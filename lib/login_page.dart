@@ -1,5 +1,8 @@
+
 import 'package:dentpal/sign_up_page_acc_details.dart';
+import 'package:dentpal/forgot_password.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 
 class LoginPage extends StatefulWidget {
@@ -10,11 +13,102 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _isLoading = false;
+  String? _errorMessage;
+  String? _emailError;
+  String? _passwordError;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _login() async {
+    setState(() {
+      _emailError = null;
+      _passwordError = null;
+      _errorMessage = null;
+    });
+
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    bool hasError = false;
+    if (email.isEmpty) {
+      setState(() {
+        _emailError = 'Please enter your email address.';
+      });
+      hasError = true;
+    }
+    if (password.isEmpty) {
+      setState(() {
+        _passwordError = 'Please enter your password.';
+      });
+      hasError = true;
+    }
+    if (hasError) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+    try {
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Login successful!')),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      String message;
+      switch (e.code) {
+        case 'invalid-email':
+          message = 'Invalid email address.';
+          break;
+        case 'user-not-found':
+          message = 'Account does not exist.';
+          break;
+        case 'wrong-password':
+          message = 'Wrong password.';
+          break;
+        case 'invalid-credential':
+          message = 'Invalid email or password.';
+          break;
+        case 'user-disabled':
+          message = 'This account has been disabled.';
+          break;
+        case 'too-many-requests':
+          message = 'Too many login attempts. Please try again later.';
+          break;
+        case 'network-request-failed':
+          message = 'Network error. Please check your connection.';
+          break;
+        default:
+          message = e.message ?? 'Authentication failed.';
+      }
+      setState(() {
+        _errorMessage = message;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'An unexpected error occurred.';
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-  return Scaffold(
+    return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
         child: Column(
@@ -38,8 +132,19 @@ class _LoginPageState extends State<LoginPage> {
                           fit: BoxFit.contain,
                         ),
                         const SizedBox(height: 48),
+                        // Error message
+                        if (_errorMessage != null) ...[
+                          Text(
+                            _errorMessage!,
+                            style: const TextStyle(color: Colors.red, fontSize: 14),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 16),
+                        ],
                         // Login form
                         TextField(
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
                           cursorColor: Colors.black,
                           decoration: InputDecoration(
                             labelText: 'Email',
@@ -58,8 +163,16 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ),
                         ),
+                        if (_emailError != null) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            _emailError!,
+                            style: const TextStyle(color: Colors.red, fontSize: 14),
+                          ),
+                        ],
                         const SizedBox(height: 16),
                         TextField(
+                          controller: _passwordController,
                           obscureText: _obscurePassword,
                           cursorColor: Colors.black,
                           decoration: InputDecoration(
@@ -90,18 +203,34 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ),
                         ),
+                        if (_passwordError != null) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            _passwordError!,
+                            style: const TextStyle(color: Colors.red, fontSize: 14),
+                          ),
+                        ],
                         const SizedBox(height: 24),
                         ElevatedButton(
-                          onPressed: () {},
+                          onPressed: _isLoading ? null : _login,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF43A047),
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 12),
                           ),
-                          child: const Text(
-                            'Login',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2.5,
+                                  ),
+                                )
+                              : const Text(
+                                  'Login',
+                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                ),
                         ),
                         const SizedBox(height: 16),
                         // Forgot password link
@@ -109,18 +238,15 @@ class _LoginPageState extends State<LoginPage> {
                           alignment: Alignment.bottomRight,
                           child: TextButton(
                             onPressed: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Show a popup here with email input and button, once clicked display success/fail'),
-                                  duration: Duration(seconds: 2),
-                                ),
+                              Navigator.of(context).push(
+                                MaterialPageRoute(builder: (context) => const ForgotPasswordPage()),
                               );
                             },
                             child: const Text(
                               'Forgot password?',
                               style: TextStyle(
                                 color: Colors.grey,
-                                fontSize: 15,
+                                fontSize: 16,
                                 fontWeight: FontWeight.normal,
                               ),
                             ),
@@ -148,7 +274,9 @@ class _LoginPageState extends State<LoginPage> {
                     children: [
                       TextSpan(
                         text: "Don't have an account? ",
-                        style: TextStyle(color: Colors.grey),
+                        style: TextStyle(color: Colors.grey, 
+                        fontWeight: FontWeight.normal
+                        ),
                       ),
                       TextSpan(
                         text: 'Sign Up',
