@@ -1,4 +1,4 @@
-package com.example.dentpal
+package com.rrnewtech.dentpal
 
 import io.flutter.embedding.android.FlutterActivity
 
