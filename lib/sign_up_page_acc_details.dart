@@ -772,7 +772,7 @@ class _SignUpPageAccDetailsState extends State<SignUpPageAccDetails> {
         codeAutoRetrievalTimeout: (String verificationId) {
           _verificationId = verificationId;
         },
-        timeout: const Duration(seconds: 180),
+        timeout: const Duration(seconds: 120),
       );
     } catch (e) {
       setState(() {

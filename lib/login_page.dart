@@ -242,12 +242,18 @@ class _LoginPageState extends State<LoginPage> {
                                 MaterialPageRoute(builder: (context) => const ForgotPasswordPage()),
                               );
                             },
-                            child: const Text(
-                              'Forgot password?',
-                              style: TextStyle(
-                                color: Colors.grey,
-                                fontSize: 16,
-                                fontWeight: FontWeight.normal,
+                            child: RichText(
+                              text: const TextSpan(
+                                style: TextStyle(fontSize: 16, color: Colors.black87),
+                                children: [
+                                  TextSpan(
+                                    text: 'Forgot password?',
+                                    style: TextStyle(
+                                      color: Colors.grey,
+                                      fontWeight: FontWeight.normal,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
