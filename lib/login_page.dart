@@ -1,9 +1,8 @@
 
-import 'package:dentpal/sign_up_page_acc_details.dart';
+import 'package:dentpal/signup/signup_flow.dart';
 import 'package:dentpal/forgot_password.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -270,7 +269,7 @@ class _LoginPageState extends State<LoginPage> {
               child: TextButton(
                 onPressed: () {
                   Navigator.of(context).push(
-                    MaterialPageRoute(builder: (context) => const SignUpPageAccDetails()),
+                    MaterialPageRoute(builder: (context) => const SignupFlow()),
                   );
                 },
                 child: RichText(

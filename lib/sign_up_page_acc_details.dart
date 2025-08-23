@@ -512,210 +512,6 @@ class _SignUpPageAccDetailsState extends State<SignUpPageAccDetails> {
     );
   }
 
-  Widget _buildStep2() {
-    return Form(
-      key: _formKeyStep2,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            'Account Creation',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Enter your details to set up your new account.',
-            style: TextStyle(fontSize: 16, color: Colors.grey),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-          TextFormField(
-            controller: _emailController,
-            cursorColor: Colors.black,
-            decoration: InputDecoration(
-              labelText: 'Email',
-              floatingLabelStyle: const TextStyle(color: Colors.black),
-              border: OutlineInputBorder(
-                borderSide: const BorderSide(color: Colors.black),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderSide: const BorderSide(color: Colors.black),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderSide: const BorderSide(color: Colors.blue, width: 2),
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            validator: (value) {
-              if (value == null || value.isEmpty || !value.contains('@')) {
-                return 'Please enter a valid email';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _passwordController,
-            obscureText: !_isPasswordVisible,
-            cursorColor: Colors.black,
-            decoration: InputDecoration(
-              labelText: 'Password',
-              floatingLabelStyle: const TextStyle(color: Colors.black),
-              border: OutlineInputBorder(
-                borderSide: const BorderSide(color: Colors.black),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderSide: const BorderSide(color: Colors.black),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderSide: const BorderSide(color: Colors.blue, width: 2),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
-                  color: Colors.grey,
-                ),
-                onPressed: () {
-                  setState(() {
-                    _isPasswordVisible = !_isPasswordVisible;
-                  });
-                },
-              ),
-            ),
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Please enter a password';
-              }
-              if (!_hasUppercase || !_hasLowercase || !_hasNumber || !_hasSpecialCharacter || !_hasMinLength) {
-                return 'Password does not meet requirements';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _confirmPasswordController,
-            obscureText: !_isConfirmPasswordVisible,
-            cursorColor: Colors.black,
-            decoration: InputDecoration(
-              labelText: 'Confirm Password',
-              floatingLabelStyle: const TextStyle(color: Colors.black),
-              border: OutlineInputBorder(
-                borderSide: const BorderSide(color: Colors.black),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderSide: const BorderSide(color: Colors.black),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderSide: const BorderSide(color: Colors.blue, width: 2),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _isConfirmPasswordVisible ? Icons.visibility : Icons.visibility_off,
-                  color: Colors.grey,
-                ),
-                onPressed: () {
-                  setState(() {
-                    _isConfirmPasswordVisible = !_isConfirmPasswordVisible;
-                  });
-                },
-              ),
-            ),
-            validator: (value) {
-              if (value != _passwordController.text) {
-                return 'Passwords do not match';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 24),
-          _buildPasswordRequirement('At least 1 uppercase letter.', _hasUppercase),
-          _buildPasswordRequirement('At least 1 lowercase letter.', _hasLowercase),
-          _buildPasswordRequirement('At least 1 number.', _hasNumber),
-          _buildPasswordRequirement('At least 1 special character.', _hasSpecialCharacter),
-          _buildPasswordRequirement('Minimum of 8 characters.', _hasMinLength),
-          _buildPasswordRequirement('Passwords must match.',
-            _passwordController.text.isNotEmpty &&
-            _confirmPasswordController.text.isNotEmpty &&
-            _passwordController.text.trim() == _confirmPasswordController.text.trim()),
-          const Spacer(),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () {
-                if (_formKeyStep2.currentState!.validate()) {
-                  _nextPage();
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF43A047),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
-              child: const Text('Proceed'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPasswordRequirement(String text, bool met) {
-    return Row(
-      children: [
-        Icon(
-          met ? Icons.check_circle : Icons.cancel,
-          color: met ? Colors.green : Colors.red,
-        ),
-        const SizedBox(width: 8),
-        Text(text),
-      ],
-    );
-  }
-
-  Widget _buildStep3() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Text(
-          'Verify Your PRC License',
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Upload or capture your PRC ID to confirm your credentials. Your PRC Number and Registration Date will be detected automatically for quick verification.',
-          style: TextStyle(fontSize: 16, color: Colors.grey),
-          textAlign: TextAlign.center,
-        ),
-        const Spacer(),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: () {
-              // TODO: Implement final step logic
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF43A047),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-            ),
-            child: const Text('Proceed to the next step'),
-          ),
-        ),
-      ],
-    );
-  }
-
   // Helper method to convert Philippine mobile number to international format
   String _formatPhoneNumberForFirebase(String phoneNumber) {
     if (phoneNumber.startsWith('09') && phoneNumber.length == 11) {
@@ -1044,4 +840,209 @@ class _SignUpPageAccDetailsState extends State<SignUpPageAccDetails> {
       },
     );
   }
+
+  Widget _buildStep2() {
+    return Form(
+      key: _formKeyStep2,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Account Creation',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Enter your details to set up your new account.',
+            style: TextStyle(fontSize: 16, color: Colors.grey),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          TextFormField(
+            controller: _emailController,
+            cursorColor: Colors.black,
+            decoration: InputDecoration(
+              labelText: 'Email',
+              floatingLabelStyle: const TextStyle(color: Colors.black),
+              border: OutlineInputBorder(
+                borderSide: const BorderSide(color: Colors.black),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderSide: const BorderSide(color: Colors.black),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderSide: const BorderSide(color: Colors.blue, width: 2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            validator: (value) {
+              if (value == null || value.isEmpty || !value.contains('@')) {
+                return 'Please enter a valid email';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _passwordController,
+            obscureText: !_isPasswordVisible,
+            cursorColor: Colors.black,
+            decoration: InputDecoration(
+              labelText: 'Password',
+              floatingLabelStyle: const TextStyle(color: Colors.black),
+              border: OutlineInputBorder(
+                borderSide: const BorderSide(color: Colors.black),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderSide: const BorderSide(color: Colors.black),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderSide: const BorderSide(color: Colors.blue, width: 2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
+                  color: Colors.grey,
+                ),
+                onPressed: () {
+                  setState(() {
+                    _isPasswordVisible = !_isPasswordVisible;
+                  });
+                },
+              ),
+            ),
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Please enter a password';
+              }
+              if (!_hasUppercase || !_hasLowercase || !_hasNumber || !_hasSpecialCharacter || !_hasMinLength) {
+                return 'Password does not meet requirements';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _confirmPasswordController,
+            obscureText: !_isConfirmPasswordVisible,
+            cursorColor: Colors.black,
+            decoration: InputDecoration(
+              labelText: 'Confirm Password',
+              floatingLabelStyle: const TextStyle(color: Colors.black),
+              border: OutlineInputBorder(
+                borderSide: const BorderSide(color: Colors.black),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderSide: const BorderSide(color: Colors.black),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderSide: const BorderSide(color: Colors.blue, width: 2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _isConfirmPasswordVisible ? Icons.visibility : Icons.visibility_off,
+                  color: Colors.grey,
+                ),
+                onPressed: () {
+                  setState(() {
+                    _isConfirmPasswordVisible = !_isConfirmPasswordVisible;
+                  });
+                },
+              ),
+            ),
+            validator: (value) {
+              if (value != _passwordController.text) {
+                return 'Passwords do not match';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 24),
+          _buildPasswordRequirement('At least 1 uppercase letter.', _hasUppercase),
+          _buildPasswordRequirement('At least 1 lowercase letter.', _hasLowercase),
+          _buildPasswordRequirement('At least 1 number.', _hasNumber),
+          _buildPasswordRequirement('At least 1 special character.', _hasSpecialCharacter),
+          _buildPasswordRequirement('Minimum of 8 characters.', _hasMinLength),
+          _buildPasswordRequirement('Passwords must match.',
+            _passwordController.text.isNotEmpty &&
+            _confirmPasswordController.text.isNotEmpty &&
+            _passwordController.text.trim() == _confirmPasswordController.text.trim()),
+          const Spacer(),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                if (_formKeyStep2.currentState!.validate()) {
+                  _nextPage();
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF43A047),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              child: const Text('Proceed'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPasswordRequirement(String text, bool met) {
+    return Row(
+      children: [
+        Icon(
+          met ? Icons.check_circle : Icons.cancel,
+          color: met ? Colors.green : Colors.red,
+        ),
+        const SizedBox(width: 8),
+        Text(text),
+      ],
+    );
+  }
+
+  Widget _buildStep3() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Verify Your PRC License',
+          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Upload or capture your PRC ID to confirm your credentials. Your PRC Number and Registration Date will be detected automatically for quick verification.',
+          style: TextStyle(fontSize: 16, color: Colors.grey),
+          textAlign: TextAlign.center,
+        ),
+        const Spacer(),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: () {
+              // TODO: Implement final step logic
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF43A047),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+            child: const Text('Proceed to the next step'),
+          ),
+        ),
+      ],
+    );
+  }
+
 }
