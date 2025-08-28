@@ -1,5 +1,5 @@
 
-import 'package:dentpal/login_page.dart';
+import 'package:dentpal/dashboard_page.dart'; // Import the dashboard page
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
@@ -43,7 +43,9 @@ class MyApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const LoginPage(),
+      // For development purposes, we're starting with the Dashboard (QR Scanner)
+      // Change back to LoginPage() when authentication flow is needed
+      home: const DashboardPage(),
       debugShowCheckedModeBanner: false,
     );
   }

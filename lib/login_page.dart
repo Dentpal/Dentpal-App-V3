@@ -1,6 +1,7 @@
 
 import 'package:dentpal/signup/signup_flow.dart';
 import 'package:dentpal/forgot_password.dart';
+import 'package:dentpal/dashboard_page.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -62,6 +63,10 @@ class _LoginPageState extends State<LoginPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Login successful!')),
+        );
+        // Navigate to the dashboard page after successful login
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const DashboardPage()),
         );
       }
     } on FirebaseAuthException catch (e) {
