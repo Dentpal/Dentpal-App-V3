@@ -1,0 +1,33 @@
+{
+  "rules": {
+    ".read": "auth != null",
+    ".write": "auth != null",
+    
+    "users": {
+      ".indexOn": ["isAdmin"],
+      "$userId": {
+        ".read": "auth != null",
+        ".write": "auth != null || auth.uid == $userId"
+      }
+    },
+    
+    "chats": {
+      ".indexOn": ["createdAt", "updatedAt"],
+      "$chatId": {
+        ".read": "auth != null && data.child('users').child(auth.uid).exists()",
+        ".write": "auth != null && (data.child('users').child(auth.uid).exists() || !data.exists())",
+        
+        "messages": {
+          ".indexOn": ["timestamp"]
+        },
+        
+        "users": {
+          "$userId": {
+            ".read": "auth != null",
+            ".write": "auth != null"
+          }
+        }
+      }
+    }
+  }
+}

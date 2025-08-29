@@ -1,14 +1,19 @@
 
-import 'package:dentpal/login_page.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'firebase_options.dart';
+import 'realtime_chat/realtime_chat_app.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  
+  // Set the database URL for Firebase Realtime Database
+  FirebaseDatabase.instance.databaseURL = 'https://dentpal-161e5-default-rtdb.asia-southeast1.firebasedatabase.app';
+  
   runApp(const MyApp());
 }
 
@@ -18,7 +23,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'DentPal',
+      title: 'DentPal Chat',
       theme: ThemeData(
         textTheme: const TextTheme(
           headlineLarge: TextStyle(
@@ -43,7 +48,7 @@ class MyApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const LoginPage(),
+      home: const RealtimeChatApp(),
       debugShowCheckedModeBanner: false,
     );
   }
