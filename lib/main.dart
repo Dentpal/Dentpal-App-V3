@@ -1,7 +1,9 @@
 
-import 'package:dentpal/login_page.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:dentpal/Products/products_module.dart';
+import 'package:dentpal/auth_wrapper.dart';
+import 'package:dentpal/utils/app_theme.dart';
 import 'firebase_options.dart';
 
 void main() async {
@@ -19,31 +21,27 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'DentPal',
-      theme: ThemeData(
-        textTheme: const TextTheme(
-          headlineLarge: TextStyle(
-            fontFamily: 'Roboto',
-            fontWeight: FontWeight.w900,
-            fontSize: 24,
-          ),
-          headlineMedium: TextStyle(
-            fontFamily: 'Roboto',
-            fontWeight: FontWeight.w900,
-            fontSize: 20,
-          ),
-          bodyLarge: TextStyle(
-            fontFamily: 'Poppins',
-            fontWeight: FontWeight.normal,
-            fontSize: 16,
-          ),
-          bodyMedium: TextStyle(
-            fontFamily: 'Poppins',
-            fontWeight: FontWeight.normal,
-            fontSize: 14,
+      theme: AppTheme.lightTheme.copyWith(
+        primaryColor: const Color(0xFF43A047), // Green color for consistency
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF43A047),
+            foregroundColor: Colors.white,
           ),
         ),
       ),
-      home: const LoginPage(),
+      home: const AuthWrapper(),
+      routes: {
+        ...ProductsModule.getRoutes(),
+      },
+      onGenerateRoute: (settings) {
+        // Try product module routes first
+        final productRoute = ProductsModule.generateRoute(settings);
+        if (productRoute != null) return productRoute;
+        
+        // Add other dynamic routes if needed
+        return null;
+      },
       debugShowCheckedModeBanner: false,
     );
   }
