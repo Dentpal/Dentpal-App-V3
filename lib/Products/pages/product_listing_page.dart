@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../models/product_model.dart';
 import '../services/product_service.dart';
 import 'product_detail_page.dart';
-import '../../widgets/currency_text.dart';
 
 class ProductListingPage extends StatefulWidget {
   const ProductListingPage({Key? key}) : super(key: key);
@@ -387,8 +386,8 @@ class _ProductListingPageState extends State<ProductListingPage> {
                     
                       // Price at the bottom
                       if (price != null)
-                        CurrencyText(
-                          amount: price,
+                        Text(
+                          '₱${price.toStringAsFixed(2)}',
                           style: TextStyle(
                             color: Theme.of(context).primaryColor,
                             fontWeight: FontWeight.w500,

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/cart_model.dart';
 import '../services/cart_service.dart';
-import '../../widgets/currency_text.dart';
 
 class CartPage extends StatefulWidget {
   const CartPage({Key? key}) : super(key: key);
@@ -236,11 +235,11 @@ class _CartPageState extends State<CartPage> {
                     ),
                     const SizedBox(height: 8),
                     if (item.productPrice != null)
-                      CurrencyText(
-                        amount: item.productPrice!,
+                      Text(
+                        '₱${item.productPrice!.toStringAsFixed(2)}',
                         style: TextStyle(
                           color: Theme.of(context).primaryColor,
-                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     const SizedBox(height: 8),
@@ -248,10 +247,10 @@ class _CartPageState extends State<CartPage> {
                       children: [
                         _buildQuantitySelector(item),
                         const Spacer(),
-                        CurrencyText(
-                          amount: item.totalPrice,
+                        Text(
+                          '₱${item.totalPrice.toStringAsFixed(2)}',
                           style: const TextStyle(
-                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
                       ],
@@ -346,10 +345,11 @@ class _CartPageState extends State<CartPage> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                CurrencyText(
-                  amount: totalPrice,
+                Text(
+                  '₱${totalPrice.toStringAsFixed(2)}',
                   style: const TextStyle(
                     fontSize: 18,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ],

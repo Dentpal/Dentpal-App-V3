@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:dentpal/Products/products_module.dart';
 import 'package:dentpal/auth_wrapper.dart';
-import 'package:dentpal/utils/app_theme.dart';
 import 'firebase_options.dart';
 
 void main() async {
@@ -21,7 +20,29 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'DentPal',
-      theme: AppTheme.lightTheme.copyWith(
+      theme: ThemeData(
+        textTheme: const TextTheme(
+          headlineLarge: TextStyle(
+            fontFamily: 'Roboto',
+            fontWeight: FontWeight.w900,
+            fontSize: 24,
+          ),
+          headlineMedium: TextStyle(
+            fontFamily: 'Roboto',
+            fontWeight: FontWeight.w900,
+            fontSize: 20,
+          ),
+          bodyLarge: TextStyle(
+            fontFamily: 'Poppins',
+            fontWeight: FontWeight.normal,
+            fontSize: 16,
+          ),
+          bodyMedium: TextStyle(
+            fontFamily: 'Poppins',
+            fontWeight: FontWeight.normal,
+            fontSize: 14,
+          ),
+        ),
         primaryColor: const Color(0xFF43A047), // Green color for consistency
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(

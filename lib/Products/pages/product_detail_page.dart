@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../models/product_model.dart';
 import '../services/product_service.dart';
 import '../services/cart_service.dart';
-import '../../widgets/currency_text.dart';
 
 class ProductDetailPage extends StatefulWidget {
   final String productId;
@@ -136,8 +135,8 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                           ),
                         ),
                         if (_selectedVariation != null)
-                          CurrencyText(
-                            amount: _selectedVariation!.price,
+                          Text(
+                            '₱${_selectedVariation!.price.toStringAsFixed(2)}',
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
@@ -333,8 +332,8 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                     ),
                   Padding(
                     padding: const EdgeInsets.all(4.0),
-                    child: CurrencyText(
-                      amount: variation.price,
+                    child: Text(
+                      '₱${variation.price.toStringAsFixed(2)}',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
