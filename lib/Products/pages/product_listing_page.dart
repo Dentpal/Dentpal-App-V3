@@ -18,10 +18,20 @@ class _ProductListingPageState extends State<ProductListingPage> {
   List<String> _categories = ['All'];
   String? _errorMessage;
   
+  bool _isSeller = false;
+
   @override
   void initState() {
     super.initState();
     _productsFuture = _loadProducts();
+    _checkSellerStatus();
+  }
+  
+  Future<void> _checkSellerStatus() async {
+    final result = await _productService.checkSellerStatus();
+    setState(() {
+      _isSeller = result['isSeller'];
+    });
   }
   
   Future<List<Product>> _loadProducts() async {
@@ -106,6 +116,13 @@ class _ProductListingPageState extends State<ProductListingPage> {
           ),
         ],
       ),
+      floatingActionButton: _isSeller ? FloatingActionButton(
+        onPressed: () {
+          Navigator.pushNamed(context, '/add-product');
+        },
+        child: const Icon(Icons.add),
+        tooltip: 'Add New Product',
+      ) : null,
       body: Column(
         children: [
           // Categories filter
