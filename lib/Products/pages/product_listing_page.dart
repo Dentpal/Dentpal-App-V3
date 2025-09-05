@@ -10,21 +10,53 @@ class ProductListingPage extends StatefulWidget {
   _ProductListingPageState createState() => _ProductListingPageState();
 }
 
-class _ProductListingPageState extends State<ProductListingPage> {
+class _ProductListingPageState extends State<ProductListingPage> with AutomaticKeepAliveClientMixin<ProductListingPage> {
   final ProductService _productService = ProductService();
-  late Future<List<Product>> _productsFuture;
+  Future<List<Product>>? _productsFuture;
   bool _isLoading = false;
   String _selectedCategory = 'All';
   List<String> _categories = ['All'];
   String? _errorMessage;
+  List<Product>? _cachedProducts;
   
   bool _isSeller = false;
 
+  // Override to keep this page alive when navigating away
+  @override
+  bool get wantKeepAlive => true;
+
+  // Static instance for the singleton pattern
+  static _ProductListingPageState? _instance;
+  
   @override
   void initState() {
     super.initState();
-    _productsFuture = _loadProducts();
-    _checkSellerStatus();
+    
+    // If we already have an instance, use its data
+    if (_instance != null) {
+      _productsFuture = _instance!._productsFuture;
+      _cachedProducts = _instance!._cachedProducts;
+      _categories = _instance!._categories;
+      _selectedCategory = _instance!._selectedCategory;
+      _isLoading = _instance!._isLoading;
+      _errorMessage = _instance!._errorMessage;
+      _isSeller = _instance!._isSeller;
+      
+      // Only check seller status if not already done
+      if (!_isSeller) {
+        _checkSellerStatus();
+      }
+    } else {
+      // First time initialization
+      _productsFuture = _loadProducts();
+      _checkSellerStatus();
+    }
+    
+    // Store this instance as the static instance
+    _instance = this;
+    
+    // Add debug log to track initialization
+    print("🔵 ProductListingPage initState called, cached: ${_cachedProducts != null}");
   }
   
   Future<void> _checkSellerStatus() async {
@@ -34,7 +66,22 @@ class _ProductListingPageState extends State<ProductListingPage> {
     });
   }
   
+  @override
+  void dispose() {
+    // Don't clear the static instance on dispose, we want to keep it
+    // Only clean up resources if needed
+    print("🔴 ProductListingPage dispose called, keeping cached data");
+    super.dispose();
+  }
+  
   Future<List<Product>> _loadProducts() async {
+    // If we have cached products, return them immediately
+    if (_cachedProducts != null) {
+      print("🟢 Using cached products: ${_cachedProducts!.length}");
+      return _cachedProducts!;
+    }
+    
+    print("🟡 No cached products, loading from API");
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -56,6 +103,9 @@ class _ProductListingPageState extends State<ProductListingPage> {
       }
       
       _categories = categorySet.toList();
+      
+      // Cache the products for future use
+      _cachedProducts = products;
       
       setState(() {
         _isLoading = false;
@@ -84,6 +134,7 @@ class _ProductListingPageState extends State<ProductListingPage> {
   
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
     return Scaffold(
       appBar: AppBar(
         title: const Text('Products'),
@@ -91,6 +142,12 @@ class _ProductListingPageState extends State<ProductListingPage> {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () {
+              print("🔄 Manual refresh requested");
+              // Clear cached products to force reload in both static instance and current instance
+              _cachedProducts = null;
+              if (_instance != null) {
+                _instance!._cachedProducts = null;
+              }
               setState(() {
                 _productsFuture = _loadProducts();
               });
@@ -220,6 +277,12 @@ class _ProductListingPageState extends State<ProductListingPage> {
                         const SizedBox(height: 16),
                         ElevatedButton(
                           onPressed: () {
+                            print("🔄 Retry button pressed");
+                            // Clear cache on retry in both static instance and current instance
+                            _cachedProducts = null;
+                            if (_instance != null) {
+                              _instance!._cachedProducts = null;
+                            }
                             setState(() {
                               _errorMessage = null;
                               _productsFuture = _loadProducts();
@@ -246,6 +309,12 @@ class _ProductListingPageState extends State<ProductListingPage> {
                         const SizedBox(height: 16),
                         ElevatedButton(
                           onPressed: () {
+                            print("🔄 Empty state refresh button pressed");
+                            // Clear cache on refresh in both static instance and current instance
+                            _cachedProducts = null;
+                            if (_instance != null) {
+                              _instance!._cachedProducts = null;
+                            }
                             setState(() {
                               _productsFuture = _loadProducts();
                             });
@@ -267,6 +336,12 @@ class _ProductListingPageState extends State<ProductListingPage> {
                 
                 return RefreshIndicator(
                   onRefresh: () async {
+                    print("🔄 Pull-to-refresh triggered");
+                    // Clear the cache to force a reload in both static instance and current instance
+                    _cachedProducts = null;
+                    if (_instance != null) {
+                      _instance!._cachedProducts = null;
+                    }
                     setState(() {
                       _productsFuture = _loadProducts();
                     });
@@ -332,11 +407,10 @@ class _ProductListingPageState extends State<ProductListingPage> {
     
     return GestureDetector(
       onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ProductDetailPage(productId: product.productId),
-          ),
+        // Use named routes to maintain consistency
+        Navigator.pushNamed(
+          context, 
+          '/product/${product.productId}'
         );
       },
       child: SizedBox(

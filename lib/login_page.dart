@@ -95,7 +95,7 @@ class _LoginPageState extends State<LoginPage> {
             
         // Query Firestore to find the user with this phone number
         final QuerySnapshot userQuery = await FirebaseFirestore.instance
-            .collection('Users')
+            .collection('User')
             .where('contactNumber', isEqualTo: formattedPhone)
             .limit(1)
             .get();
@@ -190,13 +190,31 @@ class _LoginPageState extends State<LoginPage> {
       }
       
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Login successful!')),
-        );
-        // Navigate to the home page after successful login
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const HomePage()),
-        );
+        // Check current auth state
+        final currentUser = FirebaseAuth.instance.currentUser;
+        
+        if (currentUser != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Login successful! User ID: ${currentUser.uid.substring(0, 5)}...'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+          
+          // Navigate to the home page after successful login
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => const HomePage()),
+          );
+        } else {
+          // This shouldn't happen, but adding for debugging
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Authentication successful but user is null! Please try again.'),
+              duration: Duration(seconds: 3),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
       }
     } on FirebaseAuthException catch (e) {
       String message;

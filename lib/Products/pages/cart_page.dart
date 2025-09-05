@@ -5,28 +5,102 @@ import '../services/cart_service.dart';
 class CartPage extends StatefulWidget {
   const CartPage({Key? key}) : super(key: key);
 
+  // Static method to mark the cart as needing refresh
+  static void markCartAsStale() {
+    _CartPageState._wasPopped = true;
+    print("🛒 Cart has been marked as stale, will refresh when user returns");
+  }
+
   @override
   _CartPageState createState() => _CartPageState();
 }
 
-class _CartPageState extends State<CartPage> {
+class _CartPageState extends State<CartPage> with AutomaticKeepAliveClientMixin<CartPage> {
+  // Static instance for singleton pattern
+  static _CartPageState? _instance;
+  
+  // Flag to indicate the cart needs a refresh
+  static bool _wasPopped = false;
+  
   final CartService _cartService = CartService();
-  late Future<List<CartItem>> _cartItemsFuture;
+  Future<List<CartItem>>? _cartItemsFuture;
+  List<CartItem>? _cachedCartItems;
   bool _isLoading = false;
+  
+  // Override to keep this page alive when navigating away
+  @override
+  bool get wantKeepAlive => true;
   
   @override
   void initState() {
     super.initState();
-    _cartItemsFuture = _loadCartItems();
+    
+    // If we already have an instance, use its data
+    if (_instance != null) {
+      _cartItemsFuture = _instance!._cartItemsFuture;
+      _cachedCartItems = _instance!._cachedCartItems;
+      _isLoading = _instance!._isLoading;
+      
+      print("🔵 CartPage initState called, cached: ${_cachedCartItems != null}");
+    } else {
+      // First time initialization
+      _cartItemsFuture = _loadCartItems();
+      print("🔵 CartPage initState called, first time initialization");
+    }
+    
+    // Store this instance as the static instance
+    _instance = this;
   }
   
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    
+    // Check if we should refresh the cart (when returning from product detail or another page)
+    if (_wasPopped) {
+      print("🔄 Cart page is being shown again after navigation, refreshing data");
+      _refreshCart();
+      _wasPopped = false;
+    }
+  }
+  
+  // Method to refresh the cart data
+  void _refreshCart() {
+    print("🔄 Refreshing cart data");
+    _cachedCartItems = null;
+    if (_instance != null) {
+      _instance!._cachedCartItems = null;
+    }
+    setState(() {
+      _cartItemsFuture = _loadCartItems();
+    });
+  }
+  
+  @override
+  void dispose() {
+    // Don't clear the static instance on dispose, we want to keep it
+    print("🔴 CartPage dispose called, keeping cached data");
+    super.dispose();
+  }
+
   Future<List<CartItem>> _loadCartItems() async {
+    // If we have cached cart items, return them immediately
+    if (_cachedCartItems != null) {
+      print("🟢 Using cached cart items: ${_cachedCartItems!.length}");
+      return _cachedCartItems!;
+    }
+    
+    print("🟡 No cached cart items, loading from API");
     setState(() {
       _isLoading = true;
     });
     
     try {
       final cartItems = await _cartService.getCartItems();
+      
+      // Cache the cart items for future use
+      _cachedCartItems = cartItems;
+      
       setState(() {
         _isLoading = false;
       });
@@ -35,18 +109,27 @@ class _CartPageState extends State<CartPage> {
       setState(() {
         _isLoading = false;
       });
-      print('Error loading cart items: $e');
+      print('❌ Error loading cart items: $e');
       return [];
     }
   }
   
   Future<void> _updateItemQuantity(CartItem item, int newQuantity) async {
     try {
+      print("🛒 Updating cart item quantity: ${item.cartItemId} to $newQuantity");
       await _cartService.updateCartItemQuantity(item.cartItemId, newQuantity);
+      
+      // Clear cache to force reload
+      _cachedCartItems = null;
+      if (_instance != null) {
+        _instance!._cachedCartItems = null;
+      }
+      
       setState(() {
         _cartItemsFuture = _loadCartItems();
       });
     } catch (e) {
+      print("❌ Error updating item: $e");
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error updating item: $e')),
       );
@@ -55,7 +138,15 @@ class _CartPageState extends State<CartPage> {
   
   Future<void> _removeItem(CartItem item) async {
     try {
+      print("🗑️ Removing cart item: ${item.cartItemId}");
       await _cartService.removeCartItem(item.cartItemId);
+      
+      // Clear cache to force reload
+      _cachedCartItems = null;
+      if (_instance != null) {
+        _instance!._cachedCartItems = null;
+      }
+      
       setState(() {
         _cartItemsFuture = _loadCartItems();
       });
@@ -63,6 +154,7 @@ class _CartPageState extends State<CartPage> {
         const SnackBar(content: Text('Item removed from cart')),
       );
     } catch (e) {
+      print("❌ Error removing item: $e");
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error removing item: $e')),
       );
@@ -71,6 +163,7 @@ class _CartPageState extends State<CartPage> {
   
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Cart'),
@@ -155,6 +248,12 @@ class _CartPageState extends State<CartPage> {
   Widget _buildCartList(List<CartItem> items) {
     return RefreshIndicator(
       onRefresh: () async {
+        print("🔄 Cart pull-to-refresh triggered");
+        // Clear cache to force reload in both static instance and current instance
+        _cachedCartItems = null;
+        if (_instance != null) {
+          _instance!._cachedCartItems = null;
+        }
         setState(() {
           _cartItemsFuture = _loadCartItems();
         });
@@ -417,7 +516,15 @@ class _CartPageState extends State<CartPage> {
             onPressed: () async {
               Navigator.pop(context);
               try {
+                print("🧹 Clearing the entire cart");
                 await _cartService.clearCart();
+                
+                // Clear cache to force reload
+                _cachedCartItems = null;
+                if (_instance != null) {
+                  _instance!._cachedCartItems = null;
+                }
+                
                 setState(() {
                   _cartItemsFuture = _loadCartItems();
                 });
@@ -425,6 +532,7 @@ class _CartPageState extends State<CartPage> {
                   const SnackBar(content: Text('Cart cleared successfully')),
                 );
               } catch (e) {
+                print("❌ Error clearing cart: $e");
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('Error clearing cart: $e')),
                 );

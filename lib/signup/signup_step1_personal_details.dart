@@ -305,6 +305,34 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
                   child: const Text('Proceed'),
                 ),
               ),
+              const SizedBox(height: 16),
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+                child: RichText(
+                  textAlign: TextAlign.center,
+                  text: const TextSpan(
+                    style: TextStyle(fontSize: 16, color: Colors.black87),
+                    children: [
+                      TextSpan(
+                        text: "Already have an account? ",
+                        style: TextStyle(
+                          color: Colors.grey, 
+                          fontWeight: FontWeight.normal,
+                        ),
+                      ),
+                      TextSpan(
+                        text: 'Log In',
+                        style: TextStyle(
+                          color: Color.fromRGBO(222, 140, 60, 1),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
               // Add bottom padding to prevent overlap with system UI
               const SizedBox(height: 24),
             ],

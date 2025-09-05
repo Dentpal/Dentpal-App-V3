@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/product_model.dart';
 import '../services/product_service.dart';
 import '../services/cart_service.dart';
+import 'cart_page.dart';
 
 class ProductDetailPage extends StatefulWidget {
   final String productId;
@@ -51,6 +52,9 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         quantity: _quantity,
         variationId: _selectedVariation?.variationId,
       );
+      
+      // Mark the cart as stale so it refreshes when the user navigates back
+      CartPage.markCartAsStale();
       
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Added to cart successfully')),
