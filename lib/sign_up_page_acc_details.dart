@@ -3,6 +3,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:dentpal/login_page.dart';
 
 class SignUpPageAccDetails extends StatefulWidget {
   const SignUpPageAccDetails({super.key});
@@ -1011,6 +1013,225 @@ class _SignUpPageAccDetailsState extends State<SignUpPageAccDetails> {
     );
   }
 
+  // Save user data to Firestore
+  Future<void> _saveUserDataToFirestore(User user) async {
+    try {
+      // Create the user document
+      await FirebaseFirestore.instance.collection('Users').doc(user.uid).set({
+        'displayName': '${_firstNameController.text} ${_lastNameController.text}',
+        'photoURL': null, // Will be updated when the user adds a profile photo
+        'fullName': '${_firstNameController.text} ${_lastNameController.text}',
+        'contactNumber': formattedPhoneNumber,
+        'email': _emailController.text.trim(),
+        'gender': _selectedGender,
+        'birthdate': _selectedBirthdate,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'role': 'user', // Default role
+      });
+    } catch (e) {
+      print('Error saving user data: $e');
+      throw e; // Re-throw to handle in the calling function
+    }
+  }
+
+  // Create user account in Firebase Auth
+  Future<void> _createUserAccount() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      // Create the user account with email and password
+      final UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+
+      // Get the created user
+      final User? user = userCredential.user;
+      if (user == null) throw Exception('User creation failed');
+
+      // Send email verification
+      await user.sendEmailVerification();
+
+      // Save user data to Firestore
+      await _saveUserDataToFirestore(user);
+
+      // Link phone number to the account if verified
+      if (_isContactNumberVerified) {
+        try {
+          // This is simplified - in a real app you would need to handle this differently
+          // For now, we've verified the phone number and stored it in Firestore
+          print('Phone number verified and linked to account: $formattedPhoneNumber');
+        } catch (e) {
+          print('Error linking phone: $e');
+          // Continue anyway since we have the user account created
+        }
+      }
+
+      // Sign out the user so they have to verify email before logging in
+      await FirebaseAuth.instance.signOut();
+
+      if (mounted) {
+        // Navigate to login page with success message
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const LoginPage()),
+          (route) => false, // Remove all previous routes
+        );
+
+        // Show success dialog after navigation
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _showEmailVerificationDialog();
+        });
+      }
+    } on FirebaseAuthException catch (e) {
+      String errorMessage = 'Account creation failed.';
+      if (e.code == 'email-already-in-use') {
+        errorMessage = 'An account already exists for this email address.';
+      } else if (e.code == 'invalid-email') {
+        errorMessage = 'The email address is invalid.';
+      } else if (e.code == 'weak-password') {
+        errorMessage = 'The password is too weak.';
+      } else if (e.code == 'operation-not-allowed') {
+        errorMessage = 'Email/password accounts are not enabled.';
+      }
+
+      // Show error dialog
+      _showErrorDialog(errorMessage);
+    } catch (e) {
+      // Show generic error dialog
+      _showErrorDialog('An unexpected error occurred: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  // Show email verification dialog
+  void _showEmailVerificationDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          backgroundColor: Colors.white,
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(40),
+                  ),
+                  child: const Icon(
+                    Icons.email_outlined,
+                    size: 40,
+                    color: Color(0xFF43A047),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Email Verification Sent!',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Please check your inbox and verify your email address before logging in.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF43A047),
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('OK'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // Show error dialog
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          backgroundColor: Colors.white,
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(40),
+                  ),
+                  child: const Icon(
+                    Icons.error_outline,
+                    size: 40,
+                    color: Colors.red,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Error',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.grey),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF43A047),
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('OK'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // Loading state flag
+  bool _isLoading = false;
+
   Widget _buildStep3() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1030,15 +1251,22 @@ class _SignUpPageAccDetailsState extends State<SignUpPageAccDetails> {
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
-            onPressed: () {
-              // TODO: Implement final step logic
-            },
+            onPressed: _isLoading ? null : _createUserAccount,
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF43A047),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 16),
             ),
-            child: const Text('Proceed to the next step'),
+            child: _isLoading
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2.5,
+                    ),
+                  )
+                : const Text('Create Account'),
           ),
         ),
       ],

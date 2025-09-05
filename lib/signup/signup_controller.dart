@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class SignupController {
   // Personal details (Step 1)
@@ -17,6 +18,8 @@ class SignupController {
   // Firebase verification state
   String? verificationId;
   bool isVerificationInProgress = false;
+  PhoneAuthCredential? phoneCredential;
+  int? resendToken; // Store for potential resend
   
   // Account credentials (Step 2)
   final TextEditingController emailController = TextEditingController();
@@ -41,11 +44,36 @@ class SignupController {
   
   // Helper method to convert Philippine mobile number to international format
   String formatPhoneNumberForFirebase(String phoneNumber) {
-    if (phoneNumber.startsWith('09') && phoneNumber.length == 11) {
-      return '+63${phoneNumber.substring(1)}';
+    // Clean the input
+    final cleanNumber = phoneNumber.trim();
+    
+    // Philippine mobile format
+    if (cleanNumber.startsWith('09') && cleanNumber.length == 11) {
+      return '+63${cleanNumber.substring(1)}';
     }
-    return phoneNumber;
+    
+    // Already in international format
+    if (cleanNumber.startsWith('+')) {
+      return cleanNumber;
+    }
+    
+    // Default to Philippine format if it's numeric and 10 digits (without the leading 0)
+    if (cleanNumber.length == 10 && RegExp(r'^\d+$').hasMatch(cleanNumber)) {
+      return '+63$cleanNumber';
+    }
+    
+    // No conversion possible
+    return '+63${cleanNumber.replaceAll(RegExp(r'[^0-9]'), '')}';
   }
+  
+  // Getters to access the form field values
+  String get firstName => firstNameController.text.trim();
+  String get lastName => lastNameController.text.trim();
+  String get contactNumber => contactNumberController.text.trim();
+  String get email => emailController.text.trim();
+  String get password => passwordController.text;
+  String get gender => selectedGender ?? '';
+  DateTime? get birthdate => selectedBirthdate;
   
   // Getter to access the formatted phone number for Firebase operations
   String get formattedPhoneNumber => formatPhoneNumberForFirebase(contactNumberController.text);

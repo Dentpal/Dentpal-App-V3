@@ -1,6 +1,7 @@
 import 'package:dentpal/signup/signup_flow.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ForgotPasswordPage extends StatefulWidget {
   const ForgotPasswordPage({super.key});
@@ -10,52 +11,78 @@ class ForgotPasswordPage extends StatefulWidget {
 }
 
 class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
-  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _inputController = TextEditingController();
   bool _isLoading = false;
-  String? _emailError;
+  String? _inputError;
+  bool _isEmailInput = true; // Track if input is email or phone
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _inputController.dispose();
     super.dispose();
   }
 
   bool _isValidEmail(String email) {
     return RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email);
   }
+  
+  bool _isValidPhoneNumber(String phone) {
+    // Basic check for Philippine phone format (09XXXXXXXXX or +639XXXXXXXXX)
+    return RegExp(r'^(09|\+639)\d{9}$').hasMatch(phone);
+  }
+  
+  // Convert phone to international format if needed
+  String _formatPhoneNumber(String phone) {
+    if (phone.startsWith('09')) {
+      return '+639${phone.substring(2)}';
+    }
+    return phone;
+  }
 
   Future<void> _submitPasswordReset() async {
     setState(() {
-      _emailError = null;
-    });
-
-    final email = _emailController.text.trim();
-
-    // Client-side email validation
-    if (email.isEmpty) {
-      setState(() {
-        _emailError = 'Please enter your email address.';
-      });
-      return;
-    }
-
-    if (!_isValidEmail(email)) {
-      setState(() {
-        _emailError = 'Please enter a valid email address.';
-      });
-      return;
-    }
-
-    setState(() {
+      _inputError = null;
       _isLoading = true;
     });
 
-    try {
-      // With email enumeration protection, we send the email regardless.
-      // Firebase will not indicate if the email exists or not.
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+    final input = _inputController.text.trim();
 
-      // Always show success popup to prevent email enumeration.
+    if (input.isEmpty) {
+      setState(() {
+        _inputError = 'Please enter your email or phone number.';
+        _isLoading = false;
+      });
+      return;
+    }
+
+    // Determine if input is email or phone number
+    _isEmailInput = _isValidEmail(input);
+    final bool isPhone = !_isEmailInput && _isValidPhoneNumber(input);
+
+    if (!_isEmailInput && !isPhone) {
+      setState(() {
+        _inputError = 'Please enter a valid email or phone number.';
+        _isLoading = false;
+      });
+      return;
+    }
+
+    try {
+      String emailToReset;
+      
+      if (_isEmailInput) {
+        // If it's an email, use it directly
+        emailToReset = input;
+      } else {
+        // If it's a phone number, look up the associated email in Firestore
+        final formattedPhone = _formatPhoneNumber(input);
+        emailToReset = await _getEmailFromPhone(formattedPhone);
+      }
+      
+      // Send password reset email
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: emailToReset);
+
+      // Always show success popup to prevent email enumeration
       if (mounted) {
         _showSuccessPopup();
       }
@@ -64,6 +91,10 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
       switch (e.code) {
         case 'invalid-email':
           message = 'Please enter a valid email address.';
+          break;
+        case 'user-not-found':
+          // For security, use a generic message
+          message = 'If an account exists, we\'ve sent a password reset link.';
           break;
         case 'too-many-requests':
           message = 'Too many requests. Please try again later.';
@@ -75,16 +106,44 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
           message = 'An error occurred. Please try again.';
       }
       setState(() {
-        _emailError = message;
+        _inputError = message;
       });
     } catch (e) {
       setState(() {
-        _emailError = 'An unexpected error occurred.';
+        _inputError = 'An unexpected error occurred.';
       });
     } finally {
       setState(() {
         _isLoading = false;
       });
+    }
+  }
+  
+  // Look up email from phone number in Firestore
+  Future<String> _getEmailFromPhone(String phoneNumber) async {
+    try {
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('User')
+          .where('contactNumber', isEqualTo: phoneNumber)
+          .limit(1)
+          .get();
+      
+      if (querySnapshot.docs.isEmpty) {
+        // Don't reveal if the phone exists or not for security
+        throw FirebaseAuthException(code: 'user-not-found');
+      }
+      
+      final email = querySnapshot.docs.first.data()['email'];
+      if (email == null || email.toString().isEmpty) {
+        throw Exception('No email associated with this phone number');
+      }
+      
+      return email.toString();
+    } catch (e) {
+      if (e is FirebaseAuthException) {
+        rethrow;
+      }
+      throw FirebaseAuthException(code: 'user-not-found');
     }
   }
 
@@ -111,7 +170,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                   width: 80,
                   height: 80,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF43A047).withValues(alpha: 0.1),
+                    color: const Color(0xFF43A047).withOpacity(0.1),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
@@ -356,7 +415,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                         const SizedBox(height: 16),
                         // Subtitle
                         const Text(
-                          'Enter your email address and we\'ll send you a link to reset your password.',
+                          'Enter your email address or phone number and we\'ll send a password reset link to your email.',
                           style: TextStyle(
                             fontSize: 16,
                             color: Colors.grey,
@@ -365,13 +424,14 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 32),
-                        // Email input
+                        // Email/Phone input
                         TextField(
-                          controller: _emailController,
-                          keyboardType: TextInputType.emailAddress,
+                          controller: _inputController,
+                          keyboardType: TextInputType.text,
                           cursorColor: Colors.black,
                           decoration: InputDecoration(
-                            labelText: 'Email',
+                            labelText: 'Email or Phone Number',
+                            hintText: 'Enter email or phone (09XXXXXXXXX)',
                             floatingLabelStyle: const TextStyle(color: Colors.black),
                             border: OutlineInputBorder(
                               borderSide: const BorderSide(color: Colors.black),
@@ -387,15 +447,15 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                             ),
                           ),
                         ),
-                        // Email error message
-                        if (_emailError != null) ...[
+                        // Input error message
+                        if (_inputError != null) ...[
                           const SizedBox(height: 6),
                           RichText(
                             text: TextSpan(
                               style: const TextStyle(color: Colors.red, fontSize: 13),
                               children: [
-                                TextSpan(text: _emailError!),
-                                if (_emailError!.contains('No account is linked')) ...[
+                                TextSpan(text: _inputError!),
+                                if (_inputError!.contains('No account is linked')) ...[
                                   const TextSpan(text: ' '),
                                   WidgetSpan(
                                     child: GestureDetector(
