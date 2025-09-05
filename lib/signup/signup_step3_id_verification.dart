@@ -422,38 +422,55 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: List.generate(6, (index) {
-                    return SizedBox(
+                    return Container(
                       width: 50,
                       height: 50,
-                      child: TextFormField(
-                        controller: _controller.otpControllers[index],
-                        focusNode: _controller.otpFocusNodes[index],
-                        keyboardType: TextInputType.number,
-                        textAlign: TextAlign.center,
-                        maxLength: 1,
-                        style: const TextStyle(fontSize: 20),
-                        decoration: InputDecoration(
-                          counterText: '',
-                          contentPadding: EdgeInsets.zero,
-                          border: OutlineInputBorder(
-                            borderSide: const BorderSide(color: Colors.grey),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderSide: const BorderSide(color: Colors.blue, width: 2),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: _controller.otpFocusNodes[index].hasFocus ? Colors.black : Colors.grey,
+                          width: _controller.otpFocusNodes[index].hasFocus ? 2 : 1,
                         ),
-                        onChanged: (value) {
-                          if (value.length == 1 && index < 5) {
-                            _controller.otpFocusNodes[index + 1].requestFocus();
-                          }
-                        },
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Center(
+                        child: TextField(
+                          controller: _controller.otpControllers[index],
+                          focusNode: _controller.otpFocusNodes[index],
+                          keyboardType: TextInputType.number,
+                          textAlign: TextAlign.center,
+                          maxLength: 1,
+                          style: const TextStyle(
+                            fontSize: 20, 
+                            height: 1.3, // Adjust this to center vertically
+                            color: Colors.black,
+                          ),
+                            cursorColor: Colors.black,
+                            decoration: const InputDecoration(
+                              counterText: '',
+                              border: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              errorBorder: InputBorder.none,
+                              disabledBorder: InputBorder.none,
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                            onChanged: (value) {
+                              if (value.length == 1 && index < 5) {
+                                _controller.otpFocusNodes[index + 1].requestFocus();
+                              }
+                            },
+                          ),
                       ),
                     );
                   }),
                 ),
-                const Spacer(),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: _resendOtp,
+                    child: const Text('Didn\'t receive code? Resend'),
+                  ),
+                ),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -464,15 +481,6 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
                       padding: const EdgeInsets.symmetric(vertical: 16),
                     ),
                     child: const Text('Verify'),
-                  ),
-                ),
-                // add margin top
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: TextButton(
-                    onPressed: _resendOtp,
-                    child: const Text('Didn\'t receive code? Resend'),
                   ),
                 ),
                 const SizedBox(height: 8),
