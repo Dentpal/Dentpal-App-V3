@@ -1,6 +1,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dentpal/Products/products_module.dart';
 import 'package:dentpal/auth_wrapper.dart';
 import 'firebase_options.dart';
@@ -10,6 +11,13 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  
+  // Set Firestore cache size to 250MB
+  FirebaseFirestore.instance.settings = Settings(
+    persistenceEnabled: true,
+    cacheSizeBytes: 100 * 1024 * 1024, // 250 MB
+  );
+  
   runApp(const MyApp());
 }
 

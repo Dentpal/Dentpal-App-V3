@@ -72,3 +72,4 @@ android/.gradle/8.12/fileHashes/fileHashes.lock
 android/.gradle/8.12/fileHashes/fileHashes.bin
 android/.gradle/8.12/executionHistory/executionHistory.lock
 android/.gradle/8.12/executionHistory/executionHistory.bin
+android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java

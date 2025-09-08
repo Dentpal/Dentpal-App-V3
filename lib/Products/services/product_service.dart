@@ -7,41 +7,61 @@ class ProductService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // Get all active products
+  // Get all products (legacy method - kept for backward compatibility)
   Future<List<Product>> getProducts() async {
     try {
-      print('🔍 Fetching products from Firestore...');
+      print('Fetching all products from Firestore...');
       
-      // First, let's get all products without filters to debug
-      QuerySnapshot allProducts = await _firestore
-          .collection('Product')
-          .get();
-      
-      print('📊 Total products in Firestore: ${allProducts.docs.length}');
-      
-      if (allProducts.docs.isEmpty) {
-        print('❌ No products found in the database at all.');
-        return [];
-      }
-      
-      // Let's temporarily remove the isActive filter to see if that's the issue
-      QuerySnapshot querySnapshot = await _firestore
-          .collection('Product')
-          .orderBy('createdAt', descending: true)
-          .get();
-      
-      print('🔢 Products after filtering (isActive=true): ${querySnapshot.docs.length}');
-      
-      if (querySnapshot.docs.isEmpty) {
-        print('⚠️ No active products found. Checking if isActive field exists...');
-        
-        // Check one product to see its structure
-        if (allProducts.docs.isNotEmpty) {
-          print('📄 Example product data: ${allProducts.docs[0].data()}');
-        }
-      }
+      // Get the first page of products with a large limit
+      final result = await getProductsPaginated(limit: 100);
+      return result['products'] as List<Product>;
+    } catch (e) {
+      print('Error fetching all products: $e');
+      print('Stack trace: ${StackTrace.current}');
+      return [];
+    }
+  }
 
-      List<Product> products = [];
+  // Get paginated products with optional last document for pagination
+  Future<Map<String, dynamic>> getProductsPaginated({
+    int limit = 15,
+    DocumentSnapshot? lastDocument,
+    String? category,
+  }) async {
+    try {
+      print('Fetching paginated products from Firestore...');
+      
+      // Start building the query
+      Query query = _firestore
+          .collection('Product')
+          .orderBy('createdAt', descending: true);
+      
+      // Add category filter if specified
+      if (category != null && category != 'All') {
+        query = query.where('category', isEqualTo: category);
+      }
+      
+      // Add pagination parameters
+      query = query.limit(limit);
+      
+      // If we have a last document, start after it
+      if (lastDocument != null) {
+        query = query.startAfterDocument(lastDocument);
+      }
+      
+      // Execute the query
+      QuerySnapshot querySnapshot = await query.get();
+      
+      print('Fetched page with ${querySnapshot.docs.length} products');
+      
+      // Check if we've reached the end of the data
+      bool hasMore = querySnapshot.docs.length == limit;
+      
+      // Get the last document for next pagination call
+      DocumentSnapshot? lastVisibleDocument = 
+          querySnapshot.docs.isNotEmpty ? querySnapshot.docs.last : null;
+
+      List<Product> pageProducts = [];
       for (var doc in querySnapshot.docs) {
         Product product = Product.fromFirestore(doc);
         
@@ -71,15 +91,26 @@ class ProductService {
           );
         }
         
-        products.add(product);
+        pageProducts.add(product);
       }
       
-      print('✅ Successfully fetched ${products.length} products');
-      return products;
+      print('Successfully fetched ${pageProducts.length} products');
+      
+      // Return a map with all pagination-related data
+      return {
+        'products': pageProducts,
+        'lastDocument': lastVisibleDocument,
+        'hasMore': hasMore
+      };
     } catch (e) {
-      print('❌ Error fetching products: $e');
+      print('Error fetching paginated products: $e');
       print('Stack trace: ${StackTrace.current}');
-      return [];
+      return {
+        'products': <Product>[],
+        'lastDocument': null,
+        'hasMore': false,
+        'error': e.toString()
+      };
     }
   }
 
@@ -111,12 +142,13 @@ class ProductService {
           name: product.name,
           description: product.description,
           imageURL: product.imageURL,
-          category: product.category,
+          category: product.category, // change to categoryID we will separate this
           sellerId: product.sellerId,
           createdAt: product.createdAt,
           updatedAt: product.updatedAt,
           isActive: product.isActive,
           variations: variations,
+          //add clickAmt
         );
       }
       

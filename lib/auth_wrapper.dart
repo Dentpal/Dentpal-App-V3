@@ -18,6 +18,9 @@ class AuthWrapper extends StatelessWidget {
         // Otherwise, they're not signed in
         return const LoginPage();
       },
+      // if account has a 'seller' table, then include a
+      // separate landing page so that they can transition between 
+      //buying and selling
     );
   }
 }

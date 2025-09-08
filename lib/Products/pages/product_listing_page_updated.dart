@@ -87,7 +87,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     _instance = this;
     
     // Add debug log to track initialization
-    print("ProductListingPage initState called, products: ${_products.length}, timestamp: $_cacheTimestamp");
+    print("🔵 ProductListingPage initState called, products: ${_products.length}, timestamp: $_cacheTimestamp");
   }
   
   @override
@@ -97,7 +97,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     
     // Don't clear the static instance on dispose, we want to keep it
     // Only clean up resources if needed
-    print("ProductListingPage dispose called, keeping cached data");
+    print("🔴 ProductListingPage dispose called, keeping cached data");
     super.dispose();
   }
   
@@ -173,7 +173,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     });
     
     try {
-      print('ProductListingPage: Loading first page of products...');
+      print('🔄 ProductListingPage: Loading first page of products...');
       
       final result = await _productService.getProductsPaginated(
         limit: _pageSize,
@@ -211,9 +211,9 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
         }
       });
       
-      print('Loaded ${newProducts.length} products (first page)');
+      print('✅ Loaded ${newProducts.length} products (first page)');
     } catch (e) {
-      print('Error loading first page: $e');
+      print('❌ Error loading first page: $e');
       print('Stack trace: ${StackTrace.current}');
       
       setState(() {
@@ -232,7 +232,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     });
     
     try {
-      print('ProductListingPage: Loading more products...');
+      print('🔄 ProductListingPage: Loading more products...');
       
       final result = await _productService.getProductsPaginated(
         limit: _pageSize,
@@ -258,9 +258,9 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
         }
       });
       
-      print('Loaded ${newProducts.length} more products');
+      print('✅ Loaded ${newProducts.length} more products');
     } catch (e) {
-      print('Error loading more products: $e');
+      print('❌ Error loading more products: $e');
       print('Stack trace: ${StackTrace.current}');
       
       setState(() {
@@ -279,7 +279,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () {
-              print("Manual refresh requested");
+              print("🔄 Manual refresh requested");
               
               // Reset the cache timestamp
               _cacheTimestamp = null;
@@ -386,7 +386,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                         const SizedBox(height: 16),
                         ElevatedButton(
                           onPressed: () {
-                            print("Retry button pressed");
+                            print("🔄 Retry button pressed");
                             // Clear cache on retry
                             _cacheTimestamp = null;
                             
@@ -417,7 +417,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                           const SizedBox(height: 16),
                           ElevatedButton(
                             onPressed: () {
-                              print("Empty state refresh button pressed");
+                              print("🔄 Empty state refresh button pressed");
                               // Clear cache on refresh
                               _cacheTimestamp = null;
                               
@@ -454,7 +454,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     
     return RefreshIndicator(
       onRefresh: () async {
-        print("Pull-to-refresh triggered");
+        print("🔄 Pull-to-refresh triggered");
         // Clear the cache timestamp
         _cacheTimestamp = null;
         
