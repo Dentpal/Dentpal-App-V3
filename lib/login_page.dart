@@ -1,10 +1,12 @@
-
 import 'package:dentpal/signup/signup_flow.dart';
 import 'package:dentpal/forgot_password.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dentpal/home_page.dart';
+import 'package:dentpal/core/app_theme/index.dart';
+import 'package:dentpal/utils/credential_manager.dart';
+import 'dart:ui' as ui;
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -18,9 +20,16 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
+  bool _rememberMe = false;
   String? _errorMessage;
   String? _emailError;
   String? _passwordError;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedCredentials();
+  }
 
   @override
   void dispose() {
@@ -29,12 +38,38 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
+  Future<void> _loadSavedCredentials() async {
+    final credentials = await CredentialManager.loadCredentials();
+    final savedEmail = credentials['email'];
+    final savedPassword = credentials['password'];
+    
+    if (savedEmail != null && savedPassword != null) {
+      setState(() {
+        _emailController.text = savedEmail;
+        _passwordController.text = savedPassword;
+        _rememberMe = true;
+      });
+    }
+  }
+
+  Future<void> _saveCredentials() async {
+    if (_rememberMe) {
+      // Save credentials when remember me is checked
+      await CredentialManager.saveCredentials(_emailController.text.trim(), _passwordController.text);
+    } else {
+      // Clear saved credentials when remember me is unchecked
+      await CredentialManager.clearCredentials();
+    }
+  }
+
   Future<void> _login() async {
     setState(() {
       _emailError = null;
       _passwordError = null;
       _errorMessage = null;
     });
+
+    await _saveCredentials();
 
     final emailOrPhone = _emailController.text.trim();
     final password = _passwordController.text;
@@ -59,10 +94,10 @@ class _LoginPageState extends State<LoginPage> {
     try {
       // Determine if input is email or phone number
       final bool isEmail = emailOrPhone.contains('@');
-      
+
       // Determine login type and authenticate
       UserCredential userCredential;
-      
+
       if (isEmail) {
         // Login with email directly
         userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
@@ -72,17 +107,17 @@ class _LoginPageState extends State<LoginPage> {
       } else {
         // Format Philippine phone number (09XXXXXXXXX to +639XXXXXXXXX)
         String formattedPhone = emailOrPhone;
-        
+
         // Check if phone number starts with '09' (Philippine format)
         if (formattedPhone.startsWith('09') && formattedPhone.length == 11) {
           // Convert 09XXXXXXXXX to +639XXXXXXXXX
           formattedPhone = '+63${formattedPhone.substring(1)}';
-        } 
+        }
         // If it doesn't start with + already, add it (for other formats)
         else if (!formattedPhone.startsWith('+')) {
           formattedPhone = '+$formattedPhone';
         }
-        
+
         // Show specific loading state for phone lookup
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -92,23 +127,24 @@ class _LoginPageState extends State<LoginPage> {
             ),
           );
         }
-            
+
         // Query Firestore to find the user with this phone number
         final QuerySnapshot userQuery = await FirebaseFirestore.instance
             .collection('User')
             .where('contactNumber', isEqualTo: formattedPhone)
             .limit(1)
             .get();
-            
+
         // Check if we found a user with this phone number
         if (userQuery.docs.isEmpty) {
           setState(() {
             _isLoading = false;
-            _errorMessage = "Account not found. Try logging in with your email.";
+            _errorMessage =
+                "Account not found. Try logging in with your email.";
           });
           return;
         }
-        
+
         // Try to extract the email from the found user document
         String? userEmail;
         try {
@@ -117,65 +153,79 @@ class _LoginPageState extends State<LoginPage> {
         } catch (e) {
           // Handle case where email field doesn't exist or isn't a string
         }
-        
+
         // Check if we successfully retrieved an email
         if (userEmail == null || userEmail.isEmpty) {
           setState(() {
             _isLoading = false;
-            _errorMessage = "Error accessing account details. Please contact support.";
+            _errorMessage =
+                "Error accessing account details. Please contact support.";
           });
           return;
         }
-        
+
         // Login with the associated email
         userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
           email: userEmail,
           password: password,
         );
       }
-      
+
       // Check if email is verified
       if (userCredential.user != null && !userCredential.user!.emailVerified) {
         // Sign out the user if email is not verified
         await FirebaseAuth.instance.signOut();
-        
+
         if (mounted) {
           setState(() {
-            _errorMessage = 'Please verify your email before logging in. Check your inbox for a verification link.';
+            _errorMessage =
+                'Please verify your email before logging in. Check your inbox for a verification link.';
           });
-          
+
           // Offer to resend verification email
           showDialog(
             context: context,
             builder: (context) => AlertDialog(
               title: const Text('Email Not Verified'),
-              content: const Text('You need to verify your email address before logging in. Would you like us to resend the verification email?'),
+              content: const Text(
+                'You need to verify your email address before logging in. Would you like us to resend the verification email?',
+              ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('CANCEL'),
+                  child: const Text(
+                    'CANCEL',
+                    style: TextStyle(color: Colors.red),
+                  ),
                 ),
                 TextButton(
                   onPressed: () async {
                     Navigator.of(context).pop();
                     try {
                       // Sign in temporarily to send verification email
-                      final tempCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
-                        email: emailOrPhone,
-                        password: password,
-                      );
+                      final tempCredential = await FirebaseAuth.instance
+                          .signInWithEmailAndPassword(
+                            email: emailOrPhone,
+                            password: password,
+                          );
                       await tempCredential.user?.sendEmailVerification();
                       await FirebaseAuth.instance.signOut();
-                      
+
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Verification email has been sent!')),
+                          const SnackBar(
+                            content: Text('Verification email has been sent!'),
+                          ),
                         );
                       }
                     } catch (e) {
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Failed to send verification email. Please try again.')),
+                          const SnackBar(
+                            content: Text(
+                              'Failed to send verification email. Please try again.',
+                            ),
+                          ),
                         );
                       }
                     }
@@ -188,19 +238,21 @@ class _LoginPageState extends State<LoginPage> {
         }
         return;
       }
-      
+
       if (mounted) {
         // Check current auth state
         final currentUser = FirebaseAuth.instance.currentUser;
-        
+
         if (currentUser != null) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Login successful! User ID: ${currentUser.uid.substring(0, 5)}...'),
+              content: Text(
+                'Login successful! User ID: ${currentUser.uid.substring(0, 5)}...',
+              ),
               duration: const Duration(seconds: 2),
             ),
           );
-          
+
           // Navigate to the home page after successful login
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (context) => const HomePage()),
@@ -209,7 +261,9 @@ class _LoginPageState extends State<LoginPage> {
           // This shouldn't happen, but adding for debugging
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Authentication successful but user is null! Please try again.'),
+              content: Text(
+                'Authentication successful but user is null! Please try again.',
+              ),
               duration: Duration(seconds: 3),
               backgroundColor: Colors.orange,
             ),
@@ -219,14 +273,14 @@ class _LoginPageState extends State<LoginPage> {
     } on FirebaseAuthException catch (e) {
       String message;
       bool isPhoneLogin = !emailOrPhone.contains('@');
-      
+
       switch (e.code) {
         case 'invalid-email':
           message = 'Invalid email address.';
           break;
         case 'user-not-found':
-          message = isPhoneLogin 
-              ? 'No account found with this phone number. Try using your email instead.' 
+          message = isPhoneLogin
+              ? 'No account found with this phone number. Try using your email instead.'
               : 'Account does not exist.';
           break;
         case 'wrong-password':
@@ -266,93 +320,200 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 500),
+      // Set background color to match the form's color for a seamless look
+      backgroundColor: AppColors.surface,
+      body: Stack(
+        children: [
+          // Background gradient covering full screen
+          Container(
+            decoration: const BoxDecoration(gradient: AppGradients.teal),
+            height: MediaQuery.of(context).size.height,
+          ),
+          // Content with SafeArea
+          SafeArea(
+            // Don't apply bottom padding to allow content to extend fully
+            bottom: false,
+            child: Column(
+              children: [
+              // Top section with logo and powered by text
+              Expanded(
+                flex: 3,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Logo with shadow
+                    Container(
+                      width: 220,
+                      height: 160,
+                      child: Stack(
+                        children: [
+                          // Shadow
+                          ImageFiltered(
+                            imageFilter: ui.ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+                            child: ColorFiltered(
+                              colorFilter: ColorFilter.mode(
+                              Colors.white.withValues(alpha: 0.4),
+                                BlendMode.srcATop,
+                              ),
+                              child: Image.asset(
+                                'lib/assets/icons/dentpal_vertical.png',
+                                width: 220,
+                                height: 160,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
+                          // Actual image on top
+                          Image.asset(
+                            'lib/assets/icons/dentpal_vertical.png',
+                            width: 220,
+                            height: 160,
+                            fit: BoxFit.cover,
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  ],
+                ),
+              ),
+              // Bottom section with login form
+              Expanded(
+                flex: 7,
+                child: Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(30),
+                      topRight: Radius.circular(30),
+                      bottomLeft: Radius.zero,
+                      bottomRight: Radius.zero,
+                    ),
+                  ),
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(32.0),
+                    padding: EdgeInsets.only(
+                      left: 30.0,
+                      right: 30.0,
+                      top: 30.0,
+                    ),
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        // Logo image
-                        Image.asset(
-                          'lib/assets/icons/dentpal_vertical.png',
-                          width: 180,
-                          height: 180,
-                          fit: BoxFit.contain,
-                        ),
-                        const SizedBox(height: 48),
+                        const SizedBox(height: 10),
                         // Error message
                         if (_errorMessage != null) ...[
-                          Text(
-                            _errorMessage!,
-                            style: const TextStyle(color: Colors.red, fontSize: 14),
-                            textAlign: TextAlign.center,
+                          Container(
+                            padding: context.paddingAll16,
+                            decoration: BoxDecoration(
+                              color: AppColors.error.withOpacity(0.1),
+                              borderRadius: context.borderRadius8,
+                              border: Border.all(
+                                color: AppColors.error.withOpacity(0.3),
+                              ),
+                            ),
+                            child: Text(
+                              _errorMessage!,
+                              style: context.textTheme.bodyMedium?.copyWith(
+                                color: AppColors.error,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 10),
                         ],
-                        // Login form
+                        // Email or Phone Number field
+                        Text(
+                          'Email or Phone Number',
+                          style: context.textTheme.labelLarge?.copyWith(
+                            color: AppColors.onSurface,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
                         TextField(
                           controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
-                          cursorColor: Colors.black,
+                          style: AppTextStyles.inputText,
                           decoration: InputDecoration(
-                            labelText: 'Email or Phone Number',
-                            hintText: 'example@email.com or +63912456789',
-                            floatingLabelStyle: const TextStyle(color: Colors.black),
+                            hintText: 'example@domain.com',
+                            hintStyle: AppTextStyles.inputHint,
+                            filled: true,
+                            fillColor: AppColors.surfaceVariant,
                             border: OutlineInputBorder(
-                              borderSide: const BorderSide(color: Colors.black),
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(15),
+                              borderSide: BorderSide.none,
                             ),
                             enabledBorder: OutlineInputBorder(
-                              borderSide: const BorderSide(color: Colors.black),
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(15),
+                              borderSide: BorderSide.none,
                             ),
                             focusedBorder: OutlineInputBorder(
-                              borderSide: const BorderSide(color: Colors.blue, width: 2),
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(15),
+                              borderSide: const BorderSide(
+                                color: AppColors.primary,
+                                width: 2,
+                              ),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 18,
                             ),
                           ),
                         ),
                         if (_emailError != null) ...[
-                          const SizedBox(height: 6),
+                          const SizedBox(height: 8),
                           Text(
                             _emailError!,
-                            style: const TextStyle(color: Colors.red, fontSize: 14),
+                            style: context.textTheme.bodySmall?.copyWith(
+                              color: AppColors.error,
+                            ),
                           ),
                         ],
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 10),
+                        // Password field
+                        Text(
+                          'Password',
+                          style: context.textTheme.labelLarge?.copyWith(
+                            color: AppColors.onSurface,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
                         TextField(
                           controller: _passwordController,
                           obscureText: _obscurePassword,
-                          cursorColor: Colors.black,
+                          style: AppTextStyles.inputText,
                           decoration: InputDecoration(
-                            labelText: 'Password',
                             hintText: '●●●●●●●●',
-                            floatingLabelStyle: const TextStyle(color: Colors.black),
+                            hintStyle: AppTextStyles.inputHint,
+                            filled: true,
+                            fillColor: AppColors.surfaceVariant,
                             border: OutlineInputBorder(
-                              borderSide: const BorderSide(color: Colors.black),
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(15),
+                              borderSide: BorderSide.none,
                             ),
                             enabledBorder: OutlineInputBorder(
-                              borderSide: const BorderSide(color: Colors.black),
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(15),
+                              borderSide: BorderSide.none,
                             ),
                             focusedBorder: OutlineInputBorder(
-                              borderSide: const BorderSide(color: Colors.blue, width: 2),
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(15),
+                              borderSide: const BorderSide(
+                                color: AppColors.primary,
+                                width: 2,
+                              ),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 18,
                             ),
                             suffixIcon: IconButton(
                               icon: Icon(
-                                _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                                color: Colors.grey,
+                                _obscurePassword
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
+                                color: AppColors.grey400,
                               ),
                               onPressed: () {
                                 setState(() {
@@ -363,53 +524,188 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                         ),
                         if (_passwordError != null) ...[
-                          const SizedBox(height: 6),
+                          const SizedBox(height: 8),
                           Text(
                             _passwordError!,
-                            style: const TextStyle(color: Colors.red, fontSize: 14),
+                            style: context.textTheme.bodySmall?.copyWith(
+                              color: AppColors.error,
+                            ),
                           ),
                         ],
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 10),
+                        // Remember Me checkbox
+                        Row(
+                          children: [
+                            Checkbox(
+                              value: _rememberMe,
+                              onChanged: (value) {
+                                setState(() {
+                                  _rememberMe = value ?? false;
+                                });
+                              },
+                            ),
+                            const Text('Remember me?'),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        // Log In button
                         ElevatedButton(
                           onPressed: _isLoading ? null : _login,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF43A047),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: AppColors.onPrimary,
+                            padding: const EdgeInsets.symmetric(vertical: 18),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(15),
+                            ),
+                            elevation: 0,
                           ),
                           child: _isLoading
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
+                              ? SizedBox(
+                                  height: 24,
+                                  width: 24,
                                   child: CircularProgressIndicator(
-                                    color: Colors.white,
+                                    color: AppColors.onPrimary,
                                     strokeWidth: 2.5,
                                   ),
                                 )
-                              : const Text(
-                                  'Login',
-                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              : Text(
+                                  'Log In',
+                                  style: AppTextStyles.buttonLarge.copyWith(
+                                    color: AppColors.onPrimary,
+                                  ),
                                 ),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 8),
                         // Forgot password link
                         Align(
-                          alignment: Alignment.bottomRight,
+                          alignment: Alignment.centerRight,
                           child: TextButton(
                             onPressed: () {
                               Navigator.of(context).push(
-                                MaterialPageRoute(builder: (context) => const ForgotPasswordPage()),
+                                PageRouteBuilder(
+                                  transitionDuration: const Duration(milliseconds: 500),
+                                  pageBuilder: (context, animation, secondaryAnimation) => const ForgotPasswordPage(),
+                                  transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                                    final begin = Offset(0.0, 1.0); // Starts from bottom
+                                    final end = Offset.zero; // Ends at original position
+                                    final curve = Curves.ease;
+
+                                    final tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+                                    final offsetAnimation = animation.drive(tween);
+
+                                    return SlideTransition(
+                                      position: offsetAnimation,
+                                      child: child,
+                                    );
+                                  },
+                                ),
+                              );
+                            },
+                            child: Text(
+                              'Forgot password?',
+                              style: context.textTheme.bodyMedium?.copyWith(
+                                color: AppColors.accent,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        // Sign in with text
+                        Center(
+                          child: Text(
+                            'Sign in with',
+                            style: context.textTheme.bodyMedium?.copyWith(
+                              color: AppColors.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        // Social media buttons
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            // Google button
+                            GestureDetector(
+                              onTap: () {
+                                // TODO: Implement Google Sign In
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Google Sign In - Coming Soon!',
+                                    ),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              },
+                              child: Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  boxShadow: AppShadows.light,
+                                ),
+                                child: Image.asset(
+                                  'lib/assets/icons/google-logo.png',
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 30),
+                            // Facebook button
+                            GestureDetector(
+                              onTap: () {
+                                // TODO: Implement Facebook Sign In
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Facebook Sign In - Coming Soon!',
+                                    ),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              },
+                              child: Container(
+                                width: 34,
+                                height: 34,
+                                decoration: BoxDecoration(
+                                  boxShadow: AppShadows.light,
+                                ),
+                                child: Image.asset(
+                                  'lib/assets/icons/facebook-logo.png',
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        // Sign up link
+                        Center(
+                          child: TextButton(
+                            onPressed: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => const SignupFlow(),
+                                ),
                               );
                             },
                             child: RichText(
-                              text: const TextSpan(
-                                style: TextStyle(fontSize: 16, color: Colors.black87),
+                              textAlign: TextAlign.center,
+                              text: TextSpan(
+                                style: context.textTheme.bodyMedium,
                                 children: [
                                   TextSpan(
-                                    text: 'Forgot password?',
+                                    text: "Don't have an account? ",
                                     style: TextStyle(
-                                      color: Colors.grey,
+                                      color: AppColors.onSurfaceVariant,
                                       fontWeight: FontWeight.normal,
+                                    ),
+                                  ),
+                                  TextSpan(
+                                    text: 'Sign up',
+                                    style: TextStyle(
+                                      color: AppColors.accent,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
                                 ],
@@ -417,47 +713,18 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        // Add extra space at the bottom to account for home indicator
+                        SizedBox(height: MediaQuery.of(context).padding.bottom > 0 ? 40 : 20),
                       ],
                     ),
                   ),
                 ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 24.0),
-              child: TextButton(
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (context) => const SignupFlow()),
-                  );
-                },
-                child: RichText(
-                  textAlign: TextAlign.center,
-                  text: const TextSpan(
-                    style: TextStyle(fontSize: 16, color: Colors.black87),
-                    children: [
-                      TextSpan(
-                        text: "Don't have an account? ",
-                        style: TextStyle(color: Colors.grey, 
-                        fontWeight: FontWeight.normal
-                        ),
-                      ),
-                      TextSpan(
-                        text: 'Sign Up',
-                        style: TextStyle(
-                          color: Color.fromRGBO(222, 140, 60, 1),
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
-    );
+      ],
+    )
+  );
   }
 }

@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'signup_controller.dart';
 import 'package:dentpal/login_page.dart';
+import 'package:dentpal/core/app_theme/index.dart';
 
 class SignupStep3IdVerification extends StatefulWidget {
   final SignupController controller;
@@ -27,68 +28,132 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Center(child: Text('Step 3: ID Verification', style: TextStyle(fontSize: 24))),
-            const SizedBox(height: 20),
-            const Center(child: Text('This section will be implemented later')),
-            // Add sufficient space before the buttons
-            const SizedBox(height: 200), // This gives content space to scroll
-            if (_controller.isContactNumberVerified)
-              Padding(
-                padding: const EdgeInsets.only(top: 8.0),
-                child: Row(
-                  children: [
-                    const Icon(Icons.check_circle, color: Color(0xFF43A047)),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Verified',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: Color(0xFF43A047)
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            const SizedBox(height: 40),
-            Row(
+      padding: const EdgeInsets.only(
+        left: 30.0,
+        right: 30.0,
+        top: 30.0
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Phone verification section
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: AppColors.grey50,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.grey200),
+            ),
+            child: Column(
               children: [
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: widget.onBack,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.grey,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                    child: const Text('Back'),
+                Icon(
+                  Icons.phone_android,
+                  size: 48,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Phone Verification',
+                  style: AppTextStyles.headlineSmall.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: _processSubmission,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF43A047),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                    child: _controller.isVerificationInProgress
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
-                      : Text(_controller.isContactNumberVerified ? 'Complete Registration' : 'Submit'),
+                const SizedBox(height: 8),
+                Text(
+                  'We\'ll send a verification code to your phone number to ensure account security.',
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.grey600,
                   ),
                 ),
+                const SizedBox(height: 16),
+                if (_controller.isContactNumberVerified)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.success),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.check_circle,
+                          color: AppColors.success,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Phone number verified',
+                          style: AppTextStyles.labelMedium.copyWith(
+                            color: AppColors.success,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
-            // Add padding at the bottom to prevent overlap with system UI on smaller screens
-            const SizedBox(height: 24),
-          ],
-        ),
+          ),
+          
+          const SizedBox(height: 200), // Spacer for content
+          
+          // Action buttons
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: widget.onBack,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.grey200,
+                    foregroundColor: AppColors.grey700,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: Text(
+                    'Back',
+                    style: AppTextStyles.buttonLarge,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: _processSubmission,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: AppColors.onPrimary,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: _controller.isVerificationInProgress
+                    ? SizedBox(
+                        width: 20, 
+                        height: 20, 
+                        child: CircularProgressIndicator(
+                          color: AppColors.onPrimary, 
+                          strokeWidth: 2.5
+                        )
+                      )
+                    : Text(
+                        _controller.isContactNumberVerified ? 'Complete' : 'Verify Phone',
+                        style: AppTextStyles.buttonLarge,
+                      ),
+                ),
+              ),
+            ],
+          ),
+          // Add extra space at the bottom to account for home indicator
+          SizedBox(height: MediaQuery.of(context).padding.bottom > 0 ? 40 : 20),
+        ],
       ),
     );
   }
@@ -216,10 +281,10 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
       barrierDismissible: false,
       builder: (context) {
         return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: AppColors.surface,
           child: Padding(
-            padding: const EdgeInsets.all(24.0),
+            padding: const EdgeInsets.all(30.0),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -227,27 +292,31 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
                   width: 80,
                   height: 80,
                   decoration: BoxDecoration(
-                    color: Colors.green.shade50,
+                    color: AppColors.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(40),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.email_outlined,
                     size: 40,
-                    color: Color(0xFF43A047),
+                    color: AppColors.primary,
                   ),
                 ),
-                const SizedBox(height: 16),
-                const Text(
+                const SizedBox(height: 20),
+                Text(
                   'Email Verification Sent!',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  style: AppTextStyles.headlineSmall.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-                const SizedBox(height: 8),
-                const Text(
+                const SizedBox(height: 12),
+                Text(
                   'Please check your inbox and verify your email address before logging in.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey),
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.grey600,
+                  ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 30),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -255,10 +324,18 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
                       Navigator.of(context).pop();
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF43A047),
-                      foregroundColor: Colors.white,
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: AppColors.onPrimary,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
                     ),
-                    child: const Text('OK'),
+                    child: Text(
+                      'Got it',
+                      style: AppTextStyles.buttonLarge,
+                    ),
                   ),
                 ),
               ],
@@ -376,49 +453,61 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
       builder: (context) {
         return Container(
           height: MediaQuery.of(context).size.height * 0.6,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(16),
-              topRight: Radius.circular(16),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(24),
+              topRight: Radius.circular(24),
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(24.0),
+            padding: const EdgeInsets.all(30.0),
             child: Column(
               children: [
-                // Placeholder icon
+                // Handle bar
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.grey300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                
+                // Icon
                 Container(
                   width: 80,
                   height: 80,
                   decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.1),
+                    color: AppColors.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(40),
                   ),
-                  child: const Icon(
-                    Icons.phone_android,
+                  child: Icon(
+                    Icons.sms,
                     size: 40,
-                    color: Colors.blue,
+                    color: AppColors.primary,
                   ),
                 ),
                 const SizedBox(height: 24),
-                const Text(
-                  'Enter your OTP',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
+                
+                Text(
+                  'Enter Verification Code',
+                  style: AppTextStyles.headlineSmall.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Please enter the 6-digit code we sent to $formattedNumber to continue.',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    color: Colors.grey,
+                  'Please enter the 6-digit code we sent to\n$formattedNumber',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.grey600,
                   ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 32),
+                
+                // OTP Input fields
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: List.generate(6, (index) {
@@ -426,76 +515,95 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
                       width: 50,
                       height: 50,
                       decoration: BoxDecoration(
-                        border: Border.all(
-                          color: _controller.otpFocusNodes[index].hasFocus ? Colors.black : Colors.grey,
-                          width: _controller.otpFocusNodes[index].hasFocus ? 2 : 1,
-                        ),
-                        borderRadius: BorderRadius.circular(8),
+                        color: AppColors.grey50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.grey200),
                       ),
-                      child: Center(
-                        child: TextField(
-                          controller: _controller.otpControllers[index],
-                          focusNode: _controller.otpFocusNodes[index],
-                          keyboardType: TextInputType.number,
-                          textAlign: TextAlign.center,
-                          maxLength: 1,
-                          style: const TextStyle(
-                            fontSize: 20, 
-                            height: 1.3, // Adjust this to center vertically
-                            color: Colors.black,
-                          ),
-                            cursorColor: Colors.black,
-                            decoration: const InputDecoration(
-                              counterText: '',
-                              border: InputBorder.none,
-                              focusedBorder: InputBorder.none,
-                              enabledBorder: InputBorder.none,
-                              errorBorder: InputBorder.none,
-                              disabledBorder: InputBorder.none,
-                              contentPadding: EdgeInsets.zero,
-                            ),
-                            onChanged: (value) {
-                              if (value.length == 1 && index < 5) {
-                                _controller.otpFocusNodes[index + 1].requestFocus();
-                              }
-                            },
-                          ),
+                      child: TextFormField(
+                        controller: _controller.otpControllers[index],
+                        focusNode: _controller.otpFocusNodes[index],
+                        keyboardType: TextInputType.number,
+                        textAlign: TextAlign.center,
+                        maxLength: 1,
+                        style: AppTextStyles.headlineSmall.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          counterText: '',
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                        onChanged: (value) {
+                          if (value.isNotEmpty && index < 5) {
+                            _controller.otpFocusNodes[index + 1].requestFocus();
+                          }
+                          if (value.isEmpty && index > 0) {
+                            _controller.otpFocusNodes[index - 1].requestFocus();
+                          }
+                        },
                       ),
                     );
                   }),
                 ),
-                SizedBox(
-                  width: double.infinity,
-                  child: TextButton(
-                    onPressed: _resendOtp,
-                    child: const Text('Didn\'t receive code? Resend'),
-                  ),
-                ),
+                const SizedBox(height: 32),
+                
+                // Verify button
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _verifyOtp,
+                    onPressed: _controller.isVerificationInProgress ? null : _verifyOtp,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF43A047),
-                      foregroundColor: Colors.white,
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: AppColors.onPrimary,
                       padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
                     ),
-                    child: const Text('Verify'),
+                    child: _controller.isVerificationInProgress
+                      ? SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            color: AppColors.onPrimary,
+                            strokeWidth: 2.5,
+                          ),
+                        )
+                      : Text(
+                          'Verify Code',
+                          style: AppTextStyles.buttonLarge,
+                        ),
                   ),
                 ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFB71C1C),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
+                const SizedBox(height: 16),
+                
+                // Resend button
+                TextButton(
+                  onPressed: _controller.isVerificationInProgress ? null : _resendOtp,
+                  child: RichText(
+                    text: TextSpan(
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        fontWeight: FontWeight.w500,
+                        color: Colors.black,
+                      ),
+                      children: [
+                        TextSpan(
+                          text: "Didn't receive the code? ",
+                          style: TextStyle(
+                            color: Colors.black,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        TextSpan(
+                          text: 'Resend',
+                          style: TextStyle(
+                            color: AppColors.accent,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ),
-                    child: const Text('Cancel'),
                   ),
                 ),
               ],
@@ -640,21 +748,20 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
           child: Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(20),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF43A047)),
+                CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
                   strokeWidth: 3,
                 ),
                 const SizedBox(height: 24),
                 Text(
                   message,
-                  style: const TextStyle(
-                    fontSize: 16,
+                  style: AppTextStyles.bodyLarge.copyWith(
                     fontWeight: FontWeight.w500,
                   ),
                   textAlign: TextAlign.center,
@@ -673,10 +780,10 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
       barrierDismissible: false,
       builder: (context) {
         return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: AppColors.surface,
           child: Padding(
-            padding: const EdgeInsets.all(24.0),
+            padding: const EdgeInsets.all(30.0),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -684,33 +791,31 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
                   width: 80,
                   height: 80,
                   decoration: BoxDecoration(
-                    color: (isSuccess ? const Color(0xFF43A047) : const Color(0xFFB71C1C)).withOpacity(0.1),
+                    color: (isSuccess ? AppColors.success : AppColors.error).withOpacity(0.1),
                     borderRadius: BorderRadius.circular(40),
                   ),
                   child: Icon(
-                    isSuccess ? Icons.check_circle : Icons.cancel,
+                    isSuccess ? Icons.check_circle : Icons.error,
                     size: 40,
-                    color: isSuccess ? const Color(0xFF43A047) : const Color(0xFFB71C1C),
+                    color: isSuccess ? AppColors.success : AppColors.error,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
                 Text(
                   isSuccess ? 'Verified!' : 'Verification Failed',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                  style: AppTextStyles.headlineSmall.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 Text(
                   message,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.grey600,
                   ),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 30),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -723,11 +828,18 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
                       // If verification failed, just close dialog and allow retry
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: isSuccess ? const Color(0xFF43A047) : null,
-                      foregroundColor: isSuccess ? Colors.white : null,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      backgroundColor: isSuccess ? AppColors.success : AppColors.primary,
+                      foregroundColor: AppColors.onPrimary,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
                     ),
-                    child: Text(isSuccess ? 'Continue' : 'Try Again'),
+                    child: Text(
+                      isSuccess ? 'Continue' : 'Try Again',
+                      style: AppTextStyles.buttonLarge,
+                    ),
                   ),
                 ),
               ],

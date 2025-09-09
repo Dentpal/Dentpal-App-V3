@@ -2,8 +2,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'signup_controller.dart';
+import 'package:dentpal/core/app_theme/index.dart';
 
 class SignupStep1PersonalDetails extends StatefulWidget {
   final SignupController controller;
@@ -28,130 +28,186 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
     return Form(
       key: _controller.formKeyStep1,
       child: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Personal Details',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
+        padding: const EdgeInsets.only(
+          left: 30.0,
+          right: 30.0,
+          top: 30.0
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'First Name',
+              style: AppTextStyles.labelLarge.copyWith(
+                fontWeight: FontWeight.w500,
               ),
-              const SizedBox(height: 24),
-              TextFormField(
-                controller: _controller.firstNameController,
-                cursorColor: Colors.black,
-                decoration: InputDecoration(
-                  labelText: 'First Name',
-                  floatingLabelStyle: const TextStyle(color: Colors.black),
-                  border: OutlineInputBorder(
-                    borderSide: const BorderSide(color: Colors.black),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: Colors.black),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: Colors.blue, width: 2),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
+            ),
+            const SizedBox(height: 4),
+            TextFormField(
+              controller: _controller.firstNameController,
+              style: AppTextStyles.inputText,
+              decoration: InputDecoration(
+                hintText: 'Enter your first name',
+                hintStyle: AppTextStyles.inputHint,
+                filled: true,
+                fillColor: AppColors.grey50,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
                 ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your first name';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _controller.lastNameController,
-                cursorColor: Colors.black,
-                decoration: InputDecoration(
-                  labelText: 'Last Name',
-                  floatingLabelStyle: const TextStyle(color: Colors.black),
-                  border: OutlineInputBorder(
-                    borderSide: const BorderSide(color: Colors.black),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: Colors.black),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: Colors.blue, width: 2),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
                 ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your last name';
-                  }
-                  return null;
-                },
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                ),
+                errorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.error, width: 2),
+                ),
+                focusedErrorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.error, width: 2),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _controller.contactNumberController,
-                      keyboardType: TextInputType.phone,
-                      cursorColor: Colors.black,
-                      onChanged: (value) {
-                        // Enable or disable verification button based on input format
-                        setState(() {
-                          _controller.isVerifyButtonEnabled = value.startsWith('09') && value.length == 11;
-                        });
-                      },
-                      decoration: InputDecoration(
-                        labelText: 'Contact Number',
-                        hintText: '09XXXXXXXXX',
-                        floatingLabelStyle: const TextStyle(color: Colors.black),
-                        border: OutlineInputBorder(
-                          borderSide: const BorderSide(color: Colors.black),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderSide: const BorderSide(color: Colors.black),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderSide: const BorderSide(color: Colors.blue, width: 2),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please enter your contact number';
-                        }
-                        if (!value.startsWith('09') || value.length != 11) {
-                          return 'Contact number must start with 09';
-                        }
-                        return null;
-                      },
-                    ),
-                  ),
-                ],
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your first name';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            
+            // Last Name field
+            Text(
+              'Last Name',
+              style: AppTextStyles.labelLarge.copyWith(
+                fontWeight: FontWeight.w500,
               ),
-              const SizedBox(height: 16),
-              const Text(
-                'Gender',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 4),
+            TextFormField(
+              controller: _controller.lastNameController,
+              style: AppTextStyles.inputText,
+              decoration: InputDecoration(
+                hintText: 'Enter your last name',
+                hintStyle: AppTextStyles.inputHint,
+                filled: true,
+                fillColor: AppColors.grey50,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                ),
+                errorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.error, width: 2),
+                ),
+                focusedErrorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.error, width: 2),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               ),
-              const SizedBox(height: 8),
-              Row(
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your last name';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            
+            // Contact Number field
+            Text(
+              'Contact Number',
+              style: AppTextStyles.labelLarge.copyWith(
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 4),
+            TextFormField(
+              controller: _controller.contactNumberController,
+              keyboardType: TextInputType.phone,
+              style: AppTextStyles.inputText,
+              onChanged: (value) {
+                // Enable or disable verification button based on input format
+                setState(() {
+                  _controller.isVerifyButtonEnabled = value.startsWith('09') && value.length == 11;
+                });
+              },
+              decoration: InputDecoration(
+                hintText: '09XXXXXXXXX',
+                hintStyle: AppTextStyles.inputHint,
+                filled: true,
+                fillColor: AppColors.grey50,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                ),
+                errorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.error, width: 2),
+                ),
+                focusedErrorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.error, width: 2),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              ),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your contact number';
+                }
+                if (!value.startsWith('09') || value.length != 11) {
+                  return 'Contact number must start with 09';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            
+            // Gender field
+            Text(
+              'Gender',
+              style: AppTextStyles.labelLarge.copyWith(
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.grey50,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
                 children: [
                   Expanded(
                     child: RadioListTile<String>(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Male'),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      title: Text('Male', style: AppTextStyles.bodyMedium),
                       value: 'Male',
                       groupValue: _controller.selectedGender,
-                      activeColor: Colors.blue,
+                      activeColor: AppColors.primary,
                       onChanged: (value) {
                         setState(() {
                           _controller.selectedGender = value;
@@ -161,11 +217,11 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
                   ),
                   Expanded(
                     child: RadioListTile<String>(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Female'),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      title: Text('Female', style: AppTextStyles.bodyMedium),
                       value: 'Female',
                       groupValue: _controller.selectedGender,
-                      activeColor: Colors.blue,
+                      activeColor: AppColors.primary,
                       onChanged: (value) {
                         setState(() {
                           _controller.selectedGender = value;
@@ -175,168 +231,179 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
                   ),
                 ],
               ),
-              if (_controller.step1GenderError != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
-                  child: Text(
-                    _controller.step1GenderError!,
-                    style: const TextStyle(color: Colors.red, fontSize: 12),
-                  ),
+            ),
+            if (_controller.step1GenderError != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Text(
+                  _controller.step1GenderError!,
+                  style: AppTextStyles.bodySmall.copyWith(color: AppColors.error),
                 ),
-              const SizedBox(height: 16),
-              const Text(
-                'Birthdate',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
               ),
-              const SizedBox(height: 8),
-              GestureDetector(
-                onTap: () async {
-                  final now = DateTime.now();
-                  final initialDate = _controller.selectedBirthdate ?? DateTime(now.year - 18, now.month, now.day);
-                  final picked = await showModalBottomSheet<DateTime>(
-                    context: context,
-                    backgroundColor: Colors.transparent,
-                    builder: (context) {
-                      DateTime tempPicked = initialDate;
-                      return Container(
-                        height: 270,
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.only(
-                            topLeft: Radius.circular(16),
-                            topRight: Radius.circular(16),
+            const SizedBox(height: 16),
+            
+            // Birthdate field
+            Text(
+              'Birthdate',
+              style: AppTextStyles.labelLarge.copyWith(
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 4),
+            GestureDetector(
+              onTap: () async {
+                final now = DateTime.now();
+                final initialDate = _controller.selectedBirthdate ?? DateTime(now.year - 18, now.month, now.day);
+                final picked = await showModalBottomSheet<DateTime>(
+                  context: context,
+                  backgroundColor: Colors.transparent,
+                  builder: (context) {
+                    DateTime tempPicked = initialDate;
+                    return Container(
+                      height: 270,
+                      decoration: const BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.only(
+                          topLeft: Radius.circular(16),
+                          topRight: Radius.circular(16),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Expanded(
+                            child: CupertinoTheme(
+                              data: const CupertinoThemeData(
+                                brightness: Brightness.light,
+                                textTheme: CupertinoTextThemeData(
+                                  dateTimePickerTextStyle: TextStyle(color: AppColors.onSurface, fontSize: 22),
+                                ),
+                              ),
+                              child: CupertinoDatePicker(
+                                mode: CupertinoDatePickerMode.date,
+                                initialDateTime: initialDate,
+                                maximumDate: now,
+                                onDateTimeChanged: (date) {
+                                  tempPicked = date;
+                                },
+                              ),
+                            ),
                           ),
-                        ),
-                        child: Column(
-                          children: [
-                            Expanded(
-                              child: CupertinoTheme(
-                                data: const CupertinoThemeData(
-                                  brightness: Brightness.dark,
-                                  textTheme: CupertinoTextThemeData(
-                                    dateTimePickerTextStyle: TextStyle(color: Colors.black, fontSize: 22),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 16.0),
+                            child: SizedBox(
+                              width: 180,
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  Navigator.of(context).pop(tempPicked);
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primary,
+                                  foregroundColor: AppColors.onPrimary,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
                                   ),
                                 ),
-                                child: CupertinoDatePicker(
-                                  mode: CupertinoDatePickerMode.date,
-                                  initialDateTime: initialDate,
-                                  maximumDate: now,
-                                  onDateTimeChanged: (date) {
-                                    tempPicked = date;
-                                  },
-                                ),
+                                child: const Text('Select'),
                               ),
                             ),
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 16.0),
-                              child: SizedBox(
-                                width: 180,
-                                child: TextButton(
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: Colors.green,
-                                    textStyle: const TextStyle(fontWeight: FontWeight.bold),
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                    shadowColor: Colors.transparent,
-                                    backgroundColor: Colors.transparent,
-                                  ),
-                                  onPressed: () {
-                                    Navigator.of(context).pop(tempPicked);
-                                  },
-                                  child: const Text('Select', style: TextStyle(color: Colors.green)),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  );
-                  if (picked != null) {
-                    setState(() {
-                      _controller.selectedBirthdate = picked;
-                    });
-                  }
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.black, width: 1),
-                    borderRadius: BorderRadius.circular(8),
-                    color: Colors.white,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        _controller.selectedBirthdate == null
-                            ? 'Select your birthdate'
-                            : '${_controller.selectedBirthdate!.month.toString().padLeft(2, '0')}/'
-                              '${_controller.selectedBirthdate!.day.toString().padLeft(2, '0')}/'
-                              '${_controller.selectedBirthdate!.year}',
-                        style: TextStyle(
-                          fontSize: 16, 
-                          color: _controller.selectedBirthdate == null ? Colors.grey : Colors.black,
-                        ),
+                          ),
+                        ],
                       ),
-                      const Icon(Icons.calendar_today),
-                    ],
-                  ),
+                    );
+                  },
+                );
+                if (picked != null) {
+                  setState(() {
+                    _controller.selectedBirthdate = picked;
+                  });
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.grey50,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      _controller.selectedBirthdate == null
+                          ? 'Select your birthdate'
+                          : '${_controller.selectedBirthdate!.month.toString().padLeft(2, '0')}/'
+                            '${_controller.selectedBirthdate!.day.toString().padLeft(2, '0')}/'
+                            '${_controller.selectedBirthdate!.year}',
+                      style: _controller.selectedBirthdate == null 
+                          ? AppTextStyles.inputHint
+                          : AppTextStyles.inputText,
+                    ),
+                    const Icon(Icons.calendar_today, color: AppColors.grey400),
+                  ],
                 ),
               ),
-              if (_controller.step1BirthdateError != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
-                  child: Text(
-                    _controller.step1BirthdateError!,
-                    style: const TextStyle(color: Colors.red, fontSize: 12),
-                  ),
-                ),
-              const SizedBox(height: 40),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _validateAndProceed,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF43A047),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                  child: const Text('Proceed'),
+            ),
+            if (_controller.step1BirthdateError != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Text(
+                  _controller.step1BirthdateError!,
+                  style: AppTextStyles.bodySmall.copyWith(color: AppColors.error),
                 ),
               ),
-              const SizedBox(height: 16),
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-                child: RichText(
-                  textAlign: TextAlign.center,
-                  text: const TextSpan(
-                    style: TextStyle(fontSize: 16, color: Colors.black87),
-                    children: [
-                      TextSpan(
-                        text: "Already have an account? ",
-                        style: TextStyle(
-                          color: Colors.grey, 
-                          fontWeight: FontWeight.normal,
-                        ),
-                      ),
-                      TextSpan(
-                        text: 'Log In',
-                        style: TextStyle(
-                          color: Color.fromRGBO(222, 140, 60, 1),
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
+            const SizedBox(height: 20),
+            
+            // Proceed button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _validateAndProceed,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: AppColors.onPrimary,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
+                  elevation: 0,
+                ),
+                child: Text(
+                  'Proceed',
+                  style: AppTextStyles.buttonLarge,
                 ),
               ),
-              // Add bottom padding to prevent overlap with system UI
-              const SizedBox(height: 24),
-            ],
-          ),
+            ),
+            const SizedBox(height: 8),
+            
+            // Login link
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: RichText(
+                textAlign: TextAlign.center,
+                text: TextSpan(
+                  style: AppTextStyles.bodyMedium,
+                  children: [
+                    TextSpan(
+                      text: "Already have an account? ",
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.grey600,
+                      ),
+                    ),
+                    TextSpan(
+                      text: 'Log In',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.accent,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // Add extra space at the bottom to account for home indicator
+            SizedBox(height: MediaQuery.of(context).padding.bottom > 0 ? 40 : 20),
+          ],
         ),
       ),
     );
@@ -365,6 +432,4 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
       widget.onNext();
     }
   }
-
-  // The rest of your methods (phone verification, OTP handling, etc.)
 }

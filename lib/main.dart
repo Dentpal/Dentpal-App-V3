@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dentpal/Products/products_module.dart';
 import 'package:dentpal/auth_wrapper.dart';
+import 'package:dentpal/core/app_theme/app_theme.dart';
 import 'firebase_options.dart';
 
 void main() async {
@@ -11,11 +12,11 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  
-  // Set Firestore cache size to 250MB
+
+  // Set Firestore cache size to 100MB
   FirebaseFirestore.instance.settings = Settings(
     persistenceEnabled: true,
-    cacheSizeBytes: 100 * 1024 * 1024, // 250 MB
+    cacheSizeBytes: 100 * 1024 * 1024, // 100 MB
   );
   
   runApp(const MyApp());
@@ -28,37 +29,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'DentPal',
-      theme: ThemeData(
-        textTheme: const TextTheme(
-          headlineLarge: TextStyle(
-            fontFamily: 'Roboto',
-            fontWeight: FontWeight.w900,
-            fontSize: 24,
-          ),
-          headlineMedium: TextStyle(
-            fontFamily: 'Roboto',
-            fontWeight: FontWeight.w900,
-            fontSize: 20,
-          ),
-          bodyLarge: TextStyle(
-            fontFamily: 'Poppins',
-            fontWeight: FontWeight.normal,
-            fontSize: 16,
-          ),
-          bodyMedium: TextStyle(
-            fontFamily: 'Poppins',
-            fontWeight: FontWeight.normal,
-            fontSize: 14,
-          ),
-        ),
-        primaryColor: const Color(0xFF43A047), // Green color for consistency
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF43A047),
-            foregroundColor: Colors.white,
-          ),
-        ),
-      ),
+      theme: AppTheme.lightTheme,
       home: const AuthWrapper(),
       routes: {
         ...ProductsModule.getRoutes(),

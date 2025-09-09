@@ -3,6 +3,7 @@ import 'signup_controller.dart';
 import 'signup_step1_personal_details.dart';
 import 'signup_step2_acc_credentials.dart';
 import 'signup_step3_id_verification.dart';
+import 'package:dentpal/core/app_theme/index.dart';
 
 class SignupFlow extends StatefulWidget {
   const SignupFlow({super.key});
@@ -50,61 +51,101 @@ class _SignupFlowState extends State<SignupFlow> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Progress indicator
-            LinearProgressIndicator(
-              value: (_currentPage + 1) / 3,
-              backgroundColor: Colors.grey[300],
-              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF43A047)),
-            ),
-            
-            // Step indicator
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildStepIndicator(0, 'Personal Details'),
-                  _buildStepIndicator(1, 'Account Credentials'),
-                  _buildStepIndicator(2, 'ID Verification'),
-                ],
+      body: Container(
+        decoration: const BoxDecoration(gradient: AppGradients.teal),
+        child: SafeArea(
+          // Don't apply bottom padding to allow content to extend to the bottom edge
+          bottom: false,
+          child: Column(
+            children: [
+              // Top section with step indicator and title
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Step indicator
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _buildStepIndicator(0),
+                        _buildStepIndicator(1),
+                        _buildStepIndicator(2),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Title - dynamic based on current step
+                    Text(
+                      _getStepTitle(),
+                      style: AppTextStyles.headlineMedium.copyWith(
+                        color: AppColors.surface,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _getStepDescription(),
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.surface.withOpacity(0.9),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
               ),
-            ),
-            
-            // Page view
-            Expanded(
-              child: PageView(
-                controller: _pageController,
-                physics: const NeverScrollableScrollPhysics(),
-                children: [
-                  SignupStep1PersonalDetails(
-                    controller: _controller, 
-                    onNext: nextPage
+              
+              // Bottom section with signup form
+              Expanded(
+                child: Container(
+                  width: double.infinity,
+                  decoration: const BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(30),
+                      topRight: Radius.circular(30),
+                      bottomLeft: Radius.zero,
+                      bottomRight: Radius.zero,
+                    ),
                   ),
-                  SignupStep2AccCredentials(
-                    controller: _controller,
-                    onNext: nextPage,
-                    onBack: previousPage,
+                  child: Column(
+                    children: [
+                      // Page view - remove the progress indicator section
+                      Expanded(
+                        child: PageView(
+                          controller: _pageController,
+                          physics: const NeverScrollableScrollPhysics(),
+                          children: [
+                            SignupStep1PersonalDetails(
+                              controller: _controller, 
+                              onNext: nextPage
+                            ),
+                            SignupStep2AccCredentials(
+                              controller: _controller,
+                              onNext: nextPage,
+                              onBack: previousPage,
+                            ),
+                            SignupStep3IdVerification(
+                              controller: _controller,
+                              onBack: previousPage,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  SignupStep3IdVerification(
-                    controller: _controller,
-                    onBack: previousPage,
-                  ),
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
   
-  Widget _buildStepIndicator(int step, String label) {
+  Widget _buildStepIndicator(int step) {
     final bool isActive = _currentPage >= step;
-    
     return Expanded(
       child: Column(
         children: [
@@ -113,13 +154,17 @@ class _SignupFlowState extends State<SignupFlow> {
             height: 30,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: isActive ? const Color(0xFF43A047) : Colors.grey[300],
+              color: isActive ? AppColors.surface : AppColors.surface.withOpacity(0.3),
+              border: Border.all(
+                color: AppColors.surface,
+                width: 1,
+              ),
             ),
             child: Center(
               child: Text(
                 '${step + 1}',
                 style: TextStyle(
-                  color: isActive ? Colors.white : Colors.grey[600],
+                  color: isActive ? AppColors.primary : AppColors.surface,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -127,9 +172,9 @@ class _SignupFlowState extends State<SignupFlow> {
           ),
           const SizedBox(height: 4),
           Text(
-            label,
+            'Step ${step + 1}',
             style: TextStyle(
-              color: isActive ? const Color(0xFF43A047) : Colors.grey[600],
+              color: AppColors.surface,
               fontSize: 12,
               fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
             ),
@@ -138,5 +183,31 @@ class _SignupFlowState extends State<SignupFlow> {
         ],
       ),
     );
+  }
+  
+  String _getStepTitle() {
+    switch (_currentPage) {
+      case 0:
+        return 'Personal Details';
+      case 1:
+        return 'Account Setup';
+      case 2:
+        return 'ID Verification';
+      default:
+        return 'Personal Details';
+    }
+  }
+  
+  String _getStepDescription() {
+    switch (_currentPage) {
+      case 0:
+        return 'Enter your personal information to get started.';
+      case 1:
+        return 'Create your account credentials.';
+      case 2:
+        return 'Verify your identity to complete signup.';
+      default:
+        return 'Enter your personal information to get started.';
+    }
   }
 }

@@ -2,6 +2,7 @@ import 'package:dentpal/signup/signup_flow.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:dentpal/core/app_theme/index.dart';
 
 class ForgotPasswordPage extends StatefulWidget {
   const ForgotPasswordPage({super.key});
@@ -157,51 +158,47 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
         return Center(
           child: Dialog(
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(20),
             ),
-            backgroundColor: Colors.white,
+            backgroundColor: AppColors.surface,
             child: Padding(
-              padding: const EdgeInsets.all(24.0),
+              padding: const EdgeInsets.all(30.0),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                // Placeholder icon
+                // Icon container
                 Container(
                   width: 80,
                   height: 80,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF43A047).withOpacity(0.1),
-                    shape: BoxShape.circle,
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(40),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.email_outlined,
                     size: 40,
-                    color: Color(0xFF43A047),
+                    color: AppColors.primary,
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
                 // Title
-                const Text(
+                Text(
                   'Password Reset Link Sent!',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
+                  style: AppTextStyles.headlineSmall.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 // Description
-                const Text(
+                Text(
                   'Please check your inbox (and spam folder) for a link to reset your password.',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.grey,
-                    height: 1.4,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.grey600,
                   ),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 30),
                 // Continue button
                 SizedBox(
                   width: double.infinity,
@@ -211,16 +208,17 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                       _showFollowUpPopup(); // Show second popup
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF43A047),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: AppColors.onPrimary,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(12),
                       ),
+                      elevation: 0,
                     ),
-                    child: const Text(
+                    child: Text(
                       'Got it',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      style: AppTextStyles.buttonLarge,
                     ),
                   ),
                 ),
@@ -257,11 +255,11 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
         return Center(
           child: Dialog(
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(20),
             ),
-            backgroundColor: Colors.white,
+            backgroundColor: AppColors.surface,
             child: Padding(
-              padding: const EdgeInsets.all(24.0),
+              padding: const EdgeInsets.all(30.0),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -270,38 +268,34 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                   width: 80,
                   height: 80,
                   decoration: BoxDecoration(
-                    color: const Color.fromRGBO(222, 140, 60, 0.1),
-                    shape: BoxShape.circle,
+                    color: AppColors.accent.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(40),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.info_outline,
                     size: 40,
-                    color: Color.fromRGBO(222, 140, 60, 1),
+                    color: AppColors.accent,
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
                 // Title
-                const Text(
+                Text(
                   'Don\'t see an email?',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
+                  style: AppTextStyles.headlineSmall.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 // Description
-                const Text(
+                Text(
                   'If you don\'t see an email, either check your spam folder or consider signing up — it only takes a minute.',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.grey,
-                    height: 1.4,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.grey600,
                   ),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 30),
                 // Buttons
                 Row(
                   children: [
@@ -316,16 +310,16 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                           );
                         },
                         style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Color.fromRGBO(222, 140, 60, 1)),
-                          foregroundColor: const Color.fromRGBO(222, 140, 60, 1),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          side: BorderSide(color: AppColors.accent),
+                          foregroundColor: AppColors.accent,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        child: const Text(
+                        child: Text(
                           'Sign Up',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          style: AppTextStyles.buttonLarge,
                         ),
                       ),
                     ),
@@ -337,16 +331,17 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                           Navigator.of(context).pop(); // Go back to login
                         },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF43A047),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: AppColors.onPrimary,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(12),
                           ),
+                          elevation: 0,
                         ),
-                        child: const Text(
+                        child: Text(
                           'Back to Login',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          style: AppTextStyles.buttonLarge,
                         ),
                       ),
                     ),
@@ -379,168 +374,211 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 500),
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(32.0),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Logo image
-                        Image.asset(
-                          'lib/assets/dentpal_vertical.png',
-                          width: 180,
-                          height: 180,
-                          fit: BoxFit.contain,
-                        ),
-                        const SizedBox(height: 48),
-                        // Title
-                        const Text(
-                          'Forgot Password?',
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 16),
-                        // Subtitle
-                        const Text(
-                          'Enter your email address or phone number and we\'ll send a password reset link to your email.',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey,
-                            height: 1.4,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 32),
-                        // Email/Phone input
-                        TextField(
-                          controller: _inputController,
-                          keyboardType: TextInputType.text,
-                          cursorColor: Colors.black,
-                          decoration: InputDecoration(
-                            labelText: 'Email or Phone Number',
-                            hintText: 'Enter email or phone (09XXXXXXXXX)',
-                            floatingLabelStyle: const TextStyle(color: Colors.black),
-                            border: OutlineInputBorder(
-                              borderSide: const BorderSide(color: Colors.black),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderSide: const BorderSide(color: Colors.black),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderSide: const BorderSide(color: Colors.blue, width: 2),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                        ),
-                        // Input error message
-                        if (_inputError != null) ...[
-                          const SizedBox(height: 6),
-                          RichText(
-                            text: TextSpan(
-                              style: const TextStyle(color: Colors.red, fontSize: 13),
-                              children: [
-                                TextSpan(text: _inputError!),
-                                if (_inputError!.contains('No account is linked')) ...[
-                                  const TextSpan(text: ' '),
-                                  WidgetSpan(
-                                    child: GestureDetector(
-                                      onTap: () {
-                                        Navigator.of(context).push(
-                                          MaterialPageRoute(
-                                            builder: (context) => const SignupFlow(),
-                                          ),
-                                        );
-                                      },
-                                      child: const Text(
-                                        'Want to sign up instead?',
-                                        style: TextStyle(
-                                          color: Color.fromRGBO(222, 140, 60, 1),
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.bold,
-                                          decoration: TextDecoration.underline,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 24),
-                        // Submit button
-                        ElevatedButton(
-                          onPressed: _isLoading ? null : _submitPasswordReset,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF43A047),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2.5,
-                                  ),
-                                )
-                              : const Text(
-                                  'Submit',
-                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            // Back to Login link
-            Padding(
-              padding: const EdgeInsets.only(bottom: 24.0),
-              child: TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-                child: RichText(
-                  textAlign: TextAlign.center,
-                  text: const TextSpan(
-                    style: TextStyle(fontSize: 16, color: Colors.black87),
+      backgroundColor: AppColors.surface,
+      body: Stack(
+        children: [
+          // Background gradient covering full screen
+          Container(
+            decoration: const BoxDecoration(gradient: AppGradients.teal),
+            height: MediaQuery.of(context).size.height,
+          ),
+          // Content with SafeArea
+          SafeArea(
+            bottom: false,
+            child: Column(
+              children: [
+                // Top section with logo
+                Expanded(
+                  flex: 3,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      TextSpan(
-                        text: "Remember your password? ",
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                      TextSpan(
-                        text: 'Back to Login',
-                        style: TextStyle(
-                          color: Color.fromRGBO(222, 140, 60, 1),
-                          fontWeight: FontWeight.bold,
+                      Text(
+                        'Forgot Password?',
+                        style: AppTextStyles.headlineMedium.copyWith(
+                          color: AppColors.surface,
                         ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      // Subtitle
+                      Text(
+                        'Enter your email or phone number and we\'ll send a password reset link to your email.',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.surface.withOpacity(0.9),
+                        ),
+                        textAlign: TextAlign.center,
                       ),
                     ],
                   ),
                 ),
-              ),
+                
+                // Bottom section with form
+                Expanded(
+                  flex: 5,
+                  child: Container(
+                    width: double.infinity,
+                    decoration: const BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(30),
+                        topRight: Radius.circular(30),
+                      ),
+                    ),
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.only(
+                        left: 30.0,
+                        right: 30.0,
+                        top: 30.0
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Email/Phone input field
+                          Text(
+                            'Email or Phone Number',
+                            style: AppTextStyles.labelLarge.copyWith(
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          TextField(
+                            controller: _inputController,
+                            keyboardType: TextInputType.text,
+                            style: AppTextStyles.inputText,
+                            decoration: InputDecoration(
+                              hintText: 'Enter email or phone (09XXXXXXXXX)',
+                              hintStyle: AppTextStyles.inputHint,
+                              filled: true,
+                              fillColor: AppColors.grey50,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                              ),
+                              errorBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(color: AppColors.error, width: 2),
+                              ),
+                              focusedErrorBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(color: AppColors.error, width: 2),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                            ),
+                          ),
+                          // Input error message
+                          if (_inputError != null) ...[
+                            const SizedBox(height: 8),
+                            RichText(
+                              text: TextSpan(
+                                style: AppTextStyles.bodySmall.copyWith(color: AppColors.error),
+                                children: [
+                                  TextSpan(text: _inputError!),
+                                  if (_inputError!.contains('No account is linked')) ...[
+                                    const TextSpan(text: ' '),
+                                    WidgetSpan(
+                                      child: GestureDetector(
+                                        onTap: () {
+                                          Navigator.of(context).push(
+                                            MaterialPageRoute(
+                                              builder: (context) => const SignupFlow(),
+                                            ),
+                                          );
+                                        },
+                                        child: Text(
+                                          'Want to sign up instead?',
+                                          style: AppTextStyles.bodySmall.copyWith(
+                                            color: AppColors.accent,
+                                            fontWeight: FontWeight.bold,
+                                            decoration: TextDecoration.underline,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 20),
+                          
+                          // Submit button
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: _isLoading ? null : _submitPasswordReset,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primary,
+                                foregroundColor: AppColors.onPrimary,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                elevation: 0,
+                              ),
+                              child: _isLoading
+                                  ? SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        color: AppColors.onPrimary,
+                                        strokeWidth: 2.5,
+                                      ),
+                                    )
+                                  : Text(
+                                      'Submit',
+                                      style: AppTextStyles.buttonLarge,
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          
+                          // Back to Login link
+                          TextButton(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                            },
+                            child: RichText(
+                              textAlign: TextAlign.center,
+                              text: TextSpan(
+                                style: AppTextStyles.bodyMedium,
+                                children: [
+                                  TextSpan(
+                                    text: "Remember your password? ",
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      color: AppColors.grey600,
+                                    ),
+                                  ),
+                                  TextSpan(
+                                    text: 'Back to Login',
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      color: AppColors.accent,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          // Add extra space at the bottom to account for home indicator
+                          SizedBox(height: MediaQuery.of(context).padding.bottom > 0 ? 40 : 20),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
