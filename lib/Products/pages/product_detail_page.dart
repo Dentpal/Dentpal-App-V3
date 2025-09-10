@@ -815,10 +815,11 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                     ),
                   ),
                   Text(
-                    '\$${_selectedVariation!.price.toStringAsFixed(2)}',
+                    '₱${_selectedVariation!.price.toStringAsFixed(2)}',
                     style: AppTextStyles.bodyMedium.copyWith(
                       fontWeight: FontWeight.w600,
                       color: AppColors.onSurface,
+                      fontFamily: 'Roboto', // Use Roboto for peso sign support
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -829,10 +830,11 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                     ),
                   ),
                   Text(
-                    '\$${(_selectedVariation!.price * _quantity).toStringAsFixed(2)}',
+                    '₱${(_selectedVariation!.price * _quantity).toStringAsFixed(2)}',
                     style: AppTextStyles.titleMedium.copyWith(
                       fontWeight: FontWeight.bold,
                       color: AppColors.primary,
+                      fontFamily: 'Roboto', // Use Roboto for peso sign support
                     ),
                   ),
                 ],
@@ -1112,7 +1114,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           top: false,
           child: LoadingButton(
             text: _selectedVariation != null && _selectedVariation!.stock > 0
-                ? 'Add to Cart • \$${(_selectedVariation!.price * _quantity).toStringAsFixed(2)}'
+                ? 'Add to Cart • ₱${(_selectedVariation!.price * _quantity).toStringAsFixed(2)}'
                 : 'Out of Stock',
             loadingText: 'Adding to cart...',
             isLoading: _isAddingToCart,
@@ -1120,6 +1122,11 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 ? () => _addToCart(product)
                 : null,
             padding: const EdgeInsets.symmetric(vertical: 14),
+            textStyle: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              fontFamily: 'Roboto', // Use Roboto for peso sign support
+            ),
           ),
         ),
       ),

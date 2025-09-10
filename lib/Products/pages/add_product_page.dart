@@ -433,7 +433,7 @@ class _AddProductPageState extends State<AddProductPage> {
                               decoration: const InputDecoration(
                                 labelText: 'Price *',
                                 border: OutlineInputBorder(),
-                                prefixText: '\$ ',
+                                prefixText: '₱ ',
                               ),
                               keyboardType: TextInputType.number,
                               validator: (value) {

@@ -1083,12 +1083,13 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                             Expanded(
                               child: Text(
                                 product.lowestPrice != null 
-                                  ? '\$${product.lowestPrice!.toStringAsFixed(2)}' 
+                                  ? '₱${product.lowestPrice!.toStringAsFixed(2)}' 
                                   : 'Price varies',
                                 style: AppTextStyles.bodyMedium.copyWith(
                                   color: AppColors.primary,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 13,
+                                  fontFamily: 'Roboto', // Use Roboto for peso sign support
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
