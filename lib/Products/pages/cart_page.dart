@@ -11,6 +11,32 @@ class CartPage extends StatefulWidget {
     print("🛒 Cart has been marked as stale, will refresh when user returns");
   }
 
+  // Static method to optimistically add item to cart
+  static Future<void> addItemOptimistically({
+    required String productId,
+    required int quantity,
+    String? variationId,
+    required CartService cartService,
+  }) async {
+    final instance = _CartPageState._instance;
+    if (instance != null && instance.mounted) {
+      await instance._addItemOptimisticallyInternal(
+        productId: productId,
+        quantity: quantity,
+        variationId: variationId,
+        cartService: cartService,
+      );
+    } else {
+      // If no instance or instance is disposed, just add to cart normally and mark as stale
+      await cartService.addToCart(
+        productId: productId,
+        quantity: quantity,
+        variationId: variationId,
+      );
+      markCartAsStale();
+    }
+  }
+
   @override
   _CartPageState createState() => _CartPageState();
 }
@@ -67,19 +93,51 @@ class _CartPageState extends State<CartPage> with AutomaticKeepAliveClientMixin<
   // Method to refresh the cart data
   void _refreshCart() {
     print("🔄 Refreshing cart data");
-    _cachedCartItems = null;
-    if (_instance != null) {
-      _instance!._cachedCartItems = null;
+    // Don't clear cache completely, just trigger a background sync to update data
+    if (_cachedCartItems != null && _cachedCartItems!.isNotEmpty) {
+      _syncAllCartItemsInBackground();
+    } else {
+      // If no cache, do a full reload
+      _cachedCartItems = null;
+      if (_instance != null) {
+        _instance!._cachedCartItems = null;
+      }
+      setState(() {
+        _cartItemsFuture = _loadCartItems();
+      });
     }
-    setState(() {
-      _cartItemsFuture = _loadCartItems();
-    });
+  }
+  
+  // Background sync for all cart items
+  Future<void> _syncAllCartItemsInBackground() async {
+    if (!mounted) {
+      print("⚠️ Cart page not mounted, skipping background sync for all items");
+      return;
+    }
+    
+    try {
+      print("🔄 Background syncing all cart items");
+      final freshCartItems = await _cartService.getCartItems();
+      
+      if (_cachedCartItems != null && mounted) {
+        setState(() {
+          _cachedCartItems = freshCartItems;
+        });
+        print("🔄 Background sync completed for all items");
+      }
+    } catch (e) {
+      print("⚠️ Background sync failed for all items: $e");
+    }
   }
   
   @override
   void dispose() {
-    // Don't clear the static instance on dispose, we want to keep it
-    print("🔴 CartPage dispose called, keeping cached data");
+    // Clear the static instance reference if this is the current instance
+    if (_instance == this) {
+      _instance = null;
+      print("🔴 CartPage dispose called, cleared static instance reference");
+    }
+    print("🔴 CartPage dispose called");
     super.dispose();
   }
 
@@ -115,55 +173,248 @@ class _CartPageState extends State<CartPage> with AutomaticKeepAliveClientMixin<
   }
   
   Future<void> _updateItemQuantity(CartItem item, int newQuantity) async {
+    if (!mounted) {
+      print("⚠️ Cart page not mounted, skipping quantity update");
+      return;
+    }
+    
     try {
       print("🛒 Updating cart item quantity: ${item.cartItemId} to $newQuantity");
-      await _cartService.updateCartItemQuantity(item.cartItemId, newQuantity);
       
-      // Clear cache to force reload
-      _cachedCartItems = null;
-      if (_instance != null) {
-        _instance!._cachedCartItems = null;
+      // Optimistic update: Update cached data immediately
+      if (_cachedCartItems != null && mounted) {
+        final itemIndex = _cachedCartItems!.indexWhere((cartItem) => cartItem.cartItemId == item.cartItemId);
+        if (itemIndex != -1) {
+          setState(() {
+            _cachedCartItems![itemIndex].quantity = newQuantity;
+          });
+          print("🟢 Optimistically updated item quantity in cache");
+        }
       }
       
-      setState(() {
-        _cartItemsFuture = _loadCartItems();
-      });
+      // Background update: Sync with server
+      await _cartService.updateCartItemQuantity(item.cartItemId, newQuantity);
+      
+      // Background sync: Fetch fresh data for this specific item and update cache
+      if (mounted) {
+        _syncCartItemInBackground(item.cartItemId);
+      }
+      
     } catch (e) {
       print("❌ Error updating item: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error updating item: $e')),
+      
+      // Revert optimistic update on error
+      if (_cachedCartItems != null && mounted) {
+        final itemIndex = _cachedCartItems!.indexWhere((cartItem) => cartItem.cartItemId == item.cartItemId);
+        if (itemIndex != -1) {
+          setState(() {
+            _cachedCartItems![itemIndex].quantity = item.quantity; // Revert to original
+          });
+          print("⏪ Reverted optimistic update due to error");
+        }
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error updating item: $e')),
+        );
+      }
+    }
+  }
+  
+  // Instance method to handle optimistic cart additions
+  Future<void> _addItemOptimisticallyInternal({
+    required String productId,
+    required int quantity,
+    String? variationId,
+    required CartService cartService,
+  }) async {
+    if (!mounted) {
+      print("⚠️ Cart page not mounted, skipping optimistic update");
+      // Just add to cart normally if page is not mounted
+      await cartService.addToCart(
+        productId: productId,
+        quantity: quantity,
+        variationId: variationId,
       );
+      return;
+    }
+    
+    if (_cachedCartItems != null) {
+      // Check if item already exists in cache
+      final existingItemIndex = _cachedCartItems!.indexWhere(
+        (item) => item.productId == productId && item.variationId == variationId,
+      );
+      
+      if (existingItemIndex != -1) {
+        // Update existing item quantity optimistically
+        if (mounted) {
+          setState(() {
+            _cachedCartItems![existingItemIndex].quantity += quantity;
+          });
+          print("🟢 Optimistically updated existing item quantity in cart cache");
+        }
+      } else {
+        // Create a temporary cart item for immediate display
+        final tempCartItem = CartItem(
+          cartItemId: 'temp_${DateTime.now().millisecondsSinceEpoch}',
+          productId: productId,
+          quantity: quantity,
+          variationId: variationId,
+          addedAt: DateTime.now(),
+          productName: 'Loading...', // Will be updated by background sync
+        );
+        
+        if (mounted) {
+          setState(() {
+            _cachedCartItems!.insert(0, tempCartItem); // Add at beginning
+          });
+          print("🟢 Optimistically added new item to cart cache");
+        }
+      }
+    }
+    
+    try {
+      // Background sync with server
+      final cartItemId = await cartService.addToCart(
+        productId: productId,
+        quantity: quantity,
+        variationId: variationId,
+      );
+      
+      // Background sync: Update cache with server data
+      if (cartItemId != null && mounted) {
+        _syncCartItemInBackground(cartItemId);
+      }
+    } catch (e) {
+      print("❌ Error adding to cart: $e");
+      
+      // Revert optimistic update on error
+      if (_cachedCartItems != null && mounted) {
+        final existingItemIndex = _cachedCartItems!.indexWhere(
+          (item) => item.productId == productId && item.variationId == variationId,
+        );
+        
+        if (existingItemIndex != -1) {
+          final item = _cachedCartItems![existingItemIndex];
+          if (item.cartItemId.startsWith('temp_')) {
+            // Remove temporary item
+            setState(() {
+              _cachedCartItems!.removeAt(existingItemIndex);
+            });
+          } else {
+            // Revert quantity change
+            setState(() {
+              _cachedCartItems![existingItemIndex].quantity -= quantity;
+            });
+          }
+          print("⏪ Reverted optimistic cart addition due to error");
+        }
+      }
+      rethrow;
+    }
+  }
+  
+  // Background sync method to update a specific cart item
+  Future<void> _syncCartItemInBackground(String cartItemId) async {
+    if (!mounted) {
+      print("⚠️ Cart page not mounted, skipping background sync for item: $cartItemId");
+      return;
+    }
+    
+    try {
+      final updatedItem = await _cartService.getCartItem(cartItemId);
+      if (updatedItem != null && _cachedCartItems != null && mounted) {
+        final itemIndex = _cachedCartItems!.indexWhere((item) => item.cartItemId == cartItemId);
+        
+        if (itemIndex != -1) {
+          setState(() {
+            _cachedCartItems![itemIndex] = updatedItem;
+          });
+          print("🔄 Background sync completed for item: $cartItemId");
+        } else {
+          // Check if this is replacing a temporary item
+          final tempItemIndex = _cachedCartItems!.indexWhere((item) => 
+            item.cartItemId.startsWith('temp_') && 
+            item.productId == updatedItem.productId && 
+            item.variationId == updatedItem.variationId
+          );
+          
+          if (tempItemIndex != -1 && mounted) {
+            setState(() {
+              _cachedCartItems![tempItemIndex] = updatedItem;
+            });
+            print("🔄 Background sync replaced temporary item: $cartItemId");
+          } else if (mounted) {
+            // Add new item that wasn't in cache
+            setState(() {
+              _cachedCartItems!.insert(0, updatedItem);
+            });
+            print("🔄 Background sync added new item: $cartItemId");
+          }
+        }
+      }
+    } catch (e) {
+      print("⚠️ Background sync failed for item $cartItemId: $e");
     }
   }
   
   Future<void> _removeItem(CartItem item) async {
+    if (!mounted) {
+      print("⚠️ Cart page not mounted, skipping item removal");
+      return;
+    }
+    
+    CartItem? removedItem;
+    int? removedIndex;
+    
     try {
       print("🗑️ Removing cart item: ${item.cartItemId}");
-      await _cartService.removeCartItem(item.cartItemId);
       
-      // Clear cache to force reload
-      _cachedCartItems = null;
-      if (_instance != null) {
-        _instance!._cachedCartItems = null;
+      // Optimistic update: Remove from cached data immediately
+      if (_cachedCartItems != null && mounted) {
+        final itemIndex = _cachedCartItems!.indexWhere((cartItem) => cartItem.cartItemId == item.cartItemId);
+        if (itemIndex != -1) {
+          setState(() {
+            removedItem = _cachedCartItems![itemIndex];
+            removedIndex = itemIndex;
+            _cachedCartItems!.removeAt(itemIndex);
+          });
+          print("🟢 Optimistically removed item from cache");
+        }
       }
       
-      setState(() {
-        _cartItemsFuture = _loadCartItems();
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Item removed from cart')),
-      );
+      // Background update: Sync with server
+      await _cartService.removeCartItem(item.cartItemId);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Item removed from cart')),
+        );
+      }
     } catch (e) {
       print("❌ Error removing item: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error removing item: $e')),
-      );
+      
+      // Revert optimistic update on error
+      if (_cachedCartItems != null && removedItem != null && removedIndex != null && mounted) {
+        setState(() {
+          _cachedCartItems!.insert(removedIndex!, removedItem!);
+        });
+        print("⏪ Reverted optimistic removal due to error");
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error removing item: $e')),
+        );
+      }
     }
   }
   
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
+    
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Cart'),
@@ -174,39 +425,66 @@ class _CartPageState extends State<CartPage> with AutomaticKeepAliveClientMixin<
           ),
         ],
       ),
-      body: FutureBuilder<List<CartItem>>(
-        future: _cartItemsFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting || _isLoading) {
-            return const Center(child: CircularProgressIndicator());
-          } else if (snapshot.hasError) {
-            return Center(
-              child: Text('Error: ${snapshot.error}'),
-            );
-          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return _buildEmptyCart();
-          }
-          
-          final cartItems = snapshot.data!;
-          return _buildCartList(cartItems);
-        },
-      ),
-      bottomNavigationBar: FutureBuilder<List<CartItem>>(
-        future: _cartItemsFuture,
-        builder: (context, snapshot) {
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const SizedBox.shrink();
-          }
-          
-          final cartItems = snapshot.data!;
-          final totalPrice = cartItems.fold(
-            0.0, 
-            (total, item) => total + (item.totalPrice),
+      body: _buildCartBody(),
+      bottomNavigationBar: _buildBottomNavigationBar(),
+    );
+  }
+  
+  Widget _buildCartBody() {
+    // If we have cached data, use it immediately while loading fresh data
+    if (_cachedCartItems != null) {
+      if (_cachedCartItems!.isEmpty) {
+        return _buildEmptyCart();
+      }
+      return _buildCartList(_cachedCartItems!);
+    }
+    
+    // Otherwise, use FutureBuilder for initial load
+    return FutureBuilder<List<CartItem>>(
+      future: _cartItemsFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting || _isLoading) {
+          return const Center(child: CircularProgressIndicator());
+        } else if (snapshot.hasError) {
+          return Center(
+            child: Text('Error: ${snapshot.error}'),
           );
-          
-          return _buildCheckoutSection(totalPrice);
-        },
-      ),
+        } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return _buildEmptyCart();
+        }
+        
+        final cartItems = snapshot.data!;
+        return _buildCartList(cartItems);
+      },
+    );
+  }
+  
+  Widget _buildBottomNavigationBar() {
+    // Calculate total from cached data if available
+    if (_cachedCartItems != null && _cachedCartItems!.isNotEmpty) {
+      final totalPrice = _cachedCartItems!.fold(
+        0.0, 
+        (total, item) => total + (item.totalPrice),
+      );
+      return _buildCheckoutSection(totalPrice);
+    }
+    
+    // Otherwise use FutureBuilder
+    return FutureBuilder<List<CartItem>>(
+      future: _cartItemsFuture,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        
+        final cartItems = snapshot.data!;
+        final totalPrice = cartItems.fold(
+          0.0, 
+          (total, item) => total + (item.totalPrice),
+        );
+        
+        return _buildCheckoutSection(totalPrice);
+      },
     );
   }
   
@@ -249,7 +527,7 @@ class _CartPageState extends State<CartPage> with AutomaticKeepAliveClientMixin<
     return RefreshIndicator(
       onRefresh: () async {
         print("🔄 Cart pull-to-refresh triggered");
-        // Clear cache to force reload in both static instance and current instance
+        // Full refresh: Clear cache and reload from server
         _cachedCartItems = null;
         if (_instance != null) {
           _instance!._cachedCartItems = null;
@@ -257,6 +535,7 @@ class _CartPageState extends State<CartPage> with AutomaticKeepAliveClientMixin<
         setState(() {
           _cartItemsFuture = _loadCartItems();
         });
+        await _cartItemsFuture; // Wait for the future to complete
       },
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
@@ -515,27 +794,54 @@ class _CartPageState extends State<CartPage> with AutomaticKeepAliveClientMixin<
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
+              
+              if (!mounted) {
+                print("⚠️ Cart page not mounted, skipping cart clear");
+                return;
+              }
+              
+              // Store original cart for potential rollback
+              List<CartItem>? originalCart;
+              if (_cachedCartItems != null) {
+                originalCart = List<CartItem>.from(_cachedCartItems!);
+              }
+              
               try {
                 print("🧹 Clearing the entire cart");
-                await _cartService.clearCart();
                 
-                // Clear cache to force reload
-                _cachedCartItems = null;
-                if (_instance != null) {
-                  _instance!._cachedCartItems = null;
+                // Optimistic update: Clear cached data immediately
+                if (_cachedCartItems != null && mounted) {
+                  setState(() {
+                    _cachedCartItems!.clear();
+                  });
+                  print("🟢 Optimistically cleared cart cache");
                 }
                 
-                setState(() {
-                  _cartItemsFuture = _loadCartItems();
-                });
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Cart cleared successfully')),
-                );
+                // Background update: Sync with server
+                await _cartService.clearCart();
+                
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Cart cleared successfully')),
+                  );
+                }
               } catch (e) {
                 print("❌ Error clearing cart: $e");
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Error clearing cart: $e')),
-                );
+                
+                // Revert optimistic update on error
+                if (originalCart != null && _cachedCartItems != null && mounted) {
+                  setState(() {
+                    _cachedCartItems!.clear();
+                    _cachedCartItems!.addAll(originalCart!);
+                  });
+                  print("⏪ Reverted optimistic cart clear due to error");
+                }
+                
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error clearing cart: $e')),
+                  );
+                }
               }
             },
             child: const Text('Clear'),

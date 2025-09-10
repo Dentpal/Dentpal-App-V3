@@ -23,7 +23,7 @@ class CartService {
   }
 
   // Add item to cart
-  Future<void> addToCart({
+  Future<String?> addToCart({
     required String productId, 
     required int quantity,
     String? variationId
@@ -44,14 +44,16 @@ class CartService {
           'quantity': FieldValue.increment(quantity),
           'addedAt': FieldValue.serverTimestamp(),
         });
+        return existingItems.docs.first.id;
       } else {
         // Add new item to cart
-        await cartRef.add({
+        DocumentReference newDoc = await cartRef.add({
           'productId': productId,
           'quantity': quantity,
           'addedAt': FieldValue.serverTimestamp(),
           if (variationId != null) 'variationId': variationId,
         });
+        return newDoc.id;
       }
     } catch (e) {
       print('Error adding to cart: $e');
@@ -142,6 +144,70 @@ class CartService {
     } catch (e) {
       print('Error removing cart item: $e');
       rethrow;
+    }
+  }
+  
+  // Get a single cart item with product details (for background sync)
+  Future<CartItem?> getCartItem(String cartItemId) async {
+    try {
+      final cartRef = _getCartRef();
+      DocumentSnapshot cartDoc = await cartRef.doc(cartItemId).get();
+      
+      if (!cartDoc.exists) {
+        return null;
+      }
+      
+      CartItem cartItem = CartItem.fromFirestore(cartDoc);
+      
+      // Fetch product details
+      DocumentSnapshot productDoc = await _firestore
+          .collection('Product')
+          .doc(cartItem.productId)
+          .get();
+          
+      if (productDoc.exists) {
+        Product product = Product.fromFirestore(productDoc);
+        cartItem.productName = product.name;
+        cartItem.productImage = product.imageURL;
+        
+        // If there's a variation, get its details
+        if (cartItem.variationId != null) {
+          DocumentSnapshot variationDoc = await _firestore
+              .collection('Product')
+              .doc(cartItem.productId)
+              .collection('Variation')
+              .doc(cartItem.variationId)
+              .get();
+              
+          if (variationDoc.exists) {
+            ProductVariation variation = ProductVariation.fromFirestore(variationDoc);
+            cartItem.productPrice = variation.price;
+            cartItem.availableStock = variation.stock;
+            if (variation.imageURL != null && variation.imageURL!.isNotEmpty) {
+              cartItem.productImage = variation.imageURL;
+            }
+          }
+        } else {
+          // If no variation, try to get the first variation's price
+          QuerySnapshot variationsSnapshot = await _firestore
+              .collection('Product')
+              .doc(cartItem.productId)
+              .collection('Variation')
+              .limit(1)
+              .get();
+              
+          if (variationsSnapshot.docs.isNotEmpty) {
+            ProductVariation variation = ProductVariation.fromFirestore(variationsSnapshot.docs.first);
+            cartItem.productPrice = variation.price;
+            cartItem.availableStock = variation.stock;
+          }
+        }
+      }
+      
+      return cartItem;
+    } catch (e) {
+      print('Error getting cart item: $e');
+      return null;
     }
   }
   

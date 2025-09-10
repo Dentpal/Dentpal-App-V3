@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../models/product_model.dart';
 import '../services/product_service.dart';
 import '../services/cart_service.dart';
+import '../widgets/loading_overlay.dart';
+import '../utils/cart_feedback.dart';
 import 'cart_page.dart';
 
 class ProductDetailPage extends StatefulWidget {
@@ -20,6 +22,8 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   late Future<Product?> _productFuture;
   int _quantity = 1;
   ProductVariation? _selectedVariation;
+  bool _isAddingToCart = false;
+  DateTime? _lastAddToCartTime;
   
   @override
   void initState() {
@@ -46,23 +50,50 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   }
   
   void _addToCart(Product product) async {
+    // Prevent multiple simultaneous requests
+    if (_isAddingToCart) return;
+    
+    // Debounce: Prevent rapid button taps (minimum 1 second between requests)
+    final now = DateTime.now();
+    if (_lastAddToCartTime != null && 
+        now.difference(_lastAddToCartTime!).inSeconds < 1) {
+      CartFeedback.showInfo(context, 'Please wait before adding another item');
+      return;
+    }
+    
+    _lastAddToCartTime = now;
+    
+    setState(() {
+      _isAddingToCart = true;
+    });
+    
     try {
-      await _cartService.addToCart(
+      await CartPage.addItemOptimistically(
         productId: product.productId,
         quantity: _quantity,
         variationId: _selectedVariation?.variationId,
+        cartService: _cartService,
       );
       
-      // Mark the cart as stale so it refreshes when the user navigates back
-      CartPage.markCartAsStale();
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Added to cart successfully')),
-      );
+      if (mounted) {
+        CartFeedback.showSuccess(
+          context, 
+          'Added $_quantity ${product.name} to cart'
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error adding to cart: $e')),
-      );
+      if (mounted) {
+        CartFeedback.showError(
+          context, 
+          'Failed to add item to cart: ${e.toString()}'
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isAddingToCart = false;
+        });
+      }
     }
   }
   
@@ -256,19 +287,22 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 ),
               ],
             ),
-            child: ElevatedButton(
+            child: LoadingButton(
+              text: 'Add to Cart',
+              loadingText: 'Adding...',
+              isLoading: _isAddingToCart,
               onPressed: _selectedVariation != null && _selectedVariation!.stock > 0
                   ? () => _addToCart(product)
                   : null,
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              child: const Text(
-                'Add to Cart',
-                style: TextStyle(fontSize: 16),
-              ),
+              padding: const EdgeInsets.symmetric(vertical: 12),
             ),
           ),
+        ),
+        
+        // Loading overlay
+        LoadingOverlay(
+          message: 'Adding to cart...',
+          isVisible: _isAddingToCart,
         ),
       ],
     );
