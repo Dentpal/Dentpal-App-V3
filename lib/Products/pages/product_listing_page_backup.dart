@@ -99,7 +99,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     _instance = this;
     
     // Add debug log to track initialization
-    print("🔵 ProductListingPage initState called, products: ${_products.length}, timestamp: $_cacheTimestamp");
+    print("ProductListingPage initState called, products: ${_products.length}, timestamp: $_cacheTimestamp");
   }
   
   @override
@@ -109,7 +109,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     
     // Don't clear the static instance on dispose, we want to keep it
     // Only clean up resources if needed
-    print("🔴 ProductListingPage dispose called, keeping cached data");
+    print("ProductListingPage dispose called, keeping cached data");
     super.dispose();
   }
   
@@ -122,11 +122,9 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
   
   Future<void> _loadUserName() async {
     final firstName = await _userService.getUserFirstName();
-    if (mounted) {
-      setState(() {
-        _userFirstName = firstName;
-      });
-    }
+    setState(() {
+      _userFirstName = firstName;
+    });
   }
   
   bool _isCacheExpired() {
@@ -194,7 +192,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     });
     
     try {
-      print('🔄 ProductListingPage: Loading first page of products...');
+      print('ProductListingPage: Loading first page of products...');
       
       final result = await _productService.getProductsPaginated(
         limit: _pageSize,
@@ -232,9 +230,9 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
         }
       });
       
-      print('✅ Loaded ${newProducts.length} products (first page)');
+      print('Loaded ${newProducts.length} products (first page)');
     } catch (e) {
-      print('❌ Error loading first page: $e');
+      print('Error loading first page: $e');
       print('Stack trace: ${StackTrace.current}');
       
       setState(() {
@@ -253,7 +251,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     });
     
     try {
-      print('🔄 ProductListingPage: Loading more products...');
+      print('ProductListingPage: Loading more products...');
       
       final result = await _productService.getProductsPaginated(
         limit: _pageSize,
@@ -279,9 +277,9 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
         }
       });
       
-      print('✅ Loaded ${newProducts.length} more products');
+      print('Loaded ${newProducts.length} more products');
     } catch (e) {
-      print('❌ Error loading more products: $e');
+      print('Error loading more products: $e');
       print('Stack trace: ${StackTrace.current}');
       
       setState(() {
@@ -339,10 +337,69 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
         child: const Icon(Icons.add, color: AppColors.onPrimary),
         tooltip: 'Add New Product',
       ) : null,
-      body: Column(
-        children: [
-          // Categories filter
-          SafeArea(
+      body: RefreshIndicator(
+        color: AppColors.primary,
+        onRefresh: () async {
+          print("Pull-to-refresh triggered");
+          
+          // Reset the cache timestamp
+          _cacheTimestamp = null;
+          
+          // Clear the image cache
+          ProductImageCacheManager.instance.emptyCache();
+          
+          // Reset pagination and reload first page
+          _resetAndRefresh();
+          
+          // Wait for the refresh to complete
+          while (_isLoading) {
+            await Future.delayed(const Duration(milliseconds: 100));
+          }
+        },
+        child: CustomScrollView(
+          controller: _scrollController,
+          slivers: [
+            // Banner Section
+            SliverToBoxAdapter(
+              child: _buildBannerSection(),
+            ),
+            
+            // Categories Section
+            SliverToBoxAdapter(
+              child: _buildCategoriesSection(),
+            ),
+            
+            // Products Section Header
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+                child: Row(
+                  children: [
+                    Text(
+                      _selectedCategory == 'All' ? 'All Products' : _selectedCategory,
+                      style: AppTextStyles.headlineSmall.copyWith(
+                        color: AppColors.onBackground,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${_products.length} items',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            
+            // Products Grid
+            _buildProductGrid(),
+          ],
+        ),
+      ),
+    );
+  }
             child: Container(
               height: 50,
               margin: const EdgeInsets.only(top: 8.0),
@@ -377,69 +434,6 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
             ),
           ),
           
-          // Image Banner Section
-          Container(
-            margin: const EdgeInsets.all(16.0),
-            height: 160,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: CachedNetworkImage(
-                imageUrl: 'https://placehold.co/600x400',
-                fit: BoxFit.cover,
-                width: double.infinity,
-                height: 160,
-                placeholder: (context, url) => Container(
-                  height: 160,
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Center(
-                    child: CircularProgressIndicator(),
-                  ),
-                ),
-                errorWidget: (context, url, error) => Container(
-                  height: 160,
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.image_not_supported,
-                          color: Colors.grey,
-                          size: 40,
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          'Banner image unavailable',
-                          style: TextStyle(
-                            color: Colors.grey,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                cacheManager: ProductImageCacheManager.instance,
-              ),
-            ),
-          ),
-          
           // Product grid
           Expanded(
             child: _isLoading && _products.isEmpty
@@ -469,7 +463,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                         const SizedBox(height: 16),
                         ElevatedButton(
                           onPressed: () {
-                            print("🔄 Retry button pressed");
+                            print("Retry button pressed");
                             // Clear cache on retry
                             _cacheTimestamp = null;
                             
@@ -500,7 +494,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                           const SizedBox(height: 16),
                           ElevatedButton(
                             onPressed: () {
-                              print("🔄 Empty state refresh button pressed");
+                              print("Empty state refresh button pressed");
                               // Clear cache on refresh
                               _cacheTimestamp = null;
                               
@@ -514,10 +508,137 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                           ),
                         ],
                       ),
-                    )
-                  : _buildProductGrid(),
+    );
+  }
+  
+  // Banner section widget
+  Widget _buildBannerSection() {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      height: 160,
+      decoration: BoxDecoration(
+        gradient: AppColors.primaryGradient,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withOpacity(0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            right: -20,
+            top: -20,
+            child: Container(
+              width: 100,
+              height: 100,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Positioned(
+            right: 60,
+            bottom: -30,
+            child: Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.05),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  'Dental Products',
+                  style: AppTextStyles.headlineMedium.copyWith(
+                    color: AppColors.onPrimary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Quality dental supplies for\nprofessionals and students',
+                  style: AppTextStyles.bodyLarge.copyWith(
+                    color: AppColors.onPrimary.withOpacity(0.9),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    'Free Delivery Available',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.onPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  // Categories section widget
+  Widget _buildCategoriesSection() {
+    return Container(
+      height: 60,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: _categories.length,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemBuilder: (context, index) {
+          final category = _categories[index];
+          final isSelected = category == _selectedCategory;
+          
+          return Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: FilterChip(
+              label: Text(
+                category,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  fontSize: 14,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  color: isSelected ? AppColors.onPrimary : AppColors.onSurfaceVariant,
+                ),
+              ),
+              selected: isSelected,
+              onSelected: (selected) {
+                _onCategorySelected(category);
+              },
+              backgroundColor: isSelected ? AppColors.primary : AppColors.surface,
+              selectedColor: AppColors.primary,
+              checkmarkColor: AppColors.onPrimary,
+              side: BorderSide(
+                color: isSelected ? AppColors.primary : AppColors.grey300,
+                width: 1,
+              ),
+              elevation: isSelected ? 2 : 0,
+              shadowColor: AppColors.primary.withOpacity(0.3),
+            ),
+          );
+        },
       ),
     );
   }
@@ -537,7 +658,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     
     return RefreshIndicator(
       onRefresh: () async {
-        print("🔄 Pull-to-refresh triggered");
+        print("Pull-to-refresh triggered");
         // Clear the cache timestamp
         _cacheTimestamp = null;
         
