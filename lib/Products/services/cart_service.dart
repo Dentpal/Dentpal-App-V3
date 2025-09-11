@@ -51,6 +51,7 @@ class CartService {
           'productId': productId,
           'quantity': quantity,
           'addedAt': FieldValue.serverTimestamp(),
+          'isSelected': true, // Default to selected when adding new items
           if (variationId != null) 'variationId': variationId,
         });
         return newDoc.id;
@@ -80,6 +81,22 @@ class CartService {
           Product product = Product.fromFirestore(productDoc);
           item.productName = product.name;
           item.productImage = product.imageURL;
+          item.sellerId = product.sellerId; // Add seller info
+          
+          // Fetch seller name
+          try {
+            DocumentSnapshot sellerDoc = await _firestore
+                .collection('Seller')
+                .doc(product.sellerId)
+                .get();
+            if (sellerDoc.exists) {
+              final sellerData = sellerDoc.data() as Map<String, dynamic>;
+              item.sellerName = sellerData['name'] ?? 'Unknown Seller';
+            }
+          } catch (e) {
+            print('Error fetching seller info: $e');
+            item.sellerName = 'Unknown Seller';
+          }
           
           // If there's a variation, get its details
           if (item.variationId != null) {
@@ -120,6 +137,122 @@ class CartService {
     } catch (e) {
       print('Error getting cart items: $e');
       return [];
+    }
+  }
+  
+  // Get user's cart items organized by seller
+  Future<List<SellerGroup>> getCartItemsGroupedBySeller() async {
+    try {
+      final cartItems = await getCartItems();
+      
+      // Group items by seller
+      Map<String, List<CartItem>> sellerItemsMap = {};
+      Map<String, String> sellerNames = {};
+      
+      for (var item in cartItems) {
+        final sellerId = item.sellerId ?? 'unknown';
+        if (!sellerItemsMap.containsKey(sellerId)) {
+          sellerItemsMap[sellerId] = [];
+        }
+        sellerItemsMap[sellerId]!.add(item);
+        
+        if (item.sellerName != null) {
+          sellerNames[sellerId] = item.sellerName!;
+        }
+      }
+      
+      // Create seller groups with shipping cost calculation
+      List<SellerGroup> sellerGroups = [];
+      for (var entry in sellerItemsMap.entries) {
+        final sellerId = entry.key;
+        final items = entry.value;
+        final sellerName = sellerNames[sellerId] ?? 'Unknown Seller';
+        final shippingCost = await _calculateShippingCost(sellerId, items);
+        
+        sellerGroups.add(SellerGroup(
+          sellerId: sellerId,
+          sellerName: sellerName,
+          items: items,
+          shippingCost: shippingCost,
+        ));
+      }
+      
+      // Sort by seller name
+      sellerGroups.sort((a, b) => a.sellerName.compareTo(b.sellerName));
+      
+      return sellerGroups;
+    } catch (e) {
+      print('Error getting cart items grouped by seller: $e');
+      return [];
+    }
+  }
+  
+  // Calculate shipping cost for a seller based on items
+  Future<double> _calculateShippingCost(String sellerId, List<CartItem> items) async {
+    try {
+      // Fetch seller's shipping settings
+      DocumentSnapshot sellerDoc = await _firestore
+          .collection('Seller')
+          .doc(sellerId)
+          .get();
+      
+      if (!sellerDoc.exists) {
+        return 10.0; // Default shipping cost
+      }
+      
+      final sellerData = sellerDoc.data() as Map<String, dynamic>;
+      final shippingSettings = sellerData['shippingSettings'] as Map<String, dynamic>?;
+      
+      if (shippingSettings == null) {
+        return 10.0; // Default shipping cost
+      }
+      
+      // Calculate total value of items for shipping calculation
+      double totalValue = items.fold(0.0, (sum, item) => sum + item.totalPrice);
+      
+      // Get shipping cost based on weight or value
+      double baseCost = (shippingSettings['baseCost'] ?? 10.0).toDouble();
+      double freeShippingThreshold = (shippingSettings['freeShippingThreshold'] ?? 100.0).toDouble();
+      
+      // Free shipping if order value exceeds threshold
+      if (totalValue >= freeShippingThreshold) {
+        return 0.0;
+      }
+      
+      return baseCost;
+    } catch (e) {
+      print('Error calculating shipping cost: $e');
+      return 10.0; // Default shipping cost
+    }
+  }
+  
+  // Update item selection state
+  Future<void> updateItemSelection(String cartItemId, bool isSelected) async {
+    try {
+      await _getCartRef().doc(cartItemId).update({
+        'isSelected': isSelected,
+      });
+    } catch (e) {
+      print('Error updating item selection: $e');
+      rethrow;
+    }
+  }
+
+  // Batch update multiple item selections for better performance
+  Future<void> batchUpdateItemSelections(Map<String, bool> itemSelections) async {
+    try {
+      WriteBatch batch = _firestore.batch();
+      final cartRef = _getCartRef();
+      
+      for (var entry in itemSelections.entries) {
+        batch.update(cartRef.doc(entry.key), {'isSelected': entry.value});
+      }
+      
+      await batch.commit();
+      print('✅ Batch updated ${itemSelections.length} item selections');
+    } catch (e) {
+      print('Error batch updating item selections: $e');
+      rethrow;
     }
   }
   
@@ -169,6 +302,22 @@ class CartService {
         Product product = Product.fromFirestore(productDoc);
         cartItem.productName = product.name;
         cartItem.productImage = product.imageURL;
+        cartItem.sellerId = product.sellerId;
+        
+        // Fetch seller name
+        try {
+          DocumentSnapshot sellerDoc = await _firestore
+              .collection('Seller')
+              .doc(product.sellerId)
+              .get();
+          if (sellerDoc.exists) {
+            final sellerData = sellerDoc.data() as Map<String, dynamic>;
+            cartItem.sellerName = sellerData['name'] ?? 'Unknown Seller';
+          }
+        } catch (e) {
+          print('Error fetching seller info: $e');
+          cartItem.sellerName = 'Unknown Seller';
+        }
         
         // If there's a variation, get its details
         if (cartItem.variationId != null) {
@@ -223,5 +372,11 @@ class CartService {
       print('Error clearing cart: $e');
       rethrow;
     }
+  }
+  
+  // Get cart summary with selected items only
+  Future<CartSummary> getCartSummary() async {
+    final sellerGroups = await getCartItemsGroupedBySeller();
+    return CartSummary(sellerGroups: sellerGroups);
   }
 }
