@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/product_model.dart';
 import '../services/product_service.dart';
 import '../services/cart_service.dart';
+import '../services/category_service.dart';
 import '../widgets/loading_overlay.dart';
 import '../utils/cart_feedback.dart';
 import '../../core/app_theme/app_colors.dart';
@@ -21,12 +22,16 @@ class ProductDetailPage extends StatefulWidget {
 class _ProductDetailPageState extends State<ProductDetailPage> {
   final ProductService _productService = ProductService();
   final CartService _cartService = CartService();
+  final CategoryService _categoryService = CategoryService();
   
   late Future<Product?> _productFuture;
   int _quantity = 1;
   ProductVariation? _selectedVariation;
   bool _isAddingToCart = false;
   DateTime? _lastAddToCartTime;
+  
+  // Cache for category names to avoid repeated Firestore calls
+  Map<String, String> _categoryNames = {};
   
   @override
   void initState() {
@@ -49,6 +54,24 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
     } catch (e) {
       print('Error loading product: $e');
       return null;
+    }
+  }
+  
+  // Fetch category name by ID and cache it
+  Future<String> _getCategoryName(String categoryId) async {
+    if (_categoryNames.containsKey(categoryId)) {
+      return _categoryNames[categoryId]!;
+    }
+    
+    try {
+      final category = await _categoryService.getCategoryById(categoryId);
+      final categoryName = category?.categoryName ?? 'Unknown Category';
+      _categoryNames[categoryId] = categoryName;
+      return categoryName;
+    } catch (e) {
+      print('❌ Error fetching category name for $categoryId: $e');
+      _categoryNames[categoryId] = 'Unknown Category';
+      return 'Unknown Category';
     }
   }
   
@@ -494,19 +517,25 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: AppColors.secondary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Text(
-                        product.category,
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.secondary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                    FutureBuilder<String>(
+                      future: _getCategoryName(product.categoryId),
+                      builder: (context, snapshot) {
+                        final categoryName = snapshot.data ?? 'Loading...';
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppColors.onSurfaceVariant.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Text(
+                            categoryName,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.grey500,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),

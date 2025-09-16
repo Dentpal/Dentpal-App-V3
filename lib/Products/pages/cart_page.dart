@@ -639,7 +639,19 @@ class _CartPageState extends State<CartPage>
             ),
             const SizedBox(height: 32),
             ElevatedButton.icon(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () {
+                  // Use the callback if provided, otherwise try to pop
+                  if (widget.onBackPressed != null) {
+                    widget.onBackPressed!();
+                  } else if (Navigator.canPop(context)) {
+                    Navigator.pop(context);
+                  } else {
+                    // Fallback: try to navigate to the first route
+                    Navigator.of(
+                      context,
+                    ).pushNamedAndRemoveUntil('/', (route) => false);
+                  }
+                },
               icon: const Icon(Icons.shopping_bag),
               label: const Text('Continue Shopping'),
               style: ElevatedButton.styleFrom(
@@ -741,7 +753,19 @@ class _CartPageState extends State<CartPage>
           ),
           const SizedBox(height: 32),
           ElevatedButton.icon(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+                  // Use the callback if provided, otherwise try to pop
+                  if (widget.onBackPressed != null) {
+                    widget.onBackPressed!();
+                  } else if (Navigator.canPop(context)) {
+                    Navigator.pop(context);
+                  } else {
+                    // Fallback: try to navigate to the first route
+                    Navigator.of(
+                      context,
+                    ).pushNamedAndRemoveUntil('/', (route) => false);
+                  }
+                },
             icon: const Icon(Icons.shopping_bag),
             label: const Text('Continue Shopping'),
           ),

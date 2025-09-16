@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/product_model.dart';
 import '../services/product_service.dart';
 import '../services/user_service.dart';
+import '../services/category_service.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 
@@ -32,6 +33,7 @@ class ProductListingPage extends StatefulWidget {
 class _ProductListingPageState extends State<ProductListingPage> with AutomaticKeepAliveClientMixin<ProductListingPage> {
   final ProductService _productService = ProductService();
   final UserService _userService = UserService();
+  final CategoryService _categoryService = CategoryService();
   bool _isLoading = false;
   bool _isLoadingMore = false;
   String _selectedCategory = 'All';
@@ -46,6 +48,13 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
   
   bool _isSeller = false;
   String _userFirstName = 'User';
+  
+  // Cache for category names to avoid repeated Firestore calls
+  Map<String, String> _categoryNames = {};
+  
+  // Mapping between category names and IDs for filtering
+  Map<String, String> _categoryNameToId = {};
+  Map<String, String> _categoryIdToName = {};
 
   // Override to keep this page alive when navigating away
   @override
@@ -70,6 +79,8 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
       _errorMessage = _instance!._errorMessage;
       _isSeller = _instance!._isSeller;
       _userFirstName = _instance!._userFirstName;
+      _categoryNameToId = _instance!._categoryNameToId;
+      _categoryIdToName = _instance!._categoryIdToName;
       
       // Check if cache is expired (older than 12 hours)
       if (_isCacheExpired()) {
@@ -126,6 +137,24 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
       setState(() {
         _userFirstName = firstName;
       });
+    }
+  }
+  
+  // Fetch category name by ID and cache it
+  Future<String> _getCategoryName(String categoryId) async {
+    if (_categoryNames.containsKey(categoryId)) {
+      return _categoryNames[categoryId]!;
+    }
+    
+    try {
+      final category = await _categoryService.getCategoryById(categoryId);
+      final categoryName = category?.categoryName ?? 'Unknown Category';
+      _categoryNames[categoryId] = categoryName;
+      return categoryName;
+    } catch (e) {
+      print('❌ Error fetching category name for $categoryId: $e');
+      _categoryNames[categoryId] = 'Unknown Category';
+      return 'Unknown Category';
     }
   }
   
@@ -195,10 +224,12 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     
     try {
       print('🔄 ProductListingPage: Loading first page of products...');
+      print('🔍 DEBUG: Selected category "$_selectedCategory" maps to ID: ${_categoryNameToId[_selectedCategory]}');
       
+      // Load all products first, then filter on client side to avoid Firestore index issues
       final result = await _productService.getProductsPaginated(
         limit: _pageSize,
-        category: _selectedCategory == 'All' ? null : _selectedCategory,
+        categoryId: null, // Always load all products to avoid index issues
       );
       
       final newProducts = result['products'] as List<Product>;
@@ -207,13 +238,42 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
       
       // Extract all unique categories if this is the first load
       if (_categories.length <= 1) {
-        Set<String> categorySet = {'All'};
-        for (var product in newProducts) {
-          if (product.category.isNotEmpty) {
-            categorySet.add(product.category);
+        try {
+          // Fetch all categories from CategoryService
+          final allCategories = await _categoryService.getCategories();
+          
+          print('🔍 DEBUG: Fetched ${allCategories.length} categories from service');
+          
+          // Build categories list starting with 'All'
+          Set<String> categorySet = {'All'};
+          
+          // Clear existing mappings
+          _categoryNameToId.clear();
+          _categoryIdToName.clear();
+          
+          // Add all category names from the service and build mappings
+          for (var category in allCategories) {
+            print('🔍 DEBUG: Category - Name: ${category.categoryName}, ID: ${category.categoryId}');
+            categorySet.add(category.categoryName);
+            _categoryNameToId[category.categoryName] = category.categoryId;
+            _categoryIdToName[category.categoryId] = category.categoryName;
           }
+          
+          _categories = categorySet.toList();
+          print('🔍 DEBUG: Final categories list: $_categories');
+          print('🔍 DEBUG: Category name to ID mapping: $_categoryNameToId');
+          
+          // Update static instance
+          if (_instance != null) {
+            _instance!._categories = _categories;
+            _instance!._categoryNameToId = _categoryNameToId;
+            _instance!._categoryIdToName = _categoryIdToName;
+          }
+        } catch (e) {
+          print('❌ Error loading categories: $e');
+          // Fallback to just 'All' if category loading fails
+          _categories = ['All'];
         }
-        _categories = categorySet.toList();
       }
       
       setState(() {
@@ -255,10 +315,11 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     try {
       print('🔄 ProductListingPage: Loading more products...');
       
+      // Load all products first, then filter on client side to avoid Firestore index issues
       final result = await _productService.getProductsPaginated(
         limit: _pageSize,
         lastDocument: _lastDocument,
-        category: _selectedCategory == 'All' ? null : _selectedCategory,
+        categoryId: null, // Always load all products to avoid index issues
       );
       
       final newProducts = result['products'] as List<Product>;
@@ -414,105 +475,6 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
               children: [
                 const SizedBox(height: 8),
                 
-                // Modern Categories Section
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(
-                              Icons.category,
-                              color: AppColors.primary,
-                              size: 20,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Text(
-                            'Categories',
-                            style: AppTextStyles.titleMedium.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.onSurface,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        height: 40,
-                        child: ListView.builder(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: _categories.length,
-                          itemBuilder: (context, index) {
-                            final category = _categories[index];
-                            final isSelected = category == _selectedCategory;
-                            
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 12),
-                              child: GestureDetector(
-                                onTap: () => _onCategorySelected(category),
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: isSelected ? AppColors.primary : AppColors.surface,
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(
-                                      color: isSelected ? AppColors.primary : AppColors.onSurface.withOpacity(0.2),
-                                      width: 1.5,
-                                    ),
-                                    boxShadow: isSelected ? [
-                                      BoxShadow(
-                                        color: AppColors.primary.withOpacity(0.3),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ] : [],
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      category,
-                                      style: AppTextStyles.bodyMedium.copyWith(
-                                        color: isSelected ? AppColors.onPrimary : AppColors.onSurface,
-                                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                                        fontSize: 13,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                
-                const SizedBox(height: 20),
-                
-                // Enhanced Image Banner Section
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 16),
                   height: 180,
@@ -624,6 +586,107 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                   ),
                 ),
                 
+                // Modern Categories Section
+                
+                const SizedBox(height: 20),
+                
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.category,
+                              color: AppColors.primary,
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            'Categories',
+                            style: AppTextStyles.titleMedium.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.onSurface,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        height: 40,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _categories.length,
+                          itemBuilder: (context, index) {
+                            final category = _categories[index];
+                            final isSelected = category == _selectedCategory;
+                            
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 12),
+                              child: GestureDetector(
+                                onTap: () => _onCategorySelected(category),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: isSelected ? AppColors.primary : AppColors.surface,
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: isSelected ? AppColors.primary : AppColors.onSurface.withOpacity(0.2),
+                                      width: 1.5,
+                                    ),
+                                    boxShadow: isSelected ? [
+                                      BoxShadow(
+                                        color: AppColors.primary.withOpacity(0.3),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ] : [],
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      category,
+                                      style: AppTextStyles.bodyMedium.copyWith(
+                                        color: isSelected ? AppColors.onPrimary : AppColors.onSurface,
+                                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                        fontSize: 13,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // Enhanced Image Banner Section
+                
                 const SizedBox(height: 24),
                 
                 // Products Section Header
@@ -706,16 +769,15 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
             ),
           ],
         ),
-        child: FloatingActionButton.extended(
+        child: FloatingActionButton(
           onPressed: () {
             Navigator.pushNamed(context, '/add-product');
           },
           backgroundColor: AppColors.primary,
           foregroundColor: AppColors.onPrimary,
-          icon: const Icon(Icons.add),
-          label: const Text('Add Product'),
           elevation: 0,
           highlightElevation: 0,
+          child: const Icon(Icons.add),
         ),
       ) : null,
     );
@@ -872,10 +934,19 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
 
   // Build modern product grid with enhanced design
   Widget _buildModernProductGrid() {
+    print('🔍 DEBUG: _buildModernProductGrid called');
+    print('🔍 Selected category: $_selectedCategory');
+    print('🔍 Category name to ID mapping: $_categoryNameToId');
+    print('🔍 Total products: ${_products.length}');
+    
     final filteredProducts = _products.where((product) {
       if (_selectedCategory == 'All') return true;
-      return product.category == _selectedCategory;
+      // Compare product's categoryId with the selected category's ID
+      final selectedCategoryId = _categoryNameToId[_selectedCategory];
+      return product.categoryId == selectedCategoryId;
     }).toList();
+    
+    print('🔍 Displaying ${filteredProducts.length} products for category: $_selectedCategory');
 
     if (filteredProducts.isEmpty) {
       return SliverToBoxAdapter(
@@ -976,7 +1047,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
               children: [
                 // Product Image
                 Expanded(
-                  flex: 3,
+                  flex: 4,
                   child: Container(
                     width: double.infinity,
                     decoration: BoxDecoration(
@@ -1017,39 +1088,15 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                             cacheManager: ProductImageCacheManager.instance,
                           ),
                         ),
-                        // Favorite button
-                        Positioned(
-                          top: 8,
-                          right: 8,
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.9),
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.1),
-                                  blurRadius: 4,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: const Icon(
-                              Icons.favorite_border,
-                              size: 16,
-                              color: AppColors.onSurface,
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                   ),
                 ),
                 // Product Info
                 Expanded(
-                  flex: 2,
+                  flex: 3,
                   child: Padding(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.only(top: 6, left: 12, right: 12, bottom: 12),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
@@ -1060,22 +1107,28 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                             style: AppTextStyles.bodyMedium.copyWith(
                               fontWeight: FontWeight.w600,
                               color: AppColors.onSurface,
-                              fontSize: 13,
+                              fontSize: 16,
                             ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          product.category,
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.secondary,
-                            fontWeight: FontWeight.w500,
-                            fontSize: 11,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        const SizedBox(height: 3),
+                        FutureBuilder<String>(
+                          future: _getCategoryName(product.categoryId),
+                          builder: (context, snapshot) {
+                            final categoryName = snapshot.data ?? 'Loading...';
+                            return Text(
+                              categoryName,
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.onSurfaceVariant,
+                                fontWeight: FontWeight.w500,
+                                fontSize: 12,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            );
+                          },
                         ),
                         const Spacer(),
                         Row(

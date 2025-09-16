@@ -26,7 +26,7 @@ class ProductService {
   Future<Map<String, dynamic>> getProductsPaginated({
     int limit = 15,
     DocumentSnapshot? lastDocument,
-    String? category,
+    String? categoryId,
   }) async {
     try {
       print('Fetching paginated products from Firestore...');
@@ -37,8 +37,8 @@ class ProductService {
           .orderBy('createdAt', descending: true);
       
       // Add category filter if specified
-      if (category != null && category != 'All') {
-        query = query.where('category', isEqualTo: category);
+      if (categoryId != null && categoryId != 'All') {
+        query = query.where('categoryId', isEqualTo: categoryId);
       }
       
       // Add pagination parameters
@@ -82,11 +82,13 @@ class ProductService {
             name: product.name,
             description: product.description,
             imageURL: product.imageURL,
-            category: product.category,
+            categoryId: product.categoryId,
+            subCategoryId: product.subCategoryId,
             sellerId: product.sellerId,
             createdAt: product.createdAt,
             updatedAt: product.updatedAt,
             isActive: product.isActive,
+            clickCounter: product.clickCounter,
             variations: variations,
           );
         }
@@ -142,13 +144,14 @@ class ProductService {
           name: product.name,
           description: product.description,
           imageURL: product.imageURL,
-          category: product.category, // change to categoryID we will separate this
+          categoryId: product.categoryId,
+          subCategoryId: product.subCategoryId,
           sellerId: product.sellerId,
           createdAt: product.createdAt,
           updatedAt: product.updatedAt,
           isActive: product.isActive,
+          clickCounter: product.clickCounter,
           variations: variations,
-          //add clickAmt
         );
       }
       
@@ -163,7 +166,10 @@ class ProductService {
   Future<Map<String, dynamic>> checkSellerStatus() async {
     try {
       User? currentUser = _auth.currentUser;
+      print('🔍 CheckSellerStatus: Current user UID: ${currentUser?.uid}');
+      
       if (currentUser == null) {
+        print('❌ CheckSellerStatus: User is not logged in');
         return {
           'isSeller': false,
           'message': 'User is not logged in',
@@ -177,7 +183,10 @@ class ProductService {
           .doc(currentUser.uid)
           .get();
 
+      print('🔍 CheckSellerStatus: User doc exists: ${userDoc.exists}');
+      
       if (!userDoc.exists) {
+        print('❌ CheckSellerStatus: User profile not found');
         return {
           'isSeller': false,
           'message': 'User profile not found',
@@ -187,7 +196,10 @@ class ProductService {
 
       // Check the role field to see if the user is a seller
       Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+      print('🔍 CheckSellerStatus: User role: ${userData['role']}');
+      
       if (userData['role'] != 'seller') {
+        print('❌ CheckSellerStatus: User role is not seller');
         return {
           'isSeller': false,
           'message': 'User is not registered as a seller',
@@ -195,13 +207,18 @@ class ProductService {
         };
       }
 
+      print(currentUser.uid);
+
       // Check if there's an entry in the Seller collection
       DocumentSnapshot sellerDoc = await _firestore
           .collection('Seller')
           .doc(currentUser.uid)
           .get();
 
+      print('🔍 CheckSellerStatus: Seller doc exists: ${sellerDoc.exists}');
+      
       if (!sellerDoc.exists) {
+        print('❌ CheckSellerStatus: Seller profile not setup completely');
         return {
           'isSeller': false,
           'message': 'Seller profile not setup completely',
@@ -210,7 +227,12 @@ class ProductService {
       }
 
       Map<String, dynamic> sellerData = sellerDoc.data() as Map<String, dynamic>;
+      print('🔍 CheckSellerStatus: Seller isActive: ${sellerData['isActive']}');
+      print('🔍 CheckSellerStatus: Seller isActive type: ${sellerData['isActive'].runtimeType}');
+      print('🔍 CheckSellerStatus: All seller fields: ${sellerData.keys.toList()}');
+      
       if (sellerData['isActive'] != true) {
+        print('❌ CheckSellerStatus: Seller account is not active');
         return {
           'isSeller': false,
           'message': 'Seller account is not active',
@@ -218,13 +240,14 @@ class ProductService {
         };
       }
 
+      print('✅ CheckSellerStatus: User is verified seller');
       return {
         'isSeller': true,
         'message': 'User is a verified seller',
         'sellerId': currentUser.uid
       };
     } catch (e) {
-      print('Error checking seller status: $e');
+      print('❌ CheckSellerStatus Error: $e');
       return {
         'isSeller': false,
         'message': 'Error: $e',
@@ -261,11 +284,13 @@ class ProductService {
         'name': productForm.name,
         'description': productForm.description,
         'imageURL': productForm.imageURL,
-        'category': productForm.category,
+        'categoryID': productForm.categoryId,
+        'subCategoryID': productForm.subCategoryId,
         'sellerId': sellerId,
         'createdAt': Timestamp.fromDate(now),
         'updatedAt': Timestamp.fromDate(now),
         'isActive': true,
+        'clickCounter': 0,
       });
       
       // Add variations as a sub-collection

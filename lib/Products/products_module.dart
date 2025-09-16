@@ -14,6 +14,7 @@ export 'models/cart_model.dart';
 export 'models/product_form_model.dart';
 export 'services/product_service.dart';
 export 'services/cart_service.dart';
+export 'services/category_service.dart';
 
 class ProductsModule {
   // Method to register routes for all product-related pages

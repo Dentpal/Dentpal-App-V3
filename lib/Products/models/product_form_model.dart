@@ -2,7 +2,8 @@ class ProductFormModel {
   String name = '';
   String description = '';
   String imageURL = '';
-  String category = '';
+  String categoryId = '';
+  String? subCategoryId = '';
   List<VariationFormModel> variations = [];
   
   // Validation
@@ -30,8 +31,15 @@ class ProductFormModel {
   }
   
   String? validateCategory() {
-    if (category.isEmpty) {
+    if (categoryId.isEmpty) {
       return 'Category is required';
+    }
+    return null;
+  }
+  
+  String? validateSubCategory() {
+    if (subCategoryId == null || subCategoryId!.isEmpty) {
+      return 'SubCategory is required';
     }
     return null;
   }
