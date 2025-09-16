@@ -55,8 +55,8 @@ class AppGradients {
   
   static const LinearGradient teal = LinearGradient(
     colors: [
-      Color.fromRGBO(45, 212, 191, 1),
-      Color.fromRGBO(6, 182, 212, 1),
+      Color.fromRGBO(138, 216, 196, 1),
+      Color.fromRGBO(43, 129, 110, 1),
     ],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
