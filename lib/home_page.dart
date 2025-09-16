@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:dentpal/Products/pages/product_listing_page.dart';
 import 'package:dentpal/Products/pages/cart_page.dart';
 import 'package:dentpal/login_page.dart';
+import '../../core/app_theme/app_colors.dart';
+import '../../core/app_theme/app_text_styles.dart';
 import 'package:dentpal/utils/seed_products_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -79,7 +81,19 @@ class UserProfilePage extends StatelessWidget {
     
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Profile'),
+        toolbarHeight: 60,
+        title: Row(
+              children: [
+                Icon(Icons.person, color: AppColors.primary, size: 24),
+                const SizedBox(width: 8),
+                Text(
+                  'My Profile',
+                  style: AppTextStyles.titleLarge.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),

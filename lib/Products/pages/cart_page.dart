@@ -449,12 +449,13 @@ class _CartPageState extends State<CartPage>
         slivers: [
           // Modern SliverAppBar
           SliverAppBar(
-            expandedHeight: 80,
+            expandedHeight: 60,
             floating: false,
             pinned: true,
             elevation: 0,
             backgroundColor: AppColors.surface,
-            leading: Container(
+            // Hide leading icon when used within home page navigation
+            leading: widget.onBackPressed != null ? null : Container(
               margin: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: AppColors.surface,
@@ -469,10 +470,7 @@ class _CartPageState extends State<CartPage>
               ),
               child: IconButton(
                 onPressed: () {
-                  // Use the callback if provided, otherwise try to pop
-                  if (widget.onBackPressed != null) {
-                    widget.onBackPressed!();
-                  } else if (Navigator.canPop(context)) {
+                  if (Navigator.canPop(context)) {
                     Navigator.pop(context);
                   } else {
                     // Fallback: try to navigate to the first route

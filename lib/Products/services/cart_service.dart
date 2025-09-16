@@ -91,7 +91,7 @@ class CartService {
                 .get();
             if (sellerDoc.exists) {
               final sellerData = sellerDoc.data() as Map<String, dynamic>;
-              item.sellerName = sellerData['name'] ?? 'Unknown Seller';
+              item.sellerName = sellerData['shopName'] ?? 'Unknown Seller';
             }
           } catch (e) {
             print('Error fetching seller info: $e');
@@ -312,7 +312,7 @@ class CartService {
               .get();
           if (sellerDoc.exists) {
             final sellerData = sellerDoc.data() as Map<String, dynamic>;
-            cartItem.sellerName = sellerData['name'] ?? 'Unknown Seller';
+            cartItem.sellerName = sellerData['shopName'] ?? 'Unknown Seller';
           }
         } catch (e) {
           print('Error fetching seller info: $e');

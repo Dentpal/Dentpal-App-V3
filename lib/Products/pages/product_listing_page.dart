@@ -374,7 +374,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
         slivers: [
           // Modern SliverAppBar with gradient
           SliverAppBar(
-            expandedHeight: 80,
+            expandedHeight: 60,
             floating: false,
             pinned: true,
             elevation: 0,
