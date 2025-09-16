@@ -5,11 +5,13 @@ class Product {
   final String name;
   final String description;
   final String imageURL;
-  final String category;
+  final String categoryId;
+  final String subCategoryId;
   final String sellerId;
   final DateTime createdAt;
   final DateTime updatedAt;
   final bool isActive;
+  final int clickCounter;
   final List<ProductVariation>? variations;
 
   Product({
@@ -17,11 +19,13 @@ class Product {
     required this.name,
     required this.description,
     required this.imageURL,
-    required this.category,
+    required this.categoryId,
+    required this.subCategoryId,
     required this.sellerId,
     required this.createdAt,
     required this.updatedAt,
     required this.isActive,
+    required this.clickCounter,
     this.variations,
   });
 
@@ -57,11 +61,13 @@ class Product {
       name: data['name'] ?? '',
       description: data['description'] ?? '',
       imageURL: data['imageURL'] ?? '',
-      category: data['category'] ?? '',
+      categoryId: data['categoryID'] ?? '',
+      subCategoryId: data['subCategoryID'] ?? '',
       sellerId: data['sellerId'] ?? '',
       createdAt: createdAt,
       updatedAt: updatedAt,
       isActive: data['isActive'] ?? true,
+      clickCounter: data['clickCounter'] ?? 0,
       variations: null, // Variations will be fetched separately
     );
   }
@@ -71,11 +77,13 @@ class Product {
       'name': name,
       'description': description,
       'imageURL': imageURL,
-      'category': category,
+      'categoryID': categoryId,
+      'subCategoryID': subCategoryId,
       'sellerId': sellerId,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
       'isActive': isActive,
+      'clickCounter': clickCounter,
     };
   }
 
@@ -170,6 +178,64 @@ class ProductVariation {
       'SKU': sku,
       'weight': weight,
       'dimensions': dimensions,
+    };
+  }
+}
+
+class Category {
+  final String categoryId;
+  final String categoryName;
+  final int clickCounter;
+
+  Category({
+    required this.categoryId,
+    required this.categoryName,
+    required this.clickCounter,
+  });
+
+  factory Category.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    
+    return Category(
+      categoryId: doc.id,
+      categoryName: data['categoryName'] ?? '',
+      clickCounter: data['clickCounter'] ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'categoryName': categoryName,
+      'clickCounter': clickCounter,
+    };
+  }
+}
+
+class SubCategory {
+  final String subCategoryId;
+  final String subCategoryName;
+  final String categoryId;
+
+  SubCategory({
+    required this.subCategoryId,
+    required this.subCategoryName,
+    required this.categoryId,
+  });
+
+  factory SubCategory.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    
+    return SubCategory(
+      subCategoryId: doc.id,
+      subCategoryName: data['subCategoryName'] ?? '',
+      categoryId: data['categoryId'] ?? '',  // Changed from 'categoryID' to 'categoryId'
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'subCategoryName': subCategoryName,
+      'categoryId': categoryId,  // Changed from 'categoryID' to 'categoryId'
     };
   }
 }

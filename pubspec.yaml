@@ -20,6 +20,7 @@ dependencies:
   flutter_cache_manager: ^3.4.1
   cached_network_image: ^3.4.1
   intl: ^0.20.2
+  shared_preferences: ^2.3.2
 
 dev_dependencies:
   flutter_test:
@@ -33,7 +34,8 @@ flutter:
 
   assets:
     - lib/assets/icons/dentpal_vertical.png
-
+    - lib/assets/icons/facebook-logo.png
+    - lib/assets/icons/google-logo.png
   fonts:
     - family: Poppins
       fonts:

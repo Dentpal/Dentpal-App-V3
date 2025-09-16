@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/product_form_model.dart';
+import '../models/product_model.dart';
 import '../services/product_service.dart';
+import '../services/category_service.dart';
 
 class AddProductPage extends StatefulWidget {
   const AddProductPage({Key? key}) : super(key: key);
@@ -14,6 +16,7 @@ class _AddProductPageState extends State<AddProductPage> {
   final ProductFormModel _productForm = ProductFormModel();
   final List<VariationFormModel> _variations = [VariationFormModel()];
   final ProductService _productService = ProductService();
+  final CategoryService _categoryService = CategoryService();
   
   // Add controllers for all text fields
   final _nameController = TextEditingController();
@@ -22,24 +25,76 @@ class _AddProductPageState extends State<AddProductPage> {
   final List<Map<String, TextEditingController>> _variationControllers = [];
 
   bool _isLoading = false;
+  bool _isCategoriesLoading = true;
   String _errorMessage = '';
   bool _isSeller = false;
   String _sellerMessage = '';
 
-  final List<String> _categories = [
-    'Dental Equipment',
-    'Dental Supplies',
-    'Dental Instruments',
-    'Dental Materials',
-    'Dental Accessories',
-    'Other'
-  ];
+  // Dynamic categories and subcategories
+  List<Category> _categories = [];
+  List<SubCategory> _subCategories = [];
+  String? _selectedCategoryId;
+  String? _selectedSubCategoryId;
 
-  @override
+    @override
   void initState() {
     super.initState();
-    _checkSellerStatus();
     _initializeVariationControllers();
+    _checkSellerStatus();
+    _loadCategories();
+  }
+
+  void _loadCategories() async {
+    setState(() {
+      _isCategoriesLoading = true;
+    });
+    
+    try {
+      final categories = await _categoryService.getCategories();
+      print('✅ Loaded ${categories.length} categories');
+      
+      // Debug: Print category details
+      for (var cat in categories) {
+        print('  - Category: ${cat.categoryName} (ID: ${cat.categoryId})');
+      }
+      
+      setState(() {
+        _categories = categories;
+        _isCategoriesLoading = false;
+      });
+    } catch (e) {
+      print('❌ Error loading categories: $e');
+      setState(() {
+        _isCategoriesLoading = false;
+        _errorMessage = 'Failed to load categories: $e';
+      });
+    }
+  }
+
+  void _loadSubCategories(String categoryId) async {
+    print('🔍 Loading subcategories for categoryId: $categoryId');
+    
+    try {
+      final subCategories = await _categoryService.getSubCategories(categoryId);
+      print('✅ Received ${subCategories.length} subcategories');
+      
+      // Debug: Print subcategory details
+      for (var subCat in subCategories) {
+        print('  - SubCategory: ${subCat.subCategoryName} (ID: ${subCat.subCategoryId}, CategoryID: ${subCat.categoryId})');
+      }
+      
+      setState(() {
+        _subCategories = subCategories;
+        _selectedSubCategoryId = null; // Reset subcategory selection
+        _productForm.subCategoryId = null;
+      });
+    } catch (e) {
+      print('❌ Error loading subcategories: $e');
+      setState(() {
+        _errorMessage = 'Failed to load subcategories: $e';
+        _subCategories = [];
+      });
+    }
   }
   
   // Initialize controllers for the first variation
@@ -357,18 +412,54 @@ class _AddProductPageState extends State<AddProductPage> {
                     labelText: 'Category *',
                     border: OutlineInputBorder(),
                   ),
-                  items: _categories.map((category) {
-                    return DropdownMenuItem(
-                      value: category,
-                      child: Text(category),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
+                  value: _selectedCategoryId,
+                  items: _isCategoriesLoading 
+                    ? [const DropdownMenuItem(value: null, child: Text('Loading...'))]
+                    : _categories.map((category) {
+                        return DropdownMenuItem(
+                          value: category.categoryId,
+                          child: Text(category.categoryName),
+                        );
+                      }).toList(),
+                  onChanged: _isCategoriesLoading ? null : (value) {
+                    print('🔍 Category selected: $value');
                     setState(() {
-                      _productForm.category = value ?? '';
+                      _selectedCategoryId = value;
+                      _productForm.categoryId = value ?? '';
                     });
+                    if (value != null) {
+                      _loadSubCategories(value);
+                    }
                   },
                   validator: (_) => _productForm.validateCategory(),
+                ),
+                
+                const SizedBox(height: 16),
+
+                // SubCategory
+                DropdownButtonFormField<String>(
+                  decoration: const InputDecoration(
+                    labelText: 'SubCategory *',
+                    border: OutlineInputBorder(),
+                  ),
+                  value: _selectedSubCategoryId,
+                  items: _selectedCategoryId == null 
+                    ? [const DropdownMenuItem(value: null, child: Text('Select a category first'))]
+                    : _subCategories.isEmpty
+                    ? [const DropdownMenuItem(value: null, child: Text('No subcategories available'))]
+                    : _subCategories.map((subCategory) {
+                        return DropdownMenuItem(
+                          value: subCategory.subCategoryId,
+                          child: Text(subCategory.subCategoryName),
+                        );
+                      }).toList(),
+                  onChanged: _selectedCategoryId == null ? null : (value) {
+                    setState(() {
+                      _selectedSubCategoryId = value;
+                      _productForm.subCategoryId = value;
+                    });
+                  },
+                  validator: (_) => _productForm.validateSubCategory(),
                 ),
                 
                 const SizedBox(height: 24),
@@ -433,7 +524,7 @@ class _AddProductPageState extends State<AddProductPage> {
                               decoration: const InputDecoration(
                                 labelText: 'Price *',
                                 border: OutlineInputBorder(),
-                                prefixText: '\$ ',
+                                prefixText: '₱ ',
                               ),
                               keyboardType: TextInputType.number,
                               validator: (value) {
