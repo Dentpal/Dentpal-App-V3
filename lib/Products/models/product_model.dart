@@ -185,10 +185,12 @@ class ProductVariation {
 class Category {
   final String categoryId;
   final String categoryName;
+  final int clickCounter;
 
   Category({
     required this.categoryId,
     required this.categoryName,
+    required this.clickCounter,
   });
 
   factory Category.fromFirestore(DocumentSnapshot doc) {
@@ -197,12 +199,14 @@ class Category {
     return Category(
       categoryId: doc.id,
       categoryName: data['categoryName'] ?? '',
+      clickCounter: data['clickCounter'] ?? 0,
     );
   }
 
   Map<String, dynamic> toMap() {
     return {
       'categoryName': categoryName,
+      'clickCounter': clickCounter,
     };
   }
 }

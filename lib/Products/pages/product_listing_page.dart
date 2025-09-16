@@ -6,6 +6,7 @@ import '../models/product_model.dart';
 import '../services/product_service.dart';
 import '../services/user_service.dart';
 import '../services/category_service.dart';
+import '../services/click_tracking_service.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 
@@ -34,6 +35,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
   final ProductService _productService = ProductService();
   final UserService _userService = UserService();
   final CategoryService _categoryService = CategoryService();
+  final ClickTrackingService _clickTrackingService = ClickTrackingService();
   bool _isLoading = false;
   bool _isLoadingMore = false;
   String _selectedCategory = 'All';
@@ -108,6 +110,9 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     
     // Store this instance as the static instance
     _instance = this;
+    
+    // Clean up old click tracking data (run async without waiting)
+    _clickTrackingService.cleanupOldClickData();
     
     // Add debug log to track initialization
     print("🔵 ProductListingPage initState called, products: ${_products.length}, timestamp: $_cacheTimestamp");
@@ -193,6 +198,14 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
   // Handle category selection
   void _onCategorySelected(String category) {
     if (_selectedCategory == category) return;
+    
+    // Track category click if it's not 'All'
+    if (category != 'All') {
+      final categoryId = _categoryNameToId[category];
+      if (categoryId != null) {
+        _clickTrackingService.trackCategoryClick(categoryId);
+      }
+    }
     
     setState(() {
       _selectedCategory = category;
@@ -1037,6 +1050,10 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
           color: Colors.transparent,
           child: InkWell(
             onTap: () {
+              // Track product click
+              _clickTrackingService.trackProductClick(product.productId);
+              
+              // Navigate to product details
               Navigator.pushNamed(
                 context,
                 '/product/${product.productId}',
