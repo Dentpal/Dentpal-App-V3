@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/cart_model.dart';
 import '../models/product_model.dart';
+import 'package:dentpal/utils/app_logger.dart';
 
 class CartService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -57,7 +58,7 @@ class CartService {
         return newDoc.id;
       }
     } catch (e) {
-      print('Error adding to cart: $e');
+      AppLogger.d('Error adding to cart: $e');
       rethrow;
     }
   }
@@ -94,7 +95,7 @@ class CartService {
               item.sellerName = sellerData['shopName'] ?? 'Unknown Seller';
             }
           } catch (e) {
-            print('Error fetching seller info: $e');
+            AppLogger.d('Error fetching seller info: $e');
             item.sellerName = 'Unknown Seller';
           }
           
@@ -135,7 +136,7 @@ class CartService {
       
       return cartItems;
     } catch (e) {
-      print('Error getting cart items: $e');
+      AppLogger.d('Error getting cart items: $e');
       return [];
     }
   }
@@ -182,7 +183,7 @@ class CartService {
       
       return sellerGroups;
     } catch (e) {
-      print('Error getting cart items grouped by seller: $e');
+      AppLogger.d('Error getting cart items grouped by seller: $e');
       return [];
     }
   }
@@ -221,7 +222,7 @@ class CartService {
       
       return baseCost;
     } catch (e) {
-      print('Error calculating shipping cost: $e');
+      AppLogger.d('Error calculating shipping cost: $e');
       return 10.0; // Default shipping cost
     }
   }
@@ -233,7 +234,7 @@ class CartService {
         'isSelected': isSelected,
       });
     } catch (e) {
-      print('Error updating item selection: $e');
+      AppLogger.d('Error updating item selection: $e');
       rethrow;
     }
   }
@@ -249,9 +250,9 @@ class CartService {
       }
       
       await batch.commit();
-      print('✅ Batch updated ${itemSelections.length} item selections');
+      AppLogger.d('✅ Batch updated ${itemSelections.length} item selections');
     } catch (e) {
-      print('Error batch updating item selections: $e');
+      AppLogger.d('Error batch updating item selections: $e');
       rethrow;
     }
   }
@@ -265,7 +266,7 @@ class CartService {
         await _getCartRef().doc(cartItemId).update({'quantity': quantity});
       }
     } catch (e) {
-      print('Error updating cart item: $e');
+      AppLogger.d('Error updating cart item: $e');
       rethrow;
     }
   }
@@ -275,7 +276,7 @@ class CartService {
     try {
       await _getCartRef().doc(cartItemId).delete();
     } catch (e) {
-      print('Error removing cart item: $e');
+      AppLogger.d('Error removing cart item: $e');
       rethrow;
     }
   }
@@ -315,7 +316,7 @@ class CartService {
             cartItem.sellerName = sellerData['shopName'] ?? 'Unknown Seller';
           }
         } catch (e) {
-          print('Error fetching seller info: $e');
+          AppLogger.d('Error fetching seller info: $e');
           cartItem.sellerName = 'Unknown Seller';
         }
         
@@ -355,7 +356,7 @@ class CartService {
       
       return cartItem;
     } catch (e) {
-      print('Error getting cart item: $e');
+      AppLogger.d('Error getting cart item: $e');
       return null;
     }
   }
@@ -369,7 +370,7 @@ class CartService {
         await doc.reference.delete();
       }
     } catch (e) {
-      print('Error clearing cart: $e');
+      AppLogger.d('Error clearing cart: $e');
       rethrow;
     }
   }

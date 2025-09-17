@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:dentpal/utils/app_logger.dart';
 
 class UserService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -17,7 +18,7 @@ class UserService {
       }
       return null;
     } catch (e) {
-      print('Error fetching user data: $e');
+      AppLogger.d('Error fetching user data: $e');
       return null;
     }
   }
@@ -32,7 +33,7 @@ class UserService {
       }
       return 'User';
     } catch (e) {
-      print('Error getting user first name: $e');
+      AppLogger.d('Error getting user first name: $e');
       return 'User';
     }
   }
@@ -46,7 +47,7 @@ class UserService {
       }
       return 'User';
     } catch (e) {
-      print('Error getting user full name: $e');
+      AppLogger.d('Error getting user full name: $e');
       return 'User';
     }
   }

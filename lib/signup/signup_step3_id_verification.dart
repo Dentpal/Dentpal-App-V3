@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'signup_controller.dart';
 import 'package:dentpal/login_page.dart';
 import 'package:dentpal/core/app_theme/index.dart';
+import 'package:dentpal/utils/app_logger.dart';
 
 class SignupStep3IdVerification extends StatefulWidget {
   final SignupController controller;
@@ -182,11 +183,11 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
           try {
             // Link phone authentication to this account
             await user.linkWithCredential(_controller.phoneCredential!);
-            print('Successfully linked phone number to account');
+            AppLogger.d('Successfully linked phone number to account');
           } catch (linkError) {
             // If linking fails, we'll still continue with the registration
             // but log the error for debugging
-            print('Error linking phone credential: $linkError');
+            AppLogger.d('Error linking phone credential: $linkError');
             // We won't throw here to allow the registration to complete
           }
         }
@@ -269,8 +270,8 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
         'role': 'buyer', // Default role
       });
     } catch (e) {
-      print('Error saving user data: $e');
-      throw e; // Re-throw to handle in the calling function
+      AppLogger.d('Error saving user data: $e');
+      rethrow; // Re-throw to handle in the calling function
     }
   }
   
@@ -367,7 +368,7 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
       }
       
       // Print for debugging
-      print('Attempting to verify phone number: $formattedNumber');
+      AppLogger.d('Attempting to verify phone number: $formattedNumber');
       
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: formattedNumber,
@@ -385,7 +386,7 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
           });
           
           // Print detailed error for debugging
-          print('Firebase phone verification failed: ${e.code} - ${e.message}');
+          AppLogger.d('Firebase phone verification failed: ${e.code} - ${e.message}');
           
           String errorMessage = 'Verification failed. Please try again.';
           if (e.code == 'invalid-phone-number') {
@@ -402,7 +403,7 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
           _showVerificationResult(false, errorMessage);
         },
         codeSent: (String verificationId, int? resendToken) {
-          print('Verification code sent to $formattedNumber. verificationId: ${verificationId.substring(0, 5)}...');
+          AppLogger.d('Verification code sent to $formattedNumber. verificationId: ${verificationId.substring(0, 5)}...');
           
           if (verificationId.isNotEmpty) {
             setState(() {
@@ -427,7 +428,7 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
         timeout: const Duration(seconds: 120),
       );
     } catch (e) {
-      print('Unexpected error during phone verification: $e');
+      AppLogger.d('Unexpected error during phone verification: $e');
       setState(() {
         _controller.isVerificationInProgress = false;
       });
@@ -623,7 +624,7 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
     final formattedNumber = _controller.formattedPhoneNumber;
 
     try {
-      print('Attempting to resend OTP to $formattedNumber');
+      AppLogger.d('Attempting to resend OTP to $formattedNumber');
       
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: formattedNumber,
@@ -638,7 +639,7 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
           _showVerificationResult(true, 'Your phone number has been automatically verified!');
         },
         verificationFailed: (FirebaseAuthException e) {
-          print('Resend verification failed: ${e.code} - ${e.message}');
+          AppLogger.d('Resend verification failed: ${e.code} - ${e.message}');
           setState(() {
             _controller.isVerificationInProgress = false;
           });
@@ -647,7 +648,7 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
           );
         },
         codeSent: (String verificationId, int? resendToken) {
-          print('Resend successful. New code sent.');
+          AppLogger.d('Resend successful. New code sent.');
           setState(() {
             _controller.verificationId = verificationId;
             _controller.resendToken = resendToken;
@@ -674,7 +675,7 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
         timeout: const Duration(seconds: 120),
       );
     } catch (e) {
-      print('Error resending OTP: $e');
+      AppLogger.d('Error resending OTP: $e');
       setState(() {
         _controller.isVerificationInProgress = false;
       });

@@ -88,7 +88,7 @@ class _SignupFlowState extends State<SignupFlow> {
                     Text(
                       _getStepDescription(),
                       style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.surface.withOpacity(0.9),
+                        color: AppColors.surface.withValues(alpha: 0.9),
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -154,7 +154,7 @@ class _SignupFlowState extends State<SignupFlow> {
             height: 30,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: isActive ? AppColors.surface : AppColors.surface.withOpacity(0.3),
+              color: isActive ? AppColors.surface : AppColors.surface.withValues(alpha: 0.3),
               border: Border.all(
                 color: AppColors.surface,
                 width: 1,

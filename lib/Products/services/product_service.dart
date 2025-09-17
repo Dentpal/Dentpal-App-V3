@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/product_model.dart';
 import '../models/product_form_model.dart';
+import 'package:dentpal/utils/app_logger.dart';
 
 class ProductService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -10,14 +11,14 @@ class ProductService {
   // Get all products (legacy method - kept for backward compatibility)
   Future<List<Product>> getProducts() async {
     try {
-      print('Fetching all products from Firestore...');
+      AppLogger.d('Fetching all products from Firestore...');
       
       // Get the first page of products with a large limit
       final result = await getProductsPaginated(limit: 100);
       return result['products'] as List<Product>;
     } catch (e) {
-      print('Error fetching all products: $e');
-      print('Stack trace: ${StackTrace.current}');
+      AppLogger.d('Error fetching all products: $e');
+      AppLogger.d('Stack trace: ${StackTrace.current}');
       return [];
     }
   }
@@ -29,7 +30,7 @@ class ProductService {
     String? categoryId,
   }) async {
     try {
-      print('Fetching paginated products from Firestore...');
+      AppLogger.d('Fetching paginated products from Firestore...');
       
       // Start building the query
       Query query = _firestore
@@ -52,7 +53,7 @@ class ProductService {
       // Execute the query
       QuerySnapshot querySnapshot = await query.get();
       
-      print('Fetched page with ${querySnapshot.docs.length} products');
+      AppLogger.d('Fetched page with ${querySnapshot.docs.length} products');
       
       // Check if we've reached the end of the data
       bool hasMore = querySnapshot.docs.length == limit;
@@ -96,7 +97,7 @@ class ProductService {
         pageProducts.add(product);
       }
       
-      print('Successfully fetched ${pageProducts.length} products');
+      AppLogger.d('Successfully fetched ${pageProducts.length} products');
       
       // Return a map with all pagination-related data
       return {
@@ -105,8 +106,8 @@ class ProductService {
         'hasMore': hasMore
       };
     } catch (e) {
-      print('Error fetching paginated products: $e');
-      print('Stack trace: ${StackTrace.current}');
+      AppLogger.d('Error fetching paginated products: $e');
+      AppLogger.d('Stack trace: ${StackTrace.current}');
       return {
         'products': <Product>[],
         'lastDocument': null,
@@ -157,7 +158,7 @@ class ProductService {
       
       return product;
     } catch (e) {
-      print('Error fetching product: $e');
+      AppLogger.d('Error fetching product: $e');
       return null;
     }
   }
@@ -166,10 +167,11 @@ class ProductService {
   Future<Map<String, dynamic>> checkSellerStatus() async {
     try {
       User? currentUser = _auth.currentUser;
-      print('🔍 CheckSellerStatus: Current user UID: ${currentUser?.uid}');
+      final userUID = currentUser?.uid;
+      AppLogger.d('🔍 CheckSellerStatus: Current user UID: $userUID');
       
-      if (currentUser == null) {
-        print('❌ CheckSellerStatus: User is not logged in');
+      if (currentUser == null || userUID == null) {
+        AppLogger.d('❌ CheckSellerStatus: User is not logged in');
         return {
           'isSeller': false,
           'message': 'User is not logged in',
@@ -177,16 +179,17 @@ class ProductService {
         };
       }
 
-      // First check if user exists in the users collection
+      // First check if user exists in the users collection using the exact UID
       DocumentSnapshot userDoc = await _firestore
           .collection('User')
-          .doc(currentUser.uid)
+          .doc(userUID)
           .get();
 
-      print('🔍 CheckSellerStatus: User doc exists: ${userDoc.exists}');
+      AppLogger.d('🔍 CheckSellerStatus: Looking for User doc with UID: $userUID');
+      AppLogger.d('🔍 CheckSellerStatus: User doc exists: ${userDoc.exists}');
       
       if (!userDoc.exists) {
-        print('❌ CheckSellerStatus: User profile not found');
+        AppLogger.d('❌ CheckSellerStatus: User profile not found for UID: $userUID');
         return {
           'isSeller': false,
           'message': 'User profile not found',
@@ -196,10 +199,12 @@ class ProductService {
 
       // Check the role field to see if the user is a seller
       Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
-      print('🔍 CheckSellerStatus: User role: ${userData['role']}');
+      AppLogger.d('🔍 CheckSellerStatus: User data keys: ${userData.keys.toList()}');
+      AppLogger.d('🔍 CheckSellerStatus: User role: ${userData['role']}');
+      AppLogger.d('🔍 CheckSellerStatus: User UID from doc: ${userDoc.id}');
       
       if (userData['role'] != 'seller') {
-        print('❌ CheckSellerStatus: User role is not seller');
+        AppLogger.d('❌ CheckSellerStatus: User role is not seller - role is: ${userData['role']}');
         return {
           'isSeller': false,
           'message': 'User is not registered as a seller',
@@ -207,18 +212,18 @@ class ProductService {
         };
       }
 
-      print(currentUser.uid);
-
-      // Check if there's an entry in the Seller collection
+      // Check if there's an entry in the Seller collection with the same UID
       DocumentSnapshot sellerDoc = await _firestore
           .collection('Seller')
-          .doc(currentUser.uid)
+          .doc(userUID)
           .get();
 
-      print('🔍 CheckSellerStatus: Seller doc exists: ${sellerDoc.exists}');
+      AppLogger.d('🔍 CheckSellerStatus: Looking for Seller doc with UID: $userUID');
+      AppLogger.d('🔍 CheckSellerStatus: Seller doc exists: ${sellerDoc.exists}');
+      AppLogger.d('🔍 CheckSellerStatus: Seller doc ID: ${sellerDoc.id}');
       
       if (!sellerDoc.exists) {
-        print('❌ CheckSellerStatus: Seller profile not setup completely');
+        AppLogger.d('❌ CheckSellerStatus: Seller profile not found for UID: $userUID');
         return {
           'isSeller': false,
           'message': 'Seller profile not setup completely',
@@ -227,12 +232,32 @@ class ProductService {
       }
 
       Map<String, dynamic> sellerData = sellerDoc.data() as Map<String, dynamic>;
-      print('🔍 CheckSellerStatus: Seller isActive: ${sellerData['isActive']}');
-      print('🔍 CheckSellerStatus: Seller isActive type: ${sellerData['isActive'].runtimeType}');
-      print('🔍 CheckSellerStatus: All seller fields: ${sellerData.keys.toList()}');
+      AppLogger.d('🔍 CheckSellerStatus: Seller data keys: ${sellerData.keys.toList()}');
+      AppLogger.d('🔍 CheckSellerStatus: Seller isActive: ${sellerData['isActive']}');
+      AppLogger.d('🔍 CheckSellerStatus: Seller isActive type: ${sellerData['isActive'].runtimeType}');
       
-      if (sellerData['isActive'] != true) {
-        print('❌ CheckSellerStatus: Seller account is not active');
+      // Verify UIDs match between User and Seller collections
+      if (userDoc.id != sellerDoc.id) {
+        AppLogger.d('❌ CheckSellerStatus: UID mismatch - User: ${userDoc.id}, Seller: ${sellerDoc.id}');
+        return {
+          'isSeller': false,
+          'message': 'UID mismatch between User and Seller collections',
+          'sellerId': null
+        };
+      }
+      
+      // Check if seller is active (handle both boolean and string values)
+      bool isActive = false;
+      if (sellerData['isActive'] is bool) {
+        isActive = sellerData['isActive'] as bool;
+      } else if (sellerData['isActive'] is String) {
+        isActive = sellerData['isActive'].toString().toLowerCase() == 'true';
+      }
+      
+      AppLogger.d('🔍 CheckSellerStatus: Parsed isActive value: $isActive');
+      
+      if (!isActive) {
+        AppLogger.d('❌ CheckSellerStatus: Seller account is not active - isActive: ${sellerData['isActive']}');
         return {
           'isSeller': false,
           'message': 'Seller account is not active',
@@ -240,14 +265,16 @@ class ProductService {
         };
       }
 
-      print('✅ CheckSellerStatus: User is verified seller');
+      AppLogger.d('✅ CheckSellerStatus: User is verified seller with matching UIDs');
+      AppLogger.d('✅ CheckSellerStatus: User UID: $userUID, Seller UID: ${sellerDoc.id}');
       return {
         'isSeller': true,
         'message': 'User is a verified seller',
-        'sellerId': currentUser.uid
+        'sellerId': userUID
       };
     } catch (e) {
-      print('❌ CheckSellerStatus Error: $e');
+      AppLogger.d('❌ CheckSellerStatus Error: $e');
+      AppLogger.d('❌ CheckSellerStatus Stack trace: ${StackTrace.current}');
       return {
         'isSeller': false,
         'message': 'Error: $e',
@@ -314,7 +341,7 @@ class ProductService {
         'productId': productRef.id
       };
     } catch (e) {
-      print('Error adding product: $e');
+      AppLogger.d('Error adding product: $e');
       return {
         'success': false,
         'message': 'Error: $e',

@@ -406,10 +406,10 @@ class _LoginPageState extends State<LoginPage> {
                           Container(
                             padding: context.paddingAll16,
                             decoration: BoxDecoration(
-                              color: AppColors.error.withOpacity(0.1),
+                              color: AppColors.error.withValues(alpha: .1),
                               borderRadius: context.borderRadius8,
                               border: Border.all(
-                                color: AppColors.error.withOpacity(0.3),
+                                color: AppColors.error.withValues(alpha: .3),
                               ),
                             ),
                             child: Text(

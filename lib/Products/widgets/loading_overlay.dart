@@ -10,7 +10,7 @@ class LoadingOverlay extends StatelessWidget {
   final bool showCancelButton;
 
   const LoadingOverlay({
-    Key? key,
+    super.key,
     required this.message,
     required this.isVisible,
     this.backgroundColor,
@@ -18,14 +18,14 @@ class LoadingOverlay extends StatelessWidget {
     this.progressColor,
     this.onCancel,
     this.showCancelButton = false,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
     if (!isVisible) return const SizedBox.shrink();
 
     return Container(
-      color: backgroundColor ?? Colors.black.withOpacity(0.5),
+      color: backgroundColor ?? Colors.black.withValues(alpha: 0.5),
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -72,14 +72,14 @@ class LoadingButton extends StatelessWidget {
   final TextStyle? textStyle;
 
   const LoadingButton({
-    Key? key,
+    super.key,
     required this.text,
     required this.loadingText,
     required this.isLoading,
     this.onPressed,
     this.padding,
     this.textStyle,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

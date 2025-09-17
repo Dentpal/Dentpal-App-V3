@@ -9,6 +9,8 @@ import '../services/category_service.dart';
 import '../services/click_tracking_service.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
+import 'package:dentpal/utils/app_logger.dart';
+
 
 // Custom cache manager with 24 hour TTL
 class ProductImageCacheManager {
@@ -25,7 +27,7 @@ class ProductImageCacheManager {
 }
 
 class ProductListingPage extends StatefulWidget {
-  const ProductListingPage({Key? key}) : super(key: key);
+  const ProductListingPage({super.key});
 
   @override
   _ProductListingPageState createState() => _ProductListingPageState();
@@ -52,7 +54,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
   String _userFirstName = 'User';
   
   // Cache for category names to avoid repeated Firestore calls
-  Map<String, String> _categoryNames = {};
+  final Map<String, String> _categoryNames = {};
   
   // Mapping between category names and IDs for filtering
   Map<String, String> _categoryNameToId = {};
@@ -115,7 +117,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     _clickTrackingService.cleanupOldClickData();
     
     // Add debug log to track initialization
-    print("🔵 ProductListingPage initState called, products: ${_products.length}, timestamp: $_cacheTimestamp");
+    AppLogger.d("🔵 ProductListingPage initState called, products: ${_products.length}, timestamp: $_cacheTimestamp");
   }
   
   @override
@@ -125,15 +127,30 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     
     // Don't clear the static instance on dispose, we want to keep it
     // Only clean up resources if needed
-    print("🔴 ProductListingPage dispose called, keeping cached data");
+    AppLogger.d("🔴 ProductListingPage dispose called, keeping cached data");
     super.dispose();
   }
   
   Future<void> _checkSellerStatus() async {
-    final result = await _productService.checkSellerStatus();
-    setState(() {
-      _isSeller = result['isSeller'];
-    });
+    try {
+      AppLogger.d('🔄 ProductListingPage: Checking seller status...');
+      final result = await _productService.checkSellerStatus();
+      AppLogger.d('🔍 ProductListingPage: Seller status result: $result');
+      
+      if (mounted) {
+        setState(() {
+          _isSeller = result['isSeller'] ?? false;
+        });
+        AppLogger.d('🔍 ProductListingPage: Updated _isSeller to: $_isSeller');
+      }
+    } catch (e) {
+      AppLogger.d('❌ ProductListingPage: Error checking seller status: $e');
+      if (mounted) {
+        setState(() {
+          _isSeller = false;
+        });
+      }
+    }
   }
   
   Future<void> _loadUserName() async {
@@ -157,7 +174,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
       _categoryNames[categoryId] = categoryName;
       return categoryName;
     } catch (e) {
-      print('❌ Error fetching category name for $categoryId: $e');
+      AppLogger.d('❌ Error fetching category name for $categoryId: $e');
       _categoryNames[categoryId] = 'Unknown Category';
       return 'Unknown Category';
     }
@@ -236,8 +253,8 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     });
     
     try {
-      print('🔄 ProductListingPage: Loading first page of products...');
-      print('🔍 DEBUG: Selected category "$_selectedCategory" maps to ID: ${_categoryNameToId[_selectedCategory]}');
+      AppLogger.d('🔄 ProductListingPage: Loading first page of products...');
+      AppLogger.d('🔍 DEBUG: Selected category "$_selectedCategory" maps to ID: ${_categoryNameToId[_selectedCategory]}');
       
       // Load all products first, then filter on client side to avoid Firestore index issues
       final result = await _productService.getProductsPaginated(
@@ -255,7 +272,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
           // Fetch all categories from CategoryService
           final allCategories = await _categoryService.getCategories();
           
-          print('🔍 DEBUG: Fetched ${allCategories.length} categories from service');
+          AppLogger.d('🔍 DEBUG: Fetched ${allCategories.length} categories from service');
           
           // Build categories list starting with 'All'
           Set<String> categorySet = {'All'};
@@ -266,15 +283,15 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
           
           // Add all category names from the service and build mappings
           for (var category in allCategories) {
-            print('🔍 DEBUG: Category - Name: ${category.categoryName}, ID: ${category.categoryId}');
+            AppLogger.d('🔍 DEBUG: Category - Name: ${category.categoryName}, ID: ${category.categoryId}');
             categorySet.add(category.categoryName);
             _categoryNameToId[category.categoryName] = category.categoryId;
             _categoryIdToName[category.categoryId] = category.categoryName;
           }
           
           _categories = categorySet.toList();
-          print('🔍 DEBUG: Final categories list: $_categories');
-          print('🔍 DEBUG: Category name to ID mapping: $_categoryNameToId');
+          AppLogger.d('🔍 DEBUG: Final categories list: $_categories');
+          AppLogger.d('🔍 DEBUG: Category name to ID mapping: $_categoryNameToId');
           
           // Update static instance
           if (_instance != null) {
@@ -283,7 +300,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
             _instance!._categoryIdToName = _categoryIdToName;
           }
         } catch (e) {
-          print('❌ Error loading categories: $e');
+          AppLogger.d('❌ Error loading categories: $e');
           // Fallback to just 'All' if category loading fails
           _categories = ['All'];
         }
@@ -305,10 +322,10 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
         }
       });
       
-      print('✅ Loaded ${newProducts.length} products (first page)');
+      AppLogger.d('✅ Loaded ${newProducts.length} products (first page)');
     } catch (e) {
-      print('❌ Error loading first page: $e');
-      print('Stack trace: ${StackTrace.current}');
+      AppLogger.d('❌ Error loading first page: $e');
+      AppLogger.d('Stack trace: ${StackTrace.current}');
       
       setState(() {
         _isLoading = false;
@@ -326,7 +343,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     });
     
     try {
-      print('🔄 ProductListingPage: Loading more products...');
+      AppLogger.d('🔄 ProductListingPage: Loading more products...');
       
       // Load all products first, then filter on client side to avoid Firestore index issues
       final result = await _productService.getProductsPaginated(
@@ -353,10 +370,10 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
         }
       });
       
-      print('✅ Loaded ${newProducts.length} more products');
+      AppLogger.d('✅ Loaded ${newProducts.length} more products');
     } catch (e) {
-      print('❌ Error loading more products: $e');
-      print('Stack trace: ${StackTrace.current}');
+      AppLogger.d('❌ Error loading more products: $e');
+      AppLogger.d('Stack trace: ${StackTrace.current}');
       
       setState(() {
         _isLoadingMore = false;
@@ -384,7 +401,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                 Container(
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
+                    color: AppColors.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(
@@ -402,7 +419,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                       Text(
                         'Welcome back!',
                         style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.onSurface.withOpacity(0.6),
+                          color: AppColors.onSurface.withValues(alpha: 0.6),
                           fontSize: 11,
                         ),
                       ),
@@ -426,8 +443,8 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      AppColors.primary.withOpacity(0.05),
-                      AppColors.secondary.withOpacity(0.02),
+                      AppColors.primary.withValues(alpha: 0.05),
+                      AppColors.secondary.withValues(alpha: 0.02),
                     ],
                   ),
                 ),
@@ -441,7 +458,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                   borderRadius: BorderRadius.circular(8),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.08),
+                      color: Colors.black.withValues(alpha: 0.08),
                       blurRadius: 4,
                       offset: const Offset(0, 2),
                     ),
@@ -464,7 +481,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                     Container(
                       width: 1,
                       height: 20,
-                      color: AppColors.onSurface.withOpacity(0.1),
+                      color: AppColors.onSurface.withValues(alpha: 0.1),
                     ),
                     IconButton(
                       iconSize: 20,
@@ -495,7 +512,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [
                       BoxShadow(
-                        color: AppColors.primary.withOpacity(0.2),
+                        color: AppColors.primary.withValues(alpha: 0.2),
                         blurRadius: 20,
                         offset: const Offset(0, 8),
                       ),
@@ -514,7 +531,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                             height: 180,
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
-                                colors: [AppColors.primary.withOpacity(0.1), AppColors.secondary.withOpacity(0.1)],
+                                colors: [AppColors.primary.withValues(alpha: 0.1), AppColors.secondary.withValues(alpha: 0.1)],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               ),
@@ -527,7 +544,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                             height: 180,
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
-                                colors: [AppColors.primary.withOpacity(0.1), AppColors.secondary.withOpacity(0.1)],
+                                colors: [AppColors.primary.withValues(alpha: 0.1), AppColors.secondary.withValues(alpha: 0.1)],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               ),
@@ -563,7 +580,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                               end: Alignment.bottomCenter,
                               colors: [
                                 Colors.transparent,
-                                Colors.black.withOpacity(0.3),
+                                Colors.black.withValues(alpha: 0.3),
                               ],
                             ),
                           ),
@@ -579,7 +596,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                               borderRadius: BorderRadius.circular(16),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.2),
+                                  color: Colors.black.withValues(alpha: 0.2),
                                   blurRadius: 4,
                                   offset: const Offset(0, 2),
                                 ),
@@ -611,7 +628,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
+                        color: Colors.black.withValues(alpha: 0.05),
                         blurRadius: 10,
                         offset: const Offset(0, 4),
                       ),
@@ -625,7 +642,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                           Container(
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              color: AppColors.primary.withOpacity(0.1),
+                              color: AppColors.primary.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: const Icon(
@@ -665,12 +682,12 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                                     color: isSelected ? AppColors.primary : AppColors.surface,
                                     borderRadius: BorderRadius.circular(20),
                                     border: Border.all(
-                                      color: isSelected ? AppColors.primary : AppColors.onSurface.withOpacity(0.2),
+                                      color: isSelected ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.2),
                                       width: 1.5,
                                     ),
                                     boxShadow: isSelected ? [
                                       BoxShadow(
-                                        color: AppColors.primary.withOpacity(0.3),
+                                        color: AppColors.primary.withValues(alpha: 0.3),
                                         blurRadius: 8,
                                         offset: const Offset(0, 2),
                                       ),
@@ -710,7 +727,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: AppColors.secondary.withOpacity(0.1),
+                          color: AppColors.secondary.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: const Icon(
@@ -732,7 +749,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.1),
+                          color: AppColors.primary.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: Text(
@@ -771,28 +788,32 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                   ),
         ],
       ),
-      floatingActionButton: _isSeller ? Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primary.withOpacity(0.3),
-              blurRadius: 12,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: FloatingActionButton(
-          onPressed: () {
-            Navigator.pushNamed(context, '/add-product');
-          },
-          backgroundColor: AppColors.primary,
-          foregroundColor: AppColors.onPrimary,
-          elevation: 0,
-          highlightElevation: 0,
-          child: const Icon(Icons.add),
-        ),
-      ) : null,
+      floatingActionButton: () {
+        AppLogger.d('🔍 ProductListingPage: Building FAB - _isSeller: $_isSeller');
+        return _isSeller ? Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.3),
+                blurRadius: 12,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: FloatingActionButton(
+            onPressed: () {
+              AppLogger.d('🔍 ProductListingPage: FAB pressed - navigating to add-product');
+              Navigator.pushNamed(context, '/add-product');
+            },
+            backgroundColor: AppColors.primary,
+            foregroundColor: AppColors.onPrimary,
+            elevation: 0,
+            highlightElevation: 0,
+            child: const Icon(Icons.add),
+          ),
+        ) : null;
+      }(),
     );
   }
 
@@ -806,7 +827,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: Colors.red.withOpacity(0.1),
+              color: Colors.red.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
             child: const Icon(
@@ -830,7 +851,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
               _errorMessage ?? 'Unable to load products at this time',
               textAlign: TextAlign.center,
               style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.onSurface.withOpacity(0.7),
+                color: AppColors.onSurface.withValues(alpha: 0.7),
               ),
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
@@ -842,7 +863,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.primary.withOpacity(0.2),
+                  color: AppColors.primary.withValues(alpha: 0.2),
                   blurRadius: 8,
                   offset: const Offset(0, 4),
                 ),
@@ -850,7 +871,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
             ),
             child: ElevatedButton.icon(
               onPressed: () {
-                print("🔄 Retry button pressed");
+                AppLogger.d("🔄 Retry button pressed");
                 _cacheTimestamp = null;
                 ProductImageCacheManager.instance.emptyCache();
                 _resetAndRefresh();
@@ -883,7 +904,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.1),
+              color: AppColors.primary.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
             child: const Icon(
@@ -905,7 +926,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
             'There are no products to display at this time.\nTry refreshing or check back later.',
             textAlign: TextAlign.center,
             style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.onSurface.withOpacity(0.7),
+              color: AppColors.onSurface.withValues(alpha: 0.7),
             ),
           ),
           const SizedBox(height: 32),
@@ -914,7 +935,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.primary.withOpacity(0.2),
+                  color: AppColors.primary.withValues(alpha: 0.2),
                   blurRadius: 8,
                   offset: const Offset(0, 4),
                 ),
@@ -922,7 +943,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
             ),
             child: ElevatedButton.icon(
               onPressed: () {
-                print("🔄 Empty state refresh button pressed");
+                AppLogger.d("🔄 Empty state refresh button pressed");
                 _cacheTimestamp = null;
                 ProductImageCacheManager.instance.emptyCache();
                 _resetAndRefresh();
@@ -947,10 +968,10 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
 
   // Build modern product grid with enhanced design
   Widget _buildModernProductGrid() {
-    print('🔍 DEBUG: _buildModernProductGrid called');
-    print('🔍 Selected category: $_selectedCategory');
-    print('🔍 Category name to ID mapping: $_categoryNameToId');
-    print('🔍 Total products: ${_products.length}');
+    AppLogger.d('🔍 DEBUG: _buildModernProductGrid called');
+    AppLogger.d('🔍 Selected category: $_selectedCategory');
+    AppLogger.d('🔍 Category name to ID mapping: $_categoryNameToId');
+    AppLogger.d('🔍 Total products: ${_products.length}');
     
     final filteredProducts = _products.where((product) {
       if (_selectedCategory == 'All') return true;
@@ -959,7 +980,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
       return product.categoryId == selectedCategoryId;
     }).toList();
     
-    print('🔍 Displaying ${filteredProducts.length} products for category: $_selectedCategory');
+    AppLogger.d('🔍 Displaying ${filteredProducts.length} products for category: $_selectedCategory');
 
     if (filteredProducts.isEmpty) {
       return SliverToBoxAdapter(
@@ -970,7 +991,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: AppColors.secondary.withOpacity(0.1),
+                  color: AppColors.secondary.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -991,7 +1012,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
               Text(
                 'Try selecting a different category',
                 style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.onSurface.withOpacity(0.7),
+                  color: AppColors.onSurface.withValues(alpha: 0.7),
                 ),
               ),
             ],
@@ -1038,7 +1059,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -1168,7 +1189,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                             Container(
                               padding: const EdgeInsets.all(4),
                               decoration: BoxDecoration(
-                                color: AppColors.primary.withOpacity(0.1),
+                                color: AppColors.primary.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: const Icon(

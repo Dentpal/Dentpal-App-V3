@@ -3,6 +3,8 @@ import '../models/product_form_model.dart';
 import '../models/product_model.dart';
 import '../services/product_service.dart';
 import '../services/category_service.dart';
+import 'package:dentpal/utils/app_logger.dart';
+
 
 class AddProductPage extends StatefulWidget {
   const AddProductPage({Key? key}) : super(key: key);
@@ -51,11 +53,11 @@ class _AddProductPageState extends State<AddProductPage> {
     
     try {
       final categories = await _categoryService.getCategories();
-      print('✅ Loaded ${categories.length} categories');
+      AppLogger.d('✅ Loaded ${categories.length} categories');
       
       // Debug: Print category details
       for (var cat in categories) {
-        print('  - Category: ${cat.categoryName} (ID: ${cat.categoryId})');
+        AppLogger.d('  - Category: ${cat.categoryName} (ID: ${cat.categoryId})');
       }
       
       setState(() {
@@ -63,7 +65,7 @@ class _AddProductPageState extends State<AddProductPage> {
         _isCategoriesLoading = false;
       });
     } catch (e) {
-      print('❌ Error loading categories: $e');
+      AppLogger.d('❌ Error loading categories: $e');
       setState(() {
         _isCategoriesLoading = false;
         _errorMessage = 'Failed to load categories: $e';
@@ -72,15 +74,15 @@ class _AddProductPageState extends State<AddProductPage> {
   }
 
   void _loadSubCategories(String categoryId) async {
-    print('🔍 Loading subcategories for categoryId: $categoryId');
+    AppLogger.d('🔍 Loading subcategories for categoryId: $categoryId');
     
     try {
       final subCategories = await _categoryService.getSubCategories(categoryId);
-      print('✅ Received ${subCategories.length} subcategories');
+      AppLogger.d('✅ Received ${subCategories.length} subcategories');
       
       // Debug: Print subcategory details
       for (var subCat in subCategories) {
-        print('  - SubCategory: ${subCat.subCategoryName} (ID: ${subCat.subCategoryId}, CategoryID: ${subCat.categoryId})');
+        AppLogger.d('  - SubCategory: ${subCat.subCategoryName} (ID: ${subCat.subCategoryId}, CategoryID: ${subCat.categoryId})');
       }
       
       setState(() {
@@ -89,7 +91,7 @@ class _AddProductPageState extends State<AddProductPage> {
         _productForm.subCategoryId = null;
       });
     } catch (e) {
-      print('❌ Error loading subcategories: $e');
+      AppLogger.d('❌ Error loading subcategories: $e');
       setState(() {
         _errorMessage = 'Failed to load subcategories: $e';
         _subCategories = [];
@@ -383,7 +385,7 @@ class _AddProductPageState extends State<AddProductPage> {
                             child: Image.network(
                               imageURL,
                               fit: BoxFit.contain,
-                              errorBuilder: (context, _, __) => const Center(
+                              errorBuilder: (context, _, _) => const Center(
                                 child: Text('Invalid image URL'),
                               ),
                             ),
@@ -412,7 +414,7 @@ class _AddProductPageState extends State<AddProductPage> {
                     labelText: 'Category *',
                     border: OutlineInputBorder(),
                   ),
-                  value: _selectedCategoryId,
+                  initialValue: _selectedCategoryId,
                   items: _isCategoriesLoading 
                     ? [const DropdownMenuItem(value: null, child: Text('Loading...'))]
                     : _categories.map((category) {
@@ -422,7 +424,7 @@ class _AddProductPageState extends State<AddProductPage> {
                         );
                       }).toList(),
                   onChanged: _isCategoriesLoading ? null : (value) {
-                    print('🔍 Category selected: $value');
+                    AppLogger.d('🔍 Category selected: $value');
                     setState(() {
                       _selectedCategoryId = value;
                       _productForm.categoryId = value ?? '';
@@ -442,7 +444,7 @@ class _AddProductPageState extends State<AddProductPage> {
                     labelText: 'SubCategory *',
                     border: OutlineInputBorder(),
                   ),
-                  value: _selectedSubCategoryId,
+                  initialValue: _selectedSubCategoryId,
                   items: _selectedCategoryId == null 
                     ? [const DropdownMenuItem(value: null, child: Text('Select a category first'))]
                     : _subCategories.isEmpty

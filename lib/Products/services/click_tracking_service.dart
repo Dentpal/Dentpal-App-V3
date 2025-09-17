@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:dentpal/utils/app_logger.dart';
 
 class ClickTrackingService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -11,7 +12,7 @@ class ClickTrackingService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        print('❌ No authenticated user for product click tracking');
+        AppLogger.d('❌ No authenticated user for product click tracking');
         return;
       }
 
@@ -22,7 +23,7 @@ class ClickTrackingService {
       // Check if user already clicked this product today using SharedPreferences
       final prefs = await SharedPreferences.getInstance();
       if (prefs.getBool(clickKey) == true) {
-        print('✅ User already clicked product $productId today');
+        AppLogger.d('✅ User already clicked product $productId today');
         return;
       }
 
@@ -34,9 +35,9 @@ class ClickTrackingService {
       // Mark this product as clicked today for this user
       await prefs.setBool(clickKey, true);
 
-      print('✅ Product click tracked for product: $productId');
+      AppLogger.d('✅ Product click tracked for product: $productId');
     } catch (e) {
-      print('❌ Error tracking product click: $e');
+      AppLogger.d('❌ Error tracking product click: $e');
     }
   }
 
@@ -45,7 +46,7 @@ class ClickTrackingService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        print('❌ No authenticated user for category click tracking');
+        AppLogger.d('❌ No authenticated user for category click tracking');
         return;
       }
 
@@ -56,7 +57,7 @@ class ClickTrackingService {
       // Check if user already clicked this category today using SharedPreferences
       final prefs = await SharedPreferences.getInstance();
       if (prefs.getBool(clickKey) == true) {
-        print('✅ User already clicked category $categoryId today');
+        AppLogger.d('✅ User already clicked category $categoryId today');
         return;
       }
 
@@ -68,9 +69,9 @@ class ClickTrackingService {
       // Mark this category as clicked today for this user
       await prefs.setBool(clickKey, true);
 
-      print('✅ Category click tracked for category: $categoryId');
+      AppLogger.d('✅ Category click tracked for category: $categoryId');
     } catch (e) {
-      print('❌ Error tracking category click: $e');
+      AppLogger.d('❌ Error tracking category click: $e');
     }
   }
 
@@ -89,9 +90,9 @@ class ClickTrackingService {
         }
       }
       
-      print('✅ Cleaned up old click tracking data');
+      AppLogger.d('✅ Cleaned up old click tracking data');
     } catch (e) {
-      print('❌ Error cleaning up click tracking data: $e');
+      AppLogger.d('❌ Error cleaning up click tracking data: $e');
     }
   }
 
@@ -114,7 +115,7 @@ class ClickTrackingService {
       final prefs = await SharedPreferences.getInstance();
       return prefs.getBool(clickKey) ?? false;
     } catch (e) {
-      print('❌ Error checking product click status: $e');
+      AppLogger.d('❌ Error checking product click status: $e');
       return false;
     }
   }
@@ -132,7 +133,7 @@ class ClickTrackingService {
       final prefs = await SharedPreferences.getInstance();
       return prefs.getBool(clickKey) ?? false;
     } catch (e) {
-      print('❌ Error checking category click status: $e');
+      AppLogger.d('❌ Error checking category click status: $e');
       return false;
     }
   }

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import '../firebase_options.dart';
+import 'package:dentpal/utils/app_logger.dart';
 
 /// This script adds sample dental products to the Firestore database
 /// Run it with: dart run lib/utils/add_sample_products.dart
@@ -304,10 +305,10 @@ Future<void> main() async {
     }
     
     count++;
-    print('Added product: ${product['name']}');
+    AppLogger.d('Added product: ${product['name']}');
   }
   
-  print('Successfully added $count products to the database.');
+  AppLogger.d('Successfully added $count products to the database.');
 }
 
 Future<String> addSampleSeller(FirebaseFirestore firestore) async {
@@ -317,7 +318,7 @@ Future<String> addSampleSeller(FirebaseFirestore firestore) async {
       .get();
   
   if (sellerQuery.docs.isNotEmpty) {
-    print('Using existing seller: DentPal Official Store');
+    AppLogger.d('Using existing seller: DentPal Official Store');
     return sellerQuery.docs.first.id;
   }
 
@@ -343,6 +344,6 @@ Future<String> addSampleSeller(FirebaseFirestore firestore) async {
     'isActive': true
   });
   
-  print('Created new seller: DentPal Official Store');
+  AppLogger.d('Created new seller: DentPal Official Store');
   return sellerRef.id;
 }

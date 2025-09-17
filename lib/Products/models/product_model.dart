@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:dentpal/utils/app_logger.dart';
 
 class Product {
   final String productId;
@@ -53,7 +54,7 @@ class Product {
         }
       }
     } catch (e) {
-      print('❌ Error parsing timestamps for product ${doc.id}: $e');
+      AppLogger.d('❌ Error parsing timestamps for product ${doc.id}: $e');
     }
     
     return Product(
@@ -154,7 +155,7 @@ class ProductVariation {
         }
       }
     } catch (e) {
-      print('❌ Error parsing numeric fields for variation ${doc.id}: $e');
+      AppLogger.d('❌ Error parsing numeric fields for variation ${doc.id}: $e');
     }
     
     return ProductVariation(

@@ -6,7 +6,7 @@ import '../firebase_options.dart';
 
 /// This is a simple admin tool to add sample products to your Firestore database
 class SeedProductsPage extends StatefulWidget {
-  const SeedProductsPage({Key? key}) : super(key: key);
+  const SeedProductsPage({super.key});
 
   @override
   _SeedProductsPageState createState() => _SeedProductsPageState();

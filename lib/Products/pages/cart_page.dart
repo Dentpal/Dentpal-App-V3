@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:dentpal/utils/app_logger.dart';
 import '../models/cart_model.dart';
 import '../services/cart_service.dart';
 import '../widgets/seller_group_widget.dart';
@@ -6,7 +7,7 @@ import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 
 class CartPage extends StatefulWidget {
-  const CartPage({Key? key, this.onBackPressed}) : super(key: key);
+  const CartPage({super.key, this.onBackPressed});
 
   // Callback for when back button is pressed
   final VoidCallback? onBackPressed;
@@ -14,13 +15,13 @@ class CartPage extends StatefulWidget {
   // Static method to mark the cart as needing refresh (only when items are actually added/removed)
   static void markCartAsStale() {
     _CartPageState._wasPopped = true;
-    print("🛒 Cart has been marked as stale, will refresh when user returns");
+    AppLogger.d("🛒 Cart has been marked as stale, will refresh when user returns");
   }
 
   // Static method to mark cart as stale specifically for item additions
   static void markCartAsStaleForItemAddition() {
     _CartPageState._wasPopped = true;
-    print("🛒 Cart marked as stale due to item addition");
+    AppLogger.d("🛒 Cart marked as stale due to item addition");
   }
 
   // Static method to optimistically add item to cart
@@ -89,19 +90,19 @@ class _CartPageState extends State<CartPage>
       _isLoading = _instance!._isLoading;
       _lastCacheTime = _instance!._lastCacheTime;
 
-      print(
+      AppLogger.d(
         "🔵 CartPage initState called, cached: ${_cachedSellerGroups != null}, items: ${_cachedSellerGroups?.length ?? 0}",
       );
       
       // Only load if we don't have any cached data
       if (_cachedSellerGroups == null) {
         _sellerGroupsFuture = _loadSellerGroups();
-        print("🔵 No cached data, loading from API");
+        AppLogger.d("🔵 No cached data, loading from API");
       }
     } else {
       // First time initialization
       _sellerGroupsFuture = _loadSellerGroups();
-      print("🔵 CartPage initState called, first time initialization");
+      AppLogger.d("🔵 CartPage initState called, first time initialization");
     }
 
     // Store this instance as the static instance
@@ -114,19 +115,19 @@ class _CartPageState extends State<CartPage>
 
     // Only refresh if we actually need to (not on normal navigation)
     if (_shouldRefreshCart()) {
-      print(
+      AppLogger.d(
         "🔄 Cart needs refresh, refreshing data",
       );
       _refreshCart();
       _wasPopped = false;
     } else {
-      print("🔵 Cart page shown via navigation, using cached data");
+      AppLogger.d("🔵 Cart page shown via navigation, using cached data");
     }
   }
 
   // Method to refresh the cart data
   void _refreshCart() {
-    print("🔄 Refreshing cart data");
+    AppLogger.d("🔄 Refreshing cart data");
     // Clear cache and reload
     _cachedSellerGroups = null;
     _cartSummary = null;
@@ -146,9 +147,9 @@ class _CartPageState extends State<CartPage>
     // Clear the static instance reference if this is the current instance
     if (_instance == this) {
       _instance = null;
-      print("🔴 CartPage dispose called, cleared static instance reference");
+      AppLogger.d("🔴 CartPage dispose called, cleared static instance reference");
     }
-    print("🔴 CartPage dispose called");
+    AppLogger.d("🔴 CartPage dispose called");
     super.dispose();
   }
 
@@ -157,22 +158,22 @@ class _CartPageState extends State<CartPage>
     if (_cachedSellerGroups != null && _lastCacheTime != null) {
       final cacheAge = DateTime.now().difference(_lastCacheTime!);
       if (cacheAge < _cacheDuration) {
-        print("🟢 Using cached seller groups: ${_cachedSellerGroups!.length} (age: ${cacheAge.inSeconds}s)");
+        AppLogger.d("🟢 Using cached seller groups: ${_cachedSellerGroups!.length} (age: ${cacheAge.inSeconds}s)");
         _updateCartSummary();
         return _cachedSellerGroups!;
       } else {
-        print(
+        AppLogger.d(
           "🟡 Cache expired (${cacheAge.inMinutes} minutes old), refreshing",
         );
       }
     } else if (_cachedSellerGroups != null) {
       // Have cached data but no timestamp - still use it for better UX
-      print("🟢 Using cached seller groups: ${_cachedSellerGroups!.length} (no timestamp)");
+      AppLogger.d("🟢 Using cached seller groups: ${_cachedSellerGroups!.length} (no timestamp)");
       _updateCartSummary();
       return _cachedSellerGroups!;
     }
 
-    print("🟡 Loading seller groups from API");
+    AppLogger.d("🟡 Loading seller groups from API");
     setState(() {
       _isLoading = true;
     });
@@ -193,7 +194,7 @@ class _CartPageState extends State<CartPage>
       setState(() {
         _isLoading = false;
       });
-      print('❌ Error loading seller groups: $e');
+      AppLogger.d('❌ Error loading seller groups: $e');
       return [];
     }
   }
@@ -201,27 +202,6 @@ class _CartPageState extends State<CartPage>
   void _updateCartSummary() {
     if (_cachedSellerGroups != null) {
       _cartSummary = CartSummary(sellerGroups: _cachedSellerGroups!);
-    }
-  }
-
-  // Helper method to save all current selection states to Firestore
-  Future<void> _saveAllSelectionStates() async {
-    if (_cachedSellerGroups == null) return;
-    
-    try {
-      Map<String, bool> allSelections = {};
-      for (var group in _cachedSellerGroups!) {
-        for (var item in group.items) {
-          allSelections[item.cartItemId] = item.isSelected;
-        }
-      }
-      
-      if (allSelections.isNotEmpty) {
-        await _cartService.batchUpdateItemSelections(allSelections);
-        print("✅ Saved all selection states to Firestore (${allSelections.length} items)");
-      }
-    } catch (e) {
-      print("❌ Error saving selection states to Firestore: $e");
     }
   }
 
@@ -234,14 +214,14 @@ class _CartPageState extends State<CartPage>
     if (_lastCacheTime != null) {
       final cacheAge = DateTime.now().difference(_lastCacheTime!);
       if (cacheAge >= _cacheDuration) {
-        print("🟡 Cache expired, should refresh");
+        AppLogger.d("🟡 Cache expired, should refresh");
         return true;
       }
     }
     
     // Only refresh if explicitly marked as stale
     if (_wasPopped) {
-      print("🟡 Cart marked as stale, should refresh");
+      AppLogger.d("🟡 Cart marked as stale, should refresh");
       return true;
     }
     
@@ -256,7 +236,7 @@ class _CartPageState extends State<CartPage>
     required CartService cartService,
   }) async {
     if (!mounted) {
-      print("⚠️ Cart page not mounted, skipping optimistic update");
+      AppLogger.d("⚠️ Cart page not mounted, skipping optimistic update");
       await cartService.addToCart(
         productId: productId,
         quantity: quantity,
@@ -278,7 +258,7 @@ class _CartPageState extends State<CartPage>
         _refreshCart();
       }
     } catch (e) {
-      print("❌ Error adding to cart: $e");
+      AppLogger.d("❌ Error adding to cart: $e");
       rethrow;
     }
   }
@@ -287,7 +267,7 @@ class _CartPageState extends State<CartPage>
     if (!mounted) return;
 
     try {
-      print(
+      AppLogger.d(
         "🛒 Updating cart item quantity: ${item.cartItemId} to $newQuantity",
       );
 
@@ -310,7 +290,7 @@ class _CartPageState extends State<CartPage>
         }
       }
     } catch (e) {
-      print("❌ Error updating item: $e");
+      AppLogger.d("❌ Error updating item: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -326,7 +306,7 @@ class _CartPageState extends State<CartPage>
     if (!mounted) return;
 
     try {
-      print("🗑️ Removing cart item: ${item.cartItemId}");
+      AppLogger.d("🗑️ Removing cart item: ${item.cartItemId}");
 
       // Remove from server
       await _cartService.removeCartItem(item.cartItemId);
@@ -351,7 +331,7 @@ class _CartPageState extends State<CartPage>
         ).showSnackBar(const SnackBar(content: Text('Item removed from cart')));
       }
     } catch (e) {
-      print("❌ Error removing item: $e");
+      AppLogger.d("❌ Error removing item: $e");
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -380,9 +360,9 @@ class _CartPageState extends State<CartPage>
       // Save to Firestore in background
       try {
         await _cartService.updateItemSelection(item.cartItemId, isSelected);
-        print("✅ Item selection saved to Firestore: ${item.cartItemId} = $isSelected");
+        AppLogger.d("✅ Item selection saved to Firestore: ${item.cartItemId} = $isSelected");
       } catch (e) {
-        print("❌ Error saving item selection to Firestore: $e");
+        AppLogger.d("❌ Error saving item selection to Firestore: $e");
         // Optionally revert the local state if Firestore update fails
         if (mounted) {
           setState(() {
@@ -422,9 +402,9 @@ class _CartPageState extends State<CartPage>
         }
         
         await _cartService.batchUpdateItemSelections(itemSelections);
-        print("✅ Group selection saved to Firestore for seller: ${sellerGroup.sellerName}");
+        AppLogger.d("✅ Group selection saved to Firestore for seller: ${sellerGroup.sellerName}");
       } catch (e) {
-        print("❌ Error saving group selection to Firestore: $e");
+        AppLogger.d("❌ Error saving group selection to Firestore: $e");
         // Revert to original states if Firestore update fails
         if (mounted) {
           setState(() {
@@ -462,7 +442,7 @@ class _CartPageState extends State<CartPage>
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
+                    color: Colors.black.withValues(alpha: 0.1),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -521,7 +501,7 @@ class _CartPageState extends State<CartPage>
   Widget _buildCartContent() {
     // Prioritize cached data for immediate display
     if (_cachedSellerGroups != null) {
-      print("🟢 Building cart content from cache (${_cachedSellerGroups!.length} seller groups)");
+      AppLogger.d("🟢 Building cart content from cache (${_cachedSellerGroups!.length} seller groups)");
       if (_cachedSellerGroups!.isEmpty) {
         return _buildEmptyCart();
       }
@@ -529,7 +509,7 @@ class _CartPageState extends State<CartPage>
     }
 
     // Only use FutureBuilder if no cached data is available
-    print("🟡 No cached data, using FutureBuilder");
+    AppLogger.d("🟡 No cached data, using FutureBuilder");
     return SliverFillRemaining(
       child: FutureBuilder<List<SellerGroup>>(
         future: _sellerGroupsFuture,
@@ -573,7 +553,7 @@ class _CartPageState extends State<CartPage>
   Widget _buildSellerGroupsListContent(List<SellerGroup> sellerGroups) {
     return RefreshIndicator(
       onRefresh: () async {
-        print("🔄 Cart pull-to-refresh triggered");
+        AppLogger.d("🔄 Cart pull-to-refresh triggered");
         _refreshCart();
         await _sellerGroupsFuture;
       },
@@ -612,7 +592,7 @@ class _CartPageState extends State<CartPage>
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AppColors.primary.withOpacity(0.1),
+                color: AppColors.primary.withValues(alpha: .1),
               ),
               child: const Icon(
                 Icons.shopping_cart_outlined,
@@ -632,7 +612,7 @@ class _CartPageState extends State<CartPage>
               'Add items to your cart to continue shopping',
               textAlign: TextAlign.center,
               style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.onSurface.withOpacity(0.7),
+                color: AppColors.onSurface.withValues(alpha: .7),
               ),
             ),
             const SizedBox(height: 32),
@@ -677,7 +657,7 @@ class _CartPageState extends State<CartPage>
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: AppColors.error.withOpacity(0.1),
+              color: AppColors.error.withValues(alpha: .1),
             ),
             child: const Icon(
               Icons.error_outline,
@@ -699,7 +679,7 @@ class _CartPageState extends State<CartPage>
               error,
               textAlign: TextAlign.center,
               style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.onSurface.withOpacity(0.7),
+                color: AppColors.onSurface.withValues(alpha: 0.7),
               ),
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
@@ -726,7 +706,7 @@ class _CartPageState extends State<CartPage>
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: AppColors.primary.withOpacity(0.1),
+              color: AppColors.primary.withValues(alpha: 0.1),
             ),
             child: const Icon(
               Icons.shopping_cart_outlined,
@@ -746,7 +726,7 @@ class _CartPageState extends State<CartPage>
             'Add items to your cart to continue shopping',
             textAlign: TextAlign.center,
             style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.onSurface.withOpacity(0.7),
+              color: AppColors.onSurface.withValues(alpha: 0.7),
             ),
           ),
           const SizedBox(height: 32),
@@ -785,7 +765,7 @@ class _CartPageState extends State<CartPage>
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 20,
             offset: const Offset(0, -5),
           ),
@@ -811,7 +791,7 @@ class _CartPageState extends State<CartPage>
                 Text(
                   '${summary.selectedItemsCount} item${summary.selectedItemsCount != 1 ? 's' : ''}',
                   style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.onSurface.withOpacity(0.6),
+                    color: AppColors.onSurface.withValues(alpha: 0.6),
                   ),
                 ),
               ],
@@ -856,7 +836,7 @@ class _CartPageState extends State<CartPage>
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color: AppColors.success.withOpacity(0.1),
+                                color: AppColors.success.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
@@ -892,7 +872,7 @@ class _CartPageState extends State<CartPage>
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: AppColors.info.withOpacity(0.1),
+                        color: AppColors.info.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
@@ -981,12 +961,11 @@ class _CartPageState extends State<CartPage>
       );
       return;
     }
-
     // TODO: Navigate to checkout page with selected items
-    print(
+    AppLogger.d(
       "Proceeding to checkout with ${_cartSummary!.selectedItemsCount} items",
     );
-    print("Total: ₱${_cartSummary!.grandTotal.toStringAsFixed(2)}");
+    AppLogger.d("Total: ₱${_cartSummary!.grandTotal.toStringAsFixed(2)}");
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -1009,7 +988,7 @@ class _CartPageState extends State<CartPage>
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: AppColors.error.withOpacity(0.1),
+                color: AppColors.error.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
@@ -1030,14 +1009,14 @@ class _CartPageState extends State<CartPage>
         content: Text(
           'Are you sure you want to clear your entire cart? This action cannot be undone.',
           style: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.onSurface.withOpacity(0.8),
+            color: AppColors.onSurface.withValues(alpha: 0.8),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             style: TextButton.styleFrom(
-              foregroundColor: AppColors.onSurface.withOpacity(0.6),
+              foregroundColor: AppColors.onSurface.withValues(alpha: 0.6),
             ),
             child: Text('Cancel', style: AppTextStyles.buttonMedium),
           ),

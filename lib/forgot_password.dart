@@ -171,7 +171,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                   width: 80,
                   height: 80,
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
+                    color: AppColors.primary.withValues(alpha: .1),
                     borderRadius: BorderRadius.circular(40),
                   ),
                   child: Icon(
@@ -268,7 +268,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                   width: 80,
                   height: 80,
                   decoration: BoxDecoration(
-                    color: AppColors.accent.withOpacity(0.1),
+                    color: AppColors.accent.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(40),
                   ),
                   child: Icon(
@@ -405,7 +405,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                       Text(
                         'Enter your email or phone number and we\'ll send a password reset link to your email.',
                         style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.surface.withOpacity(0.9),
+                          color: AppColors.surface.withValues(alpha: 0.9),
                         ),
                         textAlign: TextAlign.center,
                       ),

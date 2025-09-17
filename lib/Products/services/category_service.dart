@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/product_model.dart';
+import 'package:dentpal/utils/app_logger.dart';
 
 class CategoryService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -7,7 +8,7 @@ class CategoryService {
   // Get all categories
   Future<List<Category>> getCategories() async {
     try {
-      print('🔍 Fetching categories from Firestore...');
+      AppLogger.d('🔍 Fetching categories from Firestore...');
       
       QuerySnapshot querySnapshot = await _firestore
           .collection('Category')
@@ -18,10 +19,10 @@ class CategoryService {
           .map((doc) => Category.fromFirestore(doc))
           .toList();
       
-      print('✅ Fetched ${categories.length} categories');
+      AppLogger.d('✅ Fetched ${categories.length} categories');
       return categories;
     } catch (e) {
-      print('❌ Error fetching categories: $e');
+      AppLogger.d('❌ Error fetching categories: $e');
       return [];
     }
   }
@@ -29,7 +30,7 @@ class CategoryService {
   // Get subcategories for a specific category
   Future<List<SubCategory>> getSubCategories(String categoryId) async {
     try {
-      print('🔍 Fetching subcategories for category: $categoryId');
+      AppLogger.d('🔍 Fetching subcategories for category: $categoryId');
       
       QuerySnapshot querySnapshot = await _firestore
           .collection('Category')
@@ -42,10 +43,10 @@ class CategoryService {
           .map((doc) => SubCategory.fromFirestore(doc))
           .toList();
       
-      print('✅ Fetched ${subCategories.length} subcategories for $categoryId');
+      AppLogger.d('✅ Fetched ${subCategories.length} subcategories for $categoryId');
       return subCategories;
     } catch (e) {
-      print('❌ Error fetching subcategories: $e');
+      AppLogger.d('❌ Error fetching subcategories: $e');
       return [];
     }
   }
@@ -63,7 +64,7 @@ class CategoryService {
       }
       return null;
     } catch (e) {
-      print('❌ Error fetching category by ID: $e');
+      AppLogger.d('❌ Error fetching category by ID: $e');
       return null;
     }
   }
@@ -83,7 +84,7 @@ class CategoryService {
       }
       return null;
     } catch (e) {
-      print('❌ Error fetching subcategory by ID: $e');
+      AppLogger.d('❌ Error fetching subcategory by ID: $e');
       return null;
     }
   }
@@ -97,10 +98,10 @@ class CategoryService {
         'categoryName': categoryName,
       });
       
-      print('✅ Created category with ID: ${docRef.id}');
+      AppLogger.d('✅ Created category with ID: ${docRef.id}');
       return docRef.id;
     } catch (e) {
-      print('❌ Error creating category: $e');
+      AppLogger.d('❌ Error creating category: $e');
       return null;
     }
   }
@@ -117,10 +118,10 @@ class CategoryService {
         'categoryId': categoryId,  // Changed from 'categoryID' to 'categoryId'
       });
       
-      print('✅ Created subcategory with ID: ${docRef.id}');
+      AppLogger.d('✅ Created subcategory with ID: ${docRef.id}');
       return docRef.id;
     } catch (e) {
-      print('❌ Error creating subcategory: $e');
+      AppLogger.d('❌ Error creating subcategory: $e');
       return null;
     }
   }

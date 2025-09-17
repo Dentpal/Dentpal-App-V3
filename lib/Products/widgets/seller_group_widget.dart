@@ -12,13 +12,13 @@ class SellerGroupWidget extends StatelessWidget {
   final Function(SellerGroup) onToggleGroupSelection;
 
   const SellerGroupWidget({
-    Key? key,
+    super.key,
     required this.sellerGroup,
     required this.onUpdateQuantity,
     required this.onRemoveItem,
     required this.onToggleItemSelection,
     required this.onToggleGroupSelection,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -29,7 +29,7 @@ class SellerGroupWidget extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -95,7 +95,7 @@ class SellerGroupWidget extends StatelessWidget {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
+                        color: AppColors.primary.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
@@ -121,7 +121,7 @@ class SellerGroupWidget extends StatelessWidget {
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: AppColors.success.withOpacity(0.1),
+                          color: AppColors.success.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
@@ -145,7 +145,7 @@ class SellerGroupWidget extends StatelessWidget {
                 Text(
                   '${sellerGroup.items.length} item${sellerGroup.items.length != 1 ? 's' : ''}',
                   style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.onSurface.withOpacity(0.6),
+                    color: AppColors.onSurface.withValues(alpha: 0.6),
                   ),
                 ),
               ],
@@ -160,7 +160,7 @@ class SellerGroupWidget extends StatelessWidget {
                 Text(
                   'Shipping',
                   style: AppTextStyles.labelSmall.copyWith(
-                    color: AppColors.onSurface.withOpacity(0.6),
+                    color: AppColors.onSurface.withValues(alpha: 0.6),
                   ),
                 ),
                 Text(
@@ -314,7 +314,7 @@ class SellerGroupWidget extends StatelessWidget {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: AppColors.error.withOpacity(0.1),
+                        color: AppColors.error.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
@@ -385,7 +385,7 @@ class SellerGroupWidget extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: exceedsStock
-                  ? AppColors.error.withOpacity(0.1)
+                  ? AppColors.error.withValues(alpha: 0.1)
                   : AppColors.grey50,
             ),
             child: Text(
@@ -434,7 +434,7 @@ class SellerGroupWidget extends StatelessWidget {
               Text(
                 'Subtotal (${sellerGroup.selectedItemsCount} item${sellerGroup.selectedItemsCount != 1 ? 's' : ''})',
                 style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.onSurface.withOpacity(0.8),
+                  color: AppColors.onSurface.withValues(alpha: 0.8),
                 ),
               ),
               Text(
@@ -455,7 +455,7 @@ class SellerGroupWidget extends StatelessWidget {
                 Text(
                   'Shipping',
                   style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.onSurface.withOpacity(0.8),
+                    color: AppColors.onSurface.withValues(alpha: 0.8),
                   ),
                 ),
                 Text(
@@ -512,7 +512,7 @@ class SellerGroupWidget extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: AppColors.error.withOpacity(0.1),
+                color: AppColors.error.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Icon(
@@ -537,14 +537,14 @@ class SellerGroupWidget extends StatelessWidget {
             Text(
               'Are you sure you want to remove "${item.productName ?? 'this item'}" from your cart?',
               style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.onSurface.withOpacity(0.8),
+                color: AppColors.onSurface.withValues(alpha: 0.8),
               ),
             ),
             const SizedBox(height: 12),
             Text(
               'This action cannot be undone.',
               style: AppTextStyles.bodySmall.copyWith(
-                color: AppColors.onSurface.withOpacity(0.6),
+                color: AppColors.onSurface.withValues(alpha: 0.6),
                 fontStyle: FontStyle.italic,
               ),
             ),
@@ -556,7 +556,7 @@ class SellerGroupWidget extends StatelessWidget {
             child: Text(
               'Cancel',
               style: AppTextStyles.labelLarge.copyWith(
-                color: AppColors.onSurface.withOpacity(0.6),
+                color: AppColors.onSurface.withValues(alpha: 0.6),
               ),
             ),
           ),

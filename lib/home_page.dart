@@ -8,7 +8,7 @@ import '../../core/app_theme/app_text_styles.dart';
 import 'package:dentpal/utils/seed_products_page.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({Key? key}) : super(key: key);
+  const HomePage({super.key});
 
   @override
   _HomePageState createState() => _HomePageState();
@@ -57,7 +57,7 @@ class _HomePageState extends State<HomePage> {
 }
 
 class UserProfilePage extends StatelessWidget {
-  const UserProfilePage({Key? key}) : super(key: key);
+  const UserProfilePage({super.key});
 
   Future<void> _signOut(BuildContext context) async {
     try {

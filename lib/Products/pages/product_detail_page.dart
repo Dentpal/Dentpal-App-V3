@@ -9,11 +9,13 @@ import '../utils/cart_feedback.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import 'cart_page.dart';
+import 'package:dentpal/utils/app_logger.dart';
+
 
 class ProductDetailPage extends StatefulWidget {
   final String productId;
 
-  const ProductDetailPage({Key? key, required this.productId}) : super(key: key);
+  const ProductDetailPage({super.key, required this.productId});
 
   @override
   _ProductDetailPageState createState() => _ProductDetailPageState();
@@ -31,7 +33,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   DateTime? _lastAddToCartTime;
   
   // Cache for category names to avoid repeated Firestore calls
-  Map<String, String> _categoryNames = {};
+  final Map<String, String> _categoryNames = {};
   
   @override
   void initState() {
@@ -52,7 +54,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       
       return product;
     } catch (e) {
-      print('Error loading product: $e');
+      AppLogger.d('Error loading product: $e');
       return null;
     }
   }
@@ -69,7 +71,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       _categoryNames[categoryId] = categoryName;
       return categoryName;
     } catch (e) {
-      print('❌ Error fetching category name for $categoryId: $e');
+      AppLogger.d('❌ Error fetching category name for $categoryId: $e');
       _categoryNames[categoryId] = 'Unknown Category';
       return 'Unknown Category';
     }
@@ -174,7 +176,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.1),
+                color: Colors.red.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -195,7 +197,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
             Text(
               'Unable to load product details',
               style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.onSurface.withOpacity(0.7),
+                color: AppColors.onSurface.withValues(alpha: 0.7),
               ),
             ),
             const SizedBox(height: 32),
@@ -239,7 +241,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
+                color: AppColors.primary.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -260,7 +262,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
             Text(
               'The product you\'re looking for doesn\'t exist',
               style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.onSurface.withOpacity(0.7),
+                color: AppColors.onSurface.withValues(alpha: 0.7),
               ),
             ),
             const SizedBox(height: 32),
@@ -298,11 +300,11 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
               leading: Container(
                 margin: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.9),
+                  color: Colors.white.withValues(alpha: .9),
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
+                      color: Colors.black.withValues(alpha: .1),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -317,11 +319,11 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 Container(
                   margin: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.9),
+                    color: Colors.white.withValues(alpha: .9),
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
+                        color: Colors.black.withValues(alpha: .1),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -342,7 +344,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                       Container(
                         width: 1,
                         height: 24,
-                        color: AppColors.onSurface.withOpacity(0.1),
+                        color: AppColors.onSurface.withValues(alpha: .1),
                       ),
                       IconButton(
                         icon: const Icon(Icons.shopping_cart, color: AppColors.onSurface),
@@ -409,7 +411,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           end: Alignment.bottomCenter,
           colors: [
             AppColors.background,
-            AppColors.background.withOpacity(0.8),
+            AppColors.background.withValues(alpha: .8),
           ],
         ),
       ),
@@ -459,7 +461,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                   end: Alignment.bottomCenter,
                   colors: [
                     Colors.transparent,
-                    Colors.black.withOpacity(0.1),
+                    Colors.black.withValues(alpha: 0.1),
                   ],
                 ),
               ),
@@ -484,7 +486,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                       shape: BoxShape.circle,
                       color: isSelected 
                           ? AppColors.primary 
-                          : Colors.white.withOpacity(0.5),
+                          : Colors.white.withValues(alpha: 0.5),
                     ),
                   );
                 }).toList(),
@@ -524,7 +526,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                         return Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(
-                            color: AppColors.onSurfaceVariant.withOpacity(0.1),
+                            color: AppColors.onSurfaceVariant.withValues(alpha: .1),
                             borderRadius: BorderRadius.circular(16),
                           ),
                           child: Text(
@@ -550,10 +552,10 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
+                color: AppColors.primary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: AppColors.primary.withOpacity(0.2),
+                  color: AppColors.primary.withValues(alpha: 0.2),
                 ),
               ),
               child: Row(
@@ -577,7 +579,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                       Text(
                         'Shop',
                         style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.onSurface.withOpacity(0.7),
+                          color: AppColors.onSurface.withValues(alpha: 0.7),
                         ),
                       ),
                       Text(
@@ -593,7 +595,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.1),
+                      color: Colors.green.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
@@ -627,7 +629,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: AppColors.accent.withOpacity(0.1),
+                  color: AppColors.accent.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Icon(
@@ -672,15 +674,15 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                     height: 60,
                     margin: const EdgeInsets.only(right: 12),
                     decoration: BoxDecoration(
-                      color: isSelected ? AppColors.primary.withOpacity(0.1) : AppColors.surface,
+                      color: isSelected ? AppColors.primary.withValues(alpha: 0.1) : AppColors.surface,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: isSelected ? AppColors.primary : AppColors.onSurface.withOpacity(0.2),
+                        color: isSelected ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.2),
                         width: isSelected ? 2 : 1,
                       ),
                       boxShadow: isSelected ? [
                         BoxShadow(
-                          color: AppColors.primary.withOpacity(0.2),
+                          color: AppColors.primary.withValues(alpha: 0.2),
                           blurRadius: 6,
                           offset: const Offset(0, 1),
                         ),
@@ -745,7 +747,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: AppColors.onSurface.withOpacity(0.1),
+          color: AppColors.onSurface.withValues(alpha: 0.1),
         ),
       ),
       child: Column(
@@ -755,7 +757,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.1),
+                  color: AppColors.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Icon(
@@ -778,7 +780,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 style: AppTextStyles.bodySmall.copyWith(
                   color: _quantity >= _selectedVariation!.stock 
                       ? Colors.orange 
-                      : AppColors.onSurface.withOpacity(0.7),
+                      : AppColors.onSurface.withValues(alpha: 0.7),
                   fontWeight: _quantity >= _selectedVariation!.stock 
                       ? FontWeight.w600 
                       : FontWeight.normal,
@@ -792,7 +794,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
               // Quantity selector
               Container(
                 decoration: BoxDecoration(
-                  border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+                  border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
@@ -840,7 +842,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                   Text(
                     'Unit Price',
                     style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.onSurface.withOpacity(0.7),
+                      color: AppColors.onSurface.withValues(alpha: 0.7),
                     ),
                   ),
                   Text(
@@ -855,7 +857,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                   Text(
                     'Total',
                     style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.onSurface.withOpacity(0.7),
+                      color: AppColors.onSurface.withValues(alpha: 0.7),
                     ),
                   ),
                   Text(
@@ -883,7 +885,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: AppColors.onSurface.withOpacity(0.1),
+          color: AppColors.onSurface.withValues(alpha: 0.1),
         ),
       ),
       child: Column(
@@ -894,7 +896,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: AppColors.secondary.withOpacity(0.1),
+                  color: AppColors.secondary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Icon(
@@ -917,7 +919,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           Text(
             product.description,
             style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.onSurface.withOpacity(0.8),
+              color: AppColors.onSurface.withValues(alpha: 0.8),
               height: 1.6,
             ),
           ),
@@ -934,7 +936,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: AppColors.onSurface.withOpacity(0.1),
+          color: AppColors.onSurface.withValues(alpha: 0.1),
         ),
       ),
       child: Column(
@@ -945,7 +947,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.amber.withOpacity(0.1),
+                  color: Colors.amber.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Icon(
@@ -1005,7 +1007,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                   Text(
                     '24 reviews',
                     style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.onSurface.withOpacity(0.6),
+                      color: AppColors.onSurface.withValues(alpha: 0.6),
                     ),
                   ),
                 ],
@@ -1055,7 +1057,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.1),
+                  color: AppColors.primary.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
                 child: Center(
@@ -1095,7 +1097,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                         Text(
                           date,
                           style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.onSurface.withOpacity(0.6),
+                            color: AppColors.onSurface.withValues(alpha: 0.6),
                           ),
                         ),
                       ],
@@ -1109,7 +1111,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           Text(
             comment,
             style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.onSurface.withOpacity(0.8),
+              color: AppColors.onSurface.withValues(alpha: 0.8),
               height: 1.4,
             ),
           ),
@@ -1133,7 +1135,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.15),
+              color: Colors.black.withValues(alpha: 0.15),
               blurRadius: 12,
               offset: const Offset(0, -3),
             ),
