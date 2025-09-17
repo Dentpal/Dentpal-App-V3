@@ -4,12 +4,12 @@ import 'package:flutter/material.dart';
 import 'signup_controller.dart';
 import 'package:dentpal/core/app_theme/index.dart';
 
-class SignupStep3IdVerification extends StatefulWidget {
+class SignupStep4FaceVerification extends StatefulWidget {
   final SignupController controller;
   final VoidCallback onBack;
   final VoidCallback onNext;
 
-  const SignupStep3IdVerification({
+  const SignupStep4FaceVerification({
     super.key,
     required this.controller,
     required this.onBack,
@@ -17,10 +17,10 @@ class SignupStep3IdVerification extends StatefulWidget {
   });
 
   @override
-  State<SignupStep3IdVerification> createState() => _SignupStep3IdVerificationState();
+  State<SignupStep4FaceVerification> createState() => _SignupStep4FaceVerificationState();
 }
 
-class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
+class _SignupStep4FaceVerificationState extends State<SignupStep4FaceVerification> {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
@@ -32,7 +32,7 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // ID verification section
+          // Face verification section
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
@@ -43,20 +43,20 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
             child: Column(
               children: [
                 Icon(
-                  Icons.badge_outlined,
+                  Icons.face_retouching_natural,
                   size: 48,
                   color: AppColors.primary,
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'ID Verification',
+                  'Face Verification',
                   style: AppTextStyles.headlineSmall.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'We need to verify your identity to ensure account security and comply with regulations.',
+                  'Please take a selfie to verify your identity. This helps us ensure the security of your account.',
                   textAlign: TextAlign.center,
                   style: AppTextStyles.bodyMedium.copyWith(
                     color: AppColors.grey600,
@@ -73,13 +73,13 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
                   child: Column(
                     children: [
                       Icon(
-                        Icons.document_scanner_outlined,
+                        Icons.camera_alt_outlined,
                         size: 32,
                         color: AppColors.primary,
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Document Required',
+                        'Selfie Required',
                         style: AppTextStyles.labelLarge.copyWith(
                           fontWeight: FontWeight.w600,
                           color: AppColors.primary,
@@ -87,7 +87,7 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Please prepare a valid government-issued ID (passport, driver\'s license, or national ID card)',
+                        'Please ensure good lighting and look directly at the camera',
                         textAlign: TextAlign.center,
                         style: AppTextStyles.bodySmall.copyWith(
                           color: AppColors.primary,

@@ -3,6 +3,8 @@ import 'signup_controller.dart';
 import 'signup_step1_personal_details.dart';
 import 'signup_step2_acc_credentials.dart';
 import 'signup_step3_id_verification.dart';
+import 'signup_step4_face_verification.dart';
+import 'signup_step5_phone_verification.dart';
 import 'package:dentpal/core/app_theme/index.dart';
 
 class SignupFlow extends StatefulWidget {
@@ -18,7 +20,7 @@ class _SignupFlowState extends State<SignupFlow> {
   int _currentPage = 0;
   
   void nextPage() {
-    if (_currentPage < 2) {
+    if (_currentPage < 4) {
       _pageController.nextPage(
         duration: const Duration(milliseconds: 300),
         curve: Curves.ease,
@@ -72,6 +74,8 @@ class _SignupFlowState extends State<SignupFlow> {
                         _buildStepIndicator(0),
                         _buildStepIndicator(1),
                         _buildStepIndicator(2),
+                        _buildStepIndicator(3),
+                        _buildStepIndicator(4),
                       ],
                     ),
                     const SizedBox(height: 16),
@@ -127,6 +131,16 @@ class _SignupFlowState extends State<SignupFlow> {
                               onBack: previousPage,
                             ),
                             SignupStep3IdVerification(
+                              controller: _controller,
+                              onNext: nextPage,
+                              onBack: previousPage,
+                            ),
+                            SignupStep4FaceVerification(
+                              controller: _controller,
+                              onNext: nextPage,
+                              onBack: previousPage,
+                            ),
+                            SignupStep5PhoneVerification(
                               controller: _controller,
                               onBack: previousPage,
                             ),
@@ -193,6 +207,10 @@ class _SignupFlowState extends State<SignupFlow> {
         return 'Account Setup';
       case 2:
         return 'ID Verification';
+      case 3:
+        return 'Face Verification';
+      case 4:
+        return 'Phone Verification';
       default:
         return 'Personal Details';
     }
@@ -205,7 +223,11 @@ class _SignupFlowState extends State<SignupFlow> {
       case 1:
         return 'Create your account credentials.';
       case 2:
-        return 'Verify your identity to complete signup.';
+        return 'Verify your identity with a valid ID.';
+      case 3:
+        return 'Take a selfie to confirm your identity.';
+      case 4:
+        return 'Verify your phone number to complete signup.';
       default:
         return 'Enter your personal information to get started.';
     }
