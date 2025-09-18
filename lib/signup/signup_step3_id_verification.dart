@@ -1,7 +1,10 @@
 // ignore_for_file: deprecated_member_use
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 import 'signup_controller.dart';
+import 'id_ocr_service.dart';
 import 'package:dentpal/core/app_theme/index.dart';
 
 class SignupStep3IdVerification extends StatefulWidget {
@@ -21,6 +24,10 @@ class SignupStep3IdVerification extends StatefulWidget {
 }
 
 class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
+  File? _capturedImage;
+  bool _isProcessing = false;
+  final ImagePicker _picker = ImagePicker();
+
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
@@ -63,44 +70,232 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
                   ),
                 ),
                 const SizedBox(height: 24),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.primary.withOpacity(0.2)),
-                  ),
-                  child: Column(
-                    children: [
-                      Icon(
-                        Icons.document_scanner_outlined,
-                        size: 32,
-                        color: AppColors.primary,
+                
+                // Show captured image or capture instructions
+                if (_capturedImage != null) ...[
+                  Container(
+                    height: 200,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.grey300),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(
+                        _capturedImage!,
+                        fit: BoxFit.cover,
+                        width: double.infinity,
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Document Required',
-                        style: AppTextStyles.labelLarge.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (widget.controller.isIdVerified) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.green.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.check_circle, color: Colors.green, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'ID verified successfully!',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: Colors.green[700],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else if (widget.controller.idVerificationError != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.error.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.error.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.error_outline, color: AppColors.error, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Verification Failed',
+                                  style: AppTextStyles.labelMedium.copyWith(
+                                    color: AppColors.error,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  widget.controller.idVerificationError!,
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.error,
+                                  ),
+                                ),
+                                if (widget.controller.idVerificationError!.contains('expired')) ...[
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.warning_amber, color: Colors.orange, size: 16),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            'Please use a valid, non-expired PRC ID',
+                                            style: AppTextStyles.bodySmall.copyWith(
+                                              color: Colors.orange[700],
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                                if (widget.controller.idVerificationError!.contains('face')) ...[
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.face_retouching_natural, color: Colors.blue, size: 16),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            'Ensure your face is clearly visible in the ID photo',
+                                            style: AppTextStyles.bodySmall.copyWith(
+                                              color: Colors.blue[700],
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _isProcessing ? null : _captureImage,
+                          icon: Icon(Icons.camera_alt),
+                          label: Text('Retake Photo'),
+                          style: OutlinedButton.styleFrom(
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                            side: BorderSide(color: AppColors.primary),
+                            foregroundColor: AppColors.primary,
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Please prepare a valid government-issued ID (passport, driver\'s license, or national ID card)',
-                        textAlign: TextAlign.center,
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.primary,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _isProcessing ? null : _processImage,
+                          icon: _isProcessing 
+                              ? SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppColors.onPrimary,
+                                  ),
+                                )
+                              : Icon(Icons.document_scanner),
+                          label: Text(_isProcessing ? 'Processing...' : 'Verify ID'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: AppColors.onPrimary,
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                          ),
                         ),
                       ),
                     ],
                   ),
-                ),
+                ] else ...[
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.document_scanner_outlined,
+                          size: 32,
+                          color: AppColors.primary,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Document Required',
+                          style: AppTextStyles.labelLarge.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Please prepare a valid, non-expired government-issued ID (passport, driver\'s license, or national ID card) with a clearly visible face photo',
+                          textAlign: TextAlign.center,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _captureImage,
+                            icon: Icon(Icons.camera_alt),
+                            label: Text('Capture ID Photo'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: AppColors.onPrimary,
+                              padding: EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
           
-          const SizedBox(height: 200), // Spacer for content
+          const SizedBox(height: 32),
           
           // Action buttons
           Row(
@@ -126,10 +321,14 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
               const SizedBox(width: 16),
               Expanded(
                 child: ElevatedButton(
-                  onPressed: widget.onNext,
+                  onPressed: widget.controller.isIdVerified ? widget.onNext : null,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: AppColors.onPrimary,
+                    backgroundColor: widget.controller.isIdVerified 
+                        ? AppColors.primary 
+                        : AppColors.grey300,
+                    foregroundColor: widget.controller.isIdVerified 
+                        ? AppColors.onPrimary 
+                        : AppColors.grey600,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -149,5 +348,87 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
         ],
       ),
     );
+  }
+
+  Future<void> _captureImage() async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 80,
+        maxWidth: 1024,
+        maxHeight: 1024,
+      );
+
+      if (image != null) {
+        setState(() {
+          _capturedImage = File(image.path);
+          // Reset verification state when new image is captured
+          widget.controller.isIdVerified = false;
+          widget.controller.idVerificationError = null;
+          widget.controller.idNumber = null;
+        });
+      }
+    } catch (e) {
+      SignupController.logOcrResult('ERROR', 'Failed to capture image: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to capture image: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _processImage() async {
+    if (_capturedImage == null) return;
+
+    setState(() {
+      _isProcessing = true;
+      widget.controller.idVerificationError = null;
+    });
+
+    try {
+      final result = await IdOcrService.processIdImage(
+        _capturedImage!.path,
+        widget.controller.firstNameController.text,
+        widget.controller.lastNameController.text,
+      );
+
+      setState(() {
+        if (result.isValid) {
+          widget.controller.isIdVerified = true;
+          widget.controller.idNumber = result.registrationNumber;
+          widget.controller.idVerificationError = null;
+          widget.controller.idFaceImage = result.faceImage; // Store face image
+        } else {
+          widget.controller.isIdVerified = false;
+          widget.controller.idVerificationError = result.errorMessage;
+          widget.controller.idNumber = null;
+          widget.controller.idFaceImage = null; // Clear face image on failure
+        }
+        _isProcessing = false;
+      });
+
+      if (result.isValid && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('ID verified successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isProcessing = false;
+        widget.controller.isIdVerified = false;
+        widget.controller.idVerificationError = 'Failed to process ID: $e';
+        widget.controller.idNumber = null;
+        widget.controller.idFaceImage = null; // Clear face image on error
+      });
+
+      SignupController.logOcrResult('ERROR', 'Failed to process image: $e');
+    }
   }
 }
