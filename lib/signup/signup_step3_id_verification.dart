@@ -127,76 +127,11 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
                           Icon(Icons.error_outline, color: AppColors.error, size: 20),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Verification Failed',
-                                  style: AppTextStyles.labelMedium.copyWith(
-                                    color: AppColors.error,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  widget.controller.idVerificationError!,
-                                  style: AppTextStyles.bodySmall.copyWith(
-                                    color: AppColors.error,
-                                  ),
-                                ),
-                                if (widget.controller.idVerificationError!.contains('expired')) ...[
-                                  const SizedBox(height: 8),
-                                  Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: Colors.orange.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: Colors.orange.withOpacity(0.3)),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.warning_amber, color: Colors.orange, size: 16),
-                                        const SizedBox(width: 6),
-                                        Expanded(
-                                          child: Text(
-                                            'Please use a valid, non-expired PRC ID',
-                                            style: AppTextStyles.bodySmall.copyWith(
-                                              color: Colors.orange[700],
-                                              fontSize: 11,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                                if (widget.controller.idVerificationError!.contains('face')) ...[
-                                  const SizedBox(height: 8),
-                                  Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: Colors.blue.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.face_retouching_natural, color: Colors.blue, size: 16),
-                                        const SizedBox(width: 6),
-                                        Expanded(
-                                          child: Text(
-                                            'Ensure your face is clearly visible in the ID photo',
-                                            style: AppTextStyles.bodySmall.copyWith(
-                                              color: Colors.blue[700],
-                                              fontSize: 11,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ],
+                            child: Text(
+                              widget.controller.idVerificationError!,
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.error,
+                              ),
                             ),
                           ),
                         ],
@@ -373,7 +308,7 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to capture image: $e'),
+            content: Text('Unable to access camera. Please check permissions and try again.'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -423,7 +358,7 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
       setState(() {
         _isProcessing = false;
         widget.controller.isIdVerified = false;
-        widget.controller.idVerificationError = 'Failed to process ID: $e';
+        widget.controller.idVerificationError = 'Unable to process ID image. Please try again with better lighting.';
         widget.controller.idNumber = null;
         widget.controller.idFaceImage = null; // Clear face image on error
       });

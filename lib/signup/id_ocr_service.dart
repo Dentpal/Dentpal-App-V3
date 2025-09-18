@@ -46,7 +46,7 @@ class IdOcrService {
       if (!_isValidGovernmentId(rawText)) {
         return IdVerificationResult(
           isValid: false,
-          errorMessage: 'Invalid ID format - missing required government headers',
+          errorMessage: 'Please use a valid government-issued professional ID card.',
           registrationNumber: null,
           faceImage: null,
         );
@@ -73,7 +73,7 @@ class IdOcrService {
       SignupController.logOcrResult('ERROR', 'OCR processing failed: $e');
       return IdVerificationResult(
         isValid: false,
-        errorMessage: 'Failed to process ID image: $e',
+        errorMessage: 'Unable to process ID image. Please try again with better lighting.',
         registrationNumber: null,
         faceImage: null,
       );
@@ -371,45 +371,77 @@ class IdOcrService {
     String expectedLastName,
     String rawOcrText  // Add raw OCR text for flexible matching
   ) {
-    List<String> errors = [];
-    
-    // Check first name match - very lenient approach
-    bool firstNameFound = _flexibleNameMatch(expectedFirstName, parsedData.firstName, rawOcrText);
-    if (!firstNameFound) {
-      errors.add('First name not found anywhere in the ID');
+    // Check face detection requirement first - MANDATORY for security
+    if (parsedData.faceImage == null) {
+      SignupController.logOcrResult('ERROR', 'Face detection failed - verification cannot proceed without face detection');
+      return IdVerificationResult(
+        isValid: false,
+        errorMessage: 'No face detected in the ID image. Please ensure your photo is clearly visible.',
+        registrationNumber: null,
+        faceImage: null,
+      );
     }
     
-    // Check last name match - very lenient approach  
-    bool lastNameFound = _flexibleNameMatch(expectedLastName, parsedData.lastName, rawOcrText);
-    if (!lastNameFound) {
-      errors.add('Last name not found anywhere in the ID');
-    }
-    
-    // Check expiry date - improved logic for PRC IDs with multiple dates
+    // Check expiry date - prioritize expired ID messages
     if (parsedData.validUntil != null) {
       if (parsedData.validUntil!.isBefore(DateTime.now())) {
-        errors.add('ID has expired - all dates found are in the past');
+        return IdVerificationResult(
+          isValid: false,
+          errorMessage: 'ID has expired. Please use a valid, non-expired government ID.',
+          registrationNumber: parsedData.registrationNumber,
+          faceImage: parsedData.faceImage,
+        );
       }
     } else {
-      errors.add('Could not extract any valid dates from ID');
-    }
-    
-    // Check face detection requirement - temporarily disabled for testing
-    if (parsedData.faceImage == null) {
-      // Add a warning but don't fail verification for face detection during testing
-      SignupController.logOcrResult('WARNING', 'No face detected in the ID image - this should be improved in production');
-      // Temporarily comment out face detection requirement to test other features
-      // errors.add('No face detected in the ID image - face detection is required for verification');
+      return IdVerificationResult(
+        isValid: false,
+        errorMessage: 'Unable to read expiry date from ID. Please ensure the ID is clear and well-lit.',
+        registrationNumber: parsedData.registrationNumber,
+        faceImage: parsedData.faceImage,
+      );
     }
     
     // Check registration number
     if (parsedData.registrationNumber == null) {
-      errors.add('Could not extract registration number from ID');
+      return IdVerificationResult(
+        isValid: false,
+        errorMessage: 'Unable to read registration number. Please ensure the ID text is clear.',
+        registrationNumber: null,
+        faceImage: parsedData.faceImage,
+      );
     }
     
+    // Check name matches - combine both name checks into one user-friendly message
+    bool firstNameFound = _flexibleNameMatch(expectedFirstName, parsedData.firstName, rawOcrText);
+    bool lastNameFound = _flexibleNameMatch(expectedLastName, parsedData.lastName, rawOcrText);
+    
+    if (!firstNameFound && !lastNameFound) {
+      return IdVerificationResult(
+        isValid: false,
+        errorMessage: 'Name on ID does not match. Please ensure this is your personal ID.',
+        registrationNumber: parsedData.registrationNumber,
+        faceImage: parsedData.faceImage,
+      );
+    } else if (!firstNameFound) {
+      return IdVerificationResult(
+        isValid: false,
+        errorMessage: 'First name does not match ID. Please check your name entry.',
+        registrationNumber: parsedData.registrationNumber,
+        faceImage: parsedData.faceImage,
+      );
+    } else if (!lastNameFound) {
+      return IdVerificationResult(
+        isValid: false,
+        errorMessage: 'Last name does not match ID. Please check your name entry.',
+        registrationNumber: parsedData.registrationNumber,
+        faceImage: parsedData.faceImage,
+      );
+    }
+    
+    // All validations passed
     return IdVerificationResult(
-      isValid: errors.isEmpty,
-      errorMessage: errors.isNotEmpty ? errors.join('; ') : null,
+      isValid: true,
+      errorMessage: null,
       registrationNumber: parsedData.registrationNumber,
       faceImage: parsedData.faceImage,
     );
@@ -481,23 +513,23 @@ class IdOcrService {
       // Try first with standard settings
       final faces = await _faceDetector.processImage(inputImage);
       
-      SignupController.logOcrResult('FACE_DETECTION', 'Face detection completed. Found ${faces.length} face(s)');
+      SignupController.logOcrResult('FACE_DETECTION', 'Primary face detection completed. Found ${faces.length} face(s)');
       
       if (faces.isNotEmpty) {
         final face = faces.first;
         final boundingBox = face.boundingBox;
         
         SignupController.logOcrResult('FACE_DETECTION', 
-            'Face detected - bounding box: ${boundingBox.left}, ${boundingBox.top}, ${boundingBox.width}, ${boundingBox.height}');
+            'Face detected with primary detector - bounding box: ${boundingBox.left}, ${boundingBox.top}, ${boundingBox.width}, ${boundingBox.height}');
         
         // Return a placeholder to indicate face was detected
         return Uint8List.fromList([1]); // Placeholder indicating face detected
       }
       
       // If no faces found, try with more lenient settings
-      SignupController.logOcrResult('FACE_DETECTION', 'No faces detected in image - trying with different settings');
+      SignupController.logOcrResult('FACE_DETECTION', 'No faces detected with primary settings - trying alternate settings');
       
-      final _alternateFaceDetector = FaceDetector(
+      final _alternateFaceDetector1 = FaceDetector(
         options: FaceDetectorOptions(
           enableContours: false,
           enableLandmarks: false,
@@ -508,32 +540,67 @@ class IdOcrService {
       );
       
       try {
-        final alternateFaces = await _alternateFaceDetector.processImage(inputImage);
+        final alternateFaces1 = await _alternateFaceDetector1.processImage(inputImage);
         
-        SignupController.logOcrResult('FACE_DETECTION', 'Alternate detection found ${alternateFaces.length} face(s)');
+        SignupController.logOcrResult('FACE_DETECTION', 'Alternate detection 1 found ${alternateFaces1.length} face(s)');
         
-        if (alternateFaces.isNotEmpty) {
-          final face = alternateFaces.first;
+        if (alternateFaces1.isNotEmpty) {
+          final face = alternateFaces1.first;
           final boundingBox = face.boundingBox;
           
           SignupController.logOcrResult('FACE_DETECTION', 
-              'Face detected with alternate settings - bounding box: ${boundingBox.left}, ${boundingBox.top}, ${boundingBox.width}, ${boundingBox.height}');
+              'Face detected with alternate detector 1 - bounding box: ${boundingBox.left}, ${boundingBox.top}, ${boundingBox.width}, ${boundingBox.height}');
           
-          await _alternateFaceDetector.close();
+          await _alternateFaceDetector1.close();
           return Uint8List.fromList([1]); // Placeholder indicating face detected
         }
         
-        await _alternateFaceDetector.close();
+        await _alternateFaceDetector1.close();
       } catch (e) {
-        SignupController.logOcrResult('FACE_DETECTION', 'Alternate face detection failed: $e');
-        await _alternateFaceDetector.close();
+        SignupController.logOcrResult('FACE_DETECTION', 'Alternate face detection 1 failed: $e');
+        await _alternateFaceDetector1.close();
       }
       
-      SignupController.logOcrResult('WARNING', 'No face detected in ID image');
+      // Try with even more lenient settings
+      SignupController.logOcrResult('FACE_DETECTION', 'Trying most lenient face detection settings');
+      
+      final _alternateFaceDetector2 = FaceDetector(
+        options: FaceDetectorOptions(
+          enableContours: false,
+          enableLandmarks: false,
+          minFaceSize: 0.01,  // Very small minimum face size
+          enableClassification: false,
+          enableTracking: false,
+        ),
+      );
+      
+      try {
+        final alternateFaces2 = await _alternateFaceDetector2.processImage(inputImage);
+        
+        SignupController.logOcrResult('FACE_DETECTION', 'Most lenient detection found ${alternateFaces2.length} face(s)');
+        
+        if (alternateFaces2.isNotEmpty) {
+          final face = alternateFaces2.first;
+          final boundingBox = face.boundingBox;
+          
+          SignupController.logOcrResult('FACE_DETECTION', 
+              'Face detected with most lenient detector - bounding box: ${boundingBox.left}, ${boundingBox.top}, ${boundingBox.width}, ${boundingBox.height}');
+          
+          await _alternateFaceDetector2.close();
+          return Uint8List.fromList([1]); // Placeholder indicating face detected
+        }
+        
+        await _alternateFaceDetector2.close();
+      } catch (e) {
+        SignupController.logOcrResult('FACE_DETECTION', 'Most lenient face detection failed: $e');
+        await _alternateFaceDetector2.close();
+      }
+      
+      SignupController.logOcrResult('ERROR', 'All face detection attempts failed - no face found in ID image');
       return null;
       
     } catch (e) {
-      SignupController.logOcrResult('ERROR', 'Face detection failed: $e');
+      SignupController.logOcrResult('ERROR', 'Face detection failed with exception: $e');
       return null;
     }
   }
