@@ -210,31 +210,35 @@ class _SignupStep4FaceVerificationState extends State<SignupStep4FaceVerificatio
                     ),
                   ),
                   const SizedBox(height: 20),
-                  OutlinedButton(
-                    onPressed: () {
-                      widget.controller.clearFaceVerification();
-                      setState(() {});
-                    },
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: AppColors.primary),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: () {
+                        widget.controller.clearFaceVerification();
+                        setState(() {});
+                      },
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: AppColors.primary),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        'Retake Selfie',
+                        style: AppTextStyles.buttonLarge.copyWith(
+                          color: AppColors.primary,
+                        ),
                       ),
                     ),
-                    child: Text(
-                      'Retake Selfie',
-                      style: AppTextStyles.buttonLarge.copyWith(
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ),
+                  )
+
                 ],
               ],
             ),
           ),
           
-          const SizedBox(height: 200), // Spacer for content
+          const SizedBox(height: 30), // Spacer for content
           
           // Action buttons
           Row(
