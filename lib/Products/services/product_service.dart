@@ -326,6 +326,7 @@ class ProductService {
         
         await variationRef.set({
           'productId': productRef.id,
+          'name': variationForm.name,
           'imageURL': variationForm.imageURL,
           'price': variationForm.price,
           'stock': variationForm.stock,

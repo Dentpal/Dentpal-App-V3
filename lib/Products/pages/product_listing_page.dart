@@ -1124,6 +1124,10 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                               ),
                             ),
                             cacheManager: ProductImageCacheManager.instance,
+                            // Cache at native 720p resolution for better quality
+                            memCacheWidth: 1280,
+                            memCacheHeight: 720,
+                            filterQuality: FilterQuality.high,
                           ),
                         ),
                       ],

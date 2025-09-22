@@ -3,6 +3,7 @@ import '../models/product_form_model.dart';
 import '../models/product_model.dart';
 import '../services/product_service.dart';
 import '../services/category_service.dart';
+import '../services/image_upload_service.dart';
 import 'package:dentpal/utils/app_logger.dart';
 
 
@@ -19,11 +20,11 @@ class _AddProductPageState extends State<AddProductPage> {
   final List<VariationFormModel> _variations = [VariationFormModel()];
   final ProductService _productService = ProductService();
   final CategoryService _categoryService = CategoryService();
+  final ImageUploadService _imageUploadService = ImageUploadService();
   
   // Add controllers for all text fields
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
-  final _imageUrlController = TextEditingController();
   final List<Map<String, TextEditingController>> _variationControllers = [];
 
   bool _isLoading = false;
@@ -102,7 +103,7 @@ class _AddProductPageState extends State<AddProductPage> {
   // Initialize controllers for the first variation
   void _initializeVariationControllers() {
     _variationControllers.add({
-      'imageURL': TextEditingController(),
+      'name': TextEditingController(),
       'price': TextEditingController(text: '0'),
       'stock': TextEditingController(text: '0'),
       'sku': TextEditingController(),
@@ -118,9 +119,10 @@ class _AddProductPageState extends State<AddProductPage> {
     // Dispose all controllers to prevent memory leaks
     _nameController.dispose();
     _descriptionController.dispose();
-    _imageUrlController.dispose();
     for (var controllers in _variationControllers) {
-      controllers.values.forEach((controller) => controller.dispose());
+      for (var controller in controllers.values) {
+        controller.dispose();
+      }
     }
     super.dispose();
   }
@@ -152,7 +154,7 @@ class _AddProductPageState extends State<AddProductPage> {
       _variations.add(VariationFormModel());
       // Add controllers for the new variation
       _variationControllers.add({
-        'imageURL': TextEditingController(),
+        'name': TextEditingController(),
         'price': TextEditingController(text: '0'),
         'stock': TextEditingController(text: '0'),
         'sku': TextEditingController(),
@@ -170,7 +172,9 @@ class _AddProductPageState extends State<AddProductPage> {
         _variations.removeAt(index);
         // Dispose controllers for the removed variation
         final controllers = _variationControllers.removeAt(index);
-        controllers.values.forEach((controller) => controller.dispose());
+        for (var controller in controllers.values) {
+          controller.dispose();
+        }
       });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -179,8 +183,42 @@ class _AddProductPageState extends State<AddProductPage> {
     }
   }
 
+  // Pick main product image
+  Future<void> _pickProductImage() async {
+    final source = await _imageUploadService.showImageSourceDialog(context);
+    if (source == null) return;
+
+    final pickedFile = await _imageUploadService.pickImage(source: source);
+    if (pickedFile != null) {
+      setState(() {
+        _productForm.imageFile = pickedFile;
+      });
+    }
+  }
+
+  // Pick variation image
+  Future<void> _pickVariationImage(int index) async {
+    final source = await _imageUploadService.showImageSourceDialog(context);
+    if (source == null) return;
+
+    final pickedFile = await _imageUploadService.pickImage(source: source);
+    if (pickedFile != null) {
+      setState(() {
+        _variations[index].imageFile = pickedFile;
+      });
+    }
+  }
+
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    // Check if main product image is selected
+    if (_productForm.imageFile == null) {
+      setState(() {
+        _errorMessage = 'Please select a product image';
+      });
       return;
     }
 
@@ -190,12 +228,11 @@ class _AddProductPageState extends State<AddProductPage> {
     // Manually transfer values from controllers to models
     _productForm.name = _nameController.text;
     _productForm.description = _descriptionController.text;
-    _productForm.imageURL = _imageUrlController.text;
     
     // Set variation values from controllers
     for (int i = 0; i < _variations.length; i++) {
       final controllers = _variationControllers[i];
-      _variations[i].imageURL = controllers['imageURL']!.text;
+      _variations[i].name = controllers['name']!.text;
       _variations[i].price = double.tryParse(controllers['price']!.text) ?? 0;
       _variations[i].stock = int.tryParse(controllers['stock']!.text) ?? 0;
       _variations[i].sku = controllers['sku']!.text;
@@ -216,6 +253,46 @@ class _AddProductPageState extends State<AddProductPage> {
     });
 
     try {
+      // First, upload images to Firebase Storage
+      String productId = DateTime.now().millisecondsSinceEpoch.toString();
+      
+      // Upload main product image
+      if (_productForm.imageFile != null) {
+        final productImageBytes = await _imageUploadService.resizeImage(_productForm.imageFile!);
+        if (productImageBytes != null) {
+          final productImageUrl = await _imageUploadService.uploadImage(
+            imageBytes: productImageBytes,
+            path: ImageUploadService.getProductImagePath(productId),
+          );
+          
+          if (productImageUrl != null) {
+            _productForm.imageURL = productImageUrl;
+          } else {
+            throw Exception('Failed to upload product image');
+          }
+        } else {
+          throw Exception('Failed to resize product image');
+        }
+      }
+      
+      // Upload variation images
+      for (int i = 0; i < _variations.length; i++) {
+        if (_variations[i].imageFile != null) {
+          final variationImageBytes = await _imageUploadService.resizeImage(_variations[i].imageFile!);
+          if (variationImageBytes != null) {
+            final variationImageUrl = await _imageUploadService.uploadImage(
+              imageBytes: variationImageBytes,
+              path: ImageUploadService.getVariationImagePath(productId, i),
+            );
+            
+            if (variationImageUrl != null) {
+              _variations[i].imageURL = variationImageUrl;
+            }
+            // Note: Variation images are optional, so we don't throw an error if upload fails
+          }
+        }
+      }
+
       final result = await _productService.addProduct(_productForm, _variations);
 
       setState(() {
@@ -338,73 +415,74 @@ class _AddProductPageState extends State<AddProductPage> {
                 ),
                 const SizedBox(height: 16),
 
-                // Product Image URL
-                TextFormField(
-                  controller: _imageUrlController,
-                  decoration: const InputDecoration(
-                    labelText: 'Image URL *',
-                    border: OutlineInputBorder(),
-                    hintText: 'https://example.com/image.jpg',
+                // Product Image
+                Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey),
+                    borderRadius: BorderRadius.circular(4),
                   ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Image URL is required';
-                    }
-                    try {
-                      final uri = Uri.parse(value);
-                      if (!uri.isAbsolute) {
-                        return 'Please enter a valid URL';
-                      }
-                      return null;
-                    } catch (e) {
-                      return 'Invalid URL format';
-                    }
-                  },
-                  onChanged: (value) {
-                    // Update UI when image URL changes
-                    setState(() {});
-                  },
-                ),
-                const SizedBox(height: 16),
-
-                // Preview Image
-                Builder(
-                  builder: (context) {
-                    final imageURL = _imageUrlController.text;
-                    if (imageURL.isNotEmpty) {
-                      try {
-                        final uri = Uri.parse(imageURL);
-                        if (uri.isAbsolute) {
-                          return Container(
-                            height: 150,
-                            width: double.infinity,
-                            decoration: BoxDecoration(
-                              border: Border.all(color: Colors.grey),
-                              borderRadius: BorderRadius.circular(4),
+                  child: Column(
+                    children: [
+                      if (_productForm.imageFile != null)
+                        Container(
+                          height: 200,
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(8),
+                          child: Image.file(
+                            _productForm.imageFile!,
+                            fit: BoxFit.contain,
+                          ),
+                        )
+                      else
+                        SizedBox(
+                          height: 150,
+                          child: const Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.image, size: 48, color: Colors.grey),
+                                SizedBox(height: 8),
+                                Text('No image selected'),
+                              ],
                             ),
-                            child: Image.network(
-                              imageURL,
-                              fit: BoxFit.contain,
-                              errorBuilder: (context, _, _) => const Center(
-                                child: Text('Invalid image URL'),
+                          ),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: _pickProductImage,
+                                icon: const Icon(Icons.add_a_photo),
+                                label: Text(_productForm.imageFile != null 
+                                    ? 'Change Image' 
+                                    : 'Add Image *'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _productForm.imageFile != null 
+                                      ? Colors.blue 
+                                      : Colors.orange,
+                                  foregroundColor: Colors.white,
+                                ),
                               ),
                             ),
-                          );
-                        }
-                      } catch (_) {}
-                    }
-                    return Container(
-                      height: 150,
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey),
-                        borderRadius: BorderRadius.circular(4),
+                            if (_productForm.imageFile != null) ...[
+                              const SizedBox(width: 8),
+                              IconButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _productForm.imageFile = null;
+                                  });
+                                },
+                                icon: const Icon(Icons.delete, color: Colors.red),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
-                      child: const Center(
-                        child: Text('Enter a valid image URL to see preview'),
-                      ),
-                    );
-                  },
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 16),
 
@@ -509,13 +587,94 @@ class _AddProductPageState extends State<AddProductPage> {
                             ),
                             const SizedBox(height: 16),
                             
-                            // Variation Image URL (Optional)
+                            // Variation Name
                             TextFormField(
-                              controller: _variationControllers[index]['imageURL'],
+                              controller: _variationControllers[index]['name'],
                               decoration: const InputDecoration(
-                                labelText: 'Variation Image URL (Optional)',
+                                labelText: 'Variation Name *',
                                 border: OutlineInputBorder(),
-                                hintText: 'https://example.com/variation.jpg',
+                                hintText: 'e.g., Small, Blue, Standard',
+                              ),
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Variation name is required';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            
+                            // Variation Image (Optional)
+                            Container(
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade300),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Padding(
+                                    padding: EdgeInsets.all(8.0),
+                                    child: Text(
+                                      'Variation Image (Optional)',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                  if (_variations[index].imageFile != null)
+                                    Container(
+                                      height: 120,
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(8),
+                                      child: Image.file(
+                                        _variations[index].imageFile!,
+                                        fit: BoxFit.contain,
+                                      ),
+                                    )
+                                  else
+                                    SizedBox(
+                                      height: 80,
+                                      child: const Center(
+                                        child: Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(Icons.image, size: 32, color: Colors.grey),
+                                            Text('No image', style: TextStyle(color: Colors.grey)),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  Padding(
+                                    padding: const EdgeInsets.all(8.0),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: OutlinedButton.icon(
+                                            onPressed: () => _pickVariationImage(index),
+                                            icon: const Icon(Icons.add_a_photo),
+                                            label: Text(_variations[index].imageFile != null 
+                                                ? 'Change Image' 
+                                                : 'Add Image'),
+                                          ),
+                                        ),
+                                        if (_variations[index].imageFile != null) ...[
+                                          const SizedBox(width: 8),
+                                          IconButton(
+                                            onPressed: () {
+                                              setState(() {
+                                                _variations[index].imageFile = null;
+                                              });
+                                            },
+                                            icon: const Icon(Icons.delete, color: Colors.red),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                             const SizedBox(height: 16),

@@ -1,3 +1,4 @@
+import 'package:dentpal/core/app_theme/index.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/product_model.dart';
@@ -22,6 +23,78 @@ class ProductDetailPage extends StatefulWidget {
 }
 
 class _ProductDetailPageState extends State<ProductDetailPage> {
+  void _showFullImagePopup(String imageUrl) {
+  final TransformationController _transformationController =
+      TransformationController();
+
+  showDialog(
+    context: context,
+    barrierDismissible: true,
+    builder: (context) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => Navigator.of(context).pop(), // dismiss when tapping outside
+        child: Stack(
+          children: [
+            Center(
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 600, maxHeight: 600),
+                child: GestureDetector(
+                  onTap: () {}, // absorb taps on the image
+                  onDoubleTap: () {
+                    // Reset zoom and pan on double tap
+                    _transformationController.value = Matrix4.identity();
+                  },
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: InteractiveViewer(
+                      transformationController: _transformationController,
+                      minScale: 1.0,
+                      maxScale: 4.0,
+                      panEnabled: true,
+                      child: CachedNetworkImage(
+                        imageUrl: imageUrl,
+                        fit: BoxFit.contain,
+                        placeholder: (context, url) =>
+                            const Center(child: CircularProgressIndicator()),
+                        errorWidget: (context, url, error) => const Icon(
+                          Icons.broken_image,
+                          color: AppColors.error,
+                          size: 48,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 16,
+              right: 16,
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppColors.error,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Center(
+                    child: Icon(Icons.close, color: Colors.white, size: 28),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+
+
   final ProductService _productService = ProductService();
   final CartService _cartService = CartService();
   final CategoryService _categoryService = CategoryService();
@@ -76,7 +149,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       return 'Unknown Category';
     }
   }
-  
+
   void _addToCart(Product product) async {
     // Prevent multiple simultaneous requests
     if (_isAddingToCart) return;
@@ -400,59 +473,115 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   }
 
   Widget _buildProductImageSection(Product product) {
-    final imageUrl = _selectedVariation?.imageURL ?? product.imageURL;
-    
-    return Container(
+  final imageUrl = _selectedVariation?.imageURL ?? product.imageURL;
+  // Track swipe direction for animation
+  Offset _swipeOffset = const Offset(0.2, 0);
+
+  return GestureDetector(
+    onHorizontalDragEnd: (details) {
+      if (product.variations == null || product.variations!.isEmpty) return;
+      final currentIndex = product.variations!
+          .indexWhere((v) => v.variationId == _selectedVariation?.variationId);
+
+      if (details.primaryVelocity != null) {
+        // Swipe right (velocity > 0): previous variation
+        if (details.primaryVelocity! > 0) {
+          if (currentIndex > 0) {
+            setState(() {
+              _swipeOffset = const Offset(-0.2, 0); // slide in from left
+              _selectedVariation = product.variations![currentIndex - 1];
+              if (_quantity > _selectedVariation!.stock) {
+                _quantity = _selectedVariation!.stock > 0 ? 1 : 0;
+              }
+            });
+          }
+        }
+        // Swipe left (velocity < 0): next variation
+        else if (details.primaryVelocity! < 0) {
+          if (currentIndex < product.variations!.length - 1) {
+            setState(() {
+              _swipeOffset = const Offset(0.2, 0); // slide in from right
+              _selectedVariation = product.variations![currentIndex + 1];
+              if (_quantity > _selectedVariation!.stock) {
+                _quantity = _selectedVariation!.stock > 0 ? 1 : 0;
+              }
+            });
+          }
+        }
+      }
+    },
+    onTap: () {
+      if (imageUrl.isNotEmpty) {
+        _showFullImagePopup(imageUrl);
+      }
+    },
+    child: Container(
       width: double.infinity,
       height: 400,
       decoration: BoxDecoration(
+        color: Colors.white,
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            AppColors.background,
-            AppColors.background.withValues(alpha: .8),
+            Colors.white,
+            Colors.grey.shade50,
           ],
         ),
       ),
       child: Stack(
         children: [
-          // Main product image
           Positioned.fill(
-            child: imageUrl.isNotEmpty
-                ? CachedNetworkImage(
-                    imageUrl: imageUrl,
-                    fit: BoxFit.cover,
-                    placeholder: (context, url) => Container(
-                      color: AppColors.background,
-                      child: const Center(
-                        child: CircularProgressIndicator(),
-                      ),
-                    ),
-                    errorWidget: (context, url, error) => Container(
-                      color: AppColors.background,
-                      child: const Center(
-                        child: Icon(
-                          Icons.image_not_supported,
-                          size: 64,
-                          color: Colors.grey,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              transitionBuilder: (child, animation) {
+                final offsetAnimation = Tween<Offset>(
+                  begin: _swipeOffset,
+                  end: Offset.zero,
+                ).animate(animation);
+
+                return SlideTransition(
+                  position: offsetAnimation,
+                  child: FadeTransition(opacity: animation, child: child),
+                );
+              },
+              child: Container(
+                key: ValueKey(imageUrl), // important for detecting image change
+                width: double.infinity,
+                height: double.infinity,
+                child: imageUrl.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: imageUrl,
+                        fit: BoxFit.cover, // fill container
+                        filterQuality: FilterQuality.high,
+                        fadeInDuration: const Duration(milliseconds: 300),
+                        fadeOutDuration: const Duration(milliseconds: 100),
+                        placeholder: (context, url) => Container(
+                          color: Colors.white,
+                          child: const Center(
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                        errorWidget: (context, url, error) => Container(
+                          color: Colors.white,
+                          child: const Center(
+                            child: Icon(Icons.image_not_supported,
+                                size: 64, color: Colors.grey),
+                          ),
+                        ),
+                        memCacheWidth: 1920,
+                        memCacheHeight: 1080,
+                      )
+                    : Container(
+                        color: Colors.white,
+                        child: const Center(
+                          child: Icon(Icons.image_not_supported,
+                              size: 64, color: Colors.grey),
                         ),
                       ),
-                    ),
-                  )
-                : Container(
-                    color: AppColors.background,
-                    child: const Center(
-                      child: Icon(
-                        Icons.image_not_supported,
-                        size: 64,
-                        color: Colors.grey,
-                      ),
-                    ),
-                  ),
+              ),
+            ),
           ),
-          
-          // Gradient overlay for better visibility
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
@@ -467,8 +596,6 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
               ),
             ),
           ),
-          
-          // Image indicators if multiple variations
           if (product.variations != null && product.variations!.length > 1)
             Positioned(
               bottom: 16,
@@ -477,16 +604,19 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: product.variations!.asMap().entries.map((entry) {
-                  final isSelected = _selectedVariation?.variationId == entry.value.variationId;
-                  return Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 2),
-                    width: 8,
+                  final isSelected =
+                      _selectedVariation?.variationId == entry.value.variationId;
+
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    width: isSelected ? 28 : 8,
                     height: 8,
                     decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: isSelected 
-                          ? AppColors.primary 
+                      color: isSelected
+                          ? AppColors.primary
                           : Colors.white.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(isSelected ? 6 : 50),
                     ),
                   );
                 }).toList(),
@@ -494,8 +624,10 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
             ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
+
 
   Widget _buildProductInfo(Product product) {
     return Container(
@@ -511,13 +643,40 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      product.name,
-                      style: AppTextStyles.headlineSmall.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.onSurface,
-                      ),
-                    ),
+                    _selectedVariation != null && _selectedVariation!.name.isNotEmpty
+                        ? RichText(
+                            text: TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: product.name,
+                                  style: AppTextStyles.headlineSmall.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.onSurface,
+                                  ),
+                                ),
+                                TextSpan(
+                                  text: ' - ',
+                                  style: AppTextStyles.headlineSmall.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.onSurface,
+                                  ),
+                                ),
+                                TextSpan(
+                                  text: _selectedVariation!.name,
+                                  style: AppTextStyles.headlineSmall.copyWith(
+                                    color: AppColors.grey400,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : Text(
+                            product.name,
+                            style: AppTextStyles.headlineSmall.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.onSurface,
+                            ),
+                          ),
                     const SizedBox(height: 8),
                     FutureBuilder<String>(
                       future: _getCategoryName(product.categoryId),
@@ -691,28 +850,36 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(16),
                       child: variation.imageURL != null && variation.imageURL!.isNotEmpty
-                          ? CachedNetworkImage(
-                              imageUrl: variation.imageURL!,
-                              fit: BoxFit.cover,
-                              placeholder: (context, url) => Container(
-                                color: AppColors.background,
-                                child: const Center(
-                                  child: SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
+                          ? AspectRatio(
+                              aspectRatio: 1.0, // Force square aspect ratio
+                              child: CachedNetworkImage(
+                                imageUrl: variation.imageURL!,
+                                fit: BoxFit.cover, // Crop to fill square
+                                filterQuality: FilterQuality.high,
+                                fadeInDuration: const Duration(milliseconds: 200),
+                                placeholder: (context, url) => Container(
+                                  color: AppColors.background,
+                                  child: const Center(
+                                    child: SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    ),
                                   ),
                                 ),
-                              ),
-                              errorWidget: (context, url, error) => Container(
-                                color: AppColors.background,
-                                child: const Center(
-                                  child: Icon(
-                                    Icons.image_not_supported,
-                                    size: 20,
-                                    color: Colors.grey,
+                                errorWidget: (context, url, error) => Container(
+                                  color: AppColors.background,
+                                  child: const Center(
+                                    child: Icon(
+                                      Icons.image_not_supported,
+                                      size: 20,
+                                      color: Colors.grey,
+                                    ),
                                   ),
                                 ),
+                                // Cache at 1080p resolution for high quality thumbnails
+                                memCacheWidth: 1920,
+                                memCacheHeight: 1080,
                               ),
                             )
                           : Container(
