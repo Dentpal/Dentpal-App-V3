@@ -4,6 +4,9 @@ import '../models/product_model.dart';
 import '../services/product_service.dart';
 import '../services/category_service.dart';
 import '../services/image_upload_service.dart';
+import '../widgets/barcode_scanner_widget.dart';
+import '../../core/app_theme/app_colors.dart';
+import '../../core/app_theme/app_text_styles.dart';
 import 'package:dentpal/utils/app_logger.dart';
 
 
@@ -183,12 +186,12 @@ class _AddProductPageState extends State<AddProductPage> {
     }
   }
 
-  // Pick main product image
+  // Pick main product image with square cropping
   Future<void> _pickProductImage() async {
     final source = await _imageUploadService.showImageSourceDialog(context);
     if (source == null) return;
 
-    final pickedFile = await _imageUploadService.pickImage(source: source);
+    final pickedFile = await _imageUploadService.pickAndCropImage(source: source);
     if (pickedFile != null) {
       setState(() {
         _productForm.imageFile = pickedFile;
@@ -196,16 +199,52 @@ class _AddProductPageState extends State<AddProductPage> {
     }
   }
 
-  // Pick variation image
+  // Pick variation image with square cropping
   Future<void> _pickVariationImage(int index) async {
     final source = await _imageUploadService.showImageSourceDialog(context);
     if (source == null) return;
 
-    final pickedFile = await _imageUploadService.pickImage(source: source);
+    final pickedFile = await _imageUploadService.pickAndCropImage(source: source);
     if (pickedFile != null) {
       setState(() {
         _variations[index].imageFile = pickedFile;
       });
+    }
+  }
+
+  // Show barcode scanner for SKU
+  Future<void> _scanBarcode(int index) async {
+    try {
+      final scannedCode = await Navigator.push<String>(
+        context,
+        MaterialPageRoute(builder: (context) => const BarcodeScannerWidget()),
+      );
+      
+      if (scannedCode != null && scannedCode.isNotEmpty) {
+        setState(() {
+          _variationControllers[index]['sku']!.text = scannedCode;
+        });
+      }
+    } catch (e) {
+      AppLogger.d('Error scanning barcode: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.error, color: AppColors.error),
+                const SizedBox(width: 8),
+                const Text('Failed to scan barcode'),
+              ],
+            ),
+            backgroundColor: AppColors.error.withValues(alpha: 0.1),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+      }
     }
   }
 
@@ -258,7 +297,7 @@ class _AddProductPageState extends State<AddProductPage> {
       
       // Upload main product image
       if (_productForm.imageFile != null) {
-        final productImageBytes = await _imageUploadService.resizeImage(_productForm.imageFile!);
+        final productImageBytes = await _imageUploadService.resizeImage(_productForm.imageFile!, forceSquare: true);
         if (productImageBytes != null) {
           final productImageUrl = await _imageUploadService.uploadImage(
             imageBytes: productImageBytes,
@@ -278,7 +317,7 @@ class _AddProductPageState extends State<AddProductPage> {
       // Upload variation images
       for (int i = 0; i < _variations.length; i++) {
         if (_variations[i].imageFile != null) {
-          final variationImageBytes = await _imageUploadService.resizeImage(_variations[i].imageFile!);
+          final variationImageBytes = await _imageUploadService.resizeImage(_variations[i].imageFile!, forceSquare: true);
           if (variationImageBytes != null) {
             final variationImageUrl = await _imageUploadService.uploadImage(
               imageBytes: variationImageBytes,
@@ -324,36 +363,99 @@ class _AddProductPageState extends State<AddProductPage> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Add Product')),
-        body: const Center(child: CircularProgressIndicator()),
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          title: Text(
+            'Add Product',
+            style: AppTextStyles.titleLarge.copyWith(
+              color: AppColors.onSurface,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          backgroundColor: AppColors.surface,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        body: const Center(
+          child: CircularProgressIndicator(
+            color: AppColors.primary,
+          ),
+        ),
       );
     }
 
     if (!_isSeller) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Add Product')),
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          title: Text(
+            'Add Product',
+            style: AppTextStyles.titleLarge.copyWith(
+              color: AppColors.onSurface,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          backgroundColor: AppColors.surface,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
         body: Center(
           child: Padding(
-            padding: const EdgeInsets.all(20.0),
+            padding: const EdgeInsets.all(24.0),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.error_outline, size: 64, color: Colors.red),
-                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.error_outline,
+                    size: 64,
+                    color: AppColors.error,
+                  ),
+                ),
+                const SizedBox(height: 24),
                 Text(
                   'Seller Access Required',
-                  style: Theme.of(context).textTheme.headlineMedium,
+                  style: AppTextStyles.headlineMedium.copyWith(
+                    color: AppColors.onSurface,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
                 Text(
                   _sellerMessage,
                   textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyMedium,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.onSurface.withValues(alpha: 0.7),
+                  ),
                 ),
-                const SizedBox(height: 30),
+                const SizedBox(height: 32),
                 ElevatedButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Go Back'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: AppColors.onPrimary,
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: Text(
+                    'Go Back',
+                    style: AppTextStyles.labelLarge.copyWith(
+                      color: AppColors.onPrimary,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -363,93 +465,230 @@ class _AddProductPageState extends State<AddProductPage> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Add Product')),
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        title: Text(
+          'Add Product',
+          style: AppTextStyles.titleLarge.copyWith(
+            color: AppColors.onSurface,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        backgroundColor: AppColors.surface,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
       body: SingleChildScrollView(
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding: const EdgeInsets.all(20.0),
           child: Form(
             key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (_errorMessage.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 16.0),
-                    child: Text(
-                      _errorMessage,
-                      style: const TextStyle(color: Colors.red),
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 20.0),
+                    padding: const EdgeInsets.all(16.0),
+                    decoration: BoxDecoration(
+                      color: AppColors.error.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppColors.error.withValues(alpha: 0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          color: AppColors.error,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            _errorMessage,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.error,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
 
                 // Product Name
-                TextFormField(
-                  controller: _nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Product Name *',
-                    border: OutlineInputBorder(),
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Name is required';
-                    }
-                    return null;
-                  },
+                  child: TextFormField(
+                    controller: _nameController,
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      color: AppColors.onSurface,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Product Name *',
+                      labelStyle: AppTextStyles.labelLarge.copyWith(
+                        color: AppColors.onSurface.withValues(alpha: 0.7),
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: AppColors.surface,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 16,
+                      ),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Name is required';
+                      }
+                      return null;
+                    },
+                  ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
 
                 // Product Description
-                TextFormField(
-                  controller: _descriptionController,
-                  decoration: const InputDecoration(
-                    labelText: 'Description *',
-                    border: OutlineInputBorder(),
-                    alignLabelWithHint: true,
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                  maxLines: 4,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Description is required';
-                    }
-                    return null;
-                  },
+                  child: TextFormField(
+                    controller: _descriptionController,
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      color: AppColors.onSurface,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Description *',
+                      labelStyle: AppTextStyles.labelLarge.copyWith(
+                        color: AppColors.onSurface.withValues(alpha: 0.7),
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: AppColors.surface,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 16,
+                      ),
+                      alignLabelWithHint: true,
+                    ),
+                    maxLines: 4,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Description is required';
+                      }
+                      return null;
+                    },
+                  ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
 
                 // Product Image
                 Container(
                   width: double.infinity,
                   decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey),
-                    borderRadius: BorderRadius.circular(4),
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Text(
+                          'Product Image *',
+                          style: AppTextStyles.titleMedium.copyWith(
+                            color: AppColors.onSurface,
+                          ),
+                        ),
+                      ),
                       if (_productForm.imageFile != null)
                         Container(
-                          height: 200,
+                          height: 250,
                           width: double.infinity,
-                          padding: const EdgeInsets.all(8),
-                          child: Image.file(
-                            _productForm.imageFile!,
-                            fit: BoxFit.contain,
+                          margin: const EdgeInsets.symmetric(horizontal: 16),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            color: AppColors.surfaceVariant,
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.file(
+                              _productForm.imageFile!,
+                              fit: BoxFit.cover,
+                            ),
                           ),
                         )
                       else
-                        SizedBox(
+                        Container(
                           height: 150,
-                          child: const Center(
+                          margin: const EdgeInsets.symmetric(horizontal: 16),
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceVariant,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppColors.primary.withValues(alpha: 0.3),
+                              width: 2,
+                              style: BorderStyle.solid,
+                            ),
+                          ),
+                          child: Center(
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.image, size: 48, color: Colors.grey),
-                                SizedBox(height: 8),
-                                Text('No image selected'),
+                                Icon(
+                                  Icons.add_a_photo,
+                                  size: 48,
+                                  color: AppColors.primary.withValues(alpha: 0.7),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'No image selected',
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    color: AppColors.onSurface.withValues(alpha: 0.6),
+                                  ),
+                                ),
                               ],
                             ),
                           ),
                         ),
                       Padding(
-                        padding: const EdgeInsets.all(8.0),
+                        padding: const EdgeInsets.all(16.0),
                         child: Row(
                           children: [
                             Expanded(
@@ -458,24 +697,34 @@ class _AddProductPageState extends State<AddProductPage> {
                                 icon: const Icon(Icons.add_a_photo),
                                 label: Text(_productForm.imageFile != null 
                                     ? 'Change Image' 
-                                    : 'Add Image *'),
+                                    : 'Add Image'),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: _productForm.imageFile != null 
-                                      ? Colors.blue 
-                                      : Colors.orange,
-                                  foregroundColor: Colors.white,
+                                      ? AppColors.secondary 
+                                      : AppColors.primary,
+                                  foregroundColor: AppColors.onPrimary,
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
                                 ),
                               ),
                             ),
                             if (_productForm.imageFile != null) ...[
-                              const SizedBox(width: 8),
-                              IconButton(
-                                onPressed: () {
-                                  setState(() {
-                                    _productForm.imageFile = null;
-                                  });
-                                },
-                                icon: const Icon(Icons.delete, color: Colors.red),
+                              const SizedBox(width: 12),
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: AppColors.error.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: IconButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _productForm.imageFile = null;
+                                    });
+                                  },
+                                  icon: const Icon(Icons.delete, color: AppColors.error),
+                                ),
                               ),
                             ],
                           ],
@@ -484,78 +733,179 @@ class _AddProductPageState extends State<AddProductPage> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
 
                 // Category
-                DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(
-                    labelText: 'Category *',
-                    border: OutlineInputBorder(),
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                  initialValue: _selectedCategoryId,
-                  items: _isCategoriesLoading 
-                    ? [const DropdownMenuItem(value: null, child: Text('Loading...'))]
-                    : _categories.map((category) {
-                        return DropdownMenuItem(
-                          value: category.categoryId,
-                          child: Text(category.categoryName),
-                        );
-                      }).toList(),
-                  onChanged: _isCategoriesLoading ? null : (value) {
-                    AppLogger.d('🔍 Category selected: $value');
-                    setState(() {
-                      _selectedCategoryId = value;
-                      _productForm.categoryId = value ?? '';
-                    });
-                    if (value != null) {
-                      _loadSubCategories(value);
-                    }
-                  },
-                  validator: (_) => _productForm.validateCategory(),
+                  child: DropdownButtonFormField<String>(
+                    decoration: InputDecoration(
+                      labelText: 'Category *',
+                      labelStyle: AppTextStyles.labelLarge.copyWith(
+                        color: AppColors.onSurface.withValues(alpha: 0.7),
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: AppColors.surface,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 16,
+                      ),
+                    ),
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      color: AppColors.onSurface,
+                    ),
+                    dropdownColor: AppColors.surface,
+                    initialValue: _selectedCategoryId,
+                    items: _isCategoriesLoading 
+                      ? [DropdownMenuItem(
+                          value: null,
+                          child: Text(
+                            'Loading...',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.onSurface.withValues(alpha: 0.6),
+                            ),
+                          ),
+                        )]
+                      : _categories.map((category) {
+                          return DropdownMenuItem(
+                            value: category.categoryId,
+                            child: Text(
+                              category.categoryName,
+                              style: AppTextStyles.bodyLarge.copyWith(
+                                color: AppColors.onSurface,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                    onChanged: _isCategoriesLoading ? null : (value) {
+                      AppLogger.d('🔍 Category selected: $value');
+                      setState(() {
+                        _selectedCategoryId = value;
+                        _productForm.categoryId = value ?? '';
+                      });
+                      if (value != null) {
+                        _loadSubCategories(value);
+                      }
+                    },
+                    validator: (_) => _productForm.validateCategory(),
+                  ),
                 ),
                 
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
 
                 // SubCategory
-                DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(
-                    labelText: 'SubCategory *',
-                    border: OutlineInputBorder(),
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                  initialValue: _selectedSubCategoryId,
-                  items: _selectedCategoryId == null 
-                    ? [const DropdownMenuItem(value: null, child: Text('Select a category first'))]
-                    : _subCategories.isEmpty
-                    ? [const DropdownMenuItem(value: null, child: Text('No subcategories available'))]
-                    : _subCategories.map((subCategory) {
-                        return DropdownMenuItem(
-                          value: subCategory.subCategoryId,
-                          child: Text(subCategory.subCategoryName),
-                        );
-                      }).toList(),
-                  onChanged: _selectedCategoryId == null ? null : (value) {
-                    setState(() {
-                      _selectedSubCategoryId = value;
-                      _productForm.subCategoryId = value;
-                    });
-                  },
-                  validator: (_) => _productForm.validateSubCategory(),
+                  child: DropdownButtonFormField<String>(
+                    decoration: InputDecoration(
+                      labelText: 'SubCategory *',
+                      labelStyle: AppTextStyles.labelLarge.copyWith(
+                        color: AppColors.onSurface.withValues(alpha: 0.7),
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: AppColors.surface,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 16,
+                      ),
+                    ),
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      color: AppColors.onSurface,
+                    ),
+                    dropdownColor: AppColors.surface,
+                    initialValue: _selectedSubCategoryId,
+                    items: _selectedCategoryId == null 
+                      ? [DropdownMenuItem(
+                          value: null,
+                          child: Text(
+                            'Select a category first',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.onSurface.withValues(alpha: 0.6),
+                            ),
+                          ),
+                        )]
+                      : _subCategories.isEmpty
+                      ? [DropdownMenuItem(
+                          value: null,
+                          child: Text(
+                            'No subcategories available',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.onSurface.withValues(alpha: 0.6),
+                            ),
+                          ),
+                        )]
+                      : _subCategories.map((subCategory) {
+                          return DropdownMenuItem(
+                            value: subCategory.subCategoryId,
+                            child: Text(
+                              subCategory.subCategoryName,
+                              style: AppTextStyles.bodyLarge.copyWith(
+                                color: AppColors.onSurface,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                    onChanged: _selectedCategoryId == null ? null : (value) {
+                      setState(() {
+                        _selectedSubCategoryId = value;
+                        _productForm.subCategoryId = value;
+                      });
+                    },
+                    validator: (_) => _productForm.validateSubCategory(),
+                  ),
                 ),
                 
-                const SizedBox(height: 24),
-                const Text(
-                  'Product Variations',
-                  style: TextStyle(
-                    fontSize: 18, 
-                    fontWeight: FontWeight.bold
+                const SizedBox(height: 32),
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Product Variations',
+                        style: AppTextStyles.titleLarge.copyWith(
+                          color: AppColors.onSurface,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Add at least one variation with price, stock, and SKU',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.onSurface.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Add at least one variation with price, stock, and SKU',
-                  style: TextStyle(color: Colors.grey),
-                ),
-                const SizedBox(height: 16),
 
                 // Variations
                 ListView.builder(
@@ -563,37 +913,105 @@ class _AddProductPageState extends State<AddProductPage> {
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: _variations.length,
                   itemBuilder: (context, index) {
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 16),
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 20),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
                       child: Padding(
-                        padding: const EdgeInsets.all(16.0),
+                        padding: const EdgeInsets.all(20.0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text('Variation ${index + 1}', 
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16
-                                  )
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    'Variation ${index + 1}',
+                                    style: AppTextStyles.labelLarge.copyWith(
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
                                 ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete, color: Colors.red),
-                                  onPressed: () => _removeVariation(index),
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: AppColors.error.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: IconButton(
+                                    icon: const Icon(Icons.delete, color: AppColors.error),
+                                    onPressed: () => _removeVariation(index),
+                                  ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 20),
                             
                             // Variation Name
                             TextFormField(
                               controller: _variationControllers[index]['name'],
-                              decoration: const InputDecoration(
+                              style: AppTextStyles.bodyLarge.copyWith(
+                                color: AppColors.onSurface,
+                              ),
+                              decoration: InputDecoration(
                                 labelText: 'Variation Name *',
-                                border: OutlineInputBorder(),
+                                labelStyle: AppTextStyles.labelLarge.copyWith(
+                                  color: AppColors.onSurface.withValues(alpha: 0.7),
+                                ),
                                 hintText: 'e.g., Small, Blue, Standard',
+                                hintStyle: AppTextStyles.bodyMedium.copyWith(
+                                  color: AppColors.onSurface.withValues(alpha: 0.5),
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: AppColors.grey300,
+                                    width: 1,
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: AppColors.grey300,
+                                    width: 1,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: AppColors.primary,
+                                    width: 2,
+                                  ),
+                                ),
+                                errorBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: AppColors.error,
+                                    width: 1,
+                                  ),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
                               ),
                               validator: (value) {
                                 if (value == null || value.isEmpty) {
@@ -602,53 +1020,82 @@ class _AddProductPageState extends State<AddProductPage> {
                                 return null;
                               },
                             ),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 20),
                             
                             // Variation Image (Optional)
                             Container(
                               width: double.infinity,
                               decoration: BoxDecoration(
-                                border: Border.all(color: Colors.grey.shade300),
-                                borderRadius: BorderRadius.circular(4),
+                                color: AppColors.surfaceVariant,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: AppColors.grey300,
+                                  width: 1,
+                                ),
                               ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Padding(
-                                    padding: EdgeInsets.all(8.0),
+                                  Padding(
+                                    padding: const EdgeInsets.all(12.0),
                                     child: Text(
                                       'Variation Image (Optional)',
-                                      style: TextStyle(
-                                        fontSize: 14,
+                                      style: AppTextStyles.labelLarge.copyWith(
+                                        color: AppColors.onSurface,
                                         fontWeight: FontWeight.w500,
                                       ),
                                     ),
                                   ),
                                   if (_variations[index].imageFile != null)
                                     Container(
-                                      height: 120,
+                                      height: 250,
                                       width: double.infinity,
-                                      padding: const EdgeInsets.all(8),
-                                      child: Image.file(
-                                        _variations[index].imageFile!,
-                                        fit: BoxFit.contain,
+                                      margin: const EdgeInsets.symmetric(horizontal: 12),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(8),
+                                        color: AppColors.surface,
+                                      ),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Image.file(
+                                          _variations[index].imageFile!,
+                                          fit: BoxFit.cover,
+                                        ),
                                       ),
                                     )
                                   else
-                                    SizedBox(
+                                    Container(
                                       height: 80,
-                                      child: const Center(
+                                      margin: const EdgeInsets.symmetric(horizontal: 12),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.surface,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: AppColors.grey300,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: Center(
                                         child: Column(
                                           mainAxisAlignment: MainAxisAlignment.center,
                                           children: [
-                                            Icon(Icons.image, size: 32, color: Colors.grey),
-                                            Text('No image', style: TextStyle(color: Colors.grey)),
+                                            Icon(
+                                              Icons.image,
+                                              size: 32,
+                                              color: AppColors.onSurface.withValues(alpha: 0.5),
+                                            ),
+                                            Text(
+                                              'No image',
+                                              style: AppTextStyles.bodySmall.copyWith(
+                                                color: AppColors.onSurface.withValues(alpha: 0.5),
+                                              ),
+                                            ),
                                           ],
                                         ),
                                       ),
                                     ),
                                   Padding(
-                                    padding: const EdgeInsets.all(8.0),
+                                    padding: const EdgeInsets.all(12.0),
                                     child: Row(
                                       children: [
                                         Expanded(
@@ -658,17 +1105,34 @@ class _AddProductPageState extends State<AddProductPage> {
                                             label: Text(_variations[index].imageFile != null 
                                                 ? 'Change Image' 
                                                 : 'Add Image'),
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor: AppColors.primary,
+                                              side: BorderSide(
+                                                color: AppColors.primary,
+                                                width: 1.5,
+                                              ),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              padding: const EdgeInsets.symmetric(vertical: 8),
+                                            ),
                                           ),
                                         ),
                                         if (_variations[index].imageFile != null) ...[
                                           const SizedBox(width: 8),
-                                          IconButton(
-                                            onPressed: () {
-                                              setState(() {
-                                                _variations[index].imageFile = null;
-                                              });
-                                            },
-                                            icon: const Icon(Icons.delete, color: Colors.red),
+                                          Container(
+                                            decoration: BoxDecoration(
+                                              color: AppColors.error.withValues(alpha: 0.1),
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: IconButton(
+                                              onPressed: () {
+                                                setState(() {
+                                                  _variations[index].imageFile = null;
+                                                });
+                                              },
+                                              icon: const Icon(Icons.delete, color: AppColors.error),
+                                            ),
                                           ),
                                         ],
                                       ],
@@ -677,80 +1141,268 @@ class _AddProductPageState extends State<AddProductPage> {
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 20),
                             
-                            // Price
-                            TextFormField(
-                              controller: _variationControllers[index]['price'],
-                              decoration: const InputDecoration(
-                                labelText: 'Price *',
-                                border: OutlineInputBorder(),
-                                prefixText: '₱ ',
-                              ),
-                              keyboardType: TextInputType.number,
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Price is required';
-                                }
-                                final price = double.tryParse(value);
-                                if (price == null) {
-                                  return 'Please enter a valid number';
-                                }
-                                if (price <= 0) {
-                                  return 'Price must be greater than 0';
-                                }
-                                return null;
-                              },
+                            // Price and Stock Row
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _variationControllers[index]['price'],
+                                    style: AppTextStyles.bodyLarge.copyWith(
+                                      color: AppColors.onSurface,
+                                    ),
+                                    decoration: InputDecoration(
+                                      labelText: 'Price *',
+                                      labelStyle: AppTextStyles.labelLarge.copyWith(
+                                        color: AppColors.onSurface.withValues(alpha: 0.7),
+                                      ),
+                                      prefixText: '₱ ',
+                                      prefixStyle: AppTextStyles.bodyLarge.copyWith(
+                                        color: AppColors.primary,
+                                        fontWeight: FontWeight.w600,
+                                        fontFamily: 'Roboto',
+                                      ),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                          color: AppColors.grey300,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                          color: AppColors.grey300,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                          color: AppColors.primary,
+                                          width: 2,
+                                        ),
+                                      ),
+                                      errorBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                          color: AppColors.error,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 12,
+                                      ),
+                                    ),
+                                    keyboardType: TextInputType.number,
+                                    validator: (value) {
+                                      if (value == null || value.isEmpty) {
+                                        return 'Price is required';
+                                      }
+                                      final price = double.tryParse(value);
+                                      if (price == null) {
+                                        return 'Please enter a valid number';
+                                      }
+                                      if (price <= 0) {
+                                        return 'Price must be greater than 0';
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _variationControllers[index]['stock'],
+                                    style: AppTextStyles.bodyLarge.copyWith(
+                                      color: AppColors.onSurface,
+                                    ),
+                                    decoration: InputDecoration(
+                                      labelText: 'Stock *',
+                                      labelStyle: AppTextStyles.labelLarge.copyWith(
+                                        color: AppColors.onSurface.withValues(alpha: 0.7),
+                                      ),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                          color: AppColors.grey300,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                          color: AppColors.grey300,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                          color: AppColors.primary,
+                                          width: 2,
+                                        ),
+                                      ),
+                                      errorBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                          color: AppColors.error,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 12,
+                                      ),
+                                    ),
+                                    keyboardType: TextInputType.number,
+                                    validator: (value) {
+                                      if (value == null || value.isEmpty) {
+                                        return 'Stock is required';
+                                      }
+                                      final stock = int.tryParse(value);
+                                      if (stock == null) {
+                                        return 'Please enter a valid number';
+                                      }
+                                      if (stock < 0) {
+                                        return 'Stock cannot be negative';
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 20),
+
                             
-                            // Stock
-                            TextFormField(
-                              controller: _variationControllers[index]['stock'],
-                              decoration: const InputDecoration(
-                                labelText: 'Stock *',
-                                border: OutlineInputBorder(),
-                              ),
-                              keyboardType: TextInputType.number,
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Stock is required';
-                                }
-                                final stock = int.tryParse(value);
-                                if (stock == null) {
-                                  return 'Please enter a valid number';
-                                }
-                                if (stock < 0) {
-                                  return 'Stock cannot be negative';
-                                }
-                                return null;
-                              },
+                            // SKU with Barcode Scanner
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _variationControllers[index]['sku'],
+                                    style: AppTextStyles.bodyLarge.copyWith(
+                                      color: AppColors.onSurface,
+                                    ),
+                                    decoration: InputDecoration(
+                                      labelText: 'SKU *',
+                                      labelStyle: AppTextStyles.labelLarge.copyWith(
+                                        color: AppColors.onSurface.withValues(alpha: 0.7),
+                                      ),
+                                      hintText: 'Unique product identifier',
+                                      hintStyle: AppTextStyles.bodyMedium.copyWith(
+                                        color: AppColors.onSurface.withValues(alpha: 0.5),
+                                      ),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                          color: AppColors.grey300,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                          color: AppColors.grey300,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                          color: AppColors.primary,
+                                          width: 2,
+                                        ),
+                                      ),
+                                      errorBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                          color: AppColors.error,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 12,
+                                      ),
+                                    ),
+                                    validator: (value) {
+                                      if (value == null || value.isEmpty) {
+                                        return 'SKU is required';
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: AppColors.primary,
+                                      width: 1.5,
+                                    ),
+                                  ),
+                                  child: IconButton(
+                                    onPressed: () => _scanBarcode(index),
+                                    icon: const Icon(
+                                      Icons.qr_code_scanner,
+                                      color: AppColors.primary,
+                                    ),
+                                    tooltip: 'Scan Barcode',
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 16),
-                            
-                            // SKU
-                            TextFormField(
-                              controller: _variationControllers[index]['sku'],
-                              decoration: const InputDecoration(
-                                labelText: 'SKU *',
-                                border: OutlineInputBorder(),
-                                hintText: 'Unique product identifier',
-                              ),
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'SKU is required';
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 20),
                             
                             // Weight (Optional)
                             TextFormField(
                               controller: _variationControllers[index]['weight'],
-                              decoration: const InputDecoration(
+                              style: AppTextStyles.bodyLarge.copyWith(
+                                color: AppColors.onSurface,
+                              ),
+                              decoration: InputDecoration(
                                 labelText: 'Weight (g) (Optional)',
-                                border: OutlineInputBorder(),
+                                labelStyle: AppTextStyles.labelLarge.copyWith(
+                                  color: AppColors.onSurface.withValues(alpha: 0.7),
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: AppColors.grey300,
+                                    width: 1,
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: AppColors.grey300,
+                                    width: 1,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: AppColors.primary,
+                                    width: 2,
+                                  ),
+                                ),
+                                errorBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: AppColors.error,
+                                    width: 1,
+                                  ),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
                               ),
                               keyboardType: TextInputType.number,
                               validator: (value) {
@@ -766,16 +1418,17 @@ class _AddProductPageState extends State<AddProductPage> {
                                 return null;
                               },
                             ),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 20),
                             
                             // Dimensions
-                            const Text('Dimensions (Optional)', 
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500
-                              )
+                            Text(
+                              'Dimensions (Optional)',
+                              style: AppTextStyles.titleSmall.copyWith(
+                                color: AppColors.onSurface,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 12),
                             
                             // Dimensions fields
                             Row(
@@ -783,9 +1436,39 @@ class _AddProductPageState extends State<AddProductPage> {
                                 Expanded(
                                   child: TextFormField(
                                     controller: _variationControllers[index]['length'],
-                                    decoration: const InputDecoration(
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      color: AppColors.onSurface,
+                                    ),
+                                    decoration: InputDecoration(
                                       labelText: 'Length (cm)',
-                                      border: OutlineInputBorder(),
+                                      labelStyle: AppTextStyles.labelMedium.copyWith(
+                                        color: AppColors.onSurface.withValues(alpha: 0.7),
+                                      ),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: BorderSide(
+                                          color: AppColors.grey300,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: BorderSide(
+                                          color: AppColors.grey300,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: BorderSide(
+                                          color: AppColors.primary,
+                                          width: 2,
+                                        ),
+                                      ),
+                                      contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 10,
+                                      ),
                                     ),
                                     keyboardType: TextInputType.number,
                                     validator: (value) {
@@ -799,13 +1482,43 @@ class _AddProductPageState extends State<AddProductPage> {
                                     },
                                   ),
                                 ),
-                                const SizedBox(width: 8),
+                                const SizedBox(width: 12),
                                 Expanded(
                                   child: TextFormField(
                                     controller: _variationControllers[index]['width'],
-                                    decoration: const InputDecoration(
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      color: AppColors.onSurface,
+                                    ),
+                                    decoration: InputDecoration(
                                       labelText: 'Width (cm)',
-                                      border: OutlineInputBorder(),
+                                      labelStyle: AppTextStyles.labelMedium.copyWith(
+                                        color: AppColors.onSurface.withValues(alpha: 0.7),
+                                      ),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: BorderSide(
+                                          color: AppColors.grey300,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: BorderSide(
+                                          color: AppColors.grey300,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: BorderSide(
+                                          color: AppColors.primary,
+                                          width: 2,
+                                        ),
+                                      ),
+                                      contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 10,
+                                      ),
                                     ),
                                     keyboardType: TextInputType.number,
                                     validator: (value) {
@@ -819,13 +1532,43 @@ class _AddProductPageState extends State<AddProductPage> {
                                     },
                                   ),
                                 ),
-                                const SizedBox(width: 8),
+                                const SizedBox(width: 12),
                                 Expanded(
                                   child: TextFormField(
                                     controller: _variationControllers[index]['height'],
-                                    decoration: const InputDecoration(
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      color: AppColors.onSurface,
+                                    ),
+                                    decoration: InputDecoration(
                                       labelText: 'Height (cm)',
-                                      border: OutlineInputBorder(),
+                                      labelStyle: AppTextStyles.labelMedium.copyWith(
+                                        color: AppColors.onSurface.withValues(alpha: 0.7),
+                                      ),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: BorderSide(
+                                          color: AppColors.grey300,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: BorderSide(
+                                          color: AppColors.grey300,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: BorderSide(
+                                          color: AppColors.primary,
+                                          width: 2,
+                                        ),
+                                      ),
+                                      contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 10,
+                                      ),
                                     ),
                                     keyboardType: TextInputType.number,
                                     validator: (value) {
@@ -849,27 +1592,76 @@ class _AddProductPageState extends State<AddProductPage> {
                 ),
                 
                 // Add Variation Button
-                OutlinedButton.icon(
-                  onPressed: _addVariation,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add Variation'),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  child: OutlinedButton.icon(
+                    onPressed: _addVariation,
+                    icon: const Icon(Icons.add),
+                    label: Text(
+                      'Add Variation',
+                      style: AppTextStyles.labelLarge.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                      side: BorderSide(
+                        color: AppColors.primary,
+                        width: 2,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 16,
+                      ),
+                    ),
                   ),
                 ),
 
-                const SizedBox(height: 32),
+                const SizedBox(height: 12),
                 
                 // Submit Button
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _submitForm,
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    gradient: _isLoading ? null : AppColors.primaryGradient,
+                    color: _isLoading ? AppColors.grey300 : null,
                   ),
-                  child: _isLoading
-                      ? const CircularProgressIndicator()
-                      : const Text('Add Product'),
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _submitForm,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      foregroundColor: AppColors.onPrimary,
+                      shadowColor: Colors.transparent,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                    ),
+                    child: _isLoading
+                        ? SizedBox(
+                            height: 24,
+                            width: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                AppColors.onPrimary,
+                              ),
+                            ),
+                          )
+                        : Text(
+                            'Add Product',
+                            style: AppTextStyles.labelLarge.copyWith(
+                              color: AppColors.onPrimary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                  ),
                 ),
+                const SizedBox(height: 24),
               ],
             ),
           ),

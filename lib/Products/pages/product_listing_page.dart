@@ -27,7 +27,10 @@ class ProductImageCacheManager {
 }
 
 class ProductListingPage extends StatefulWidget {
-  const ProductListingPage({super.key});
+  const ProductListingPage({super.key, this.isStandalone = false});
+
+  // Flag to indicate if this page is used standalone (not within bottom navigation)
+  final bool isStandalone;
 
   @override
   _ProductListingPageState createState() => _ProductListingPageState();
@@ -381,14 +384,248 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     }
   }
   
+  // Helper method to compare product lists for change detection
+  bool _hasDataChanged(List<Product> oldProducts, List<Product> newProducts) {
+    if (oldProducts.length != newProducts.length) {
+      AppLogger.d('🔍 Data changed: Product count differs (${oldProducts.length} vs ${newProducts.length})');
+      return true;
+    }
+    
+    for (int i = 0; i < oldProducts.length; i++) {
+      final oldProduct = oldProducts[i];
+      final newProduct = newProducts[i];
+      
+      if (oldProduct.productId != newProduct.productId ||
+          oldProduct.name != newProduct.name ||
+          oldProduct.lowestPrice != newProduct.lowestPrice ||
+          oldProduct.imageURL != newProduct.imageURL ||
+          oldProduct.categoryId != newProduct.categoryId) {
+        AppLogger.d('🔍 Data changed: Product ${oldProduct.name} has differences');
+        return true;
+      }
+    }
+    
+    return false;
+  }
+  
+  // Helper method to compare category data for changes
+  bool _hasCategoryDataChanged(Map<String, String> oldMapping, Map<String, String> newMapping) {
+    if (oldMapping.length != newMapping.length) {
+      AppLogger.d('🔍 Categories changed: Count differs (${oldMapping.length} vs ${newMapping.length})');
+      return true;
+    }
+    
+    for (final entry in oldMapping.entries) {
+      if (newMapping[entry.key] != entry.value) {
+        AppLogger.d('🔍 Categories changed: ${entry.key} mapping differs');
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  // Handle pull-to-refresh with cache-first approach and change detection
+  Future<void> _handleRefresh() async {
+    AppLogger.d('🔄 ProductListingPage: Pull-to-refresh triggered (cache-first approach)');
+    
+    try {
+      // Keep current data as backup
+      final currentProducts = List<Product>.from(_products);
+      final currentCategories = Map<String, String>.from(_categoryNameToId);
+      final currentTimestamp = _cacheTimestamp;
+      
+      AppLogger.d('📋 Current cache: ${currentProducts.length} products, ${currentCategories.length} categories');
+      
+      // Fetch fresh data from Firebase
+      AppLogger.d('🌐 Fetching fresh data from Firebase...');
+      final result = await _productService.getProductsPaginated(
+        limit: _pageSize,
+        categoryId: null,
+      );
+      
+      final freshProducts = result['products'] as List<Product>;
+      
+      // Fetch fresh categories
+      Map<String, String> freshCategoryMapping = {};
+      Map<String, String> freshCategoryIdToName = {};
+      List<String> freshCategoriesList = ['All'];
+      
+      try {
+        final allCategories = await _categoryService.getCategories();
+        for (var category in allCategories) {
+          freshCategoriesList.add(category.categoryName);
+          freshCategoryMapping[category.categoryName] = category.categoryId;
+          freshCategoryIdToName[category.categoryId] = category.categoryName;
+        }
+        AppLogger.d('📂 Fetched ${allCategories.length} fresh categories');
+      } catch (e) {
+        AppLogger.d('❌ Error fetching fresh categories: $e');
+        // Keep existing categories on error
+        freshCategoryMapping = currentCategories;
+        freshCategoriesList = _categories;
+      }
+      
+      // Compare data for changes
+      final hasProductChanges = _hasDataChanged(currentProducts, freshProducts);
+      final hasCategoryChanges = _hasCategoryDataChanged(currentCategories, freshCategoryMapping);
+      final hasAnyChanges = hasProductChanges || hasCategoryChanges;
+      
+      if (hasAnyChanges || currentTimestamp == null || _isCacheExpired()) {
+        AppLogger.d('🔄 Changes detected or cache expired - updating data');
+        
+        // Update with fresh data
+        setState(() {
+          _products = freshProducts;
+          _lastDocument = result['lastDocument'] as DocumentSnapshot?;
+          _hasMore = result['hasMore'] as bool;
+          _categories = freshCategoriesList;
+          _categoryNameToId = freshCategoryMapping;
+          _categoryIdToName = freshCategoryIdToName;
+          _cacheTimestamp = DateTime.now();
+          _errorMessage = null;
+        });
+        
+        // Update static instance
+        if (_instance != null) {
+          _instance!._products = _products;
+          _instance!._lastDocument = _lastDocument;
+          _instance!._hasMore = _hasMore;
+          _instance!._categories = _categories;
+          _instance!._categoryNameToId = _categoryNameToId;
+          _instance!._categoryIdToName = _categoryIdToName;
+          _instance!._cacheTimestamp = _cacheTimestamp;
+        }
+        
+        // Clear image cache only if there are actual changes
+        if (hasProductChanges) {
+          AppLogger.d('🗑️ Clearing image cache due to product changes');
+          await ProductImageCacheManager.instance.emptyCache();
+        }
+        
+        AppLogger.d('✅ Data updated: ${freshProducts.length} products, ${freshCategoriesList.length - 1} categories');
+      } else {
+        // No changes detected, just refresh timestamp
+        setState(() {
+          _cacheTimestamp = DateTime.now();
+        });
+        
+        // Update static instance timestamp
+        if (_instance != null) {
+          _instance!._cacheTimestamp = _cacheTimestamp;
+        }
+        
+        AppLogger.d('ℹ️ No changes detected - cache timestamp refreshed');
+      }
+      
+    } catch (e) {
+      AppLogger.d('❌ Refresh error: $e');
+      AppLogger.d('Stack trace: ${StackTrace.current}');
+      
+      // Keep existing data on error, but show error state if we have no data
+      if (_products.isEmpty) {
+        setState(() {
+          _errorMessage = 'Failed to refresh data: ${e.toString()}';
+        });
+      }
+    }
+    
+    AppLogger.d('✅ ProductListingPage: Pull-to-refresh completed');
+  }
+
+  Future<bool> _showExitConfirmation() async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.exit_to_app,
+                color: AppColors.warning,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Exit App',
+              style: AppTextStyles.titleMedium.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to exit the app?',
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: AppColors.onSurface.withValues(alpha: 0.8),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.onSurface.withValues(alpha: 0.6),
+            ),
+            child: Text('Cancel', style: AppTextStyles.buttonMedium),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.warning,
+              foregroundColor: AppColors.onPrimary,
+              elevation: 0,
+            ),
+            child: Text('Exit', style: AppTextStyles.buttonMedium),
+          ),
+        ],
+      ),
+    ) ?? false;
+  }
+  
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
+    
+    // Only wrap with PopScope if used standalone (not within home page navigation)
+    if (!widget.isStandalone) {
+      return _buildScaffold();
+    }
+    
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        
+        final shouldExit = await _showExitConfirmation();
+        if (shouldExit && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: _buildScaffold(),
+    );
+  }
+
+  Widget _buildScaffold() {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: CustomScrollView(
-        controller: _scrollController,
-        slivers: [
+      body: RefreshIndicator(
+        onRefresh: _handleRefresh,
+        color: AppColors.primary,
+        backgroundColor: AppColors.surface,
+        displacement: 40,
+        strokeWidth: 2.5,
+        child: CustomScrollView(
+          controller: _scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
           // Modern SliverAppBar with gradient
           SliverAppBar(
             expandedHeight: 60,
@@ -786,34 +1023,32 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     sliver: _buildModernProductGrid(),
                   ),
-        ],
+          ],
+        ),
       ),
-      floatingActionButton: () {
-        AppLogger.d('🔍 ProductListingPage: Building FAB - _isSeller: $_isSeller');
-        return _isSeller ? Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.primary.withValues(alpha: 0.3),
-                blurRadius: 12,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: FloatingActionButton(
-            onPressed: () {
-              AppLogger.d('🔍 ProductListingPage: FAB pressed - navigating to add-product');
-              Navigator.pushNamed(context, '/add-product');
-            },
-            backgroundColor: AppColors.primary,
-            foregroundColor: AppColors.onPrimary,
-            elevation: 0,
-            highlightElevation: 0,
-            child: const Icon(Icons.add),
-          ),
-        ) : null;
-      }(),
+      floatingActionButton: _isSeller ? Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withValues(alpha: 0.3),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: FloatingActionButton(
+          onPressed: () {
+            AppLogger.d('🔍 ProductListingPage: FAB pressed - navigating to add-product');
+            Navigator.pushNamed(context, '/add-product');
+          },
+          backgroundColor: AppColors.primary,
+          foregroundColor: AppColors.onPrimary,
+          elevation: 0,
+          highlightElevation: 0,
+          child: const Icon(Icons.add),
+        ),
+      ) : null,
     );
   }
 

@@ -228,6 +228,119 @@ class _CartPageState extends State<CartPage>
     return false;
   }
 
+  // Cache-first refresh with change detection
+  Future<void> _handleRefresh() async {
+    AppLogger.d("🔄 Cart refresh started - cache-first approach");
+    
+    try {
+      // Store current cached data for comparison
+      final currentSellerGroups = _cachedSellerGroups;
+      
+      // Fetch new data from API
+      final newSellerGroups = await _cartService.getCartItemsGroupedBySeller();
+      
+      // Compare with cached data
+      if (currentSellerGroups != null && _hasSellerGroupsDataChanged(currentSellerGroups, newSellerGroups)) {
+        AppLogger.d("🔄 Cart data has changed, updating UI and cache");
+        
+        // Update cache and UI
+        _cachedSellerGroups = newSellerGroups;
+        _lastCacheTime = DateTime.now();
+        _updateCartSummary();
+        
+        if (mounted) {
+          setState(() {
+            // UI will rebuild with new data
+          });
+        }
+      } else {
+        AppLogger.d("✅ Cart data unchanged, keeping existing cache");
+      }
+      
+      // Reset the stale flag since we've refreshed
+      _wasPopped = false;
+      
+    } catch (e) {
+      AppLogger.d("❌ Error during cart refresh: $e");
+      rethrow;
+    }
+  }
+
+  // Helper method to compare seller groups data
+  bool _hasSellerGroupsDataChanged(List<SellerGroup> oldData, List<SellerGroup> newData) {
+    if (oldData.length != newData.length) {
+      AppLogger.d("🔍 Seller groups count changed: ${oldData.length} -> ${newData.length}");
+      return true;
+    }
+    
+    // Create maps for easier comparison
+    final oldMap = <String, SellerGroup>{};
+    final newMap = <String, SellerGroup>{};
+    
+    for (var group in oldData) {
+      oldMap[group.sellerId] = group;
+    }
+    
+    for (var group in newData) {
+      newMap[group.sellerId] = group;
+    }
+    
+    // Check if seller IDs are the same
+    if (oldMap.keys.toSet().difference(newMap.keys.toSet()).isNotEmpty ||
+        newMap.keys.toSet().difference(oldMap.keys.toSet()).isNotEmpty) {
+      AppLogger.d("🔍 Seller groups composition changed");
+      return true;
+    }
+    
+    // Compare each seller group's items
+    for (var sellerId in oldMap.keys) {
+      final oldGroup = oldMap[sellerId]!;
+      final newGroup = newMap[sellerId]!;
+      
+      if (oldGroup.items.length != newGroup.items.length) {
+        AppLogger.d("🔍 Items count changed for seller $sellerId: ${oldGroup.items.length} -> ${newGroup.items.length}");
+        return true;
+      }
+      
+      // Create maps for cart items comparison
+      final oldItemsMap = <String, CartItem>{};
+      final newItemsMap = <String, CartItem>{};
+      
+      for (var item in oldGroup.items) {
+        oldItemsMap[item.cartItemId] = item;
+      }
+      
+      for (var item in newGroup.items) {
+        newItemsMap[item.cartItemId] = item;
+      }
+      
+      // Check if cart item IDs are the same
+      if (oldItemsMap.keys.toSet().difference(newItemsMap.keys.toSet()).isNotEmpty ||
+          newItemsMap.keys.toSet().difference(oldItemsMap.keys.toSet()).isNotEmpty) {
+        AppLogger.d("🔍 Cart items composition changed for seller $sellerId");
+        return true;
+      }
+      
+      // Compare individual cart items
+      for (var cartItemId in oldItemsMap.keys) {
+        final oldItem = oldItemsMap[cartItemId]!;
+        final newItem = newItemsMap[cartItemId]!;
+        
+        if (oldItem.quantity != newItem.quantity ||
+            oldItem.isSelected != newItem.isSelected ||
+            oldItem.productPrice != newItem.productPrice ||
+            oldItem.productName != newItem.productName ||
+            oldItem.availableStock != newItem.availableStock) {
+          AppLogger.d("🔍 Cart item details changed for item $cartItemId");
+          return true;
+        }
+      }
+    }
+    
+    AppLogger.d("✅ No changes detected in seller groups data");
+    return false;
+  }
+
   // Instance method to handle optimistic cart additions
   Future<void> _addItemOptimisticallyInternal({
     required String productId,
@@ -419,10 +532,87 @@ class _CartPageState extends State<CartPage>
     }
   }
 
+  Future<bool> _showExitConfirmation() async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.exit_to_app,
+                color: AppColors.warning,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Exit App',
+              style: AppTextStyles.titleMedium.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to exit the app?',
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: AppColors.onSurface.withValues(alpha: 0.8),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.onSurface.withValues(alpha: 0.6),
+            ),
+            child: Text('Cancel', style: AppTextStyles.buttonMedium),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.warning,
+              foregroundColor: AppColors.onPrimary,
+              elevation: 0,
+            ),
+            child: Text('Exit', style: AppTextStyles.buttonMedium),
+          ),
+        ],
+      ),
+    ) ?? false;
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
 
+    // Only wrap with PopScope if not used within home page navigation
+    if (widget.onBackPressed != null) {
+      return _buildScaffold();
+    }
+
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
+        
+        final shouldExit = await _showExitConfirmation();
+        if (shouldExit && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: _buildScaffold(),
+    );
+  }
+
+  Widget _buildScaffold() {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: CustomScrollView(
@@ -496,9 +686,7 @@ class _CartPageState extends State<CartPage>
       ),
       bottomNavigationBar: _buildBottomNavigationBar(),
     );
-  }
-
-  Widget _buildCartContent() {
+  }  Widget _buildCartContent() {
     // Prioritize cached data for immediate display
     if (_cachedSellerGroups != null) {
       AppLogger.d("🟢 Building cart content from cache (${_cachedSellerGroups!.length} seller groups)");
@@ -533,30 +721,36 @@ class _CartPageState extends State<CartPage>
   }
 
   Widget _buildSellerGroupsList(List<SellerGroup> sellerGroups) {
-    return SliverPadding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      sliver: SliverList(
-        delegate: SliverChildBuilderDelegate((context, index) {
-          final sellerGroup = sellerGroups[index];
-          return SellerGroupWidget(
-            sellerGroup: sellerGroup,
-            onUpdateQuantity: _onUpdateQuantity,
-            onRemoveItem: _onRemoveItem,
-            onToggleItemSelection: _onToggleItemSelection,
-            onToggleGroupSelection: _onToggleGroupSelection,
-          );
-        }, childCount: sellerGroups.length),
+    return SliverFillRemaining(
+      child: RefreshIndicator(
+        onRefresh: _handleRefresh,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate((context, index) {
+                  final sellerGroup = sellerGroups[index];
+                  return SellerGroupWidget(
+                    sellerGroup: sellerGroup,
+                    onUpdateQuantity: _onUpdateQuantity,
+                    onRemoveItem: _onRemoveItem,
+                    onToggleItemSelection: _onToggleItemSelection,
+                    onToggleGroupSelection: _onToggleGroupSelection,
+                  );
+                }, childCount: sellerGroups.length),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildSellerGroupsListContent(List<SellerGroup> sellerGroups) {
     return RefreshIndicator(
-      onRefresh: () async {
-        AppLogger.d("🔄 Cart pull-to-refresh triggered");
-        _refreshCart();
-        await _sellerGroupsFuture;
-      },
+      onRefresh: _handleRefresh,
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
         itemCount: sellerGroups.length,

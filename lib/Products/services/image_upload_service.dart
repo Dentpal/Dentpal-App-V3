@@ -3,8 +3,10 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:image/image.dart' as img;
 import 'package:dentpal/utils/app_logger.dart';
+import '../../core/app_theme/app_colors.dart';
 
 class ImageUploadService {
   final FirebaseStorage _storage = FirebaseStorage.instance;
@@ -29,8 +31,62 @@ class ImageUploadService {
     }
   }
 
-  /// Resize image to 720p (1280x720) while maintaining aspect ratio
-  Future<Uint8List?> resizeImage(File imageFile) async {
+  /// Pick and crop image to square
+  Future<File?> pickAndCropImage({required ImageSource source}) async {
+    try {
+      // First pick the image
+      final XFile? pickedFile = await _picker.pickImage(
+        source: source,
+        maxWidth: 2048,
+        maxHeight: 2048,
+        imageQuality: 90,
+      );
+
+      if (pickedFile == null) return null;
+
+      // Then crop it to square
+      final croppedFile = await ImageCropper().cropImage(
+        sourcePath: pickedFile.path,
+        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'Crop Image',
+            toolbarColor: AppColors.primary,
+            toolbarWidgetColor: AppColors.onPrimary,
+            initAspectRatio: CropAspectRatioPreset.square,
+            lockAspectRatio: true,
+            aspectRatioPresets: [CropAspectRatioPreset.square],
+            showCropGrid: true,
+            hideBottomControls: false,
+            cropGridStrokeWidth: 2,
+            cropGridColor: AppColors.primary,
+            activeControlsWidgetColor: AppColors.primary,
+          ),
+          IOSUiSettings(
+            title: 'Crop Image',
+            aspectRatioLockEnabled: true,
+            resetAspectRatioEnabled: false,
+            aspectRatioPresets: [CropAspectRatioPreset.square],
+            showCancelConfirmationDialog: true,
+            rotateClockwiseButtonHidden: false,
+            hidesNavigationBar: false,
+          ),
+        ],
+      );
+
+      if (croppedFile != null) {
+        return File(croppedFile.path);
+      }
+      
+      return null;
+    } catch (e) {
+      AppLogger.d('Error picking and cropping image: $e');
+      return null;
+    }
+  }
+
+  /// Resize image to optimal size while maintaining aspect ratio
+  Future<Uint8List?> resizeImage(File imageFile, {bool forceSquare = false}) async {
     try {
       // Read the image file
       final bytes = await imageFile.readAsBytes();
@@ -41,18 +97,27 @@ class ImageUploadService {
         return null;
       }
 
-      // Calculate the size to maintain aspect ratio within 1280x720 (720p)
-      int targetWidth = 1280;
-      int targetHeight = 720;
-      
-      final aspectRatio = image.width / image.height;
-      
-      if (aspectRatio > 1) {
-        // Landscape: width is larger
-        targetHeight = (targetWidth / aspectRatio).round();
+      int targetWidth;
+      int targetHeight;
+
+      if (forceSquare) {
+        // For square images, use 1024x1024
+        targetWidth = 1024;
+        targetHeight = 1024;
       } else {
-        // Portrait: height is larger
-        targetWidth = (targetHeight * aspectRatio).round();
+        // Calculate the size to maintain aspect ratio within 1280x720 (720p)
+        targetWidth = 1280;
+        targetHeight = 720;
+        
+        final aspectRatio = image.width / image.height;
+        
+        if (aspectRatio > 1) {
+          // Landscape: width is larger
+          targetHeight = (targetWidth / aspectRatio).round();
+        } else {
+          // Portrait: height is larger
+          targetWidth = (targetHeight * aspectRatio).round();
+        }
       }
 
       // Resize the image

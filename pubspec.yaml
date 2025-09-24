@@ -22,6 +22,8 @@ dependencies:
   cached_network_image: ^3.4.1
   image_picker: ^1.2.0
   image: ^4.3.0
+  image_cropper: ^8.0.2
+  mobile_scanner: ^7.1.2
   intl: ^0.20.2
   shared_preferences: ^2.3.2
   logger: ^2.6.1

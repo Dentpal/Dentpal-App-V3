@@ -7,8 +7,6 @@ import '../services/cart_service.dart';
 import '../services/category_service.dart';
 import '../widgets/loading_overlay.dart';
 import '../utils/cart_feedback.dart';
-import '../../core/app_theme/app_colors.dart';
-import '../../core/app_theme/app_text_styles.dart';
 import 'cart_page.dart';
 import 'package:dentpal/utils/app_logger.dart';
 
@@ -108,6 +106,10 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   // Cache for category names to avoid repeated Firestore calls
   final Map<String, String> _categoryNames = {};
   
+  // Cache management
+  Product? _cachedProduct;
+  DateTime? _cacheTimestamp;
+  
   @override
   void initState() {
     super.initState();
@@ -116,18 +118,26 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   
   Future<Product?> _loadProduct() async {
     try {
+      AppLogger.d('📄 ProductDetailPage: Loading product ${widget.productId}...');
       final product = await _productService.getProductById(widget.productId);
       
-      // Select the first variation by default if available
-      if (product != null && 
-          product.variations != null && 
-          product.variations!.isNotEmpty) {
-        _selectedVariation = product.variations![0];
+      if (product != null) {
+        // Cache the product data
+        _cachedProduct = product;
+        _cacheTimestamp = DateTime.now();
+        
+        // Select the first variation by default if available
+        if (product.variations != null && 
+            product.variations!.isNotEmpty) {
+          _selectedVariation = product.variations![0];
+        }
+        
+        AppLogger.d('✅ ProductDetailPage: Loaded product ${product.name}');
       }
       
       return product;
     } catch (e) {
-      AppLogger.d('Error loading product: $e');
+      AppLogger.d('❌ Error loading product: $e');
       return null;
     }
   }
@@ -148,6 +158,134 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       _categoryNames[categoryId] = 'Unknown Category';
       return 'Unknown Category';
     }
+  }
+
+  // Check if cache is expired (older than 10 minutes for product details)
+  bool _isCacheExpired() {
+    if (_cacheTimestamp == null) return true;
+    
+    final now = DateTime.now();
+    final difference = now.difference(_cacheTimestamp!);
+    return difference.inMinutes >= 10;
+  }
+
+  // Helper method to compare products for change detection
+  bool _hasProductChanged(Product? oldProduct, Product? newProduct) {
+    if (oldProduct == null && newProduct == null) return false;
+    if (oldProduct == null || newProduct == null) return true;
+    
+    // Compare basic product properties
+    if (oldProduct.productId != newProduct.productId ||
+        oldProduct.name != newProduct.name ||
+        oldProduct.description != newProduct.description ||
+        oldProduct.imageURL != newProduct.imageURL ||
+        oldProduct.categoryId != newProduct.categoryId ||
+        oldProduct.lowestPrice != newProduct.lowestPrice) {
+      AppLogger.d('🔍 Product data changed: Basic properties differ');
+      return true;
+    }
+    
+    // Compare variations
+    if (oldProduct.variations?.length != newProduct.variations?.length) {
+      AppLogger.d('🔍 Product data changed: Variation count differs');
+      return true;
+    }
+    
+    if (oldProduct.variations != null && newProduct.variations != null) {
+      for (int i = 0; i < oldProduct.variations!.length; i++) {
+        final oldVar = oldProduct.variations![i];
+        final newVar = newProduct.variations![i];
+        
+        if (oldVar.variationId != newVar.variationId ||
+            oldVar.name != newVar.name ||
+            oldVar.price != newVar.price ||
+            oldVar.stock != newVar.stock ||
+            oldVar.imageURL != newVar.imageURL) {
+          AppLogger.d('🔍 Product data changed: Variation ${oldVar.name} has differences');
+          return true;
+        }
+      }
+    }
+    
+    return false;
+  }
+
+  // Handle pull-to-refresh with cache-first approach and change detection
+  Future<void> _handleRefresh() async {
+    AppLogger.d('🔄 ProductDetailPage: Pull-to-refresh triggered (cache-first approach)');
+    
+    try {
+      // Keep current data as backup
+      final currentProduct = _cachedProduct;
+      final currentTimestamp = _cacheTimestamp;
+      
+      AppLogger.d('📋 Current cache: ${currentProduct?.name ?? 'No cached product'}');
+      
+      // Fetch fresh data from Firebase
+      AppLogger.d('🌐 Fetching fresh product data from Firebase...');
+      final freshProduct = await _productService.getProductById(widget.productId);
+      
+      // Compare data for changes
+      final hasChanges = _hasProductChanged(currentProduct, freshProduct);
+      
+      if (hasChanges || currentTimestamp == null || _isCacheExpired()) {
+        AppLogger.d('🔄 Changes detected or cache expired - updating data');
+        
+        // Update with fresh data
+        setState(() {
+          _cachedProduct = freshProduct;
+          _cacheTimestamp = DateTime.now();
+          _productFuture = Future.value(freshProduct);
+          
+          // Re-select variation if it still exists, otherwise select first available
+          if (freshProduct?.variations != null && freshProduct!.variations!.isNotEmpty) {
+            final currentVariationId = _selectedVariation?.variationId;
+            final foundVariation = freshProduct.variations!
+                .where((v) => v.variationId == currentVariationId)
+                .firstOrNull;
+            
+            if (foundVariation != null) {
+              _selectedVariation = foundVariation;
+              // Adjust quantity if it exceeds new stock
+              if (_quantity > foundVariation.stock) {
+                _quantity = foundVariation.stock > 0 ? 1 : 0;
+              }
+            } else {
+              // Current variation no longer exists, select first one
+              _selectedVariation = freshProduct.variations![0];
+              if (_quantity > _selectedVariation!.stock) {
+                _quantity = _selectedVariation!.stock > 0 ? 1 : 0;
+              }
+            }
+          }
+        });
+        
+        AppLogger.d('✅ Product data updated: ${freshProduct?.name ?? 'Product removed'}');
+      } else {
+        // No changes detected, just refresh timestamp
+        setState(() {
+          _cacheTimestamp = DateTime.now();
+        });
+        
+        AppLogger.d('ℹ️ No changes detected - cache timestamp refreshed');
+      }
+      
+    } catch (e) {
+      AppLogger.d('❌ Refresh error: $e');
+      AppLogger.d('Stack trace: ${StackTrace.current}');
+      
+      // Show error but keep existing data
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to refresh: ${e.toString()}'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+    
+    AppLogger.d('✅ ProductDetailPage: Pull-to-refresh completed');
   }
 
   void _addToCart(Product product) async {
@@ -361,8 +499,15 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   Widget _buildModernProductDetail(Product product) {
     return Stack(
       children: [
-        CustomScrollView(
-          slivers: [
+        RefreshIndicator(
+          onRefresh: _handleRefresh,
+          color: AppColors.primary,
+          backgroundColor: AppColors.surface,
+          displacement: 40,
+          strokeWidth: 2.5,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
             // Modern SliverAppBar with product image
             SliverAppBar(
               expandedHeight: 400,
@@ -405,15 +550,6 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      IconButton(
-                        icon: const Icon(Icons.favorite_border, color: AppColors.accent),
-                        onPressed: () {
-                          // TODO: Implement wishlist functionality
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Added to wishlist')),
-                          );
-                        },
-                      ),
                       Container(
                         width: 1,
                         height: 24,
@@ -458,7 +594,8 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
               ),
             ),
           ],
-        ),
+        ), // End CustomScrollView
+        ), // End RefreshIndicator
         
         // Fixed Add to Cart Button
         _buildFixedAddToCartButton(product),
