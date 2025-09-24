@@ -188,27 +188,75 @@ class _AddProductPageState extends State<AddProductPage> {
 
   // Pick main product image with square cropping
   Future<void> _pickProductImage() async {
-    final source = await _imageUploadService.showImageSourceDialog(context);
-    if (source == null) return;
+    try {
+      final source = await _imageUploadService.showImageSourceDialog(context);
+      if (source == null) return;
 
-    final pickedFile = await _imageUploadService.pickAndCropImage(source: source);
-    if (pickedFile != null) {
-      setState(() {
-        _productForm.imageFile = pickedFile;
-      });
+      final pickedFile = await _imageUploadService.pickAndCropImage(source: source);
+      if (pickedFile != null) {
+        setState(() {
+          _productForm.imageFile = pickedFile;
+        });
+      }
+    } catch (e) {
+      AppLogger.d('Error picking product image: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.error, color: AppColors.error),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('Failed to pick image. Please try again.'),
+                ),
+              ],
+            ),
+            backgroundColor: AppColors.error.withValues(alpha: 0.1),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+      }
     }
   }
 
   // Pick variation image with square cropping
   Future<void> _pickVariationImage(int index) async {
-    final source = await _imageUploadService.showImageSourceDialog(context);
-    if (source == null) return;
+    try {
+      final source = await _imageUploadService.showImageSourceDialog(context);
+      if (source == null) return;
 
-    final pickedFile = await _imageUploadService.pickAndCropImage(source: source);
-    if (pickedFile != null) {
-      setState(() {
-        _variations[index].imageFile = pickedFile;
-      });
+      final pickedFile = await _imageUploadService.pickAndCropImage(source: source);
+      if (pickedFile != null) {
+        setState(() {
+          _variations[index].imageFile = pickedFile;
+        });
+      }
+    } catch (e) {
+      AppLogger.d('Error picking variation image: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.error, color: AppColors.error),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('Failed to pick image. Please try again.'),
+                ),
+              ],
+            ),
+            backgroundColor: AppColors.error.withValues(alpha: 0.1),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+      }
     }
   }
 

@@ -44,41 +44,51 @@ class ImageUploadService {
 
       if (pickedFile == null) return null;
 
-      // Then crop it to square
-      final croppedFile = await ImageCropper().cropImage(
-        sourcePath: pickedFile.path,
-        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-        uiSettings: [
-          AndroidUiSettings(
-            toolbarTitle: 'Crop Image',
-            toolbarColor: AppColors.primary,
-            toolbarWidgetColor: AppColors.onPrimary,
-            initAspectRatio: CropAspectRatioPreset.square,
-            lockAspectRatio: true,
-            aspectRatioPresets: [CropAspectRatioPreset.square],
-            showCropGrid: true,
-            hideBottomControls: false,
-            cropGridStrokeWidth: 2,
-            cropGridColor: AppColors.primary,
-            activeControlsWidgetColor: AppColors.primary,
-          ),
-          IOSUiSettings(
-            title: 'Crop Image',
-            aspectRatioLockEnabled: true,
-            resetAspectRatioEnabled: false,
-            aspectRatioPresets: [CropAspectRatioPreset.square],
-            showCancelConfirmationDialog: true,
-            rotateClockwiseButtonHidden: false,
-            hidesNavigationBar: false,
-          ),
-        ],
-      );
+      try {
+        // Then crop it to square
+        final croppedFile = await ImageCropper().cropImage(
+          sourcePath: pickedFile.path,
+          aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+          uiSettings: [
+            AndroidUiSettings(
+              toolbarTitle: 'Crop Image',
+              toolbarColor: AppColors.primary,
+              toolbarWidgetColor: AppColors.onPrimary,
+              initAspectRatio: CropAspectRatioPreset.square,
+              lockAspectRatio: true,
+              aspectRatioPresets: [CropAspectRatioPreset.square],
+              showCropGrid: true,
+              hideBottomControls: false,
+              cropGridStrokeWidth: 2,
+              cropGridColor: AppColors.primary,
+              activeControlsWidgetColor: AppColors.primary,
+            ),
+            IOSUiSettings(
+              title: 'Crop Image',
+              aspectRatioLockEnabled: true,
+              resetAspectRatioEnabled: false,
+              aspectRatioPresets: [CropAspectRatioPreset.square],
+              showCancelConfirmationDialog: true,
+              rotateClockwiseButtonHidden: false,
+              hidesNavigationBar: false,
+            ),
+          ],
+        );
 
-      if (croppedFile != null) {
-        return File(croppedFile.path);
+        if (croppedFile != null) {
+          return File(croppedFile.path);
+        }
+        
+        // If cropping was cancelled, return the original image
+        AppLogger.d('Image cropping was cancelled, returning original image');
+        return File(pickedFile.path);
+        
+      } catch (cropError) {
+        AppLogger.d('Error during cropping, falling back to original image: $cropError');
+        // If cropping fails, return the original picked image
+        return File(pickedFile.path);
       }
       
-      return null;
     } catch (e) {
       AppLogger.d('Error picking and cropping image: $e');
       return null;
