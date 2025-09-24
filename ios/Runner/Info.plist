@@ -61,5 +61,7 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs access to the camera for face verification during signup.</string>
 </dict>
 </plist>

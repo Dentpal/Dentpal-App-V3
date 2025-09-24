@@ -4,7 +4,7 @@ description: "A new Flutter project."
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 1.0.0+1
+version: 1.2.0+1
 
 environment:
   sdk: ^3.9.0
@@ -22,7 +22,16 @@ dependencies:
   intl: ^0.20.2
   shared_preferences: ^2.3.2
   logger: ^2.6.1
-  
+  google_mlkit_text_recognition: ^0.15.0
+  google_mlkit_face_detection: ^0.13.1
+  tensorflow_face_verification: ^0.1.2
+  http: ^1.1.0
+  camera: ^0.10.5+9
+  path_provider: ^2.1.1
+  permission_handler: ^11.0.1
+  image_picker: ^1.0.4
+
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
