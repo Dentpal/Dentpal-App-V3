@@ -1,6 +1,7 @@
 import 'package:dentpal/core/app_theme/index.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/product_model.dart';
 import '../services/product_service.dart';
 import '../services/cart_service.dart';
@@ -8,6 +9,7 @@ import '../services/category_service.dart';
 import '../widgets/loading_overlay.dart';
 import '../utils/cart_feedback.dart';
 import 'cart_page.dart';
+import 'edit_product_page.dart';
 import 'package:dentpal/utils/app_logger.dart';
 
 
@@ -109,6 +111,13 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   // Cache management
   Product? _cachedProduct;
   DateTime? _cacheTimestamp;
+  
+  // Check if current user is the seller of this product
+  bool _isCurrentUserSeller(Product product) {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return false;
+    return currentUser.uid == product.sellerId;
+  }
   
   @override
   void initState() {
@@ -550,11 +559,28 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Container(
-                        width: 1,
-                        height: 24,
-                        color: AppColors.onSurface.withValues(alpha: .1),
-                      ),
+                      // Edit button - only show if current user is the seller
+                      if (_isCurrentUserSeller(product)) ...[
+                        IconButton(
+                          icon: const Icon(Icons.edit, color: AppColors.primary),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => EditProductPage(product: product),
+                              ),
+                            ).then((_) {
+                              // Refresh product data after edit
+                              _handleRefresh();
+                            });
+                          },
+                        ),
+                        Container(
+                          width: 1,
+                          height: 24,
+                          color: AppColors.onSurface.withValues(alpha: .1),
+                        ),
+                      ],
                       IconButton(
                         icon: const Icon(Icons.shopping_cart, color: AppColors.onSurface),
                         onPressed: () => Navigator.pushNamed(context, '/cart'),
