@@ -75,6 +75,45 @@ class ClickTrackingService {
     }
   }
 
+  // Track subcategory click with daily limit per user
+  Future<void> trackSubCategoryClick(String categoryId, String subCategoryId) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        AppLogger.d('❌ No authenticated user for subcategory click tracking');
+        return;
+      }
+
+      final userId = user.uid;
+      final today = _getTodayKey();
+      final clickKey = 'subcategory_click_${subCategoryId}_${userId}_$today';
+
+      // Check if user already clicked this subcategory today using SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(clickKey) == true) {
+        AppLogger.d('✅ User already clicked subcategory $subCategoryId today');
+        return;
+      }
+
+      // Increment the click counter in Firestore (subcategory is nested under category)
+      await _firestore
+          .collection('Category')
+          .doc(categoryId)
+          .collection('subCategory')
+          .doc(subCategoryId)
+          .update({
+        'clickCounter': FieldValue.increment(1),
+      });
+
+      // Mark this subcategory as clicked today for this user
+      await prefs.setBool(clickKey, true);
+
+      AppLogger.d('✅ SubCategory click tracked for subcategory: $subCategoryId in category: $categoryId');
+    } catch (e) {
+      AppLogger.d('❌ Error tracking subcategory click: $e');
+    }
+  }
+
   // Clean up old click tracking data (optional, for maintenance)
   Future<void> cleanupOldClickData() async {
     try {
@@ -84,7 +123,9 @@ class ClickTrackingService {
       
       // Remove click tracking data older than today
       for (String key in keys) {
-        if ((key.startsWith('product_click_') || key.startsWith('category_click_')) 
+        if ((key.startsWith('product_click_') || 
+             key.startsWith('category_click_') ||
+             key.startsWith('subcategory_click_')) 
             && !key.endsWith(today)) {
           await prefs.remove(key);
         }
@@ -134,6 +175,24 @@ class ClickTrackingService {
       return prefs.getBool(clickKey) ?? false;
     } catch (e) {
       AppLogger.d('❌ Error checking category click status: $e');
+      return false;
+    }
+  }
+
+  // Check if user clicked a subcategory today (for UI feedback if needed)
+  Future<bool> hasUserClickedSubCategoryToday(String subCategoryId) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return false;
+
+      final userId = user.uid;
+      final today = _getTodayKey();
+      final clickKey = 'subcategory_click_${subCategoryId}_${userId}_$today';
+
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(clickKey) ?? false;
+    } catch (e) {
+      AppLogger.d('❌ Error checking subcategory click status: $e');
       return false;
     }
   }

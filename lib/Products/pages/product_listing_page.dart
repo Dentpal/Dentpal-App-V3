@@ -62,6 +62,12 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
   // Mapping between category names and IDs for filtering
   Map<String, String> _categoryNameToId = {};
   Map<String, String> _categoryIdToName = {};
+  
+  // Subcategory state
+  List<SubCategory> _subcategories = [];
+  String? _selectedSubCategory;
+  bool _isLoadingSubcategories = false;
+  bool _isSubcategoriesExpanded = false;
 
   // Override to keep this page alive when navigating away
   @override
@@ -88,6 +94,10 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
       _userFirstName = _instance!._userFirstName;
       _categoryNameToId = _instance!._categoryNameToId;
       _categoryIdToName = _instance!._categoryIdToName;
+      _subcategories = _instance!._subcategories;
+      _selectedSubCategory = _instance!._selectedSubCategory;
+      _isLoadingSubcategories = _instance!._isLoadingSubcategories;
+      _isSubcategoriesExpanded = _instance!._isSubcategoriesExpanded;
       
       // Check if cache is expired (older than 12 hours)
       if (_isCacheExpired()) {
@@ -229,6 +239,10 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     
     setState(() {
       _selectedCategory = category;
+      // Reset subcategory selection when switching categories
+      _selectedSubCategory = null;
+      _subcategories = [];
+      _isSubcategoriesExpanded = false;
       // Reset pagination parameters for the new category
       _products = [];
       _lastDocument = null;
@@ -237,12 +251,87 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
       _isLoadingMore = false;
     });
     
+    // Load subcategories for the selected category if it's not 'All'
+    if (category != 'All') {
+      _loadSubcategories(category);
+    }
+    
     // Load first page with the new category
     _loadFirstPage();
     
     // Update the static instance
     if (_instance != null) {
       _instance!._selectedCategory = category;
+      _instance!._selectedSubCategory = null;
+      _instance!._subcategories = [];
+      _instance!._isSubcategoriesExpanded = false;
+    }
+  }
+
+  // Load subcategories for a given category
+  Future<void> _loadSubcategories(String categoryName) async {
+    final categoryId = _categoryNameToId[categoryName];
+    if (categoryId == null) return;
+    
+    setState(() {
+      _isLoadingSubcategories = true;
+    });
+    
+    try {
+      final subcategories = await _categoryService.getSubCategories(categoryId);
+      if (mounted) {
+        setState(() {
+          _subcategories = subcategories;
+          _isLoadingSubcategories = false;
+          // Auto-expand if subcategories are found
+          _isSubcategoriesExpanded = subcategories.isNotEmpty;
+        });
+        
+        // Update the static instance
+        if (_instance != null) {
+          _instance!._subcategories = subcategories;
+          _instance!._isLoadingSubcategories = false;
+          _instance!._isSubcategoriesExpanded = subcategories.isNotEmpty;
+        }
+      }
+    } catch (e) {
+      AppLogger.d('❌ Error loading subcategories: $e');
+      if (mounted) {
+        setState(() {
+          _subcategories = [];
+          _isLoadingSubcategories = false;
+          _isSubcategoriesExpanded = false;
+        });
+      }
+    }
+  }
+
+  // Handle subcategory selection
+  void _onSubCategorySelected(String subCategoryId, String subCategoryName) {
+    if (_selectedSubCategory == subCategoryId) return;
+    
+    // Track subcategory click (need categoryId)
+    final categoryId = _categoryNameToId[_selectedCategory];
+    if (categoryId != null) {
+      _clickTrackingService.trackSubCategoryClick(categoryId, subCategoryId);
+    }
+    
+    setState(() {
+      _selectedSubCategory = subCategoryId;
+      // Reset pagination parameters for the new subcategory
+      _products = [];
+      _lastDocument = null;
+      _hasMore = true;
+      _isLoading = false;
+      _isLoadingMore = false;
+    });
+    
+    // Load first page with the new subcategory
+    _loadFirstPage();
+    
+    // Update the static instance
+    if (_instance != null) {
+      _instance!._selectedSubCategory = subCategoryId;
     }
   }
   
@@ -948,6 +1037,198 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                           },
                         ),
                       ),
+                      
+                      // Subcategories section (expandable)
+                      if (_selectedCategory != 'All' && _subcategories.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _isSubcategoriesExpanded = !_isSubcategoriesExpanded;
+                            });
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: AppColors.secondary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: AppColors.secondary.withValues(alpha: 0.2),
+                                width: 1,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.secondary.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Icon(
+                                    Icons.subdirectory_arrow_right,
+                                    color: AppColors.secondary,
+                                    size: 14,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Subcategories (${_subcategories.length})',
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.secondary,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                                if (_selectedSubCategory != null) ...[
+                                  GestureDetector(
+                                    onTap: () {
+                                      setState(() {
+                                        _selectedSubCategory = null;
+                                      });
+                                      _loadFirstPage();
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.error.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        'Clear',
+                                        style: AppTextStyles.bodySmall.copyWith(
+                                          color: AppColors.error,
+                                          fontWeight: FontWeight.w500,
+                                          fontSize: 10,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                ],
+                                AnimatedRotation(
+                                  turns: _isSubcategoriesExpanded ? 0.25 : 0,
+                                  duration: const Duration(milliseconds: 200),
+                                  child: Icon(
+                                    Icons.keyboard_arrow_right,
+                                    color: AppColors.secondary,
+                                    size: 18,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        
+                        // Expandable subcategories content
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut,
+                          height: _isSubcategoriesExpanded ? null : 0,
+                          child: AnimatedOpacity(
+                            duration: const Duration(milliseconds: 200),
+                            opacity: _isSubcategoriesExpanded ? 1.0 : 0.0,
+                            child: Container(
+                              margin: const EdgeInsets.only(top: 12),
+                              child: _isLoadingSubcategories
+                                  ? const Center(
+                                      child: Padding(
+                                        padding: EdgeInsets.all(16.0),
+                                        child: SizedBox(
+                                          height: 20,
+                                          width: 20,
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        ),
+                                      ),
+                                    )
+                                  : Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: _subcategories.map((subcategory) {
+                                        final isSelected = _selectedSubCategory == subcategory.subCategoryId;
+                                        
+                                        return GestureDetector(
+                                          onTap: () => _onSubCategorySelected(
+                                            subcategory.subCategoryId,
+                                            subcategory.subCategoryName,
+                                          ),
+                                          child: AnimatedContainer(
+                                            duration: const Duration(milliseconds: 200),
+                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                            decoration: BoxDecoration(
+                                              color: isSelected 
+                                                  ? AppColors.secondary 
+                                                  : Colors.white,
+                                              borderRadius: BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color: isSelected 
+                                                    ? AppColors.secondary 
+                                                    : AppColors.onSurface.withValues(alpha: 0.2),
+                                                width: 1,
+                                              ),
+                                              boxShadow: isSelected ? [
+                                                BoxShadow(
+                                                  color: AppColors.secondary.withValues(alpha: 0.2),
+                                                  blurRadius: 4,
+                                                  offset: const Offset(0, 2),
+                                                ),
+                                              ] : [],
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  subcategory.subCategoryName,
+                                                  style: AppTextStyles.bodySmall.copyWith(
+                                                    color: isSelected 
+                                                        ? AppColors.onSecondary 
+                                                        : AppColors.onSurface,
+                                                    fontWeight: isSelected 
+                                                        ? FontWeight.bold 
+                                                        : FontWeight.w500,
+                                                    fontSize: 11,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 4),
+                                                FutureBuilder<int>(
+                                                  future: _getSubCategoryClickCount(subcategory.subCategoryId),
+                                                  builder: (context, snapshot) {
+                                                    final clickCount = snapshot.data ?? 0;
+                                                    if (clickCount == 0) return const SizedBox.shrink();
+                                                    
+                                                    return Container(
+                                                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                                      decoration: BoxDecoration(
+                                                        color: isSelected 
+                                                            ? AppColors.onSecondary.withValues(alpha: 0.2)
+                                                            : AppColors.primary.withValues(alpha: 0.1),
+                                                        borderRadius: BorderRadius.circular(6),
+                                                      ),
+                                                      child: Text(
+                                                        '$clickCount',
+                                                        style: AppTextStyles.bodySmall.copyWith(
+                                                          color: isSelected 
+                                                              ? AppColors.onSecondary 
+                                                              : AppColors.primary,
+                                                          fontWeight: FontWeight.bold,
+                                                          fontSize: 9,
+                                                        ),
+                                                      ),
+                                                    );
+                                                  },
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1210,7 +1491,13 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     
     final filteredProducts = _products.where((product) {
       if (_selectedCategory == 'All') return true;
-      // Compare product's categoryId with the selected category's ID
+      
+      // If a subcategory is selected, filter by subcategory
+      if (_selectedSubCategory != null) {
+        return product.subCategoryId == _selectedSubCategory;
+      }
+      
+      // Otherwise, filter by category
       final selectedCategoryId = _categoryNameToId[_selectedCategory];
       return product.categoryId == selectedCategoryId;
     }).toList();
@@ -1449,5 +1736,23 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
         ),
       ),
     );
+  }
+
+  // Get subcategory click count from Firestore
+  Future<int> _getSubCategoryClickCount(String subCategoryId) async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('SubCategoryClicks')
+          .doc(subCategoryId)
+          .get();
+      
+      if (doc.exists) {
+        return doc.data()?['clickCounter'] ?? 0;
+      }
+      return 0;
+    } catch (e) {
+      AppLogger.d('❌ Error getting subcategory click count: $e');
+      return 0;
+    }
   }
 }
