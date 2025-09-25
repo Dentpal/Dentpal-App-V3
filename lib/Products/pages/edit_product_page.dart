@@ -1468,6 +1468,172 @@ class _EditProductPageState extends State<EditProductPage> {
                                 return null;
                               },
                             ),
+                            const SizedBox(height: 20),
+                            
+                            // Dimensions
+                            Text(
+                              'Dimensions (Optional)',
+                              style: AppTextStyles.titleSmall.copyWith(
+                                color: AppColors.onSurface,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            
+                            // Dimensions fields
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _variationControllers[index]['length'],
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      color: AppColors.onSurface,
+                                    ),
+                                    decoration: InputDecoration(
+                                      labelText: 'Length (cm)',
+                                      labelStyle: AppTextStyles.labelMedium.copyWith(
+                                        color: AppColors.onSurface.withValues(alpha: 0.7),
+                                      ),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: BorderSide(
+                                          color: AppColors.grey300,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: BorderSide(
+                                          color: AppColors.grey300,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: BorderSide(
+                                          color: AppColors.primary,
+                                          width: 2,
+                                        ),
+                                      ),
+                                      contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 10,
+                                      ),
+                                    ),
+                                    keyboardType: TextInputType.number,
+                                    validator: (value) {
+                                      if (value != null && value.isNotEmpty) {
+                                        final length = double.tryParse(value);
+                                        if (length == null) {
+                                          return 'Invalid';
+                                        }
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _variationControllers[index]['width'],
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      color: AppColors.onSurface,
+                                    ),
+                                    decoration: InputDecoration(
+                                      labelText: 'Width (cm)',
+                                      labelStyle: AppTextStyles.labelMedium.copyWith(
+                                        color: AppColors.onSurface.withValues(alpha: 0.7),
+                                      ),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: BorderSide(
+                                          color: AppColors.grey300,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: BorderSide(
+                                          color: AppColors.grey300,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: BorderSide(
+                                          color: AppColors.primary,
+                                          width: 2,
+                                        ),
+                                      ),
+                                      contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 10,
+                                      ),
+                                    ),
+                                    keyboardType: TextInputType.number,
+                                    validator: (value) {
+                                      if (value != null && value.isNotEmpty) {
+                                        final width = double.tryParse(value);
+                                        if (width == null) {
+                                          return 'Invalid';
+                                        }
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _variationControllers[index]['height'],
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      color: AppColors.onSurface,
+                                    ),
+                                    decoration: InputDecoration(
+                                      labelText: 'Height (cm)',
+                                      labelStyle: AppTextStyles.labelMedium.copyWith(
+                                        color: AppColors.onSurface.withValues(alpha: 0.7),
+                                      ),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: BorderSide(
+                                          color: AppColors.grey300,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: BorderSide(
+                                          color: AppColors.grey300,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: BorderSide(
+                                          color: AppColors.primary,
+                                          width: 2,
+                                        ),
+                                      ),
+                                      contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 10,
+                                      ),
+                                    ),
+                                    keyboardType: TextInputType.number,
+                                    validator: (value) {
+                                      if (value != null && value.isNotEmpty) {
+                                        final height = double.tryParse(value);
+                                        if (height == null) {
+                                          return 'Invalid';
+                                        }
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
                           ],
                         ),
                       ),
