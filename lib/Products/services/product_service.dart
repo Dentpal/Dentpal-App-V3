@@ -326,6 +326,7 @@ class ProductService {
         
         await variationRef.set({
           'productId': productRef.id,
+          'name': variationForm.name,
           'imageURL': variationForm.imageURL,
           'price': variationForm.price,
           'stock': variationForm.stock,
@@ -346,6 +347,128 @@ class ProductService {
         'success': false,
         'message': 'Error: $e',
         'productId': null
+      };
+    }
+  }
+
+  // Update an existing product in Firestore
+  Future<Map<String, dynamic>> updateProduct(
+      String productId, ProductFormModel productForm, List<VariationFormModel> variations) async {
+    try {
+      // First check if the user is a seller
+      Map<String, dynamic> sellerStatus = await checkSellerStatus();
+      
+      if (!sellerStatus['isSeller']) {
+        return {
+          'success': false,
+          'message': sellerStatus['message'],
+        };
+      }
+      
+      // Check if the product exists and belongs to the current user
+      DocumentSnapshot productDoc = await _firestore.collection('Product').doc(productId).get();
+      
+      if (!productDoc.exists) {
+        return {
+          'success': false,
+          'message': 'Product not found',
+        };
+      }
+      
+      Map<String, dynamic> productData = productDoc.data() as Map<String, dynamic>;
+      String productSellerId = productData['sellerId'] ?? '';
+      String currentUserSellerId = sellerStatus['sellerId'];
+      
+      if (productSellerId != currentUserSellerId) {
+        return {
+          'success': false,
+          'message': 'You can only edit your own products',
+        };
+      }
+      
+      // Update the product document
+      DocumentReference productRef = _firestore.collection('Product').doc(productId);
+      DateTime now = DateTime.now();
+      
+      await productRef.update({
+        'name': productForm.name,
+        'description': productForm.description,
+        'imageURL': productForm.imageURL,
+        'categoryID': productForm.categoryId,
+        'subCategoryID': productForm.subCategoryId,
+        'updatedAt': Timestamp.fromDate(now),
+      });
+      
+      // Handle variations update
+      // First, get existing variations
+      QuerySnapshot existingVariations = await productRef.collection('Variation').get();
+      
+      // Create a map of existing variations for easier lookup
+      Map<String, DocumentSnapshot> existingVariationsMap = {};
+      for (var doc in existingVariations.docs) {
+        existingVariationsMap[doc.id] = doc;
+      }
+      
+      // Track which variations we're keeping
+      Set<String> variationsToKeep = {};
+      
+      // Update or create variations
+      for (int index = 0; index < variations.length; index++) {
+        var variationForm = variations[index];
+        
+        // Check if this is an existing variation (by checking if we can find a match)
+        String? existingVariationId;
+        
+        // For existing variations, try to match by index first, then by properties
+        if (index < existingVariations.docs.length) {
+          existingVariationId = existingVariations.docs[index].id;
+        }
+        
+        if (existingVariationId != null && existingVariationsMap.containsKey(existingVariationId)) {
+          // Update existing variation
+          await productRef.collection('Variation').doc(existingVariationId).update({
+            'name': variationForm.name,
+            'imageURL': variationForm.imageURL,
+            'price': variationForm.price,
+            'stock': variationForm.stock,
+            'SKU': variationForm.sku,
+            'weight': variationForm.weight,
+            'dimensions': variationForm.dimensions,
+          });
+          variationsToKeep.add(existingVariationId);
+        } else {
+          // Create new variation
+          DocumentReference variationRef = productRef.collection('Variation').doc();
+          await variationRef.set({
+            'productId': productId,
+            'name': variationForm.name,
+            'imageURL': variationForm.imageURL,
+            'price': variationForm.price,
+            'stock': variationForm.stock,
+            'SKU': variationForm.sku,
+            'weight': variationForm.weight,
+            'dimensions': variationForm.dimensions,
+          });
+          variationsToKeep.add(variationRef.id);
+        }
+      }
+      
+      // Delete variations that are no longer needed
+      for (var doc in existingVariations.docs) {
+        if (!variationsToKeep.contains(doc.id)) {
+          await doc.reference.delete();
+        }
+      }
+      
+      return {
+        'success': true,
+        'message': 'Product updated successfully',
+      };
+    } catch (e) {
+      AppLogger.d('Error updating product: $e');
+      return {
+        'success': false,
+        'message': 'Error: $e',
       };
     }
   }

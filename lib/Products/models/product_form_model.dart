@@ -1,7 +1,10 @@
+import 'dart:io';
+
 class ProductFormModel {
   String name = '';
   String description = '';
   String imageURL = '';
+  File? imageFile;
   String categoryId = '';
   String? subCategoryId = '';
   List<VariationFormModel> variations = [];
@@ -22,10 +25,8 @@ class ProductFormModel {
   }
   
   String? validateImageURL() {
-    if (imageURL.isEmpty) {
-      return 'Image URL is required';
-    } else if (!Uri.parse(imageURL).isAbsolute) {
-      return 'Please enter a valid URL';
+    if (imageFile == null && imageURL.isEmpty) {
+      return 'Product image is required';
     }
     return null;
   }
@@ -60,7 +61,9 @@ class ProductFormModel {
 }
 
 class VariationFormModel {
+  String name = '';
   String? imageURL;
+  File? imageFile;
   double price = 0;
   int stock = 0;
   String sku = '';
@@ -89,6 +92,13 @@ class VariationFormModel {
   String? validateSKU() {
     if (sku.isEmpty) {
       return 'SKU is required';
+    }
+    return null;
+  }
+  
+  String? validateName() {
+    if (name.isEmpty) {
+      return 'Variation name is required';
     }
     return null;
   }

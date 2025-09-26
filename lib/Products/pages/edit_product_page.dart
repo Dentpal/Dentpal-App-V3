@@ -10,17 +10,19 @@ import '../../core/app_theme/app_text_styles.dart';
 import 'package:dentpal/utils/app_logger.dart';
 
 
-class AddProductPage extends StatefulWidget {
-  const AddProductPage({Key? key}) : super(key: key);
+class EditProductPage extends StatefulWidget {
+  final Product product;
+  
+  const EditProductPage({Key? key, required this.product}) : super(key: key);
 
   @override
-  State<AddProductPage> createState() => _AddProductPageState();
+  State<EditProductPage> createState() => _EditProductPageState();
 }
 
-class _AddProductPageState extends State<AddProductPage> {
+class _EditProductPageState extends State<EditProductPage> {
   final _formKey = GlobalKey<FormState>();
   final ProductFormModel _productForm = ProductFormModel();
-  final List<VariationFormModel> _variations = [VariationFormModel()];
+  List<VariationFormModel> _variations = [];
   final ProductService _productService = ProductService();
   final CategoryService _categoryService = CategoryService();
   final ImageUploadService _imageUploadService = ImageUploadService();
@@ -33,21 +35,74 @@ class _AddProductPageState extends State<AddProductPage> {
   bool _isLoading = false;
   bool _isCategoriesLoading = true;
   String _errorMessage = '';
-  bool _isSeller = false;
-  String _sellerMessage = '';
 
   // Dynamic categories and subcategories
   List<Category> _categories = [];
   List<SubCategory> _subCategories = [];
   String? _selectedCategoryId;
   String? _selectedSubCategoryId;
+  String? _originalCategoryId;  // Store original values from product
+  String? _originalSubCategoryId;
 
-    @override
+  @override
   void initState() {
     super.initState();
-    _initializeVariationControllers();
-    _checkSellerStatus();
+    _populateFormWithProduct();
     _loadCategories();
+  }
+
+  // Populate the form with existing product data
+  void _populateFormWithProduct() {
+    final product = widget.product;
+    
+    // Set basic product info
+    _nameController.text = product.name;
+    _descriptionController.text = product.description;
+    _productForm.name = product.name;
+    _productForm.description = product.description;
+    _productForm.imageURL = product.imageURL;
+    _productForm.categoryId = product.categoryId;
+    _productForm.subCategoryId = product.subCategoryId;
+    
+    // Store the product's category and subcategory IDs but don't set them as selected yet
+    // They will be set when the categories are loaded and validated
+    _originalCategoryId = product.categoryId;
+    _originalSubCategoryId = product.subCategoryId;
+
+    // Populate variations
+    if (product.variations != null && product.variations!.isNotEmpty) {
+      _variations = product.variations!.map((variation) {
+        final variationForm = VariationFormModel();
+        variationForm.name = variation.name;
+        variationForm.price = variation.price;
+        variationForm.stock = variation.stock;
+        variationForm.sku = variation.sku;
+        variationForm.weight = variation.weight;
+        variationForm.imageURL = variation.imageURL;
+        variationForm.dimensions = variation.dimensions ?? {};
+        return variationForm;
+      }).toList();
+      
+      // Initialize controllers for existing variations
+      _variationControllers.clear();
+      for (int i = 0; i < _variations.length; i++) {
+        final variation = _variations[i];
+        _variationControllers.add({
+          'name': TextEditingController(text: variation.name),
+          'price': TextEditingController(text: variation.price.toString()),
+          'stock': TextEditingController(text: variation.stock.toString()),
+          'sku': TextEditingController(text: variation.sku),
+          'weight': TextEditingController(text: variation.weight?.toString() ?? ''),
+          'length': TextEditingController(text: (variation.dimensions?['length']?.toString() ?? '0')),
+          'width': TextEditingController(text: (variation.dimensions?['width']?.toString() ?? '0')),
+          'height': TextEditingController(text: (variation.dimensions?['height']?.toString() ?? '0')),
+        });
+      }
+    } else {
+      // If no variations, create a default one
+      _variations = [VariationFormModel()];
+      _initializeVariationControllers();
+    }
   }
 
   void _loadCategories() async {
@@ -59,15 +114,27 @@ class _AddProductPageState extends State<AddProductPage> {
       final categories = await _categoryService.getCategories();
       AppLogger.d('✅ Loaded ${categories.length} categories');
       
-      // Debug: Print category details
-      for (var cat in categories) {
-        AppLogger.d('  - Category: ${cat.categoryName} (ID: ${cat.categoryId})');
-      }
-      
       setState(() {
         _categories = categories;
         _isCategoriesLoading = false;
+        
+        // Validate and set the selected category from the original product data
+        if (_originalCategoryId != null && 
+            categories.any((cat) => cat.categoryId == _originalCategoryId)) {
+          _selectedCategoryId = _originalCategoryId;
+          _productForm.categoryId = _originalCategoryId!;
+        } else {
+          _selectedCategoryId = null;
+          _productForm.categoryId = '';
+          _selectedSubCategoryId = null;
+          _productForm.subCategoryId = null;
+        }
       });
+      
+      // Load subcategories for the selected category if we have one
+      if (_selectedCategoryId != null) {
+        _loadSubCategories(_selectedCategoryId!);
+      }
     } catch (e) {
       AppLogger.d('❌ Error loading categories: $e');
       setState(() {
@@ -84,15 +151,17 @@ class _AddProductPageState extends State<AddProductPage> {
       final subCategories = await _categoryService.getSubCategories(categoryId);
       AppLogger.d('✅ Received ${subCategories.length} subcategories');
       
-      // Debug: Print subcategory details
-      for (var subCat in subCategories) {
-        AppLogger.d('  - SubCategory: ${subCat.subCategoryName} (ID: ${subCat.subCategoryId}, CategoryID: ${subCat.categoryId})');
-      }
-      
       setState(() {
         _subCategories = subCategories;
-        _selectedSubCategoryId = null; // Reset subcategory selection
-        _productForm.subCategoryId = null;
+        // Validate and set the selected subcategory from the original product data
+        if (_originalSubCategoryId != null && 
+            subCategories.any((sub) => sub.subCategoryId == _originalSubCategoryId)) {
+          _selectedSubCategoryId = _originalSubCategoryId;
+          _productForm.subCategoryId = _originalSubCategoryId!;
+        } else {
+          _selectedSubCategoryId = null;
+          _productForm.subCategoryId = null;
+        }
       });
     } catch (e) {
       AppLogger.d('❌ Error loading subcategories: $e');
@@ -128,28 +197,6 @@ class _AddProductPageState extends State<AddProductPage> {
       }
     }
     super.dispose();
-  }
-
-  Future<void> _checkSellerStatus() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      final result = await _productService.checkSellerStatus();
-      
-      setState(() {
-        _isSeller = result['isSeller'];
-        _sellerMessage = result['message'];
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isSeller = false;
-        _sellerMessage = 'Error: $e';
-        _isLoading = false;
-      });
-    }
   }
 
   void _addVariation() {
@@ -301,8 +348,8 @@ class _AddProductPageState extends State<AddProductPage> {
       return;
     }
 
-    // Check if main product image is selected
-    if (_productForm.imageFile == null) {
+    // Check if main product image is selected (either existing or new)
+    if (_productForm.imageFile == null && _productForm.imageURL.isEmpty) {
       setState(() {
         _errorMessage = 'Please select a product image';
       });
@@ -340,10 +387,9 @@ class _AddProductPageState extends State<AddProductPage> {
     });
 
     try {
-      // First, upload images to Firebase Storage
-      String productId = DateTime.now().millisecondsSinceEpoch.toString();
+      String productId = widget.product.productId;
       
-      // Upload main product image
+      // Handle image uploads for main product image
       if (_productForm.imageFile != null) {
         final productImageBytes = await _imageUploadService.resizeImage(_productForm.imageFile!, forceSquare: true);
         if (productImageBytes != null) {
@@ -362,7 +408,7 @@ class _AddProductPageState extends State<AddProductPage> {
         }
       }
       
-      // Upload variation images
+      // Handle variation images
       for (int i = 0; i < _variations.length; i++) {
         if (_variations[i].imageFile != null) {
           final variationImageBytes = await _imageUploadService.resizeImage(_variations[i].imageFile!, forceSquare: true);
@@ -375,12 +421,11 @@ class _AddProductPageState extends State<AddProductPage> {
             if (variationImageUrl != null) {
               _variations[i].imageURL = variationImageUrl;
             }
-            // Note: Variation images are optional, so we don't throw an error if upload fails
           }
         }
       }
 
-      final result = await _productService.addProduct(_productForm, _variations);
+      final result = await _productService.updateProduct(productId, _productForm, _variations);
 
       setState(() {
         _isLoading = false;
@@ -389,14 +434,14 @@ class _AddProductPageState extends State<AddProductPage> {
       if (result['success']) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(result['message'])),
+            SnackBar(content: Text(result['message'] ?? 'Product updated successfully')),
           );
-          // Navigate back or to product detail
+          // Navigate back to product detail
           Navigator.of(context).pop();
         }
       } else {
         setState(() {
-          _errorMessage = result['message'];
+          _errorMessage = result['message'] ?? 'Failed to update product';
         });
       }
     } catch (e) {
@@ -414,7 +459,7 @@ class _AddProductPageState extends State<AddProductPage> {
         backgroundColor: AppColors.background,
         appBar: AppBar(
           title: Text(
-            'Add Product',
+            'Edit Product',
             style: AppTextStyles.titleLarge.copyWith(
               color: AppColors.onSurface,
               fontWeight: FontWeight.w600,
@@ -435,88 +480,11 @@ class _AddProductPageState extends State<AddProductPage> {
       );
     }
 
-    if (!_isSeller) {
-      return Scaffold(
-        backgroundColor: AppColors.background,
-        appBar: AppBar(
-          title: Text(
-            'Add Product',
-            style: AppTextStyles.titleLarge.copyWith(
-              color: AppColors.onSurface,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          backgroundColor: AppColors.surface,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
-            onPressed: () => Navigator.pop(context),
-          ),
-        ),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: AppColors.error.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.error_outline,
-                    size: 64,
-                    color: AppColors.error,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  'Seller Access Required',
-                  style: AppTextStyles.headlineMedium.copyWith(
-                    color: AppColors.onSurface,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  _sellerMessage,
-                  textAlign: TextAlign.center,
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.onSurface.withValues(alpha: 0.7),
-                  ),
-                ),
-                const SizedBox(height: 32),
-                ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: AppColors.onPrimary,
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  child: Text(
-                    'Go Back',
-                    style: AppTextStyles.labelLarge.copyWith(
-                      color: AppColors.onPrimary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(
-          'Add Product',
+          'Edit Product',
           style: AppTextStyles.titleLarge.copyWith(
             color: AppColors.onSurface,
             fontWeight: FontWeight.w600,
@@ -551,18 +519,12 @@ class _AddProductPageState extends State<AddProductPage> {
                     ),
                     child: Row(
                       children: [
-                        Icon(
-                          Icons.error_outline,
-                          color: AppColors.error,
-                          size: 20,
-                        ),
+                        Icon(Icons.error_outline, color: AppColors.error, size: 20),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
                             _errorMessage,
-                            style: AppTextStyles.bodyMedium.copyWith(
-                              color: AppColors.error,
-                            ),
+                            style: AppTextStyles.bodyMedium.copyWith(color: AppColors.error),
                           ),
                         ),
                       ],
@@ -576,7 +538,7 @@ class _AddProductPageState extends State<AddProductPage> {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
+                        color: AppColors.onSurface.withValues(alpha: 0.05),
                         blurRadius: 10,
                         offset: const Offset(0, 2),
                       ),
@@ -599,15 +561,18 @@ class _AddProductPageState extends State<AddProductPage> {
                       filled: true,
                       fillColor: AppColors.surface,
                       contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
+                        horizontal: 20,
                         vertical: 16,
                       ),
                     ),
                     validator: (value) {
                       if (value == null || value.isEmpty) {
-                        return 'Name is required';
+                        return 'Please enter product name';
                       }
                       return null;
+                    },
+                    onSaved: (value) {
+                      _productForm.name = value!;
                     },
                   ),
                 ),
@@ -620,7 +585,7 @@ class _AddProductPageState extends State<AddProductPage> {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
+                        color: AppColors.onSurface.withValues(alpha: 0.05),
                         blurRadius: 10,
                         offset: const Offset(0, 2),
                       ),
@@ -643,7 +608,7 @@ class _AddProductPageState extends State<AddProductPage> {
                       filled: true,
                       fillColor: AppColors.surface,
                       contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
+                        horizontal: 20,
                         vertical: 16,
                       ),
                       alignLabelWithHint: true,
@@ -651,9 +616,12 @@ class _AddProductPageState extends State<AddProductPage> {
                     maxLines: 4,
                     validator: (value) {
                       if (value == null || value.isEmpty) {
-                        return 'Description is required';
+                        return 'Please enter product description';
                       }
                       return null;
+                    },
+                    onSaved: (value) {
+                      _productForm.description = value!;
                     },
                   ),
                 ),
@@ -667,7 +635,7 @@ class _AddProductPageState extends State<AddProductPage> {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
+                        color: AppColors.onSurface.withValues(alpha: 0.05),
                         blurRadius: 10,
                         offset: const Offset(0, 2),
                       ),
@@ -698,31 +666,37 @@ class _AddProductPageState extends State<AddProductPage> {
                       ),
                       if (_productForm.imageFile != null)
                         Container(
-                          height: 250,
-                          width: double.infinity,
-                          margin: const EdgeInsets.symmetric(horizontal: 16),
+                          margin: const EdgeInsets.symmetric(horizontal: 20),
+                          height: 200,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(12),
-                            color: AppColors.surfaceVariant,
+                            image: DecorationImage(
+                              image: FileImage(_productForm.imageFile!),
+                              fit: BoxFit.cover,
+                            ),
                           ),
-                          child: ClipRRect(
+                        )
+                      else if (_productForm.imageURL.isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 20),
+                          height: 200,
+                          decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(12),
-                            child: Image.file(
-                              _productForm.imageFile!,
+                            image: DecorationImage(
+                              image: NetworkImage(_productForm.imageURL),
                               fit: BoxFit.cover,
                             ),
                           ),
                         )
                       else
                         Container(
-                          height: 150,
-                          margin: const EdgeInsets.symmetric(horizontal: 16),
+                          margin: const EdgeInsets.symmetric(horizontal: 20),
+                          height: 200,
                           decoration: BoxDecoration(
-                            color: AppColors.surfaceVariant,
                             borderRadius: BorderRadius.circular(12),
+                            color: AppColors.background,
                             border: Border.all(
-                              color: AppColors.primary.withValues(alpha: 0.3),
-                              width: 2,
+                              color: AppColors.onSurface.withValues(alpha: 0.2),
                               style: BorderStyle.solid,
                             ),
                           ),
@@ -731,13 +705,13 @@ class _AddProductPageState extends State<AddProductPage> {
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Icon(
-                                  Icons.add_a_photo,
+                                  Icons.add_photo_alternate,
                                   size: 48,
-                                  color: AppColors.primary.withValues(alpha: 0.7),
+                                  color: AppColors.onSurface.withValues(alpha: 0.5),
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  'No image selected',
+                                  'Tap to add image',
                                   style: AppTextStyles.bodyMedium.copyWith(
                                     color: AppColors.onSurface.withValues(alpha: 0.6),
                                   ),
@@ -747,46 +721,25 @@ class _AddProductPageState extends State<AddProductPage> {
                           ),
                         ),
                       Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: _pickProductImage,
-                                icon: const Icon(Icons.add_a_photo),
-                                label: Text(_productForm.imageFile != null 
-                                    ? 'Change Image' 
-                                    : 'Add Image'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _productForm.imageFile != null 
-                                      ? AppColors.secondary 
-                                      : AppColors.primary,
-                                  foregroundColor: AppColors.onPrimary,
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
+                        padding: const EdgeInsets.all(20),
+                        child: Center(
+                          child: OutlinedButton.icon(
+                            onPressed: _pickProductImage,
+                            icon: const Icon(Icons.camera_alt),
+                            label: Text(
+                              (_productForm.imageFile != null || _productForm.imageURL.isNotEmpty)
+                                  ? 'Change Image'
+                                  : 'Add Image',
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.primary,
+                              side: const BorderSide(color: AppColors.primary),
+                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
                             ),
-                            if (_productForm.imageFile != null) ...[
-                              const SizedBox(width: 12),
-                              Container(
-                                decoration: BoxDecoration(
-                                  color: AppColors.error.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: IconButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      _productForm.imageFile = null;
-                                    });
-                                  },
-                                  icon: const Icon(Icons.delete, color: AppColors.error),
-                                ),
-                              ),
-                            ],
-                          ],
+                          ),
                         ),
                       ),
                     ],
@@ -801,7 +754,7 @@ class _AddProductPageState extends State<AddProductPage> {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
+                        color: AppColors.onSurface.withValues(alpha: 0.05),
                         blurRadius: 10,
                         offset: const Offset(0, 2),
                       ),
@@ -821,7 +774,7 @@ class _AddProductPageState extends State<AddProductPage> {
                       filled: true,
                       fillColor: AppColors.surface,
                       contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
+                        horizontal: 20,
                         vertical: 16,
                       ),
                     ),
@@ -829,33 +782,43 @@ class _AddProductPageState extends State<AddProductPage> {
                       color: AppColors.onSurface,
                     ),
                     dropdownColor: AppColors.surface,
-                    initialValue: _selectedCategoryId,
+                    value: _isCategoriesLoading 
+                      ? null 
+                      : (_categories.any((cat) => cat.categoryId == _selectedCategoryId) 
+                         ? _selectedCategoryId 
+                         : null),
                     items: _isCategoriesLoading 
                       ? [DropdownMenuItem(
                           value: null,
                           child: Text(
-                            'Loading...',
+                            'Loading categories...',
                             style: AppTextStyles.bodyMedium.copyWith(
                               color: AppColors.onSurface.withValues(alpha: 0.6),
                             ),
                           ),
                         )]
-                      : _categories.map((category) {
-                          return DropdownMenuItem(
-                            value: category.categoryId,
-                            child: Text(
-                              category.categoryName,
-                              style: AppTextStyles.bodyLarge.copyWith(
-                                color: AppColors.onSurface,
-                              ),
-                            ),
-                          );
-                        }).toList(),
+                      : _categories
+                          .where((category) => category.categoryId.isNotEmpty)
+                          .fold<Map<String, DropdownMenuItem<String>>>(
+                            {},
+                            (Map<String, DropdownMenuItem<String>> map, category) {
+                              map[category.categoryId] = DropdownMenuItem<String>(
+                                value: category.categoryId,
+                                child: Text(category.categoryName),
+                              );
+                              return map;
+                            },
+                          )
+                          .values
+                          .toList(),
                     onChanged: _isCategoriesLoading ? null : (value) {
                       AppLogger.d('🔍 Category selected: $value');
                       setState(() {
                         _selectedCategoryId = value;
                         _productForm.categoryId = value ?? '';
+                        _selectedSubCategoryId = null;
+                        _productForm.subCategoryId = null;
+                        _subCategories.clear();
                       });
                       if (value != null) {
                         _loadSubCategories(value);
@@ -874,7 +837,7 @@ class _AddProductPageState extends State<AddProductPage> {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
+                        color: AppColors.onSurface.withValues(alpha: 0.05),
                         blurRadius: 10,
                         offset: const Offset(0, 2),
                       ),
@@ -894,7 +857,7 @@ class _AddProductPageState extends State<AddProductPage> {
                       filled: true,
                       fillColor: AppColors.surface,
                       contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
+                        horizontal: 20,
                         vertical: 16,
                       ),
                     ),
@@ -902,12 +865,16 @@ class _AddProductPageState extends State<AddProductPage> {
                       color: AppColors.onSurface,
                     ),
                     dropdownColor: AppColors.surface,
-                    initialValue: _selectedSubCategoryId,
+                    value: _selectedCategoryId == null 
+                      ? null 
+                      : (_subCategories.any((sub) => sub.subCategoryId == _selectedSubCategoryId) 
+                         ? _selectedSubCategoryId 
+                         : null),
                     items: _selectedCategoryId == null 
                       ? [DropdownMenuItem(
                           value: null,
                           child: Text(
-                            'Select a category first',
+                            'Select category first',
                             style: AppTextStyles.bodyMedium.copyWith(
                               color: AppColors.onSurface.withValues(alpha: 0.6),
                             ),
@@ -923,17 +890,20 @@ class _AddProductPageState extends State<AddProductPage> {
                             ),
                           ),
                         )]
-                      : _subCategories.map((subCategory) {
-                          return DropdownMenuItem(
-                            value: subCategory.subCategoryId,
-                            child: Text(
-                              subCategory.subCategoryName,
-                              style: AppTextStyles.bodyLarge.copyWith(
-                                color: AppColors.onSurface,
-                              ),
-                            ),
-                          );
-                        }).toList(),
+                      : _subCategories
+                          .where((subCategory) => subCategory.subCategoryId.isNotEmpty)
+                          .fold<Map<String, DropdownMenuItem<String>>>(
+                            {},
+                            (Map<String, DropdownMenuItem<String>> map, subCategory) {
+                              map[subCategory.subCategoryId] = DropdownMenuItem<String>(
+                                value: subCategory.subCategoryId,
+                                child: Text(subCategory.subCategoryName),
+                              );
+                              return map;
+                            },
+                          )
+                          .values
+                          .toList(),
                     onChanged: _selectedCategoryId == null ? null : (value) {
                       setState(() {
                         _selectedSubCategoryId = value;
@@ -959,7 +929,7 @@ class _AddProductPageState extends State<AddProductPage> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Add at least one variation with price, stock, and SKU',
+                        'Add different variations of your product (size, color, model, etc.)',
                         style: AppTextStyles.bodyMedium.copyWith(
                           color: AppColors.onSurface.withValues(alpha: 0.7),
                         ),
@@ -1124,6 +1094,23 @@ class _AddProductPageState extends State<AddProductPage> {
                                         ),
                                       ),
                                     )
+                                  else if (_variations[index].imageURL != null && _variations[index].imageURL!.isNotEmpty)
+                                    Container(
+                                      height: 250,
+                                      width: double.infinity,
+                                      margin: const EdgeInsets.symmetric(horizontal: 12),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(8),
+                                        color: AppColors.surface,
+                                      ),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Image.network(
+                                          _variations[index].imageURL!,
+                                          fit: BoxFit.cover,
+                                        ),
+                                      ),
+                                    )
                                   else
                                     Container(
                                       height: 80,
@@ -1163,7 +1150,8 @@ class _AddProductPageState extends State<AddProductPage> {
                                           child: OutlinedButton.icon(
                                             onPressed: () => _pickVariationImage(index),
                                             icon: const Icon(Icons.add_a_photo),
-                                            label: Text(_variations[index].imageFile != null 
+                                            label: Text((_variations[index].imageFile != null || 
+                                                        (_variations[index].imageURL != null && _variations[index].imageURL!.isNotEmpty))
                                                 ? 'Change Image' 
                                                 : 'Add Image'),
                                             style: OutlinedButton.styleFrom(
@@ -1179,7 +1167,8 @@ class _AddProductPageState extends State<AddProductPage> {
                                             ),
                                           ),
                                         ),
-                                        if (_variations[index].imageFile != null) ...[
+                                        if (_variations[index].imageFile != null || 
+                                            (_variations[index].imageURL != null && _variations[index].imageURL!.isNotEmpty)) ...[
                                           const SizedBox(width: 8),
                                           Container(
                                             decoration: BoxDecoration(
@@ -1190,6 +1179,7 @@ class _AddProductPageState extends State<AddProductPage> {
                                               onPressed: () {
                                                 setState(() {
                                                   _variations[index].imageFile = null;
+                                                  _variations[index].imageURL = null;
                                                 });
                                               },
                                               icon: const Icon(Icons.delete, color: AppColors.error),
@@ -1338,7 +1328,6 @@ class _AddProductPageState extends State<AddProductPage> {
                             ),
                             const SizedBox(height: 20),
 
-                            
                             // SKU with Barcode Scanner
                             Row(
                               children: [
@@ -1661,22 +1650,17 @@ class _AddProductPageState extends State<AddProductPage> {
                     label: Text(
                       'Add Variation',
                       style: AppTextStyles.labelLarge.copyWith(
+                        color: AppColors.primary,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.primary,
-                      side: BorderSide(
-                        color: AppColors.primary,
-                        width: 2,
-                      ),
+                      side: const BorderSide(color: AppColors.primary, width: 2),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 16,
-                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                     ),
                   ),
                 ),
@@ -1714,7 +1698,7 @@ class _AddProductPageState extends State<AddProductPage> {
                             ),
                           )
                         : Text(
-                            'Add Product',
+                            'Update Product',
                             style: AppTextStyles.labelLarge.copyWith(
                               color: AppColors.onPrimary,
                               fontWeight: FontWeight.w600,

@@ -98,6 +98,7 @@ class Product {
 class ProductVariation {
   final String variationId;
   final String productId;
+  final String name;
   final String? imageURL;
   final double price;
   final int stock;
@@ -108,6 +109,7 @@ class ProductVariation {
   ProductVariation({
     required this.variationId,
     required this.productId,
+    required this.name,
     this.imageURL,
     required this.price,
     required this.stock,
@@ -161,10 +163,11 @@ class ProductVariation {
     return ProductVariation(
       variationId: doc.id,
       productId: data['productId'] ?? '',
+      name: data['name'] ?? '',
       imageURL: data['imageURL'],
       price: price,
       stock: stock,
-      sku: data['SKU'] ?? '',
+      sku: data['sku'] ?? '',
       weight: weight,
       dimensions: data['dimensions'],
     );
@@ -173,10 +176,11 @@ class ProductVariation {
   Map<String, dynamic> toMap() {
     return {
       'productId': productId,
+      'name': name,
       'imageURL': imageURL,
       'price': price,
       'stock': stock,
-      'SKU': sku,
+      'sku': sku,
       'weight': weight,
       'dimensions': dimensions,
     };

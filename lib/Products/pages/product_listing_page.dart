@@ -27,7 +27,10 @@ class ProductImageCacheManager {
 }
 
 class ProductListingPage extends StatefulWidget {
-  const ProductListingPage({super.key});
+  const ProductListingPage({super.key, this.isStandalone = false});
+
+  // Flag to indicate if this page is used standalone (not within bottom navigation)
+  final bool isStandalone;
 
   @override
   _ProductListingPageState createState() => _ProductListingPageState();
@@ -59,6 +62,12 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
   // Mapping between category names and IDs for filtering
   Map<String, String> _categoryNameToId = {};
   Map<String, String> _categoryIdToName = {};
+  
+  // Subcategory state
+  List<SubCategory> _subcategories = [];
+  String? _selectedSubCategory;
+  bool _isLoadingSubcategories = false;
+  bool _isSubcategoriesExpanded = false;
 
   // Override to keep this page alive when navigating away
   @override
@@ -85,6 +94,10 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
       _userFirstName = _instance!._userFirstName;
       _categoryNameToId = _instance!._categoryNameToId;
       _categoryIdToName = _instance!._categoryIdToName;
+      _subcategories = _instance!._subcategories;
+      _selectedSubCategory = _instance!._selectedSubCategory;
+      _isLoadingSubcategories = _instance!._isLoadingSubcategories;
+      _isSubcategoriesExpanded = _instance!._isSubcategoriesExpanded;
       
       // Check if cache is expired (older than 12 hours)
       if (_isCacheExpired()) {
@@ -226,6 +239,10 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     
     setState(() {
       _selectedCategory = category;
+      // Reset subcategory selection when switching categories
+      _selectedSubCategory = null;
+      _subcategories = [];
+      _isSubcategoriesExpanded = false;
       // Reset pagination parameters for the new category
       _products = [];
       _lastDocument = null;
@@ -234,12 +251,87 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
       _isLoadingMore = false;
     });
     
+    // Load subcategories for the selected category if it's not 'All'
+    if (category != 'All') {
+      _loadSubcategories(category);
+    }
+    
     // Load first page with the new category
     _loadFirstPage();
     
     // Update the static instance
     if (_instance != null) {
       _instance!._selectedCategory = category;
+      _instance!._selectedSubCategory = null;
+      _instance!._subcategories = [];
+      _instance!._isSubcategoriesExpanded = false;
+    }
+  }
+
+  // Load subcategories for a given category
+  Future<void> _loadSubcategories(String categoryName) async {
+    final categoryId = _categoryNameToId[categoryName];
+    if (categoryId == null) return;
+    
+    setState(() {
+      _isLoadingSubcategories = true;
+    });
+    
+    try {
+      final subcategories = await _categoryService.getSubCategories(categoryId);
+      if (mounted) {
+        setState(() {
+          _subcategories = subcategories;
+          _isLoadingSubcategories = false;
+          // Auto-expand if subcategories are found
+          _isSubcategoriesExpanded = subcategories.isNotEmpty;
+        });
+        
+        // Update the static instance
+        if (_instance != null) {
+          _instance!._subcategories = subcategories;
+          _instance!._isLoadingSubcategories = false;
+          _instance!._isSubcategoriesExpanded = subcategories.isNotEmpty;
+        }
+      }
+    } catch (e) {
+      AppLogger.d('❌ Error loading subcategories: $e');
+      if (mounted) {
+        setState(() {
+          _subcategories = [];
+          _isLoadingSubcategories = false;
+          _isSubcategoriesExpanded = false;
+        });
+      }
+    }
+  }
+
+  // Handle subcategory selection
+  void _onSubCategorySelected(String subCategoryId, String subCategoryName) {
+    if (_selectedSubCategory == subCategoryId) return;
+    
+    // Track subcategory click (need categoryId)
+    final categoryId = _categoryNameToId[_selectedCategory];
+    if (categoryId != null) {
+      _clickTrackingService.trackSubCategoryClick(categoryId, subCategoryId);
+    }
+    
+    setState(() {
+      _selectedSubCategory = subCategoryId;
+      // Reset pagination parameters for the new subcategory
+      _products = [];
+      _lastDocument = null;
+      _hasMore = true;
+      _isLoading = false;
+      _isLoadingMore = false;
+    });
+    
+    // Load first page with the new subcategory
+    _loadFirstPage();
+    
+    // Update the static instance
+    if (_instance != null) {
+      _instance!._selectedSubCategory = subCategoryId;
     }
   }
   
@@ -381,14 +473,248 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     }
   }
   
+  // Helper method to compare product lists for change detection
+  bool _hasDataChanged(List<Product> oldProducts, List<Product> newProducts) {
+    if (oldProducts.length != newProducts.length) {
+      AppLogger.d('🔍 Data changed: Product count differs (${oldProducts.length} vs ${newProducts.length})');
+      return true;
+    }
+    
+    for (int i = 0; i < oldProducts.length; i++) {
+      final oldProduct = oldProducts[i];
+      final newProduct = newProducts[i];
+      
+      if (oldProduct.productId != newProduct.productId ||
+          oldProduct.name != newProduct.name ||
+          oldProduct.lowestPrice != newProduct.lowestPrice ||
+          oldProduct.imageURL != newProduct.imageURL ||
+          oldProduct.categoryId != newProduct.categoryId) {
+        AppLogger.d('🔍 Data changed: Product ${oldProduct.name} has differences');
+        return true;
+      }
+    }
+    
+    return false;
+  }
+  
+  // Helper method to compare category data for changes
+  bool _hasCategoryDataChanged(Map<String, String> oldMapping, Map<String, String> newMapping) {
+    if (oldMapping.length != newMapping.length) {
+      AppLogger.d('🔍 Categories changed: Count differs (${oldMapping.length} vs ${newMapping.length})');
+      return true;
+    }
+    
+    for (final entry in oldMapping.entries) {
+      if (newMapping[entry.key] != entry.value) {
+        AppLogger.d('🔍 Categories changed: ${entry.key} mapping differs');
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  // Handle pull-to-refresh with cache-first approach and change detection
+  Future<void> _handleRefresh() async {
+    AppLogger.d('🔄 ProductListingPage: Pull-to-refresh triggered (cache-first approach)');
+    
+    try {
+      // Keep current data as backup
+      final currentProducts = List<Product>.from(_products);
+      final currentCategories = Map<String, String>.from(_categoryNameToId);
+      final currentTimestamp = _cacheTimestamp;
+      
+      AppLogger.d('📋 Current cache: ${currentProducts.length} products, ${currentCategories.length} categories');
+      
+      // Fetch fresh data from Firebase
+      AppLogger.d('🌐 Fetching fresh data from Firebase...');
+      final result = await _productService.getProductsPaginated(
+        limit: _pageSize,
+        categoryId: null,
+      );
+      
+      final freshProducts = result['products'] as List<Product>;
+      
+      // Fetch fresh categories
+      Map<String, String> freshCategoryMapping = {};
+      Map<String, String> freshCategoryIdToName = {};
+      List<String> freshCategoriesList = ['All'];
+      
+      try {
+        final allCategories = await _categoryService.getCategories();
+        for (var category in allCategories) {
+          freshCategoriesList.add(category.categoryName);
+          freshCategoryMapping[category.categoryName] = category.categoryId;
+          freshCategoryIdToName[category.categoryId] = category.categoryName;
+        }
+        AppLogger.d('📂 Fetched ${allCategories.length} fresh categories');
+      } catch (e) {
+        AppLogger.d('❌ Error fetching fresh categories: $e');
+        // Keep existing categories on error
+        freshCategoryMapping = currentCategories;
+        freshCategoriesList = _categories;
+      }
+      
+      // Compare data for changes
+      final hasProductChanges = _hasDataChanged(currentProducts, freshProducts);
+      final hasCategoryChanges = _hasCategoryDataChanged(currentCategories, freshCategoryMapping);
+      final hasAnyChanges = hasProductChanges || hasCategoryChanges;
+      
+      if (hasAnyChanges || currentTimestamp == null || _isCacheExpired()) {
+        AppLogger.d('🔄 Changes detected or cache expired - updating data');
+        
+        // Update with fresh data
+        setState(() {
+          _products = freshProducts;
+          _lastDocument = result['lastDocument'] as DocumentSnapshot?;
+          _hasMore = result['hasMore'] as bool;
+          _categories = freshCategoriesList;
+          _categoryNameToId = freshCategoryMapping;
+          _categoryIdToName = freshCategoryIdToName;
+          _cacheTimestamp = DateTime.now();
+          _errorMessage = null;
+        });
+        
+        // Update static instance
+        if (_instance != null) {
+          _instance!._products = _products;
+          _instance!._lastDocument = _lastDocument;
+          _instance!._hasMore = _hasMore;
+          _instance!._categories = _categories;
+          _instance!._categoryNameToId = _categoryNameToId;
+          _instance!._categoryIdToName = _categoryIdToName;
+          _instance!._cacheTimestamp = _cacheTimestamp;
+        }
+        
+        // Clear image cache only if there are actual changes
+        if (hasProductChanges) {
+          AppLogger.d('🗑️ Clearing image cache due to product changes');
+          await ProductImageCacheManager.instance.emptyCache();
+        }
+        
+        AppLogger.d('✅ Data updated: ${freshProducts.length} products, ${freshCategoriesList.length - 1} categories');
+      } else {
+        // No changes detected, just refresh timestamp
+        setState(() {
+          _cacheTimestamp = DateTime.now();
+        });
+        
+        // Update static instance timestamp
+        if (_instance != null) {
+          _instance!._cacheTimestamp = _cacheTimestamp;
+        }
+        
+        AppLogger.d('ℹ️ No changes detected - cache timestamp refreshed');
+      }
+      
+    } catch (e) {
+      AppLogger.d('❌ Refresh error: $e');
+      AppLogger.d('Stack trace: ${StackTrace.current}');
+      
+      // Keep existing data on error, but show error state if we have no data
+      if (_products.isEmpty) {
+        setState(() {
+          _errorMessage = 'Failed to refresh data: ${e.toString()}';
+        });
+      }
+    }
+    
+    AppLogger.d('✅ ProductListingPage: Pull-to-refresh completed');
+  }
+
+  Future<bool> _showExitConfirmation() async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.exit_to_app,
+                color: AppColors.warning,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Exit App',
+              style: AppTextStyles.titleMedium.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to exit the app?',
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: AppColors.onSurface.withValues(alpha: 0.8),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.onSurface.withValues(alpha: 0.6),
+            ),
+            child: Text('Cancel', style: AppTextStyles.buttonMedium),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.warning,
+              foregroundColor: AppColors.onPrimary,
+              elevation: 0,
+            ),
+            child: Text('Exit', style: AppTextStyles.buttonMedium),
+          ),
+        ],
+      ),
+    ) ?? false;
+  }
+  
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
+    
+    // Only wrap with PopScope if used standalone (not within home page navigation)
+    if (!widget.isStandalone) {
+      return _buildScaffold();
+    }
+    
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        
+        final shouldExit = await _showExitConfirmation();
+        if (shouldExit && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: _buildScaffold(),
+    );
+  }
+
+  Widget _buildScaffold() {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: CustomScrollView(
-        controller: _scrollController,
-        slivers: [
+      body: RefreshIndicator(
+        onRefresh: _handleRefresh,
+        color: AppColors.primary,
+        backgroundColor: AppColors.surface,
+        displacement: 40,
+        strokeWidth: 2.5,
+        child: CustomScrollView(
+          controller: _scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
           // Modern SliverAppBar with gradient
           SliverAppBar(
             expandedHeight: 60,
@@ -711,6 +1037,198 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                           },
                         ),
                       ),
+                      
+                      // Subcategories section (expandable)
+                      if (_selectedCategory != 'All' && _subcategories.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _isSubcategoriesExpanded = !_isSubcategoriesExpanded;
+                            });
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: AppColors.secondary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: AppColors.secondary.withValues(alpha: 0.2),
+                                width: 1,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.secondary.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Icon(
+                                    Icons.subdirectory_arrow_right,
+                                    color: AppColors.secondary,
+                                    size: 14,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Subcategories (${_subcategories.length})',
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.secondary,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                                if (_selectedSubCategory != null) ...[
+                                  GestureDetector(
+                                    onTap: () {
+                                      setState(() {
+                                        _selectedSubCategory = null;
+                                      });
+                                      _loadFirstPage();
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.error.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        'Clear',
+                                        style: AppTextStyles.bodySmall.copyWith(
+                                          color: AppColors.error,
+                                          fontWeight: FontWeight.w500,
+                                          fontSize: 10,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                ],
+                                AnimatedRotation(
+                                  turns: _isSubcategoriesExpanded ? 0.25 : 0,
+                                  duration: const Duration(milliseconds: 200),
+                                  child: Icon(
+                                    Icons.keyboard_arrow_right,
+                                    color: AppColors.secondary,
+                                    size: 18,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        
+                        // Expandable subcategories content
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut,
+                          height: _isSubcategoriesExpanded ? null : 0,
+                          child: AnimatedOpacity(
+                            duration: const Duration(milliseconds: 200),
+                            opacity: _isSubcategoriesExpanded ? 1.0 : 0.0,
+                            child: Container(
+                              margin: const EdgeInsets.only(top: 12),
+                              child: _isLoadingSubcategories
+                                  ? const Center(
+                                      child: Padding(
+                                        padding: EdgeInsets.all(16.0),
+                                        child: SizedBox(
+                                          height: 20,
+                                          width: 20,
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        ),
+                                      ),
+                                    )
+                                  : Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: _subcategories.map((subcategory) {
+                                        final isSelected = _selectedSubCategory == subcategory.subCategoryId;
+                                        
+                                        return GestureDetector(
+                                          onTap: () => _onSubCategorySelected(
+                                            subcategory.subCategoryId,
+                                            subcategory.subCategoryName,
+                                          ),
+                                          child: AnimatedContainer(
+                                            duration: const Duration(milliseconds: 200),
+                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                            decoration: BoxDecoration(
+                                              color: isSelected 
+                                                  ? AppColors.secondary 
+                                                  : Colors.white,
+                                              borderRadius: BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color: isSelected 
+                                                    ? AppColors.secondary 
+                                                    : AppColors.onSurface.withValues(alpha: 0.2),
+                                                width: 1,
+                                              ),
+                                              boxShadow: isSelected ? [
+                                                BoxShadow(
+                                                  color: AppColors.secondary.withValues(alpha: 0.2),
+                                                  blurRadius: 4,
+                                                  offset: const Offset(0, 2),
+                                                ),
+                                              ] : [],
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  subcategory.subCategoryName,
+                                                  style: AppTextStyles.bodySmall.copyWith(
+                                                    color: isSelected 
+                                                        ? AppColors.onSecondary 
+                                                        : AppColors.onSurface,
+                                                    fontWeight: isSelected 
+                                                        ? FontWeight.bold 
+                                                        : FontWeight.w500,
+                                                    fontSize: 11,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 4),
+                                                FutureBuilder<int>(
+                                                  future: _getSubCategoryClickCount(subcategory.subCategoryId),
+                                                  builder: (context, snapshot) {
+                                                    final clickCount = snapshot.data ?? 0;
+                                                    if (clickCount == 0) return const SizedBox.shrink();
+                                                    
+                                                    return Container(
+                                                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                                      decoration: BoxDecoration(
+                                                        color: isSelected 
+                                                            ? AppColors.onSecondary.withValues(alpha: 0.2)
+                                                            : AppColors.primary.withValues(alpha: 0.1),
+                                                        borderRadius: BorderRadius.circular(6),
+                                                      ),
+                                                      child: Text(
+                                                        '$clickCount',
+                                                        style: AppTextStyles.bodySmall.copyWith(
+                                                          color: isSelected 
+                                                              ? AppColors.onSecondary 
+                                                              : AppColors.primary,
+                                                          fontWeight: FontWeight.bold,
+                                                          fontSize: 9,
+                                                        ),
+                                                      ),
+                                                    );
+                                                  },
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -786,34 +1304,32 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     sliver: _buildModernProductGrid(),
                   ),
-        ],
+          ],
+        ),
       ),
-      floatingActionButton: () {
-        AppLogger.d('🔍 ProductListingPage: Building FAB - _isSeller: $_isSeller');
-        return _isSeller ? Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.primary.withValues(alpha: 0.3),
-                blurRadius: 12,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: FloatingActionButton(
-            onPressed: () {
-              AppLogger.d('🔍 ProductListingPage: FAB pressed - navigating to add-product');
-              Navigator.pushNamed(context, '/add-product');
-            },
-            backgroundColor: AppColors.primary,
-            foregroundColor: AppColors.onPrimary,
-            elevation: 0,
-            highlightElevation: 0,
-            child: const Icon(Icons.add),
-          ),
-        ) : null;
-      }(),
+      floatingActionButton: _isSeller ? Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withValues(alpha: 0.3),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: FloatingActionButton(
+          onPressed: () {
+            AppLogger.d('🔍 ProductListingPage: FAB pressed - navigating to add-product');
+            Navigator.pushNamed(context, '/add-product');
+          },
+          backgroundColor: AppColors.primary,
+          foregroundColor: AppColors.onPrimary,
+          elevation: 0,
+          highlightElevation: 0,
+          child: const Icon(Icons.add),
+        ),
+      ) : null,
     );
   }
 
@@ -975,7 +1491,13 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     
     final filteredProducts = _products.where((product) {
       if (_selectedCategory == 'All') return true;
-      // Compare product's categoryId with the selected category's ID
+      
+      // If a subcategory is selected, filter by subcategory
+      if (_selectedSubCategory != null) {
+        return product.subCategoryId == _selectedSubCategory;
+      }
+      
+      // Otherwise, filter by category
       final selectedCategoryId = _categoryNameToId[_selectedCategory];
       return product.categoryId == selectedCategoryId;
     }).toList();
@@ -1124,6 +1646,10 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                               ),
                             ),
                             cacheManager: ProductImageCacheManager.instance,
+                            // Cache at native 720p resolution for better quality
+                            memCacheWidth: 1280,
+                            memCacheHeight: 720,
+                            filterQuality: FilterQuality.high,
                           ),
                         ),
                       ],
@@ -1210,5 +1736,23 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
         ),
       ),
     );
+  }
+
+  // Get subcategory click count from Firestore
+  Future<int> _getSubCategoryClickCount(String subCategoryId) async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('SubCategoryClicks')
+          .doc(subCategoryId)
+          .get();
+      
+      if (doc.exists) {
+        return doc.data()?['clickCounter'] ?? 0;
+      }
+      return 0;
+    } catch (e) {
+      AppLogger.d('❌ Error getting subcategory click count: $e');
+      return 0;
+    }
   }
 }
