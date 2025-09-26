@@ -2,6 +2,7 @@ import 'package:dentpal/core/app_theme/index.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/product_model.dart';
 import '../services/product_service.dart';
 import '../services/cart_service.dart';
@@ -108,6 +109,9 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   // Cache for category names to avoid repeated Firestore calls
   final Map<String, String> _categoryNames = {};
   
+  // Cache for seller data to avoid repeated Firestore calls
+  final Map<String, Map<String, dynamic>> _sellerData = {};
+  
   // Cache management
   Product? _cachedProduct;
   DateTime? _cacheTimestamp;
@@ -166,6 +170,55 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       AppLogger.d('❌ Error fetching category name for $categoryId: $e');
       _categoryNames[categoryId] = 'Unknown Category';
       return 'Unknown Category';
+    }
+  }
+
+  // Fetch seller data by ID and cache it
+  Future<Map<String, dynamic>> _getSellerData(String sellerId) async {
+    if (_sellerData.containsKey(sellerId)) {
+      return _sellerData[sellerId]!;
+    }
+    
+    try {
+      final sellerDoc = await FirebaseFirestore.instance
+          .collection('Seller')
+          .doc(sellerId)
+          .get();
+      
+      if (sellerDoc.exists) {
+        final data = sellerDoc.data() as Map<String, dynamic>;
+        final sellerInfo = {
+          'shopName': data['shopName'] ?? 'DentPal Store',
+          'address': data['address'] ?? 'No address provided',
+          'contactEmail': data['contactEmail'] ?? '',
+          'contactNumber': data['contactNumber'] ?? '',
+          'isActive': data['isActive'] ?? true,
+        };
+        _sellerData[sellerId] = sellerInfo;
+        return sellerInfo;
+      } else {
+        // Default data if seller not found
+        final defaultData = {
+          'shopName': 'DentPal Store',
+          'address': 'Store location not available',
+          'contactEmail': '',
+          'contactNumber': '',
+          'isActive': true,
+        };
+        _sellerData[sellerId] = defaultData;
+        return defaultData;
+      }
+    } catch (e) {
+      AppLogger.d('❌ Error fetching seller data for $sellerId: $e');
+      final defaultData = {
+        'shopName': 'DentPal Store',
+        'address': 'Store location not available',
+        'contactEmail': '',
+        'contactNumber': '',
+        'isActive': true,
+      };
+      _sellerData[sellerId] = defaultData;
+      return defaultData;
     }
   }
 
@@ -871,65 +924,79 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           
           // Shop name section
           if (_selectedVariation != null)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: AppColors.primary.withValues(alpha: 0.2),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(
-                      Icons.store,
-                      color: AppColors.onPrimary,
-                      size: 20,
+            FutureBuilder<Map<String, dynamic>>(
+              future: _getSellerData(product.sellerId),
+              builder: (context, sellerSnapshot) {
+                final sellerData = sellerSnapshot.data ?? {
+                  'shopName': 'DentPal Store',
+                  'address': 'Loading...',
+                  'isActive': true,
+                };
+                
+                return Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.2),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      Text(
-                        'Shop',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.onSurface.withValues(alpha: 0.7),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.store,
+                          color: AppColors.onPrimary,
+                          size: 20,
                         ),
                       ),
-                      Text(
-                        'DentPal Store',
-                        style: AppTextStyles.titleLarge.copyWith(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.bold,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              sellerData['shopName'] ?? 'Store name not available',
+                              style: AppTextStyles.titleLarge.copyWith(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              sellerData['address'] ?? 'Address not available',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.onSurface.withValues(alpha: 0.7),
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: (sellerData['isActive'] == true ? Colors.green : Colors.orange).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          sellerData['isActive'] == true ? 'Verified' : 'Inactive',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: sellerData['isActive'] == true ? Colors.green : Colors.orange,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ],
                   ),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      'Verified',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: Colors.green,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                );
+              },
             ),
         ],
       ),

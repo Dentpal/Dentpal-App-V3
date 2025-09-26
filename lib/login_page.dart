@@ -128,15 +128,15 @@ class _LoginPageState extends State<LoginPage> {
           );
         }
 
-        // Query Firestore to find the user with this phone number
-        final QuerySnapshot userQuery = await FirebaseFirestore.instance
-            .collection('User')
+        // Query UserLookup to find the user with this phone number
+        final QuerySnapshot userLookupQuery = await FirebaseFirestore.instance
+            .collection('UserLookup')
             .where('contactNumber', isEqualTo: formattedPhone)
             .limit(1)
             .get();
 
         // Check if we found a user with this phone number
-        if (userQuery.docs.isEmpty) {
+        if (userLookupQuery.docs.isEmpty) {
           setState(() {
             _isLoading = false;
             _errorMessage =
@@ -145,11 +145,11 @@ class _LoginPageState extends State<LoginPage> {
           return;
         }
 
-        // Try to extract the email from the found user document
+        // Try to extract the email from the found UserLookup document
         String? userEmail;
         try {
-          final userData = userQuery.docs.first.data() as Map<String, dynamic>;
-          userEmail = userData['email'] as String?;
+          final userLookupData = userLookupQuery.docs.first.data() as Map<String, dynamic>;
+          userEmail = userLookupData['email'] as String?;
         } catch (e) {
           // Handle case where email field doesn't exist or isn't a string
         }

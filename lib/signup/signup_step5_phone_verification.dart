@@ -269,6 +269,16 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
         'updatedAt': FieldValue.serverTimestamp(),
         'role': 'buyer', // Default role
       });
+      
+      // Create UserLookup document for fast phone/email lookup during login
+      await FirebaseFirestore.instance.collection('UserLookup').doc(user.uid).set({
+        'contactNumber': _controller.formattedPhoneNumber,
+        'email': _controller.email,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      
+      AppLogger.d('User and UserLookup documents created successfully');
     } catch (e) {
       AppLogger.d('Error saving user data: $e');
       rethrow; // Re-throw to handle in the calling function
