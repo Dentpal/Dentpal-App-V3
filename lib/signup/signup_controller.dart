@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:logger/logger.dart';
+import 'dart:typed_data';
 
 class SignupController {
   // Personal details (Step 1)
@@ -8,6 +10,29 @@ class SignupController {
   final TextEditingController contactNumberController = TextEditingController();
   String? selectedGender;
   DateTime? selectedBirthdate;
+  
+  // ID verification (Step 3)
+  String? idNumber; // Registration number from the scanned ID
+  bool isIdVerified = false;
+  String? idVerificationError;
+  Uint8List? idFaceImage; // Temporarily store face image from ID
+  
+  // Face verification (Step 4)
+  bool isFaceVerified = false;
+  Uint8List? selfieImage; // Store the captured selfie
+  String? faceVerificationError;
+  
+  // Logger for OCR debugging
+  static final Logger _logger = Logger(
+    printer: PrettyPrinter(
+      methodCount: 0,
+      errorMethodCount: 5,
+      lineLength: 50,
+      colors: true,
+      printEmojis: true,
+      dateTimeFormat: DateTimeFormat.onlyTimeAndSinceStart,
+    ),
+  );
   
   // OTP verification state for contact number
   bool isContactNumberVerified = false;
@@ -78,6 +103,37 @@ class SignupController {
   // Getter to access the formatted phone number for Firebase operations
   String get formattedPhoneNumber => formatPhoneNumberForFirebase(contactNumberController.text);
   
+  // OCR logging helper
+  static void logOcrResult(String tag, String message) {
+    _logger.i('[OCR_KYC_$tag] $message');
+  }
+  
+  // Static cleanup for OCR service
+  static void cleanupOcrService() {
+    // This can be called from the main dispose method if needed
+    // For now, the OCR service manages its own lifecycle
+  }
+  
+  // Face verification methods
+  void setFaceVerification(Uint8List imageBytes) {
+    selfieImage = imageBytes;
+    isFaceVerified = true;
+    faceVerificationError = null;
+    logOcrResult('FACE_VERIFICATION', 'Face verification completed successfully');
+  }
+  
+  void clearFaceVerification() {
+    selfieImage = null;
+    isFaceVerified = false;
+    faceVerificationError = null;
+  }
+  
+  void setFaceVerificationError(String error) {
+    faceVerificationError = error;
+    isFaceVerified = false;
+    logOcrResult('FACE_VERIFICATION_ERROR', error);
+  }
+  
   void validatePassword() {
     final password = passwordController.text;
     hasUppercase = password.contains(RegExp(r'[A-Z]'));
@@ -95,6 +151,10 @@ class SignupController {
     emailController.dispose();
     passwordController.dispose();
     confirmPasswordController.dispose();
+    
+    // Clear sensitive data
+    idFaceImage = null;
+    selfieImage = null;
     
     // Dispose OTP controllers and focus nodes
     for (var controller in otpControllers) {

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'signup_step1_personal_details.dart';
 import 'signup_step2_acc_credentials.dart';
 import 'signup_step3_id_verification.dart';
+import 'signup_step4_face_verification.dart';
+import 'signup_step5_phone_verification.dart';
 import 'signup_controller.dart';
 
 class SignUpPage extends StatefulWidget {
@@ -17,7 +19,7 @@ class _SignUpPageState extends State<SignUpPage> {
 
   void _goToNextStep() {
     setState(() {
-      if (_currentStep < 2) {
+      if (_currentStep < 4) {
         _currentStep++;
       }
     });
@@ -46,7 +48,7 @@ class _SignUpPageState extends State<SignUpPage> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
             child: Row(
-              children: List.generate(3, (index) {
+              children: List.generate(5, (index) {
                 return Expanded(
                   child: Container(
                     height: 4,
@@ -65,28 +67,59 @@ class _SignUpPageState extends State<SignUpPage> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Personal Details',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: _currentStep == 0 ? FontWeight.bold : FontWeight.normal,
-                    color: _currentStep == 0 ? const Color(0xFF43A047) : Colors.grey,
+                Expanded(
+                  child: Text(
+                    'Personal Details',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: _currentStep == 0 ? FontWeight.bold : FontWeight.normal,
+                      color: _currentStep == 0 ? const Color(0xFF43A047) : Colors.grey,
+                    ),
                   ),
                 ),
-                Text(
-                  'Account Setup',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: _currentStep == 1 ? FontWeight.bold : FontWeight.normal,
-                    color: _currentStep == 1 ? const Color(0xFF43A047) : Colors.grey,
+                Expanded(
+                  child: Text(
+                    'Account Setup',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: _currentStep == 1 ? FontWeight.bold : FontWeight.normal,
+                      color: _currentStep == 1 ? const Color(0xFF43A047) : Colors.grey,
+                    ),
                   ),
                 ),
-                Text(
-                  'ID Verification',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: _currentStep == 2 ? FontWeight.bold : FontWeight.normal,
-                    color: _currentStep == 2 ? const Color(0xFF43A047) : Colors.grey,
+                Expanded(
+                  child: Text(
+                    'ID Verification',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: _currentStep == 2 ? FontWeight.bold : FontWeight.normal,
+                      color: _currentStep == 2 ? const Color(0xFF43A047) : Colors.grey,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    'Face Verification',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: _currentStep == 3 ? FontWeight.bold : FontWeight.normal,
+                      color: _currentStep == 3 ? const Color(0xFF43A047) : Colors.grey,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    'Phone Verification',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: _currentStep == 4 ? FontWeight.bold : FontWeight.normal,
+                      color: _currentStep == 4 ? const Color(0xFF43A047) : Colors.grey,
+                    ),
                   ),
                 ),
               ],
@@ -117,6 +150,18 @@ class _SignUpPageState extends State<SignUpPage> {
         );
       case 2:
         return SignupStep3IdVerification(
+          controller: _controller,
+          onNext: _goToNextStep,
+          onBack: _goToPreviousStep,
+        );
+      case 3:
+        return SignupStep4FaceVerification(
+          controller: _controller,
+          onNext: _goToNextStep,
+          onBack: _goToPreviousStep,
+        );
+      case 4:
+        return SignupStep5PhoneVerification(
           controller: _controller,
           onBack: _goToPreviousStep,
         );
