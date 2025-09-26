@@ -330,7 +330,7 @@ class ProductService {
           'imageURL': variationForm.imageURL,
           'price': variationForm.price,
           'stock': variationForm.stock,
-          'SKU': variationForm.sku,
+          'sku': variationForm.sku,
           'weight': variationForm.weight,
           'dimensions': variationForm.dimensions,
         });
@@ -431,7 +431,7 @@ class ProductService {
             'imageURL': variationForm.imageURL,
             'price': variationForm.price,
             'stock': variationForm.stock,
-            'SKU': variationForm.sku,
+            'sku': variationForm.sku,
             'weight': variationForm.weight,
             'dimensions': variationForm.dimensions,
           });
@@ -445,7 +445,7 @@ class ProductService {
             'imageURL': variationForm.imageURL,
             'price': variationForm.price,
             'stock': variationForm.stock,
-            'SKU': variationForm.sku,
+            'sku': variationForm.sku,
             'weight': variationForm.weight,
             'dimensions': variationForm.dimensions,
           });
