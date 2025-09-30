@@ -125,4 +125,39 @@ class CategoryService {
       return null;
     }
   }
+
+  // Get subcategories by searching through all categories
+  Future<List<SubCategory>> getSubCategoriesByIds(List<String> subCategoryIds) async {
+    try {
+      AppLogger.d('🔍 Searching for subcategories with IDs: $subCategoryIds');
+      
+      List<SubCategory> foundSubCategories = [];
+      
+      // Get all categories first
+      QuerySnapshot categoriesSnapshot = await _firestore
+          .collection('Category')
+          .get();
+      
+      // Search through each category's subcategories
+      for (var categoryDoc in categoriesSnapshot.docs) {
+        QuerySnapshot subCategoriesSnapshot = await _firestore
+            .collection('Category')
+            .doc(categoryDoc.id)
+            .collection('subCategory')
+            .get();
+        
+        for (var subCategoryDoc in subCategoriesSnapshot.docs) {
+          if (subCategoryIds.contains(subCategoryDoc.id)) {
+            foundSubCategories.add(SubCategory.fromFirestore(subCategoryDoc));
+          }
+        }
+      }
+      
+      AppLogger.d('✅ Found ${foundSubCategories.length} subcategories');
+      return foundSubCategories;
+    } catch (e) {
+      AppLogger.d('❌ Error searching subcategories: $e');
+      return [];
+    }
+  }
 }

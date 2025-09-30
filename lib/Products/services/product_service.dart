@@ -472,4 +472,77 @@ class ProductService {
       };
     }
   }
+
+  // Get all products for a specific seller
+  Future<List<Product>> getProductsBySeller(String sellerId) async {
+    try {
+      AppLogger.d('🔍 ProductService: Fetching products for seller: $sellerId');
+      
+      // Use simple query to avoid index requirements
+      QuerySnapshot querySnapshot = await _firestore
+          .collection('Product')
+          .where('sellerId', isEqualTo: sellerId)
+          .get();
+      
+      AppLogger.d('✅ ProductService: Simple query successful with ${querySnapshot.docs.length} documents');
+      
+      AppLogger.d('🔍 ProductService: Query returned ${querySnapshot.docs.length} documents');
+      
+      List<Product> products = [];
+      for (var doc in querySnapshot.docs) {
+        try {
+          AppLogger.d('🔍 ProductService: Processing document ${doc.id}');
+          Product product = Product.fromFirestore(doc);
+          
+          // Filter by isActive manually since we're using simple query
+          if (!product.isActive) {
+            AppLogger.d('⚠️ ProductService: Skipping inactive product ${product.name}');
+            continue;
+          }
+          
+          // Get variations for each product
+          QuerySnapshot variationsSnapshot = await _firestore
+              .collection('Product')
+              .doc(product.productId)
+              .collection('Variation')
+              .get();
+          
+          AppLogger.d('🔍 ProductService: Found ${variationsSnapshot.docs.length} variations for ${product.name}');
+          
+          if (variationsSnapshot.docs.isNotEmpty) {
+            List<ProductVariation> variations = variationsSnapshot.docs
+                .map((doc) => ProductVariation.fromFirestore(doc))
+                .toList();
+            
+            product = Product(
+              productId: product.productId,
+              name: product.name,
+              description: product.description,
+              imageURL: product.imageURL,
+              categoryId: product.categoryId,
+              subCategoryId: product.subCategoryId,
+              sellerId: product.sellerId,
+              createdAt: product.createdAt,
+              updatedAt: product.updatedAt,
+              isActive: product.isActive,
+              clickCounter: product.clickCounter,
+              variations: variations,
+            );
+          }
+          
+          products.add(product);
+          AppLogger.d('✅ ProductService: Added product ${product.name} to results');
+        } catch (productError) {
+          AppLogger.d('❌ ProductService: Error processing product document ${doc.id}: $productError');
+        }
+      }
+      
+      AppLogger.d('✅ ProductService: Final result - Fetched ${products.length} active products for seller $sellerId');
+      return products;
+    } catch (e) {
+      AppLogger.d('❌ ProductService: Error fetching products for seller $sellerId: $e');
+      AppLogger.d('❌ ProductService: Stack trace: ${StackTrace.current}');
+      return [];
+    }
+  }
 }

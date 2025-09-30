@@ -593,9 +593,14 @@ class _CartPageState extends State<CartPage>
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
 
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWebView = screenWidth > 1024;
+
+    Widget scaffold = isWebView ? _buildWebScaffold() : _buildScaffold();
+
     // Only wrap with PopScope if not used within home page navigation
     if (widget.onBackPressed != null) {
-      return _buildScaffold();
+      return scaffold;
     }
 
     return PopScope(
@@ -608,7 +613,7 @@ class _CartPageState extends State<CartPage>
           Navigator.of(context).pop();
         }
       },
-      child: _buildScaffold(),
+      child: scaffold,
     );
   }
 
@@ -685,6 +690,470 @@ class _CartPageState extends State<CartPage>
         ],
       ),
       bottomNavigationBar: _buildBottomNavigationBar(),
+    );
+  }
+
+  Widget _buildWebScaffold() {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: Column(
+        children: [
+          // Web Header
+          Container(
+            height: 80,
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.08),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                // Back button (only show if not used within home page navigation)
+                if (widget.onBackPressed == null)
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.background,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.1)),
+                    ),
+                    child: IconButton(
+                      onPressed: () {
+                        if (Navigator.canPop(context)) {
+                          Navigator.pop(context);
+                        } else {
+                          Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+                        }
+                      },
+                      icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
+                    ),
+                  ),
+                if (widget.onBackPressed == null) const SizedBox(width: 16),
+                
+                // Title
+                Row(
+                  children: [
+                    Icon(Icons.shopping_cart, color: AppColors.primary, size: 28),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Shopping Cart',
+                      style: AppTextStyles.headlineSmall.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+                
+                const Spacer(),
+                
+                // Cart summary info
+                if (_cartSummary?.hasSelectedItems == true) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.shopping_bag, color: AppColors.primary, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${_cartSummary!.selectedItemsCount} item${_cartSummary!.selectedItemsCount != 1 ? 's' : ''}',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                ],
+                
+                // Clear cart button
+                if (_cartSummary?.hasSelectedItems == true)
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.error.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.error.withValues(alpha: 0.2)),
+                    ),
+                    child: IconButton(
+                      onPressed: _showClearCartConfirmation,
+                      icon: const Icon(Icons.delete_outline, color: AppColors.error),
+                      tooltip: 'Clear Cart',
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
+          // Web Content Area
+          Expanded(
+            child: _buildWebContent(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWebContent() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Main cart content area
+        Expanded(
+          flex: 2,
+          child: Container(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Cart items header
+                if (_cachedSellerGroups != null && _cachedSellerGroups!.isNotEmpty) ...[
+                  Row(
+                    children: [
+                      Text(
+                        'Cart Items',
+                        style: AppTextStyles.titleLarge.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.onSurface,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${_cachedSellerGroups!.fold(0, (total, group) => total + group.items.length)}',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      // Select all toggle
+                      Row(
+                        children: [
+                          Text(
+                            'Select All',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.onSurface,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Switch.adaptive(
+                            value: _cachedSellerGroups?.every((group) => group.allItemsSelected) == true,
+                            onChanged: _toggleSelectAllWeb,
+                            activeColor: AppColors.primary,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                ],
+
+                // Cart items list
+                Expanded(
+                  child: _buildWebCartItems(),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // Sidebar with cart summary and actions
+        Container(
+          width: 400,
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            border: Border(
+              left: BorderSide(
+                color: AppColors.onSurface.withValues(alpha: 0.1),
+                width: 1,
+              ),
+            ),
+          ),
+          child: _buildWebCartSummary(),
+        ),
+      ],
+    );
+  }
+
+  void _toggleSelectAllWeb(bool? value) async {
+    if (_cachedSellerGroups == null) return;
+
+    try {
+      setState(() {
+        for (var group in _cachedSellerGroups!) {
+          group.toggleAllItems();
+        }
+        _updateCartSummary();
+      });
+
+      // Save all changes to Firestore
+      Map<String, bool> itemSelections = {};
+      for (var group in _cachedSellerGroups!) {
+        for (var item in group.items) {
+          itemSelections[item.cartItemId] = item.isSelected;
+        }
+      }
+      
+      await _cartService.batchUpdateItemSelections(itemSelections);
+      AppLogger.d("✅ All items selection saved to Firestore");
+    } catch (e) {
+      AppLogger.d("❌ Error saving all items selection: $e");
+      // Optionally show error message to user
+    }
+  }
+
+  Widget _buildWebCartItems() {
+    if (_cachedSellerGroups == null || _cachedSellerGroups!.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.shopping_cart_outlined,
+              size: 80,
+              color: AppColors.onSurface,
+            ),
+            SizedBox(height: 16),
+            Text(
+              'Your cart is empty',
+              style: AppTextStyles.titleMedium,
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Add some products to get started',
+              style: AppTextStyles.bodyMedium,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: _cachedSellerGroups!.length,
+      itemBuilder: (context, index) {
+        final sellerGroup = _cachedSellerGroups![index];
+        return Container(
+          margin: const EdgeInsets.only(bottom: 24),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: SellerGroupWidget(
+            sellerGroup: sellerGroup,
+            onUpdateQuantity: _onUpdateQuantity,
+            onRemoveItem: _onRemoveItem,
+            onToggleItemSelection: _onToggleItemSelection,
+            onToggleGroupSelection: _onToggleGroupSelection,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildWebCartSummary() {
+    return Column(
+      children: [
+        // Summary header
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: AppColors.background,
+            border: Border(
+              bottom: BorderSide(
+                color: AppColors.onSurface.withValues(alpha: 0.1),
+                width: 1,
+              ),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.receipt_long, color: AppColors.primary, size: 24),
+              const SizedBox(width: 12),
+              Text(
+                'Order Summary',
+                style: AppTextStyles.titleLarge.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.onSurface,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Summary content
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_cartSummary?.hasSelectedItems == true) ...[
+                  // Selected items count
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Selected Items',
+                        style: AppTextStyles.bodyLarge.copyWith(
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      Text(
+                        '${_cartSummary!.selectedItemsCount}',
+                        style: AppTextStyles.bodyLarge.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Subtotal
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Subtotal', style: AppTextStyles.bodyMedium),
+                      Text(
+                        'RM ${_cartSummary!.selectedItemsTotal.toStringAsFixed(2)}',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Shipping
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Shipping', style: AppTextStyles.bodyMedium),
+                      Text(
+                        'RM ${_cartSummary!.totalShippingCost.toStringAsFixed(2)}',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Divider
+                  Divider(
+                    color: AppColors.onSurface.withValues(alpha: 0.2),
+                    thickness: 1,
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Total
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Total',
+                        style: AppTextStyles.titleMedium.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        'RM ${_cartSummary!.grandTotal.toStringAsFixed(2)}',
+                        style: AppTextStyles.titleMedium.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 32),
+
+                  // Checkout button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: _proceedToCheckout,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: AppColors.onPrimary,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.shopping_bag),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Checkout',
+                            style: AppTextStyles.buttonLarge.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ] else ...[
+                  // Empty state
+                  Column(
+                    children: [
+                      const SizedBox(height: 40),
+                      Icon(
+                        Icons.shopping_cart_outlined,
+                        size: 64,
+                        color: AppColors.onSurface.withValues(alpha: 0.4),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No items selected',
+                        style: AppTextStyles.bodyLarge.copyWith(
+                          color: AppColors.onSurface.withValues(alpha: 0.6),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Select items to see summary',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.onSurface.withValues(alpha: 0.4),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }  Widget _buildCartContent() {
     // Prioritize cached data for immediate display

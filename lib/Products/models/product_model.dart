@@ -167,7 +167,7 @@ class ProductVariation {
       imageURL: data['imageURL'],
       price: price,
       stock: stock,
-      sku: data['sku'] ?? '',
+      sku: data['sku'] ?? data['SKU'] ?? '',
       weight: weight,
       dimensions: data['dimensions'],
     );

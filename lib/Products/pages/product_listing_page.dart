@@ -7,9 +7,11 @@ import '../services/product_service.dart';
 import '../services/user_service.dart';
 import '../services/category_service.dart';
 import '../services/click_tracking_service.dart';
+import '../widgets/product_card.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import 'package:dentpal/utils/app_logger.dart';
+import 'product_detail_page.dart';
 
 
 // Custom cache manager with 24 hour TTL
@@ -55,9 +57,6 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
   
   bool _isSeller = false;
   String _userFirstName = 'User';
-  
-  // Cache for category names to avoid repeated Firestore calls
-  final Map<String, String> _categoryNames = {};
   
   // Mapping between category names and IDs for filtering
   Map<String, String> _categoryNameToId = {};
@@ -175,23 +174,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     }
   }
   
-  // Fetch category name by ID and cache it
-  Future<String> _getCategoryName(String categoryId) async {
-    if (_categoryNames.containsKey(categoryId)) {
-      return _categoryNames[categoryId]!;
-    }
-    
-    try {
-      final category = await _categoryService.getCategoryById(categoryId);
-      final categoryName = category?.categoryName ?? 'Unknown Category';
-      _categoryNames[categoryId] = categoryName;
-      return categoryName;
-    } catch (e) {
-      AppLogger.d('❌ Error fetching category name for $categoryId: $e');
-      _categoryNames[categoryId] = 'Unknown Category';
-      return 'Unknown Category';
-    }
-  }
+
   
   bool _isCacheExpired() {
     if (_cacheTimestamp == null) return true;
@@ -833,7 +816,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                 
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 16),
-                  height: 180,
+                  height: MediaQuery.of(context).size.width > 800 ? 300 : 180,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [
@@ -852,9 +835,9 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                           imageUrl: 'https://placehold.co/600x400',
                           fit: BoxFit.cover,
                           width: double.infinity,
-                          height: 180,
+                          height: MediaQuery.of(context).size.width > 800 ? 300 : 180,
                           placeholder: (context, url) => Container(
-                            height: 180,
+                            height: MediaQuery.of(context).size.width > 800 ? 300 : 180,
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [AppColors.primary.withValues(alpha: 0.1), AppColors.secondary.withValues(alpha: 0.1)],
@@ -867,7 +850,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                             ),
                           ),
                           errorWidget: (context, url, error) => Container(
-                            height: 180,
+                            height: MediaQuery.of(context).size.width > 800 ? 300 : 180,
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [AppColors.primary.withValues(alpha: 0.1), AppColors.secondary.withValues(alpha: 0.1)],
@@ -1545,8 +1528,8 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
 
     return SliverGrid(
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 0.8, // Increased from 0.75 to give more height
+        crossAxisCount: _getResponsiveCrossAxisCount(context),
+        childAspectRatio: _getResponsiveAspectRatio(context),
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
       ),
@@ -1566,176 +1549,57 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
           }
 
           final product = filteredProducts[index];
-          return _buildModernProductCard(product);
+          return ProductCard(
+            product: product,
+            onTap: () {
+              // Track product click
+              _clickTrackingService.trackProductClick(product.productId);
+              
+              // Navigate to product detail page
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ProductDetailPage(productId: product.productId),
+                ),
+              );
+            },
+          );
         },
         childCount: filteredProducts.length + (_isLoadingMore ? 1 : 0),
       ),
     );
   }
 
-  // Build modern product card with enhanced styling
-  Widget _buildModernProductCard(Product product) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () {
-              // Track product click
-              _clickTrackingService.trackProductClick(product.productId);
-              
-              // Navigate to product details
-              Navigator.pushNamed(
-                context,
-                '/product/${product.productId}',
-              );
-            },
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Product Image
-                Expanded(
-                  flex: 4,
-                  child: Container(
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: AppColors.background,
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(20),
-                        topRight: Radius.circular(20),
-                      ),
-                    ),
-                    child: Stack(
-                      children: [
-                        ClipRRect(
-                          borderRadius: const BorderRadius.only(
-                            topLeft: Radius.circular(20),
-                            topRight: Radius.circular(20),
-                          ),
-                          child: CachedNetworkImage(
-                            imageUrl: product.imageURL,
-                            fit: BoxFit.cover,
-                            width: double.infinity,
-                            height: double.infinity,
-                            placeholder: (context, url) => Container(
-                              color: AppColors.background,
-                              child: const Center(
-                                child: CircularProgressIndicator(),
-                              ),
-                            ),
-                            errorWidget: (context, url, error) => Container(
-                              color: AppColors.background,
-                              child: const Center(
-                                child: Icon(
-                                  Icons.image_not_supported,
-                                  color: Colors.grey,
-                                  size: 32,
-                                ),
-                              ),
-                            ),
-                            cacheManager: ProductImageCacheManager.instance,
-                            // Cache at native 720p resolution for better quality
-                            memCacheWidth: 1280,
-                            memCacheHeight: 720,
-                            filterQuality: FilterQuality.high,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                // Product Info
-                Expanded(
-                  flex: 3,
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 6, left: 12, right: 12, bottom: 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            product.name,
-                            style: AppTextStyles.bodyMedium.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.onSurface,
-                              fontSize: 16,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        FutureBuilder<String>(
-                          future: _getCategoryName(product.categoryId),
-                          builder: (context, snapshot) {
-                            final categoryName = snapshot.data ?? 'Loading...';
-                            return Text(
-                              categoryName,
-                              style: AppTextStyles.bodySmall.copyWith(
-                                color: AppColors.onSurfaceVariant,
-                                fontWeight: FontWeight.w500,
-                                fontSize: 12,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            );
-                          },
-                        ),
-                        const Spacer(),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                product.lowestPrice != null 
-                                  ? '₱${product.lowestPrice!.toStringAsFixed(2)}' 
-                                  : 'Price varies',
-                                style: AppTextStyles.bodyMedium.copyWith(
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                  fontFamily: 'Roboto', // Use Roboto for peso sign support
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: const Icon(
-                                Icons.add_shopping_cart,
-                                size: 14,
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+  // Helper method to get responsive cross axis count based on screen width
+  int _getResponsiveCrossAxisCount(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    
+    if (screenWidth >= 1200) {
+      return 6; // Large desktop screens
+    } else if (screenWidth >= 900) {
+      return 5; // Desktop screens
+    } else if (screenWidth >= 600) {
+      return 4; // Tablet screens
+    } else if (screenWidth >= 480) {
+      return 3; // Large mobile screens
+    } else {
+      return 2; // Small mobile screens
+    }
+  }
+
+  // Helper method to get responsive aspect ratio based on screen width
+  double _getResponsiveAspectRatio(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    
+    if (screenWidth >= 1200) {
+      return 0.85; // Slightly taller cards for large desktop
+    } else if (screenWidth >= 900) {
+      return 0.8; // Desktop screens
+    } else if (screenWidth >= 600) {
+      return 0.78; // Tablet screens
+    } else {
+      return 0.75; // Mobile screens (same as original)
+    }
   }
 
   // Get subcategory click count from Firestore

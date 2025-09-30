@@ -1,0 +1,13 @@
+[
+  {
+    "origin": ["https://dentpal-store.web.app", "https://dentpal-161e5.web.app", "https://dentpal-161e5.firebaseapp.com"],
+    "method": ["GET", "HEAD"],
+    "maxAgeSeconds": 3600,
+    "responseHeader": ["Content-Type", "Access-Control-Allow-Origin"]
+  },
+  {
+    "origin": ["*"],
+    "method": ["GET"],
+    "maxAgeSeconds": 3600
+  }
+]

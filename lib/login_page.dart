@@ -240,19 +240,13 @@ class _LoginPageState extends State<LoginPage> {
       }
 
       if (mounted) {
-        // Check current auth state
-        final currentUser = FirebaseAuth.instance.currentUser;
-
-        if (currentUser != null) {
+        final uid = FirebaseAuth.instance.currentUser?.uid;
+        if (uid != null) {
+          final doc = await FirebaseFirestore.instance.collection('User').doc(uid).get();
+          final name = doc.data()?['firstName'] ?? 'User';
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Login successful! User ID: ${currentUser.uid.substring(0, 5)}...',
-              ),
-              duration: const Duration(seconds: 2),
-            ),
+            SnackBar(content: Text('Login successful! Welcome back, $name.')),
           );
-
           // Navigate to the home page after successful login
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (context) => const HomePage()),
@@ -380,8 +374,13 @@ class _LoginPageState extends State<LoginPage> {
               // Bottom section with login form
               Expanded(
                 flex: 7,
-                child: Container(
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Container(
                   width: double.infinity,
+                  constraints: const BoxConstraints(
+                      maxWidth: 500, // Maximum width for web/tablet
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.surface,
                     borderRadius: const BorderRadius.only(
@@ -718,6 +717,7 @@ class _LoginPageState extends State<LoginPage> {
                       ],
                     ),
                   ),
+                ),
                 ),
               ),
             ],
