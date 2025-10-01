@@ -38,38 +38,32 @@ app.*.symbols
 
 # Obfuscation related
 app.*.map.json
+
+# Firebase related files (sensitive)
 lib/firebase_options.dart
 ios/GoogleService-Info.plist
 android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+macos/Runner/GoogleService-Info.plist
+
+# Firebase Functions
+functions/node_modules/
+functions/lib/
+functions/.env
+functions/.env.local
+functions/npm-debug.log*
+functions/yarn-debug.log*
+functions/yarn-error.log*
+functions/*.tsbuildinfo
+
+# Test and trash folders
 lib/trash/
 test/
 
-# Android Studio will place build artifacts here
+# Android Studio build artifacts
 /android/app/debug
 /android/app/profile
 /android/app/release
-ios/Runner/GoogleService-Info.plist
-macos/Runner/GoogleService-Info.plist
-android/.gradle/buildOutputCleanup/outputFiles.bin
-android/.gradle/8.12/executionHistory/executionHistory.bin
-android/.gradle/8.12/executionHistory/executionHistory.bin
-android/.gradle/8.12/executionHistory/executionHistory.lock
-android/.gradle/8.12/fileHashes/fileHashes.bin
-android/.gradle/8.12/fileHashes/fileHashes.lock
-android/.gradle/buildOutputCleanup/buildOutputCleanup.lock
-android/.gradle/buildOutputCleanup/outputFiles.bin
-android/.gradle/8.12/executionHistory/executionHistory.bin
-android/.gradle/8.12/executionHistory/executionHistory.lock
-android/.gradle/8.12/fileHashes/fileHashes.bin
-android/.gradle/8.12/fileHashes/fileHashes.lock
-android/.gradle/buildOutputCleanup/buildOutputCleanup.lock
-android/.gradle/buildOutputCleanup/outputFiles.bin
-android/.gradle/8.12/executionHistory/executionHistory.bin
-/android/.gradle
-android/.gradle/buildOutputCleanup/outputFiles.bin
-android/.gradle/buildOutputCleanup/buildOutputCleanup.lock
-android/.gradle/8.12/fileHashes/fileHashes.lock
-android/.gradle/8.12/fileHashes/fileHashes.bin
-android/.gradle/8.12/executionHistory/executionHistory.lock
-android/.gradle/8.12/executionHistory/executionHistory.bin
+/android/.gradle/
+android/.gradle/
 android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java

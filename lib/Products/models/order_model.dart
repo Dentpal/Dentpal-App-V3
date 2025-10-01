@@ -1,0 +1,631 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'cart_model.dart';
+
+enum OrderStatus {
+  pending,
+  processing,
+  shipped,
+  delivered,
+  cancelled,
+  refunded
+}
+
+enum PaymentStatus {
+  pending,
+  paid,
+  failed,
+  refunded,
+  partially_refunded
+}
+
+enum PaymentMethod {
+  card,
+  gcash,
+  grabpay,
+  paymaya,
+  bank_transfer
+}
+
+class Order {
+  final String orderId;
+  final String userId; // Changed from buyerId to userId for clarity
+  final List<String> sellerIds; // Changed to array to support multiple sellers
+  final List<OrderItem> items;
+  final OrderSummary summary;
+  final ShippingInfo shippingInfo;
+  final PaymentInfo paymentInfo;
+  final OrderStatus status;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final String? notes;
+  final List<OrderStatusUpdate> statusHistory;
+  final String? checkoutSessionId; // Added for Paymongo checkout session
+
+  Order({
+    required this.orderId,
+    required this.userId,
+    required this.sellerIds,
+    required this.items,
+    required this.summary,
+    required this.shippingInfo,
+    required this.paymentInfo,
+    required this.status,
+    required this.createdAt,
+    required this.updatedAt,
+    this.notes,
+    required this.statusHistory,
+    this.checkoutSessionId,
+  });
+
+  factory Order.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    
+    print('🐛 Order.fromFirestore - Processing document: ${doc.id}');
+    print('🐛 Order.fromFirestore - Raw data keys: ${data.keys.toList()}');
+    
+    try {
+      // Parse basic fields
+      final userId = data['userId'] ?? data['buyerId'] ?? '';
+      print('🐛 Order.fromFirestore - userId: $userId');
+      
+      final sellerIds = List<String>.from(data['sellerIds'] ?? [data['sellerId'] ?? '']).where((id) => id.isNotEmpty).toList();
+      print('🐛 Order.fromFirestore - sellerIds: $sellerIds');
+      
+      // Parse items
+      print('🐛 Order.fromFirestore - Parsing items...');
+      final items = (data['items'] as List<dynamic>?)
+          ?.map((item) {
+            print('🐛 Order.fromFirestore - Item data: $item');
+            return OrderItem.fromMap(item as Map<String, dynamic>);
+          })
+          .toList() ?? [];
+      print('🐛 Order.fromFirestore - Items parsed: ${items.length} items');
+      
+      // Parse summary
+      print('🐛 Order.fromFirestore - Parsing summary...');
+      print('🐛 Order.fromFirestore - Summary data: ${data['summary']}');
+      final summary = OrderSummary.fromMap(data['summary'] as Map<String, dynamic>);
+      
+      // Parse shipping info
+      print('🐛 Order.fromFirestore - Parsing shippingInfo...');
+      print('🐛 Order.fromFirestore - ShippingInfo data: ${data['shippingInfo']}');
+      final shippingInfo = ShippingInfo.fromMap(data['shippingInfo'] as Map<String, dynamic>);
+      
+      // Parse payment info
+      print('🐛 Order.fromFirestore - Parsing paymentInfo...');
+      print('🐛 Order.fromFirestore - PaymentInfo data: ${data['paymentInfo']}');
+      final paymentInfo = PaymentInfo.fromMap(data['paymentInfo'] as Map<String, dynamic>);
+      
+      // Parse status
+      print('🐛 Order.fromFirestore - Parsing status...');
+      print('🐛 Order.fromFirestore - Status value: ${data['status']} (type: ${data['status'].runtimeType})');
+      final status = OrderStatus.values.firstWhere(
+        (e) => e.toString().split('.').last == (data['status']?.toString() ?? 'pending'),
+        orElse: () => OrderStatus.pending,
+      );
+      
+      // Parse timestamps
+      print('🐛 Order.fromFirestore - Parsing timestamps...');
+      print('🐛 Order.fromFirestore - CreatedAt: ${data['createdAt']} (type: ${data['createdAt'].runtimeType})');
+      print('🐛 Order.fromFirestore - UpdatedAt: ${data['updatedAt']} (type: ${data['updatedAt'].runtimeType})');
+      final createdAt = (data['createdAt'] as Timestamp).toDate();
+      final updatedAt = (data['updatedAt'] as Timestamp).toDate();
+      
+      // Parse status history
+      print('🐛 Order.fromFirestore - Parsing statusHistory...');
+      print('🐛 Order.fromFirestore - StatusHistory data: ${data['statusHistory']}');
+      final statusHistory = (data['statusHistory'] as List<dynamic>?)
+          ?.map((item) {
+            print('🐛 Order.fromFirestore - StatusHistory item: $item');
+            return OrderStatusUpdate.fromMap(item as Map<String, dynamic>);
+          })
+          .toList() ?? [];
+      
+      print('🐛 Order.fromFirestore - All parsing completed successfully');
+      
+      return Order(
+        orderId: doc.id,
+        userId: userId,
+        sellerIds: sellerIds,
+        items: items,
+        summary: summary,
+        shippingInfo: shippingInfo,
+        paymentInfo: paymentInfo,
+        status: status,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+        notes: data['notes'],
+        statusHistory: statusHistory,
+        checkoutSessionId: data['checkoutSessionId'],
+      );
+    } catch (e, stackTrace) {
+      print('🐛 ❌ Order.fromFirestore - Error occurred: $e');
+      print('🐛 ❌ Order.fromFirestore - Stack trace: $stackTrace');
+      print('🐛 ❌ Order.fromFirestore - Document data: $data');
+      rethrow;
+    }
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'userId': userId,
+      'sellerIds': sellerIds,
+      'items': items.map((item) => item.toMap()).toList(),
+      'summary': summary.toMap(),
+      'shippingInfo': shippingInfo.toMap(),
+      'paymentInfo': paymentInfo.toMap(),
+      'status': status.toString().split('.').last,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+      'notes': notes,
+      'statusHistory': statusHistory.map((update) => update.toMap()).toList(),
+      'checkoutSessionId': checkoutSessionId,
+    };
+  }
+
+  Order copyWith({
+    String? orderId,
+    String? userId,
+    List<String>? sellerIds,
+    List<OrderItem>? items,
+    OrderSummary? summary,
+    ShippingInfo? shippingInfo,
+    PaymentInfo? paymentInfo,
+    OrderStatus? status,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    String? notes,
+    List<OrderStatusUpdate>? statusHistory,
+    String? checkoutSessionId,
+  }) {
+    return Order(
+      orderId: orderId ?? this.orderId,
+      userId: userId ?? this.userId,
+      sellerIds: sellerIds ?? this.sellerIds,
+      items: items ?? this.items,
+      summary: summary ?? this.summary,
+      shippingInfo: shippingInfo ?? this.shippingInfo,
+      paymentInfo: paymentInfo ?? this.paymentInfo,
+      status: status ?? this.status,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      notes: notes ?? this.notes,
+      statusHistory: statusHistory ?? this.statusHistory,
+      checkoutSessionId: checkoutSessionId ?? this.checkoutSessionId,
+    );
+  }
+}
+
+class OrderItem {
+  final String productId;
+  final String productName;
+  final String productImage;
+  final double price;
+  final int quantity;
+  final String? variationId;
+  final String? variationName;
+  final String sellerId; // Added seller ID for each item
+  final String sellerName; // Added seller name for each item
+
+  OrderItem({
+    required this.productId,
+    required this.productName,
+    required this.productImage,
+    required this.price,
+    required this.quantity,
+    this.variationId,
+    this.variationName,
+    required this.sellerId,
+    required this.sellerName,
+  });
+
+  factory OrderItem.fromMap(Map<String, dynamic> map) {
+    return OrderItem(
+      productId: map['productId'] ?? '',
+      productName: map['productName'] ?? '',
+      productImage: map['productImage'] ?? '',
+      price: (map['price'] ?? 0.0).toDouble(),
+      quantity: map['quantity'] ?? 0,
+      variationId: map['variationId'],
+      variationName: map['variationName'],
+      sellerId: map['sellerId'] ?? '',
+      sellerName: map['sellerName'] ?? '',
+    );
+  }
+
+  factory OrderItem.fromCartItem(CartItem cartItem, {required String sellerId, required String sellerName}) {
+    return OrderItem(
+      productId: cartItem.productId,
+      productName: cartItem.productName ?? '',
+      productImage: cartItem.productImage ?? '',
+      price: cartItem.productPrice ?? 0.0,
+      quantity: cartItem.quantity,
+      variationId: cartItem.variationId,
+      variationName: null, // TODO: Get variation name from product
+      sellerId: sellerId,
+      sellerName: sellerName,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'productId': productId,
+      'productName': productName,
+      'productImage': productImage,
+      'price': price,
+      'quantity': quantity,
+      'variationId': variationId,
+      'variationName': variationName,
+      'sellerId': sellerId,
+      'sellerName': sellerName,
+    };
+  }
+
+  double get total => price * quantity;
+}
+
+class OrderSummary {
+  final double subtotal;
+  final double shippingCost;
+  final double taxAmount;
+  final double discountAmount;
+  final double total;
+  final int totalItems;
+
+  OrderSummary({
+    required this.subtotal,
+    required this.shippingCost,
+    required this.taxAmount,
+    required this.discountAmount,
+    required this.total,
+    required this.totalItems,
+  });
+
+  factory OrderSummary.fromMap(Map<String, dynamic> map) {
+    return OrderSummary(
+      subtotal: (map['subtotal'] ?? 0.0).toDouble(),
+      shippingCost: (map['shippingCost'] ?? 0.0).toDouble(),
+      taxAmount: (map['taxAmount'] ?? 0.0).toDouble(),
+      discountAmount: (map['discountAmount'] ?? 0.0).toDouble(),
+      total: (map['total'] ?? 0.0).toDouble(),
+      totalItems: map['totalItems'] ?? 0,
+    );
+  }
+
+  factory OrderSummary.fromCartSummary(CartSummary cartSummary) {
+    return OrderSummary(
+      subtotal: cartSummary.selectedItemsTotal,
+      shippingCost: cartSummary.totalShippingCost,
+      taxAmount: 0.0, // TODO: Add tax calculation
+      discountAmount: 0.0,
+      total: cartSummary.grandTotal,
+      totalItems: cartSummary.selectedItemsCount,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'subtotal': subtotal,
+      'shippingCost': shippingCost,
+      'taxAmount': taxAmount,
+      'discountAmount': discountAmount,
+      'total': total,
+      'totalItems': totalItems,
+    };
+  }
+}
+
+class ShippingInfo {
+  final String addressId;
+  final String fullName;
+  final String addressLine1;
+  final String? addressLine2;
+  final String city;
+  final String state;
+  final String postalCode;
+  final String country;
+  final String phoneNumber;
+  final String? notes;
+
+  ShippingInfo({
+    required this.addressId,
+    required this.fullName,
+    required this.addressLine1,
+    this.addressLine2,
+    required this.city,
+    required this.state,
+    required this.postalCode,
+    required this.country,
+    required this.phoneNumber,
+    this.notes,
+  });
+
+  factory ShippingInfo.fromMap(Map<String, dynamic> map) {
+    return ShippingInfo(
+      addressId: map['addressId'] ?? '',
+      fullName: map['fullName'] ?? '',
+      addressLine1: map['addressLine1'] ?? '',
+      addressLine2: map['addressLine2'],
+      city: map['city'] ?? '',
+      state: map['state'] ?? '',
+      postalCode: map['postalCode'] ?? '',
+      country: map['country'] ?? '',
+      phoneNumber: map['phoneNumber'] ?? '',
+      notes: map['notes'],
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'addressId': addressId,
+      'fullName': fullName,
+      'addressLine1': addressLine1,
+      'addressLine2': addressLine2,
+      'city': city,
+      'state': state,
+      'postalCode': postalCode,
+      'country': country,
+      'phoneNumber': phoneNumber,
+      'notes': notes,
+    };
+  }
+
+  String get formattedAddress {
+    final parts = [
+      addressLine1,
+      if (addressLine2?.isNotEmpty == true) addressLine2,
+      city,
+      state,
+      postalCode,
+      country,
+    ];
+    return parts.join(', ');
+  }
+}
+
+class PaymentInfo {
+  final String? paymentIntentId; // Made optional since we'll use checkout sessions
+  final String? checkoutSessionId; // Added for Paymongo checkout sessions
+  final PaymentMethod method;
+  final PaymentStatus status;
+  final double amount;
+  final String currency;
+  final DateTime? paidAt;
+  final String? failureReason;
+
+  PaymentInfo({
+    this.paymentIntentId,
+    this.checkoutSessionId,
+    required this.method,
+    required this.status,
+    required this.amount,
+    required this.currency,
+    this.paidAt,
+    this.failureReason,
+  });
+
+  factory PaymentInfo.fromMap(Map<String, dynamic> map) {
+    print('🐛 PaymentInfo.fromMap - Raw map: $map');
+    
+    try {
+      // Handle paidAt timestamp conversion
+      DateTime? paidAt;
+      final paidAtValue = map['paidAt'];
+      print('🐛 PaymentInfo.fromMap - paidAt value: $paidAtValue (type: ${paidAtValue.runtimeType})');
+      
+      if (paidAtValue != null) {
+        if (paidAtValue is Timestamp) {
+          paidAt = paidAtValue.toDate();
+        } else if (paidAtValue is int) {
+          paidAt = DateTime.fromMillisecondsSinceEpoch(paidAtValue);
+        } else if (paidAtValue is double) {
+          paidAt = DateTime.fromMillisecondsSinceEpoch(paidAtValue.toInt());
+        } else if (paidAtValue is String) {
+          paidAt = DateTime.parse(paidAtValue);
+        }
+      }
+
+      // Parse method enum
+      final methodValue = map['method'];
+      print('🐛 PaymentInfo.fromMap - method value: $methodValue (type: ${methodValue.runtimeType})');
+      final method = PaymentMethod.values.firstWhere(
+        (e) => e.toString().split('.').last == (methodValue?.toString() ?? 'card'),
+        orElse: () => PaymentMethod.card,
+      );
+
+      // Parse status enum
+      final statusValue = map['status'];
+      print('🐛 PaymentInfo.fromMap - status value: $statusValue (type: ${statusValue.runtimeType})');
+      final status = PaymentStatus.values.firstWhere(
+        (e) => e.toString().split('.').last == (statusValue?.toString() ?? 'pending'),
+        orElse: () => PaymentStatus.pending,
+      );
+
+      print('🐛 PaymentInfo.fromMap - Parsing completed successfully');
+      
+      return PaymentInfo(
+        paymentIntentId: map['paymentIntentId'],
+        checkoutSessionId: map['checkoutSessionId'],
+        method: method,
+        status: status,
+        amount: (map['amount'] ?? 0.0).toDouble(),
+        currency: map['currency'] ?? 'PHP',
+        paidAt: paidAt,
+        failureReason: map['failureReason'],
+      );
+    } catch (e, stackTrace) {
+      print('🐛 ❌ PaymentInfo.fromMap - Error occurred: $e');
+      print('🐛 ❌ PaymentInfo.fromMap - Stack trace: $stackTrace');
+      print('🐛 ❌ PaymentInfo.fromMap - Input map: $map');
+      rethrow;
+    }
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'paymentIntentId': paymentIntentId,
+      'checkoutSessionId': checkoutSessionId,
+      'method': method.toString().split('.').last,
+      'status': status.toString().split('.').last,
+      'amount': amount,
+      'currency': currency,
+      'paidAt': paidAt != null ? Timestamp.fromDate(paidAt!) : null,
+      'failureReason': failureReason,
+    };
+  }
+}
+
+class OrderStatusUpdate {
+  final OrderStatus status;
+  final DateTime timestamp;
+  final String? note;
+  final String? updatedBy;
+
+  OrderStatusUpdate({
+    required this.status,
+    required this.timestamp,
+    this.note,
+    this.updatedBy,
+  });
+
+  factory OrderStatusUpdate.fromMap(Map<String, dynamic> map) {
+    print('🐛 OrderStatusUpdate.fromMap - Raw map: $map');
+    
+    try {
+      // Handle both Firestore Timestamp and Unix timestamp (from Firebase Functions)
+      DateTime timestamp;
+      final timestampValue = map['timestamp'];
+      print('🐛 OrderStatusUpdate.fromMap - timestamp value: $timestampValue (type: ${timestampValue.runtimeType})');
+      
+      if (timestampValue is Timestamp) {
+        timestamp = timestampValue.toDate();
+      } else if (timestampValue is int) {
+        timestamp = DateTime.fromMillisecondsSinceEpoch(timestampValue);
+      } else if (timestampValue is double) {
+        timestamp = DateTime.fromMillisecondsSinceEpoch(timestampValue.toInt());
+      } else if (timestampValue is String) {
+        timestamp = DateTime.parse(timestampValue);
+      } else {
+        print('🐛 ⚠️ OrderStatusUpdate.fromMap - Unexpected timestamp type, using current time');
+        timestamp = DateTime.now(); // Fallback
+      }
+
+      // Parse status enum
+      final statusValue = map['status'];
+      print('🐛 OrderStatusUpdate.fromMap - status value: $statusValue (type: ${statusValue.runtimeType})');
+      final status = OrderStatus.values.firstWhere(
+        (e) => e.toString().split('.').last == (statusValue?.toString() ?? 'pending'),
+        orElse: () => OrderStatus.pending,
+      );
+
+      print('🐛 OrderStatusUpdate.fromMap - Parsing completed successfully');
+
+      return OrderStatusUpdate(
+        status: status,
+        timestamp: timestamp,
+        note: map['note'],
+        updatedBy: map['updatedBy'],
+      );
+    } catch (e, stackTrace) {
+      print('🐛 ❌ OrderStatusUpdate.fromMap - Error occurred: $e');
+      print('🐛 ❌ OrderStatusUpdate.fromMap - Stack trace: $stackTrace');
+      print('🐛 ❌ OrderStatusUpdate.fromMap - Input map: $map');
+      rethrow;
+    }
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'status': status.toString().split('.').last,
+      'timestamp': Timestamp.fromDate(timestamp),
+      'note': note,
+      'updatedBy': updatedBy,
+    };
+  }
+}
+
+// Extension methods for display
+extension OrderStatusExtension on OrderStatus {
+  String get displayName {
+    switch (this) {
+      case OrderStatus.pending:
+        return 'Pending';
+      case OrderStatus.processing:
+        return 'Processing';
+      case OrderStatus.shipped:
+        return 'Shipped';
+      case OrderStatus.delivered:
+        return 'Delivered';
+      case OrderStatus.cancelled:
+        return 'Cancelled';
+      case OrderStatus.refunded:
+        return 'Refunded';
+    }
+  }
+
+  String get description {
+    switch (this) {
+      case OrderStatus.pending:
+        return 'Order has been placed and is awaiting confirmation';
+      case OrderStatus.processing:
+        return 'Order is being prepared for shipment';
+      case OrderStatus.shipped:
+        return 'Order has been shipped and is on its way';
+      case OrderStatus.delivered:
+        return 'Order has been delivered successfully';
+      case OrderStatus.cancelled:
+        return 'Order has been cancelled';
+      case OrderStatus.refunded:
+        return 'Order has been refunded';
+    }
+  }
+}
+
+extension PaymentStatusExtension on PaymentStatus {
+  String get displayName {
+    switch (this) {
+      case PaymentStatus.pending:
+        return 'Pending';
+      case PaymentStatus.paid:
+        return 'Paid';
+      case PaymentStatus.failed:
+        return 'Failed';
+      case PaymentStatus.refunded:
+        return 'Refunded';
+      case PaymentStatus.partially_refunded:
+        return 'Partially Refunded';
+    }
+  }
+}
+
+extension PaymentMethodExtension on PaymentMethod {
+  String get displayName {
+    switch (this) {
+      case PaymentMethod.card:
+        return 'Credit/Debit Card';
+      case PaymentMethod.gcash:
+        return 'GCash';
+      case PaymentMethod.grabpay:
+        return 'GrabPay';
+      case PaymentMethod.paymaya:
+        return 'PayMaya';
+      case PaymentMethod.bank_transfer:
+        return 'Bank Transfer';
+    }
+  }
+
+  String get paymongoType {
+    switch (this) {
+      case PaymentMethod.card:
+        return 'card';
+      case PaymentMethod.gcash:
+        return 'gcash';
+      case PaymentMethod.grabpay:
+        return 'grab_pay';
+      case PaymentMethod.paymaya:
+        return 'paymaya';
+      case PaymentMethod.bank_transfer:
+        return 'billease';
+    }
+  }
+}

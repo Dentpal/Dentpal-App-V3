@@ -3,6 +3,7 @@ import 'package:dentpal/utils/app_logger.dart';
 import '../models/cart_model.dart';
 import '../services/cart_service.dart';
 import '../widgets/seller_group_widget.dart';
+import '../pages/checkout_page.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 
@@ -1041,9 +1042,10 @@ class _CartPageState extends State<CartPage>
                     children: [
                       Text('Subtotal', style: AppTextStyles.bodyMedium),
                       Text(
-                        'RM ${_cartSummary!.selectedItemsTotal.toStringAsFixed(2)}',
+                        '₱${_cartSummary!.selectedItemsTotal.toStringAsFixed(2)}',
                         style: AppTextStyles.bodyMedium.copyWith(
                           fontWeight: FontWeight.w600,
+                          fontFamily: 'Roboto',
                         ),
                       ),
                     ],
@@ -1056,9 +1058,10 @@ class _CartPageState extends State<CartPage>
                     children: [
                       Text('Shipping', style: AppTextStyles.bodyMedium),
                       Text(
-                        'RM ${_cartSummary!.totalShippingCost.toStringAsFixed(2)}',
+                        '₱${_cartSummary!.totalShippingCost.toStringAsFixed(2)}',
                         style: AppTextStyles.bodyMedium.copyWith(
                           fontWeight: FontWeight.w600,
+                          fontFamily: 'Roboto',
                         ),
                       ),
                     ],
@@ -1083,10 +1086,11 @@ class _CartPageState extends State<CartPage>
                         ),
                       ),
                       Text(
-                        'RM ${_cartSummary!.grandTotal.toStringAsFixed(2)}',
+                        '₱${_cartSummary!.grandTotal.toStringAsFixed(2)}',
                         style: AppTextStyles.titleMedium.copyWith(
                           fontWeight: FontWeight.w700,
                           color: AppColors.primary,
+                          fontFamily: 'Roboto',
                         ),
                       ),
                     ],
@@ -1624,18 +1628,41 @@ class _CartPageState extends State<CartPage>
       );
       return;
     }
-    // TODO: Navigate to checkout page with selected items
-    AppLogger.d(
-      "Proceeding to checkout with ${_cartSummary!.selectedItemsCount} items",
-    );
-    AppLogger.d("Total: ₱${_cartSummary!.grandTotal.toStringAsFixed(2)}");
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Checkout functionality coming soon! Total: ₱${_cartSummary!.grandTotal.toStringAsFixed(2)}',
+    // Get selected cart items
+    final selectedItems = <CartItem>[];
+    if (_cachedSellerGroups != null) {
+      for (final group in _cachedSellerGroups!) {
+        for (final item in group.items) {
+          if (item.isSelected) {
+            selectedItems.add(item);
+          }
+        }
+      }
+    }
+
+    if (selectedItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No items selected for checkout'),
+          backgroundColor: AppColors.warning,
         ),
-        backgroundColor: AppColors.primary,
+      );
+      return;
+    }
+
+    // Navigate to checkout page
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CheckoutPage(
+          cartItems: selectedItems,
+          cartSummary: _cartSummary!,
+          onOrderComplete: () {
+            // Refresh cart after successful order
+            _refreshCart();
+          },
+        ),
       ),
     );
   }
