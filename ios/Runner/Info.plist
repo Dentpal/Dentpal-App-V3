@@ -55,6 +55,13 @@
 	<string>This app needs access to camera to take product photos</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>This app needs access to photo library to select product images</string>
+	
+	<!-- Permissions for location services -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>This app needs access to your location to help set your delivery address accurately</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>This app needs access to your location to help set your delivery address accurately</string>
+	
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
