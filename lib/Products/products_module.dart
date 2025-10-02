@@ -3,12 +3,14 @@ import 'pages/product_listing_page.dart';
 import 'pages/product_detail_page.dart';
 import 'pages/cart_page.dart';
 import 'pages/add_product_page.dart';
+import 'pages/paymongo_webview_page.dart';
 
 // Export all the classes needed for the app
 export 'pages/product_listing_page.dart';
 export 'pages/product_detail_page.dart';
 export 'pages/cart_page.dart';
 export 'pages/add_product_page.dart';
+export 'pages/paymongo_webview_page.dart';
 export 'models/product_model.dart';
 export 'models/cart_model.dart';
 export 'models/product_form_model.dart';

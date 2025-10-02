@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import '../models/cart_model.dart';
@@ -7,6 +8,7 @@ import '../models/paymongo_model.dart';
 import '../services/checkout_service.dart';
 import '../services/cart_service.dart';
 import '../widgets/address_selection_widget.dart';
+import '../pages/paymongo_webview_page.dart';
 import '../../profile/models/shipping_address.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
@@ -1201,18 +1203,41 @@ class _CheckoutPageState extends State<CheckoutPage> {
     try {
       AppLogger.d('🌐 Attempting to open checkout URL: $checkoutUrl');
       
-      // For web platform, use window.open through dart:html
-      // Note: This is a simplified approach for web
-      // In production, you might want to use url_launcher package for better cross-platform support
-      
       if (checkoutUrl.isNotEmpty) {
-        // Import dart:html conditionally for web
-        // For now, we'll use a simple approach that works on web
-        await _openUrlInBrowser(checkoutUrl);
-        
-        // After opening the URL, show a message to the user
-        if (mounted) {
-          _showPaymentInProgressDialog();
+        // Check if running on web platform
+        if (kIsWeb) {
+          // For web platform, use external browser
+          await _openUrlInBrowser(checkoutUrl);
+          
+          // After opening the URL, show a message to the user
+          if (mounted) {
+            _showPaymentInProgressDialog();
+          }
+        } else {
+          // For mobile platforms, use WebView
+          if (mounted) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => PaymongoWebViewPage(
+                  checkoutUrl: checkoutUrl,
+                  successUrl: 'https://dentpal.com/order-success',
+                  cancelUrl: 'https://dentpal.com/checkout',
+                  onPaymentComplete: (isSuccess, orderId) {
+                    AppLogger.d('💳 Payment completed. Success: $isSuccess, Order ID: $orderId');
+                    
+                    if (isSuccess) {
+                      // Handle successful payment
+                      _handlePaymentSuccess(orderId);
+                    } else {
+                      // Handle payment cancellation
+                      _handlePaymentCancellation();
+                    }
+                  },
+                ),
+              ),
+            );
+          }
         }
       } else {
         throw Exception('Invalid checkout URL');
@@ -1478,6 +1503,170 @@ class _CheckoutPageState extends State<CheckoutPage> {
     } catch (e) {
       AppLogger.d('❌ Error copying to clipboard: $e');
       rethrow;
+    }
+  }
+
+  void _handlePaymentSuccess(String? orderId) {
+    AppLogger.d('✅ Payment completed successfully. Order ID: $orderId');
+    
+    if (mounted) {
+      // Show success dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.success.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.check_circle,
+                  color: AppColors.success,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Payment Successful!',
+                style: AppTextStyles.titleMedium.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Your payment has been processed successfully and your order has been confirmed.',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.onSurface.withValues(alpha: 0.8),
+                ),
+              ),
+              if (orderId != null) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.grey50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Order Reference:',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.onSurface.withValues(alpha: 0.6),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        orderId,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          fontFamily: 'monospace',
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+                Navigator.of(context).pop(); // Go back to previous page
+                widget.onOrderComplete?.call();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.success,
+                foregroundColor: AppColors.onPrimary,
+                elevation: 0,
+              ),
+              child: Text('Continue Shopping', style: AppTextStyles.buttonMedium),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  void _handlePaymentCancellation() {
+    AppLogger.d('❌ Payment was cancelled by user');
+    
+    if (mounted) {
+      // Show cancellation dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.cancel_outlined,
+                  color: AppColors.warning,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Payment Cancelled',
+                style: AppTextStyles.titleMedium.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            'Your payment was cancelled. Your cart items are still saved and you can try again whenever you\'re ready.',
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.onSurface.withValues(alpha: 0.8),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+                Navigator.of(context).pop(); // Go back to checkout
+              },
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.onSurface.withValues(alpha: 0.6),
+              ),
+              child: Text('Try Again', style: AppTextStyles.buttonMedium),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+                Navigator.of(context).pop(); // Go back to previous page
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.onPrimary,
+                elevation: 0,
+              ),
+              child: Text('Back to Cart', style: AppTextStyles.buttonMedium),
+            ),
+          ],
+        ),
+      );
     }
   }
 }
