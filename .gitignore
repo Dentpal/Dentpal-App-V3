@@ -44,6 +44,9 @@ android/app/google-services.json
 lib/trash/
 test/
 
+# Ignore node modules
+functions/*
+
 # Android Studio will place build artifacts here
 /android/app/debug
 /android/app/profile
@@ -73,3 +76,9 @@ android/.gradle/8.12/fileHashes/fileHashes.bin
 android/.gradle/8.12/executionHistory/executionHistory.lock
 android/.gradle/8.12/executionHistory/executionHistory.bin
 android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+linux/flutter/generated_plugin_registrant.cc
+linux/flutter/generated_plugins.cmake
+macos/Flutter/GeneratedPluginRegistrant.swift
+windows/flutter/generated_plugin_registrant.cc
+windows/flutter/generated_plugins.cmake
