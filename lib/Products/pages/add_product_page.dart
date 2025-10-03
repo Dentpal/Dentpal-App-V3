@@ -59,7 +59,6 @@ class _AddProductPageState extends State<AddProductPage> {
       final categories = await _categoryService.getCategories();
       AppLogger.d('✅ Loaded ${categories.length} categories');
 
-      // Debug: Print category details
       for (var cat in categories) {
         AppLogger.d(
           '  - Category: ${cat.categoryName} (ID: ${cat.categoryId})',
@@ -86,7 +85,6 @@ class _AddProductPageState extends State<AddProductPage> {
       final subCategories = await _categoryService.getSubCategories(categoryId);
       AppLogger.d('✅ Received ${subCategories.length} subcategories');
 
-      // Debug: Print subcategory details
       for (var subCat in subCategories) {
         AppLogger.d(
           '  - SubCategory: ${subCat.subCategoryName} (ID: ${subCat.subCategoryId}, CategoryID: ${subCat.categoryId})',
@@ -2401,7 +2399,7 @@ class _AddProductPageState extends State<AddProductPage> {
         ),
         style: AppTextStyles.bodyLarge.copyWith(color: AppColors.onSurface),
         dropdownColor: AppColors.surface,
-        value: value,
+        initialValue: value,
         items: items,
         onChanged: onChanged,
         validator: validator,

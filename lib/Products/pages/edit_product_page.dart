@@ -869,7 +869,7 @@ class _EditProductPageState extends State<EditProductPage> {
                       color: AppColors.onSurface,
                     ),
                     dropdownColor: AppColors.surface,
-                    value: _isCategoriesLoading
+                    initialValue: _isCategoriesLoading
                         ? null
                         : (_categories.any(
                                 (cat) => cat.categoryId == _selectedCategoryId,
@@ -966,7 +966,7 @@ class _EditProductPageState extends State<EditProductPage> {
                       color: AppColors.onSurface,
                     ),
                     dropdownColor: AppColors.surface,
-                    value: _selectedCategoryId == null
+                    initialValue: _selectedCategoryId == null
                         ? null
                         : (_subCategories.any(
                                 (sub) =>
@@ -2478,7 +2478,7 @@ class _EditProductPageState extends State<EditProductPage> {
         ),
         style: AppTextStyles.bodyLarge.copyWith(color: AppColors.onSurface),
         dropdownColor: AppColors.surface,
-        value: value,
+        initialValue: value,
         items: items,
         onChanged: onChanged,
         validator: validator,

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:dentpal/core/app_theme/index.dart';
+import 'package:dentpal/utils/app_logger.dart';
 
 class FaceVerificationCamera extends StatefulWidget {
   final Function(Uint8List imageBytes) onFaceVerified;
@@ -107,7 +108,7 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
         _cameraController!.startImageStream(_processCameraImage);
       }
     } catch (e) {
-      debugPrint('Error initializing camera: $e');
+      AppLogger.d('Error initializing camera: $e');
       if (mounted) {
         setState(() {
           _statusMessage = "Camera initialization failed";
@@ -138,7 +139,7 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
         }
       }
     } catch (e) {
-      debugPrint('Error processing camera image: $e');
+      AppLogger.d('Error processing camera image: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -374,7 +375,9 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
     final format = InputImageFormatValue.fromRawValue(cameraImage.format.raw);
     if (format == null ||
         (Platform.isAndroid && format != InputImageFormat.nv21) ||
-        (Platform.isIOS && format != InputImageFormat.bgra8888)) return null;
+        (Platform.isIOS && format != InputImageFormat.bgra8888)) {
+      return null;
+    }
 
     if (cameraImage.planes.length != 1) return null;
     final plane = cameraImage.planes.first;
@@ -450,7 +453,7 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
         _cameraController!.startImageStream(_processCameraImage);
       }
     } catch (e) {
-      debugPrint('Error capturing image: $e');
+      AppLogger.d('Error capturing image: $e');
       _showSnackBar("Failed to capture image. Please try again.");
       // Reset liveness check
       _resetLivenessCheck();
@@ -487,7 +490,7 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
             shape: BoxShape.circle,
             color: completed ? AppColors.success : Colors.transparent,
             border: Border.all(
-              color: completed ? AppColors.success : Colors.white.withOpacity(0.5),
+              color: completed ? AppColors.success : Colors.white.withValues(alpha: 0.5),
               width: 2,
             ),
           ),
@@ -503,7 +506,7 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
         Text(
           label,
           style: AppTextStyles.bodySmall.copyWith(
-            color: completed ? AppColors.success : Colors.white.withOpacity(0.7),
+            color: completed ? AppColors.success : Colors.white.withValues(alpha: 0.7),
             fontSize: 10,
           ),
         ),
@@ -603,7 +606,7 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.8),
+                  color: Colors.black.withValues(alpha: 0.8),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Column(
@@ -638,7 +641,7 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.8),
+                color: Colors.black.withValues(alpha: 0.8),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
@@ -665,7 +668,7 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
                   shape: BoxShape.circle,
                   color: _faceDetected && _allLivenessChecksPassed
                       ? AppColors.primary
-                      : Colors.white.withOpacity(0.3),
+                      : Colors.white.withValues(alpha: 0.3),
                   border: Border.all(
                     color: Colors.white,
                     width: 4,

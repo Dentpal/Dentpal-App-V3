@@ -336,7 +336,7 @@ class _LoginPageState extends State<LoginPage> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     // Logo with shadow
-                    Container(
+                    SizedBox(
                       width: 220,
                       height: 160,
                       child: Stack(

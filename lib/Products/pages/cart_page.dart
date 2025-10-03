@@ -606,7 +606,7 @@ class _CartPageState extends State<CartPage>
 
     return PopScope(
       canPop: false,
-      onPopInvoked: (didPop) async {
+      onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         
         final shouldExit = await _showExitConfirmation();
@@ -859,7 +859,7 @@ class _CartPageState extends State<CartPage>
                           Switch.adaptive(
                             value: _cachedSellerGroups?.every((group) => group.allItemsSelected) == true,
                             onChanged: _toggleSelectAllWeb,
-                            activeColor: AppColors.primary,
+                            activeThumbColor: AppColors.primary,
                           ),
                         ],
                       ),

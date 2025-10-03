@@ -821,7 +821,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                       const SizedBox(height: 40),
                       
                       // Row 2: Description (Full Width)
-                      Container(
+                      SizedBox(
                         width: double.infinity,
                         child: _buildDescriptionSection(product),
                       ),
@@ -829,7 +829,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                       const SizedBox(height: 24),
                       
                       // Row 3: Reviews (Full Width)
-                      Container(
+                      SizedBox(
                         width: double.infinity,
                         child: _buildReviewsSection(),
                       ),
@@ -913,7 +913,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 bottom: 16,
                 left: 16,
                 right: 16,
-                child: Container(
+                child: SizedBox(
                   height: 90, // Increased height for better thumbnail visibility
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
@@ -957,7 +957,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(14), // Slightly smaller to account for border
-                            child: Container(
+                            child: SizedBox(
                               width: 90,
                               height: 90,
                               child: variation.imageURL != null && variation.imageURL!.isNotEmpty
@@ -1122,14 +1122,14 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                     child: FadeTransition(opacity: animation, child: child),
                   );
                 },
-                child: Container(
+                child: SizedBox(
                   key: ValueKey(imageUrl), // important for detecting image change
                   width: double.infinity,
                   height: double.infinity,
                   child: imageUrl.isNotEmpty
                       ? CachedNetworkImage(
                           imageUrl: imageUrl,
-                          fit: BoxFit.contain, // Changed from cover to contain for better aspect ratio
+                          fit: BoxFit.cover, // Changed from cover to contain for better aspect ratio
                           filterQuality: FilterQuality.high,
                           fadeInDuration: const Duration(milliseconds: 300),
                           fadeOutDuration: const Duration(milliseconds: 100),
@@ -1468,7 +1468,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(14), // Slightly smaller to account for border
-                      child: Container(
+                      child: SizedBox(
                         width: 70,
                         height: 70,
                         child: variation.imageURL != null && variation.imageURL!.isNotEmpty
@@ -1724,7 +1724,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
             ),
           ),
           // Quantity input field - simplified
-          Container(
+          SizedBox(
             width: 80,
             height: 48,
             child: TextField(

@@ -135,7 +135,6 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
       _allSellerProducts = await _productService.getProductsBySeller(widget.sellerId);
       AppLogger.d('✅ StorePage: Loaded ${_allSellerProducts.length} products for seller ${widget.sellerId}');
       
-      // Debug: Print some product details
       for (int i = 0; i < _allSellerProducts.length && i < 3; i++) {
         final product = _allSellerProducts[i];
         AppLogger.d('📦 Product $i: ${product.name} (ID: ${product.productId})');
@@ -530,7 +529,7 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
       children: [
         _buildProductFilters(),
         _isLoadingProducts
-            ? Container(
+            ? SizedBox(
                 height: 300,
                 child: const Center(child: CircularProgressIndicator()),
               )
@@ -613,7 +612,7 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
   }
 
   Widget _buildEmptyProductsState() {
-    return Container(
+    return SizedBox(
       height: 300,
       child: Center(
         child: Column(
@@ -655,7 +654,7 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
 
   Widget _buildCategoriesTabContent() {
     if (_isLoadingCategories) {
-      return Container(
+      return SizedBox(
         height: 300,
         child: const Center(child: CircularProgressIndicator()),
       );
@@ -793,7 +792,7 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
   }
 
   Widget _buildEmptyCategoriesState() {
-    return Container(
+    return SizedBox(
       height: 300,
       child: Center(
         child: Column(

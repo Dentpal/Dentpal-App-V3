@@ -73,7 +73,7 @@ class _SignupStep4FaceVerificationState extends State<SignupStep4FaceVerificatio
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: widget.controller.isFaceVerified 
-                  ? AppColors.success.withOpacity(0.1)
+                  ? AppColors.success.withValues(alpha: 0.1)
                   : AppColors.grey50,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
@@ -121,9 +121,9 @@ class _SignupStep4FaceVerificationState extends State<SignupStep4FaceVerificatio
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
+                      color: AppColors.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
                     ),
                     child: Column(
                       children: [
@@ -179,9 +179,9 @@ class _SignupStep4FaceVerificationState extends State<SignupStep4FaceVerificatio
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: AppColors.success.withOpacity(0.1),
+                      color: AppColors.success.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.success.withOpacity(0.2)),
+                      border: Border.all(color: AppColors.success.withValues(alpha: 0.2)),
                     ),
                     child: Column(
                       children: [
