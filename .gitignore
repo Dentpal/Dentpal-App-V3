@@ -60,10 +60,19 @@ functions/*.tsbuildinfo
 lib/trash/
 test/
 
-# Android Studio build artifacts
+# Ignore node modules
+functions/*
+
+# Android Studio will place build artifacts here
 /android/app/debug
 /android/app/profile
 /android/app/release
 /android/.gradle/
 android/.gradle/
 android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+linux/flutter/generated_plugin_registrant.cc
+linux/flutter/generated_plugins.cmake
+macos/Flutter/GeneratedPluginRegistrant.swift
+windows/flutter/generated_plugin_registrant.cc
+windows/flutter/generated_plugins.cmake
