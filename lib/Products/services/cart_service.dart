@@ -198,21 +198,21 @@ class CartService {
           .get();
       
       if (!sellerDoc.exists) {
-        return 10.0; // Default shipping cost
+        return 50.0; // Default shipping cost
       }
       
       final sellerData = sellerDoc.data() as Map<String, dynamic>;
       final shippingSettings = sellerData['shippingSettings'] as Map<String, dynamic>?;
       
       if (shippingSettings == null) {
-        return 10.0; // Default shipping cost
+        return 50.0; // Default shipping cost
       }
       
       // Calculate total value of items for shipping calculation
       double totalValue = items.fold(0.0, (sum, item) => sum + item.totalPrice);
       
       // Get shipping cost based on weight or value
-      double baseCost = (shippingSettings['baseCost'] ?? 10.0).toDouble();
+      double baseCost = (shippingSettings['baseCost'] ?? 50.0).toDouble();
       double freeShippingThreshold = (shippingSettings['freeShippingThreshold'] ?? 100.0).toDouble();
       
       // Free shipping if order value exceeds threshold
@@ -223,7 +223,7 @@ class CartService {
       return baseCost;
     } catch (e) {
       AppLogger.d('Error calculating shipping cost: $e');
-      return 10.0; // Default shipping cost
+      return 50.0; // Default shipping cost
     }
   }
   
