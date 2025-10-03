@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/product_form_model.dart';
 import '../models/product_model.dart';
 import '../services/product_service.dart';
@@ -8,7 +9,6 @@ import '../widgets/barcode_scanner_widget.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import 'package:dentpal/utils/app_logger.dart';
-
 
 class AddProductPage extends StatefulWidget {
   const AddProductPage({Key? key}) : super(key: key);
@@ -24,7 +24,7 @@ class _AddProductPageState extends State<AddProductPage> {
   final ProductService _productService = ProductService();
   final CategoryService _categoryService = CategoryService();
   final ImageUploadService _imageUploadService = ImageUploadService();
-  
+
   // Add controllers for all text fields
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -42,7 +42,7 @@ class _AddProductPageState extends State<AddProductPage> {
   String? _selectedCategoryId;
   String? _selectedSubCategoryId;
 
-    @override
+  @override
   void initState() {
     super.initState();
     _initializeVariationControllers();
@@ -54,16 +54,18 @@ class _AddProductPageState extends State<AddProductPage> {
     setState(() {
       _isCategoriesLoading = true;
     });
-    
+
     try {
       final categories = await _categoryService.getCategories();
       AppLogger.d('✅ Loaded ${categories.length} categories');
-      
+
       // Debug: Print category details
       for (var cat in categories) {
-        AppLogger.d('  - Category: ${cat.categoryName} (ID: ${cat.categoryId})');
+        AppLogger.d(
+          '  - Category: ${cat.categoryName} (ID: ${cat.categoryId})',
+        );
       }
-      
+
       setState(() {
         _categories = categories;
         _isCategoriesLoading = false;
@@ -79,16 +81,18 @@ class _AddProductPageState extends State<AddProductPage> {
 
   void _loadSubCategories(String categoryId) async {
     AppLogger.d('🔍 Loading subcategories for categoryId: $categoryId');
-    
+
     try {
       final subCategories = await _categoryService.getSubCategories(categoryId);
       AppLogger.d('✅ Received ${subCategories.length} subcategories');
-      
+
       // Debug: Print subcategory details
       for (var subCat in subCategories) {
-        AppLogger.d('  - SubCategory: ${subCat.subCategoryName} (ID: ${subCat.subCategoryId}, CategoryID: ${subCat.categoryId})');
+        AppLogger.d(
+          '  - SubCategory: ${subCat.subCategoryName} (ID: ${subCat.subCategoryId}, CategoryID: ${subCat.categoryId})',
+        );
       }
-      
+
       setState(() {
         _subCategories = subCategories;
         _selectedSubCategoryId = null; // Reset subcategory selection
@@ -102,7 +106,7 @@ class _AddProductPageState extends State<AddProductPage> {
       });
     }
   }
-  
+
   // Initialize controllers for the first variation
   void _initializeVariationControllers() {
     _variationControllers.add({
@@ -116,7 +120,7 @@ class _AddProductPageState extends State<AddProductPage> {
       'height': TextEditingController(text: '0'),
     });
   }
-  
+
   @override
   void dispose() {
     // Dispose all controllers to prevent memory leaks
@@ -137,7 +141,7 @@ class _AddProductPageState extends State<AddProductPage> {
 
     try {
       final result = await _productService.checkSellerStatus();
-      
+
       setState(() {
         _isSeller = result['isSeller'];
         _sellerMessage = result['message'];
@@ -189,10 +193,22 @@ class _AddProductPageState extends State<AddProductPage> {
   // Pick main product image with square cropping
   Future<void> _pickProductImage() async {
     try {
-      final source = await _imageUploadService.showImageSourceDialog(context);
-      if (source == null) return;
+      final screenWidth = MediaQuery.of(context).size.width;
+      final isWebView = screenWidth > 1024;
 
-      final pickedFile = await _imageUploadService.pickAndCropImage(source: source);
+      ImageSource? source;
+      if (isWebView) {
+        // For web view, automatically use gallery/file picker
+        source = ImageSource.gallery;
+      } else {
+        // For mobile, show the source selection dialog
+        source = await _imageUploadService.showImageSourceDialog(context);
+        if (source == null) return;
+      }
+
+      final pickedFile = await _imageUploadService.pickAndCropImage(
+        source: source,
+      );
       if (pickedFile != null) {
         setState(() {
           _productForm.imageFile = pickedFile;
@@ -226,10 +242,22 @@ class _AddProductPageState extends State<AddProductPage> {
   // Pick variation image with square cropping
   Future<void> _pickVariationImage(int index) async {
     try {
-      final source = await _imageUploadService.showImageSourceDialog(context);
-      if (source == null) return;
+      final screenWidth = MediaQuery.of(context).size.width;
+      final isWebView = screenWidth > 1024;
 
-      final pickedFile = await _imageUploadService.pickAndCropImage(source: source);
+      ImageSource? source;
+      if (isWebView) {
+        // For web view, automatically use gallery/file picker
+        source = ImageSource.gallery;
+      } else {
+        // For mobile, show the source selection dialog
+        source = await _imageUploadService.showImageSourceDialog(context);
+        if (source == null) return;
+      }
+
+      final pickedFile = await _imageUploadService.pickAndCropImage(
+        source: source,
+      );
       if (pickedFile != null) {
         setState(() {
           _variations[index].imageFile = pickedFile;
@@ -267,7 +295,7 @@ class _AddProductPageState extends State<AddProductPage> {
         context,
         MaterialPageRoute(builder: (context) => const BarcodeScannerWidget()),
       );
-      
+
       if (scannedCode != null && scannedCode.isNotEmpty) {
         setState(() {
           _variationControllers[index]['sku']!.text = scannedCode;
@@ -311,11 +339,11 @@ class _AddProductPageState extends State<AddProductPage> {
 
     // Save all form fields
     _formKey.currentState!.save();
-    
+
     // Manually transfer values from controllers to models
     _productForm.name = _nameController.text;
     _productForm.description = _descriptionController.text;
-    
+
     // Set variation values from controllers
     for (int i = 0; i < _variations.length; i++) {
       final controllers = _variationControllers[i];
@@ -323,9 +351,10 @@ class _AddProductPageState extends State<AddProductPage> {
       _variations[i].price = double.tryParse(controllers['price']!.text) ?? 0;
       _variations[i].stock = int.tryParse(controllers['stock']!.text) ?? 0;
       _variations[i].sku = controllers['sku']!.text;
-      _variations[i].weight = controllers['weight']!.text.isNotEmpty ? 
-                             double.tryParse(controllers['weight']!.text) : null;
-      
+      _variations[i].weight = controllers['weight']!.text.isNotEmpty
+          ? double.tryParse(controllers['weight']!.text)
+          : null;
+
       // Set dimensions
       _variations[i].dimensions = {
         'length': double.tryParse(controllers['length']!.text) ?? 0,
@@ -342,16 +371,19 @@ class _AddProductPageState extends State<AddProductPage> {
     try {
       // First, upload images to Firebase Storage
       String productId = DateTime.now().millisecondsSinceEpoch.toString();
-      
+
       // Upload main product image
       if (_productForm.imageFile != null) {
-        final productImageBytes = await _imageUploadService.resizeImage(_productForm.imageFile!, forceSquare: true);
+        final productImageBytes = await _imageUploadService.resizeImage(
+          _productForm.imageFile!,
+          forceSquare: true,
+        );
         if (productImageBytes != null) {
           final productImageUrl = await _imageUploadService.uploadImage(
             imageBytes: productImageBytes,
             path: ImageUploadService.getProductImagePath(productId),
           );
-          
+
           if (productImageUrl != null) {
             _productForm.imageURL = productImageUrl;
           } else {
@@ -361,17 +393,20 @@ class _AddProductPageState extends State<AddProductPage> {
           throw Exception('Failed to resize product image');
         }
       }
-      
+
       // Upload variation images
       for (int i = 0; i < _variations.length; i++) {
         if (_variations[i].imageFile != null) {
-          final variationImageBytes = await _imageUploadService.resizeImage(_variations[i].imageFile!, forceSquare: true);
+          final variationImageBytes = await _imageUploadService.resizeImage(
+            _variations[i].imageFile!,
+            forceSquare: true,
+          );
           if (variationImageBytes != null) {
             final variationImageUrl = await _imageUploadService.uploadImage(
               imageBytes: variationImageBytes,
               path: ImageUploadService.getVariationImagePath(productId, i),
             );
-            
+
             if (variationImageUrl != null) {
               _variations[i].imageURL = variationImageUrl;
             }
@@ -380,7 +415,10 @@ class _AddProductPageState extends State<AddProductPage> {
         }
       }
 
-      final result = await _productService.addProduct(_productForm, _variations);
+      final result = await _productService.addProduct(
+        _productForm,
+        _variations,
+      );
 
       setState(() {
         _isLoading = false;
@@ -388,9 +426,9 @@ class _AddProductPageState extends State<AddProductPage> {
 
       if (result['success']) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(result['message'])),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(result['message'])));
           // Navigate back or to product detail
           Navigator.of(context).pop();
         }
@@ -428,9 +466,7 @@ class _AddProductPageState extends State<AddProductPage> {
           ),
         ),
         body: const Center(
-          child: CircularProgressIndicator(
-            color: AppColors.primary,
-          ),
+          child: CircularProgressIndicator(color: AppColors.primary),
         ),
       );
     }
@@ -493,7 +529,10 @@ class _AddProductPageState extends State<AddProductPage> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: AppColors.onPrimary,
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 32,
+                      vertical: 16,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
@@ -512,6 +551,17 @@ class _AddProductPageState extends State<AddProductPage> {
       );
     }
 
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWebView = screenWidth > 1024;
+
+    if (isWebView) {
+      return _buildWebLayout();
+    }
+
+    return _buildMobileLayout();
+  }
+
+  Widget _buildMobileLayout() {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -679,20 +729,32 @@ class _AddProductPageState extends State<AddProductPage> {
                       Row(
                         children: [
                           const Padding(
-                          padding: EdgeInsets.only(left: 20, top: 20, bottom: 8),
-                          child: Icon(Icons.camera_alt, color: AppColors.primary),
+                            padding: EdgeInsets.only(
+                              left: 20,
+                              top: 20,
+                              bottom: 8,
+                            ),
+                            child: Icon(
+                              Icons.camera_alt,
+                              color: AppColors.primary,
+                            ),
                           ),
                           Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.only(left: 12, top: 20, right: 20, bottom: 8),
-                            child: Text(
-                            'Product Image *',
-                            style: AppTextStyles.titleMedium.copyWith(
-                              color: AppColors.onSurface,
-                              fontWeight: FontWeight.w600,
+                            child: Padding(
+                              padding: const EdgeInsets.only(
+                                left: 12,
+                                top: 20,
+                                right: 20,
+                                bottom: 8,
+                              ),
+                              child: Text(
+                                'Product Image *',
+                                style: AppTextStyles.titleMedium.copyWith(
+                                  color: AppColors.onSurface,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ),
-                            ),
-                          ),
                           ),
                         ],
                       ),
@@ -733,13 +795,17 @@ class _AddProductPageState extends State<AddProductPage> {
                                 Icon(
                                   Icons.add_a_photo,
                                   size: 48,
-                                  color: AppColors.primary.withValues(alpha: 0.7),
+                                  color: AppColors.primary.withValues(
+                                    alpha: 0.7,
+                                  ),
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
                                   'No image selected',
                                   style: AppTextStyles.bodyMedium.copyWith(
-                                    color: AppColors.onSurface.withValues(alpha: 0.6),
+                                    color: AppColors.onSurface.withValues(
+                                      alpha: 0.6,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -754,15 +820,20 @@ class _AddProductPageState extends State<AddProductPage> {
                               child: ElevatedButton.icon(
                                 onPressed: _pickProductImage,
                                 icon: const Icon(Icons.add_a_photo),
-                                label: Text(_productForm.imageFile != null 
-                                    ? 'Change Image' 
-                                    : 'Add Image'),
+                                label: Text(
+                                  _productForm.imageFile != null
+                                      ? 'Change Image'
+                                      : 'Add Image',
+                                ),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: _productForm.imageFile != null 
-                                      ? AppColors.secondary 
+                                  backgroundColor:
+                                      _productForm.imageFile != null
+                                      ? AppColors.secondary
                                       : AppColors.primary,
                                   foregroundColor: AppColors.onPrimary,
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
@@ -782,7 +853,10 @@ class _AddProductPageState extends State<AddProductPage> {
                                       _productForm.imageFile = null;
                                     });
                                   },
-                                  icon: const Icon(Icons.delete, color: AppColors.error),
+                                  icon: const Icon(
+                                    Icons.delete,
+                                    color: AppColors.error,
+                                  ),
                                 ),
                               ),
                             ],
@@ -813,7 +887,10 @@ class _AddProductPageState extends State<AddProductPage> {
                       labelStyle: AppTextStyles.labelLarge.copyWith(
                         color: AppColors.onSurface.withValues(alpha: 0.7),
                       ),
-                      prefixIcon: const Icon(Icons.category, color: AppColors.primary),
+                      prefixIcon: const Icon(
+                        Icons.category,
+                        color: AppColors.primary,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
                         borderSide: BorderSide.none,
@@ -830,41 +907,47 @@ class _AddProductPageState extends State<AddProductPage> {
                     ),
                     dropdownColor: AppColors.surface,
                     initialValue: _selectedCategoryId,
-                    items: _isCategoriesLoading 
-                      ? [DropdownMenuItem(
-                          value: null,
-                          child: Text(
-                            'Loading...',
-                            style: AppTextStyles.bodyMedium.copyWith(
-                              color: AppColors.onSurface.withValues(alpha: 0.6),
-                            ),
-                          ),
-                        )]
-                      : _categories.map((category) {
-                          return DropdownMenuItem(
-                            value: category.categoryId,
-                            child: Text(
-                              category.categoryName,
-                              style: AppTextStyles.bodyLarge.copyWith(
-                                color: AppColors.onSurface,
+                    items: _isCategoriesLoading
+                        ? [
+                            DropdownMenuItem(
+                              value: null,
+                              child: Text(
+                                'Loading...',
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  color: AppColors.onSurface.withValues(
+                                    alpha: 0.6,
+                                  ),
+                                ),
                               ),
                             ),
-                          );
-                        }).toList(),
-                    onChanged: _isCategoriesLoading ? null : (value) {
-                      AppLogger.d('🔍 Category selected: $value');
-                      setState(() {
-                        _selectedCategoryId = value;
-                        _productForm.categoryId = value ?? '';
-                      });
-                      if (value != null) {
-                        _loadSubCategories(value);
-                      }
-                    },
+                          ]
+                        : _categories.map((category) {
+                            return DropdownMenuItem(
+                              value: category.categoryId,
+                              child: Text(
+                                category.categoryName,
+                                style: AppTextStyles.bodyLarge.copyWith(
+                                  color: AppColors.onSurface,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                    onChanged: _isCategoriesLoading
+                        ? null
+                        : (value) {
+                            AppLogger.d('🔍 Category selected: $value');
+                            setState(() {
+                              _selectedCategoryId = value;
+                              _productForm.categoryId = value ?? '';
+                            });
+                            if (value != null) {
+                              _loadSubCategories(value);
+                            }
+                          },
                     validator: (_) => _productForm.validateCategory(),
                   ),
                 ),
-                
+
                 const SizedBox(height: 20),
 
                 // SubCategory
@@ -886,7 +969,10 @@ class _AddProductPageState extends State<AddProductPage> {
                       labelStyle: AppTextStyles.labelLarge.copyWith(
                         color: AppColors.onSurface.withValues(alpha: 0.7),
                       ),
-                      prefixIcon: const Icon(Icons.subdirectory_arrow_right, color: AppColors.primary),
+                      prefixIcon: const Icon(
+                        Icons.subdirectory_arrow_right,
+                        color: AppColors.primary,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
                         borderSide: BorderSide.none,
@@ -903,47 +989,57 @@ class _AddProductPageState extends State<AddProductPage> {
                     ),
                     dropdownColor: AppColors.surface,
                     initialValue: _selectedSubCategoryId,
-                    items: _selectedCategoryId == null 
-                      ? [DropdownMenuItem(
-                          value: null,
-                          child: Text(
-                            'Select a category first',
-                            style: AppTextStyles.bodyMedium.copyWith(
-                              color: AppColors.onSurface.withValues(alpha: 0.6),
-                            ),
-                          ),
-                        )]
-                      : _subCategories.isEmpty
-                      ? [DropdownMenuItem(
-                          value: null,
-                          child: Text(
-                            'No subcategories available',
-                            style: AppTextStyles.bodyMedium.copyWith(
-                              color: AppColors.onSurface.withValues(alpha: 0.6),
-                            ),
-                          ),
-                        )]
-                      : _subCategories.map((subCategory) {
-                          return DropdownMenuItem(
-                            value: subCategory.subCategoryId,
-                            child: Text(
-                              subCategory.subCategoryName,
-                              style: AppTextStyles.bodyLarge.copyWith(
-                                color: AppColors.onSurface,
+                    items: _selectedCategoryId == null
+                        ? [
+                            DropdownMenuItem(
+                              value: null,
+                              child: Text(
+                                'Select a category first',
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  color: AppColors.onSurface.withValues(
+                                    alpha: 0.6,
+                                  ),
+                                ),
                               ),
                             ),
-                          );
-                        }).toList(),
-                    onChanged: _selectedCategoryId == null ? null : (value) {
-                      setState(() {
-                        _selectedSubCategoryId = value;
-                        _productForm.subCategoryId = value;
-                      });
-                    },
+                          ]
+                        : _subCategories.isEmpty
+                        ? [
+                            DropdownMenuItem(
+                              value: null,
+                              child: Text(
+                                'No subcategories available',
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  color: AppColors.onSurface.withValues(
+                                    alpha: 0.6,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ]
+                        : _subCategories.map((subCategory) {
+                            return DropdownMenuItem(
+                              value: subCategory.subCategoryId,
+                              child: Text(
+                                subCategory.subCategoryName,
+                                style: AppTextStyles.bodyLarge.copyWith(
+                                  color: AppColors.onSurface,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                    onChanged: _selectedCategoryId == null
+                        ? null
+                        : (value) {
+                            setState(() {
+                              _selectedSubCategoryId = value;
+                              _productForm.subCategoryId = value;
+                            });
+                          },
                     validator: (_) => _productForm.validateSubCategory(),
                   ),
                 ),
-                
+
                 const SizedBox(height: 32),
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 16),
@@ -1001,7 +1097,9 @@ class _AddProductPageState extends State<AddProductPage> {
                                     vertical: 6,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: AppColors.primary.withValues(alpha: 0.1),
+                                    color: AppColors.primary.withValues(
+                                      alpha: 0.1,
+                                    ),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Text(
@@ -1014,18 +1112,23 @@ class _AddProductPageState extends State<AddProductPage> {
                                 ),
                                 Container(
                                   decoration: BoxDecoration(
-                                    color: AppColors.error.withValues(alpha: 0.1),
+                                    color: AppColors.error.withValues(
+                                      alpha: 0.1,
+                                    ),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: IconButton(
-                                    icon: const Icon(Icons.delete, color: AppColors.error),
+                                    icon: const Icon(
+                                      Icons.delete,
+                                      color: AppColors.error,
+                                    ),
                                     onPressed: () => _removeVariation(index),
                                   ),
                                 ),
                               ],
                             ),
                             const SizedBox(height: 20),
-                            
+
                             // Variation Name
                             TextFormField(
                               controller: _variationControllers[index]['name'],
@@ -1035,11 +1138,15 @@ class _AddProductPageState extends State<AddProductPage> {
                               decoration: InputDecoration(
                                 labelText: 'Variation Name *',
                                 labelStyle: AppTextStyles.labelLarge.copyWith(
-                                  color: AppColors.onSurface.withValues(alpha: 0.7),
+                                  color: AppColors.onSurface.withValues(
+                                    alpha: 0.7,
+                                  ),
                                 ),
                                 hintText: 'e.g., Small, Blue, Standard',
                                 hintStyle: AppTextStyles.bodyMedium.copyWith(
-                                  color: AppColors.onSurface.withValues(alpha: 0.5),
+                                  color: AppColors.onSurface.withValues(
+                                    alpha: 0.5,
+                                  ),
                                 ),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(12),
@@ -1082,7 +1189,7 @@ class _AddProductPageState extends State<AddProductPage> {
                               },
                             ),
                             const SizedBox(height: 20),
-                            
+
                             // Variation Image (Optional)
                             Container(
                               width: double.infinity,
@@ -1111,7 +1218,9 @@ class _AddProductPageState extends State<AddProductPage> {
                                     Container(
                                       height: 250,
                                       width: double.infinity,
-                                      margin: const EdgeInsets.symmetric(horizontal: 12),
+                                      margin: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                      ),
                                       decoration: BoxDecoration(
                                         borderRadius: BorderRadius.circular(8),
                                         color: AppColors.surface,
@@ -1127,7 +1236,9 @@ class _AddProductPageState extends State<AddProductPage> {
                                   else
                                     Container(
                                       height: 80,
-                                      margin: const EdgeInsets.symmetric(horizontal: 12),
+                                      margin: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                      ),
                                       decoration: BoxDecoration(
                                         color: AppColors.surface,
                                         borderRadius: BorderRadius.circular(8),
@@ -1138,18 +1249,22 @@ class _AddProductPageState extends State<AddProductPage> {
                                       ),
                                       child: Center(
                                         child: Column(
-                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
                                           children: [
                                             Icon(
                                               Icons.image,
                                               size: 32,
-                                              color: AppColors.onSurface.withValues(alpha: 0.5),
+                                              color: AppColors.onSurface
+                                                  .withValues(alpha: 0.5),
                                             ),
                                             Text(
                                               'No image',
-                                              style: AppTextStyles.bodySmall.copyWith(
-                                                color: AppColors.onSurface.withValues(alpha: 0.5),
-                                              ),
+                                              style: AppTextStyles.bodySmall
+                                                  .copyWith(
+                                                    color: AppColors.onSurface
+                                                        .withValues(alpha: 0.5),
+                                                  ),
                                             ),
                                           ],
                                         ),
@@ -1161,38 +1276,55 @@ class _AddProductPageState extends State<AddProductPage> {
                                       children: [
                                         Expanded(
                                           child: OutlinedButton.icon(
-                                            onPressed: () => _pickVariationImage(index),
+                                            onPressed: () =>
+                                                _pickVariationImage(index),
                                             icon: const Icon(Icons.add_a_photo),
-                                            label: Text(_variations[index].imageFile != null 
-                                                ? 'Change Image' 
-                                                : 'Add Image'),
+                                            label: Text(
+                                              _variations[index].imageFile !=
+                                                      null
+                                                  ? 'Change Image'
+                                                  : 'Add Image',
+                                            ),
                                             style: OutlinedButton.styleFrom(
-                                              foregroundColor: AppColors.primary,
+                                              foregroundColor:
+                                                  AppColors.primary,
                                               side: BorderSide(
                                                 color: AppColors.primary,
                                                 width: 1.5,
                                               ),
                                               shape: RoundedRectangleBorder(
-                                                borderRadius: BorderRadius.circular(8),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
                                               ),
-                                              padding: const EdgeInsets.symmetric(vertical: 8),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    vertical: 8,
+                                                  ),
                                             ),
                                           ),
                                         ),
-                                        if (_variations[index].imageFile != null) ...[
+                                        if (_variations[index].imageFile !=
+                                            null) ...[
                                           const SizedBox(width: 8),
                                           Container(
                                             decoration: BoxDecoration(
-                                              color: AppColors.error.withValues(alpha: 0.1),
-                                              borderRadius: BorderRadius.circular(6),
+                                              color: AppColors.error.withValues(
+                                                alpha: 0.1,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
                                             ),
                                             child: IconButton(
                                               onPressed: () {
                                                 setState(() {
-                                                  _variations[index].imageFile = null;
+                                                  _variations[index].imageFile =
+                                                      null;
                                                 });
                                               },
-                                              icon: const Icon(Icons.delete, color: AppColors.error),
+                                              icon: const Icon(
+                                                Icons.delete,
+                                                color: AppColors.error,
+                                              ),
                                             ),
                                           ),
                                         ],
@@ -1203,27 +1335,31 @@ class _AddProductPageState extends State<AddProductPage> {
                               ),
                             ),
                             const SizedBox(height: 20),
-                            
+
                             // Price and Stock Row
                             Row(
                               children: [
                                 Expanded(
                                   child: TextFormField(
-                                    controller: _variationControllers[index]['price'],
+                                    controller:
+                                        _variationControllers[index]['price'],
                                     style: AppTextStyles.bodyLarge.copyWith(
                                       color: AppColors.onSurface,
                                     ),
                                     decoration: InputDecoration(
                                       labelText: 'Price *',
-                                      labelStyle: AppTextStyles.labelLarge.copyWith(
-                                        color: AppColors.onSurface.withValues(alpha: 0.7),
-                                      ),
+                                      labelStyle: AppTextStyles.labelLarge
+                                          .copyWith(
+                                            color: AppColors.onSurface
+                                                .withValues(alpha: 0.7),
+                                          ),
                                       prefixText: '₱ ',
-                                      prefixStyle: AppTextStyles.bodyLarge.copyWith(
-                                        color: AppColors.primary,
-                                        fontWeight: FontWeight.w600,
-                                        fontFamily: 'Roboto',
-                                      ),
+                                      prefixStyle: AppTextStyles.bodyLarge
+                                          .copyWith(
+                                            color: AppColors.primary,
+                                            fontWeight: FontWeight.w600,
+                                            fontFamily: 'Roboto',
+                                          ),
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(12),
                                         borderSide: BorderSide(
@@ -1252,10 +1388,11 @@ class _AddProductPageState extends State<AddProductPage> {
                                           width: 1,
                                         ),
                                       ),
-                                      contentPadding: const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 12,
-                                      ),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 12,
+                                          ),
                                     ),
                                     keyboardType: TextInputType.number,
                                     validator: (value) {
@@ -1276,15 +1413,18 @@ class _AddProductPageState extends State<AddProductPage> {
                                 const SizedBox(width: 16),
                                 Expanded(
                                   child: TextFormField(
-                                    controller: _variationControllers[index]['stock'],
+                                    controller:
+                                        _variationControllers[index]['stock'],
                                     style: AppTextStyles.bodyLarge.copyWith(
                                       color: AppColors.onSurface,
                                     ),
                                     decoration: InputDecoration(
                                       labelText: 'Stock *',
-                                      labelStyle: AppTextStyles.labelLarge.copyWith(
-                                        color: AppColors.onSurface.withValues(alpha: 0.7),
-                                      ),
+                                      labelStyle: AppTextStyles.labelLarge
+                                          .copyWith(
+                                            color: AppColors.onSurface
+                                                .withValues(alpha: 0.7),
+                                          ),
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(12),
                                         borderSide: BorderSide(
@@ -1313,10 +1453,11 @@ class _AddProductPageState extends State<AddProductPage> {
                                           width: 1,
                                         ),
                                       ),
-                                      contentPadding: const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 12,
-                                      ),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 12,
+                                          ),
                                     ),
                                     keyboardType: TextInputType.number,
                                     validator: (value) {
@@ -1338,25 +1479,29 @@ class _AddProductPageState extends State<AddProductPage> {
                             ),
                             const SizedBox(height: 20),
 
-                            
                             // SKU with Barcode Scanner
                             Row(
                               children: [
                                 Expanded(
                                   child: TextFormField(
-                                    controller: _variationControllers[index]['sku'],
+                                    controller:
+                                        _variationControllers[index]['sku'],
                                     style: AppTextStyles.bodyLarge.copyWith(
                                       color: AppColors.onSurface,
                                     ),
                                     decoration: InputDecoration(
                                       labelText: 'SKU *',
-                                      labelStyle: AppTextStyles.labelLarge.copyWith(
-                                        color: AppColors.onSurface.withValues(alpha: 0.7),
-                                      ),
+                                      labelStyle: AppTextStyles.labelLarge
+                                          .copyWith(
+                                            color: AppColors.onSurface
+                                                .withValues(alpha: 0.7),
+                                          ),
                                       hintText: 'Unique product identifier',
-                                      hintStyle: AppTextStyles.bodyMedium.copyWith(
-                                        color: AppColors.onSurface.withValues(alpha: 0.5),
-                                      ),
+                                      hintStyle: AppTextStyles.bodyMedium
+                                          .copyWith(
+                                            color: AppColors.onSurface
+                                                .withValues(alpha: 0.5),
+                                          ),
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(12),
                                         borderSide: BorderSide(
@@ -1385,10 +1530,11 @@ class _AddProductPageState extends State<AddProductPage> {
                                           width: 1,
                                         ),
                                       ),
-                                      contentPadding: const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 12,
-                                      ),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 12,
+                                          ),
                                     ),
                                     validator: (value) {
                                       if (value == null || value.isEmpty) {
@@ -1401,7 +1547,9 @@ class _AddProductPageState extends State<AddProductPage> {
                                 const SizedBox(width: 12),
                                 Container(
                                   decoration: BoxDecoration(
-                                    color: AppColors.primary.withValues(alpha: 0.1),
+                                    color: AppColors.primary.withValues(
+                                      alpha: 0.1,
+                                    ),
                                     borderRadius: BorderRadius.circular(12),
                                     border: Border.all(
                                       color: AppColors.primary,
@@ -1420,17 +1568,20 @@ class _AddProductPageState extends State<AddProductPage> {
                               ],
                             ),
                             const SizedBox(height: 20),
-                            
+
                             // Weight (Optional)
                             TextFormField(
-                              controller: _variationControllers[index]['weight'],
+                              controller:
+                                  _variationControllers[index]['weight'],
                               style: AppTextStyles.bodyLarge.copyWith(
                                 color: AppColors.onSurface,
                               ),
                               decoration: InputDecoration(
                                 labelText: 'Weight (g) (Optional)',
                                 labelStyle: AppTextStyles.labelLarge.copyWith(
-                                  color: AppColors.onSurface.withValues(alpha: 0.7),
+                                  color: AppColors.onSurface.withValues(
+                                    alpha: 0.7,
+                                  ),
                                 ),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(12),
@@ -1480,7 +1631,7 @@ class _AddProductPageState extends State<AddProductPage> {
                               },
                             ),
                             const SizedBox(height: 20),
-                            
+
                             // Dimensions
                             Text(
                               'Dimensions (Optional)',
@@ -1490,21 +1641,24 @@ class _AddProductPageState extends State<AddProductPage> {
                               ),
                             ),
                             const SizedBox(height: 12),
-                            
+
                             // Dimensions fields
                             Row(
                               children: [
                                 Expanded(
                                   child: TextFormField(
-                                    controller: _variationControllers[index]['length'],
+                                    controller:
+                                        _variationControllers[index]['length'],
                                     style: AppTextStyles.bodyMedium.copyWith(
                                       color: AppColors.onSurface,
                                     ),
                                     decoration: InputDecoration(
                                       labelText: 'Length (cm)',
-                                      labelStyle: AppTextStyles.labelMedium.copyWith(
-                                        color: AppColors.onSurface.withValues(alpha: 0.7),
-                                      ),
+                                      labelStyle: AppTextStyles.labelMedium
+                                          .copyWith(
+                                            color: AppColors.onSurface
+                                                .withValues(alpha: 0.7),
+                                          ),
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(10),
                                         borderSide: BorderSide(
@@ -1526,10 +1680,11 @@ class _AddProductPageState extends State<AddProductPage> {
                                           width: 2,
                                         ),
                                       ),
-                                      contentPadding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 10,
-                                      ),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 10,
+                                          ),
                                     ),
                                     keyboardType: TextInputType.number,
                                     validator: (value) {
@@ -1546,15 +1701,18 @@ class _AddProductPageState extends State<AddProductPage> {
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: TextFormField(
-                                    controller: _variationControllers[index]['width'],
+                                    controller:
+                                        _variationControllers[index]['width'],
                                     style: AppTextStyles.bodyMedium.copyWith(
                                       color: AppColors.onSurface,
                                     ),
                                     decoration: InputDecoration(
                                       labelText: 'Width (cm)',
-                                      labelStyle: AppTextStyles.labelMedium.copyWith(
-                                        color: AppColors.onSurface.withValues(alpha: 0.7),
-                                      ),
+                                      labelStyle: AppTextStyles.labelMedium
+                                          .copyWith(
+                                            color: AppColors.onSurface
+                                                .withValues(alpha: 0.7),
+                                          ),
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(10),
                                         borderSide: BorderSide(
@@ -1576,10 +1734,11 @@ class _AddProductPageState extends State<AddProductPage> {
                                           width: 2,
                                         ),
                                       ),
-                                      contentPadding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 10,
-                                      ),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 10,
+                                          ),
                                     ),
                                     keyboardType: TextInputType.number,
                                     validator: (value) {
@@ -1596,15 +1755,18 @@ class _AddProductPageState extends State<AddProductPage> {
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: TextFormField(
-                                    controller: _variationControllers[index]['height'],
+                                    controller:
+                                        _variationControllers[index]['height'],
                                     style: AppTextStyles.bodyMedium.copyWith(
                                       color: AppColors.onSurface,
                                     ),
                                     decoration: InputDecoration(
                                       labelText: 'Height (cm)',
-                                      labelStyle: AppTextStyles.labelMedium.copyWith(
-                                        color: AppColors.onSurface.withValues(alpha: 0.7),
-                                      ),
+                                      labelStyle: AppTextStyles.labelMedium
+                                          .copyWith(
+                                            color: AppColors.onSurface
+                                                .withValues(alpha: 0.7),
+                                          ),
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(10),
                                         borderSide: BorderSide(
@@ -1626,10 +1788,11 @@ class _AddProductPageState extends State<AddProductPage> {
                                           width: 2,
                                         ),
                                       ),
-                                      contentPadding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 10,
-                                      ),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 10,
+                                          ),
                                     ),
                                     keyboardType: TextInputType.number,
                                     validator: (value) {
@@ -1651,7 +1814,7 @@ class _AddProductPageState extends State<AddProductPage> {
                     );
                   },
                 ),
-                
+
                 // Add Variation Button
                 Container(
                   margin: const EdgeInsets.symmetric(vertical: 8),
@@ -1666,10 +1829,7 @@ class _AddProductPageState extends State<AddProductPage> {
                     ),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.primary,
-                      side: BorderSide(
-                        color: AppColors.primary,
-                        width: 2,
-                      ),
+                      side: BorderSide(color: AppColors.primary, width: 2),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
                       ),
@@ -1682,7 +1842,7 @@ class _AddProductPageState extends State<AddProductPage> {
                 ),
 
                 const SizedBox(height: 12),
-                
+
                 // Submit Button
                 Container(
                   width: double.infinity,
@@ -1727,6 +1887,839 @@ class _AddProductPageState extends State<AddProductPage> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildWebLayout() {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        title: Text(
+          'Add Product',
+          style: AppTextStyles.titleLarge.copyWith(
+            color: AppColors.onSurface,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        backgroundColor: AppColors.surface,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: SingleChildScrollView(
+        child: Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 1200),
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Error message if any
+                  if (_errorMessage.isNotEmpty)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 32.0),
+                      padding: const EdgeInsets.all(20.0),
+                      decoration: BoxDecoration(
+                        color: AppColors.error.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: AppColors.error.withValues(alpha: 0.3),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            color: AppColors.error,
+                            size: 24,
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Text(
+                              _errorMessage,
+                              style: AppTextStyles.bodyLarge.copyWith(
+                                color: AppColors.error,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  // Main content in two columns
+                  IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Left column - Product Image
+                        Expanded(
+                          flex: 2,
+                          child: _buildWebProductImageSection(),
+                        ),
+                        const SizedBox(width: 32),
+                        // Right column - Product Information and Categories
+                        Expanded(
+                          flex: 3,
+                          child: _buildWebProductInfoAndCategoriesSection(),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 40),
+
+                  // Product Variations Section (full width)
+                  _buildWebVariationsSection(),
+
+                  const SizedBox(height: 40),
+
+                  // Submit Button
+                  Center(
+                    child: Container(
+                      width: 400,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        gradient: _isLoading ? null : AppColors.primaryGradient,
+                        color: _isLoading ? AppColors.grey300 : null,
+                      ),
+                      child: ElevatedButton(
+                        onPressed: _isLoading ? null : _submitForm,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          foregroundColor: AppColors.onPrimary,
+                          shadowColor: Colors.transparent,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                        ),
+                        child: _isLoading
+                            ? SizedBox(
+                                height: 28,
+                                width: 28,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 3,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    AppColors.onPrimary,
+                                  ),
+                                ),
+                              )
+                            : Text(
+                                'Add Product',
+                                style: AppTextStyles.titleMedium.copyWith(
+                                  color: AppColors.onPrimary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 40),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWebProductImageSection() {
+    return Container(
+      height: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 15,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.image_outlined, color: AppColors.primary, size: 24),
+              const SizedBox(width: 12),
+              Text(
+                'Product Image *',
+                style: AppTextStyles.titleMedium.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.onSurface,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Image Preview or Placeholder - Expanded to fill available space
+          Expanded(
+            child: Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: _productForm.imageFile != null
+                    ? Colors.transparent
+                    : AppColors.background,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: AppColors.onSurface.withValues(alpha: 0.2),
+                  width: 2,
+                  style: BorderStyle.solid,
+                ),
+              ),
+              child: _productForm.imageFile != null
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Image.file(
+                        _productForm.imageFile!,
+                        fit: BoxFit.cover,
+                      ),
+                    )
+                  : Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.cloud_upload_outlined,
+                          size: 64,
+                          color: AppColors.onSurface.withValues(alpha: 0.4),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Click to browse files',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.onSurface.withValues(alpha: 0.6),
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Upload Button
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _pickProductImage,
+              icon: Icon(
+                _productForm.imageFile != null ? Icons.edit : Icons.add_a_photo,
+                size: 20,
+              ),
+              label: Text(
+                _productForm.imageFile != null
+                    ? 'Change Image'
+                    : 'Browse Files',
+                style: AppTextStyles.labelLarge.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                side: BorderSide(color: AppColors.primary, width: 2),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWebProductInfoAndCategoriesSection() {
+    return Column(
+      children: [
+        // Product Information Section
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 15,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Product Information',
+                style: AppTextStyles.titleLarge.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.onSurface,
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Product Name
+              _buildWebTextField(
+                controller: _nameController,
+                label: 'Product Name *',
+                icon: Icons.shopping_bag_outlined,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Name is required';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 20),
+
+              // Product Description
+              _buildWebTextField(
+                controller: _descriptionController,
+                label: 'Description *',
+                icon: Icons.description_outlined,
+                maxLines: 4,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Description is required';
+                  }
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 24),
+
+        // Categories Section
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 15,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Categories',
+                style: AppTextStyles.titleMedium.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.onSurface,
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Category Dropdown
+              _buildWebDropdown(
+                label: 'Category *',
+                icon: Icons.category_outlined,
+                value: _selectedCategoryId,
+                items: _isCategoriesLoading
+                    ? [
+                        DropdownMenuItem(
+                          value: null,
+                          child: Text(
+                            'Loading categories...',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.onSurface.withValues(alpha: 0.6),
+                            ),
+                          ),
+                        ),
+                      ]
+                    : _categories.map((category) {
+                        return DropdownMenuItem(
+                          value: category.categoryId,
+                          child: Text(
+                            category.categoryName,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.onSurface,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                onChanged: _isCategoriesLoading
+                    ? null
+                    : (String? value) {
+                        AppLogger.d('🔍 Category selected: $value');
+                        setState(() {
+                          _selectedCategoryId = value;
+                          _productForm.categoryId = value ?? '';
+                        });
+                        if (value != null) {
+                          _loadSubCategories(value);
+                        }
+                      },
+                validator: (_) => _productForm.validateCategory(),
+              ),
+
+              const SizedBox(height: 20),
+
+              // SubCategory Dropdown
+              _buildWebDropdown(
+                label: 'SubCategory *',
+                icon: Icons.subdirectory_arrow_right_outlined,
+                value: _selectedSubCategoryId,
+                items: _selectedCategoryId == null
+                    ? [
+                        DropdownMenuItem(
+                          value: null,
+                          child: Text(
+                            'Select category first',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.onSurface.withValues(alpha: 0.6),
+                            ),
+                          ),
+                        ),
+                      ]
+                    : _subCategories.isEmpty
+                    ? [
+                        DropdownMenuItem(
+                          value: null,
+                          child: Text(
+                            'No subcategories available',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.onSurface.withValues(alpha: 0.6),
+                            ),
+                          ),
+                        ),
+                      ]
+                    : _subCategories.map((subCategory) {
+                        return DropdownMenuItem(
+                          value: subCategory.subCategoryId,
+                          child: Text(
+                            subCategory.subCategoryName,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.onSurface,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                onChanged: _selectedCategoryId == null
+                    ? null
+                    : (String? value) {
+                        setState(() {
+                          _selectedSubCategoryId = value;
+                          _productForm.subCategoryId = value;
+                        });
+                      },
+                validator: (_) => _productForm.validateSubCategory(),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWebTextField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    int maxLines = 1,
+    String? Function(String?)? validator,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.1)),
+      ),
+      child: TextFormField(
+        controller: controller,
+        style: AppTextStyles.bodyLarge.copyWith(color: AppColors.onSurface),
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: AppTextStyles.labelLarge.copyWith(
+            color: AppColors.onSurface.withValues(alpha: 0.7),
+          ),
+          prefixIcon: Icon(icon, color: AppColors.primary),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          filled: true,
+          fillColor: AppColors.background,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 16,
+          ),
+        ),
+        maxLines: maxLines,
+        validator: validator,
+      ),
+    );
+  }
+
+  Widget _buildWebDropdown({
+    required String label,
+    required IconData icon,
+    required String? value,
+    required List<DropdownMenuItem<String>> items,
+    required void Function(String?)? onChanged,
+    String? Function(String?)? validator,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.1)),
+      ),
+      child: DropdownButtonFormField<String>(
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: AppTextStyles.labelLarge.copyWith(
+            color: AppColors.onSurface.withValues(alpha: 0.7),
+          ),
+          prefixIcon: Icon(icon, color: AppColors.primary),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          filled: true,
+          fillColor: AppColors.background,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 16,
+          ),
+        ),
+        style: AppTextStyles.bodyLarge.copyWith(color: AppColors.onSurface),
+        dropdownColor: AppColors.surface,
+        value: value,
+        items: items,
+        onChanged: onChanged,
+        validator: validator,
+      ),
+    );
+  }
+
+  Widget _buildWebVariationsSection() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 15,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Product Variations',
+                    style: AppTextStyles.titleLarge.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Add at least one variation with price, stock, and SKU',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.onSurface.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ],
+              ),
+              ElevatedButton.icon(
+                onPressed: _addVariation,
+                icon: const Icon(Icons.add, size: 20),
+                label: Text(
+                  'Add Variation',
+                  style: AppTextStyles.labelLarge.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.surface,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: AppColors.onPrimary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // Variations Grid
+          ...List.generate(_variations.length, (index) {
+            return _buildWebVariationCard(index);
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWebVariationCard(int index) {
+    final controllers = _variationControllers[index];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header with variation title and remove button
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Variation ${index + 1}',
+                style: AppTextStyles.titleMedium.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.onSurface,
+                ),
+              ),
+              if (_variations.length > 1)
+                IconButton(
+                  onPressed: () => _removeVariation(index),
+                  icon: const Icon(Icons.delete_outline),
+                  color: AppColors.error,
+                  tooltip: 'Remove Variation',
+                ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Variation fields in grid layout
+          Row(
+            children: [
+              // Left side - Image and basic info
+              Expanded(
+                flex: 2,
+                child: Column(
+                  children: [
+                    // Variation Image
+                    Container(
+                      width: double.infinity,
+                      height: 150,
+                      decoration: BoxDecoration(
+                        color: _variations[index].imageFile != null
+                            ? Colors.transparent
+                            : AppColors.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.onSurface.withValues(alpha: 0.2),
+                          style: BorderStyle.solid,
+                        ),
+                      ),
+                      child: _variations[index].imageFile != null
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: Image.file(
+                                _variations[index].imageFile!,
+                                fit: BoxFit.cover,
+                              ),
+                            )
+                          : Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.image_outlined,
+                                  size: 32,
+                                  color: AppColors.onSurface.withValues(
+                                    alpha: 0.4,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Variation Image',
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.onSurface.withValues(
+                                      alpha: 0.6,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => _pickVariationImage(index),
+                        icon: Icon(
+                          _variations[index].imageFile != null
+                              ? Icons.edit
+                              : Icons.photo,
+                          size: 16,
+                        ),
+                        label: Text(
+                          _variations[index].imageFile != null
+                              ? 'Change'
+                              : 'Add Image',
+                          style: AppTextStyles.labelMedium,
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.primary,
+                          side: BorderSide(color: AppColors.primary),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 24),
+
+              // Right side - Form fields
+              Expanded(
+                flex: 3,
+                child: Column(
+                  children: [
+                    // First row - Name and Price
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildWebTextField(
+                            controller: controllers['name']!,
+                            label: 'Variation Name *',
+                            icon: Icons.label_outline,
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Variation name is required';
+                              }
+                              return null;
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _buildWebTextField(
+                            controller: controllers['price']!,
+                            label: 'Price (₱) *',
+                            icon: Icons.money_rounded,
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Price is required';
+                              }
+                              final price = double.tryParse(value);
+                              if (price == null || price <= 0) {
+                                return 'Enter a valid price';
+                              }
+                              return null;
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Second row - Stock, SKU and Weight
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildWebTextField(
+                            controller: controllers['stock']!,
+                            label: 'Stock *',
+                            icon: Icons.inventory_2_outlined,
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Stock is required';
+                              }
+                              final stock = int.tryParse(value);
+                              if (stock == null || stock < 0) {
+                                return 'Enter a valid stock number';
+                              }
+                              return null;
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _buildWebTextField(
+                            controller: controllers['sku']!,
+                            label: 'SKU',
+                            icon: Icons.qr_code_outlined,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _buildWebTextField(
+                            controller: controllers['weight']!,
+                            label: 'Weight (g)',
+                            icon: Icons.scale_outlined,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Third row - Dimensions only
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildWebTextField(
+                            controller: controllers['length']!,
+                            label: 'Length (cm)',
+                            icon: Icons.straighten,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _buildWebTextField(
+                            controller: controllers['width']!,
+                            label: 'Width (cm)',
+                            icon: Icons.straighten,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _buildWebTextField(
+                            controller: controllers['height']!,
+                            label: 'Height (cm)',
+                            icon: Icons.straighten,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
