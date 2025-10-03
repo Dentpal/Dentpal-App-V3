@@ -300,8 +300,9 @@ export const createCheckoutSession = functions
           description: `DentPal Order #${orderRef.id}`,
           line_items: lineItems,
           payment_method_types: paymentMethodTypes,
-          success_url: successUrl || `${process.env.APP_URL}/order-success?session_id={CHECKOUT_SESSION_ID}`,
-          cancel_url: cancelUrl || `${process.env.APP_URL}/checkout?cancelled=true`,
+          success_url: successUrl || `https://dentpal-store.web.app/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: cancelUrl || `https://dentpal-store.web.app/payment-failed?session_id={CHECKOUT_SESSION_ID}`,
+          send_email_receipt: true, // Enable automatic email receipt
           metadata: {
             order_id: orderRef.id,
             user_id: userId,

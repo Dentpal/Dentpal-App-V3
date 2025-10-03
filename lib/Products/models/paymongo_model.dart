@@ -616,6 +616,7 @@ class CreateCheckoutSessionRequest {
   final List<String> paymentMethodTypes;
   final String? successUrl;
   final String? cancelUrl;
+  final bool sendEmailReceipt;
   final Map<String, dynamic>? metadata;
   final PaymongoCheckoutBilling? billing;
 
@@ -625,6 +626,7 @@ class CreateCheckoutSessionRequest {
     required this.paymentMethodTypes,
     this.successUrl,
     this.cancelUrl,
+    this.sendEmailReceipt = true, // Default to true for automatic email receipts
     this.metadata,
     this.billing,
   });
@@ -636,6 +638,7 @@ class CreateCheckoutSessionRequest {
       'payment_method_types': paymentMethodTypes,
       'success_url': successUrl,
       'cancel_url': cancelUrl,
+      'send_email_receipt': sendEmailReceipt,
       'metadata': metadata,
       'billing': billing?.toJson(),
     };

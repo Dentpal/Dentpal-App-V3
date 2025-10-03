@@ -138,9 +138,12 @@ class _CartPageState extends State<CartPage>
       _instance!._cartSummary = null;
       _instance!._lastCacheTime = null;
     }
-    setState(() {
-      _sellerGroupsFuture = _loadSellerGroups();
-    });
+    // Check if widget is still mounted before calling setState
+    if (mounted) {
+      setState(() {
+        _sellerGroupsFuture = _loadSellerGroups();
+      });
+    }
   }
 
   @override
