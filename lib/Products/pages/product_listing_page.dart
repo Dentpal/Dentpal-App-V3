@@ -12,7 +12,7 @@ import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'product_detail_page.dart';
-
+import 'package:flutter/services.dart';
 
 // Custom cache manager with 24 hour TTL
 class ProductImageCacheManager {
@@ -649,7 +649,9 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
             child: Text('Cancel', style: AppTextStyles.buttonMedium),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () {
+              SystemNavigator.pop(); // Sends to background or closes app
+            },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.warning,
               foregroundColor: AppColors.onPrimary,

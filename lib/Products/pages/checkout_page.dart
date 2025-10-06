@@ -869,7 +869,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         return Icons.local_taxi;
       case PaymentMethod.paymaya:
         return Icons.account_balance_wallet_outlined;
-      case PaymentMethod.bank_transfer:
+      case PaymentMethod.billEase:
         return Icons.account_balance;
     }
   }
@@ -1506,15 +1506,76 @@ class _CheckoutPageState extends State<CheckoutPage> {
     }
   }
 
-  void _handlePaymentSuccess(String? orderId) {
+  void _handlePaymentSuccess(String? orderId) async {
     AppLogger.d('✅ Payment completed successfully. Order ID: $orderId');
     
-    if (mounted) {
-      // Navigate to dedicated payment success page instead of showing popup
+    if (mounted && orderId != null) {
+      // Show loading dialog while verifying payment
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(
+                'Verifying payment...',
+                style: AppTextStyles.bodyMedium,
+              ),
+            ],
+          ),
+        ),
+      );
+
+      try {
+        // Verify payment status with Paymongo
+        final wasUpdated = await _checkoutService.verifyPaymentStatus(orderId);
+        
+        if (mounted) {
+          Navigator.of(context).pop(); // Close loading dialog
+          
+          if (wasUpdated) {
+            AppLogger.d('✅ Payment verified and order updated to confirmed');
+          } else {
+            AppLogger.d('ℹ️ Payment status already verified');
+          }
+          
+          // Navigate to success page
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            '/payment-success',
+            (route) => route.settings.name == '/', // Clear stack until home
+          );
+          
+          // Call completion callback
+          widget.onOrderComplete?.call();
+        }
+      } catch (e) {
+        AppLogger.d('❌ Error verifying payment: $e');
+        
+        if (mounted) {
+          Navigator.of(context).pop(); // Close loading dialog
+          
+          // Still navigate to success page since payment completion was detected
+          // but show a message that verification will happen later
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            '/payment-success',
+            (route) => route.settings.name == '/', // Clear stack until home
+          );
+          
+          // Call completion callback
+          widget.onOrderComplete?.call();
+        }
+      }
+    } else if (mounted) {
+      // Navigate to success page even without order ID
       Navigator.of(context).pushNamedAndRemoveUntil(
         '/payment-success',
         (route) => route.settings.name == '/', // Clear stack until home
       );
+      
       // Call completion callback
       widget.onOrderComplete?.call();
     }

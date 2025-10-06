@@ -4,6 +4,7 @@ import 'package:dentpal/Products/pages/cart_page.dart';
 import 'package:dentpal/profile/pages/profile_page.dart';
 import 'core/app_theme/app_colors.dart';
 import 'core/app_theme/app_text_styles.dart';
+import 'package:flutter/services.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -71,7 +72,9 @@ class _HomePageState extends State<HomePage> {
             child: Text('Cancel', style: AppTextStyles.buttonMedium),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () {
+              SystemNavigator.pop(); // Sends to background or closes app
+            },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.warning,
               foregroundColor: AppColors.onPrimary,

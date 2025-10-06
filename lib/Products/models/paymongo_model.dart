@@ -500,7 +500,7 @@ class PaymongoPaymentMethodConfig {
     'gcash': 'GCash',
     'grab_pay': 'GrabPay',
     'paymaya': 'PayMaya',
-    'billease': 'Bank Transfer',
+    'billease': 'Buy Now, Pay Later (Billease)',
   };
 
   static const Map<String, String> paymentMethodIcons = {

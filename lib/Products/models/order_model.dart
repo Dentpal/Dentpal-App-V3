@@ -4,6 +4,7 @@ import 'package:dentpal/utils/app_logger.dart';
 
 enum OrderStatus {
   pending,
+  confirmed,
   processing,
   shipped,
   delivered,
@@ -24,7 +25,7 @@ enum PaymentMethod {
   gcash,
   grabpay,
   paymaya,
-  bank_transfer
+  billEase
 }
 
 class Order {
@@ -551,6 +552,8 @@ extension OrderStatusExtension on OrderStatus {
     switch (this) {
       case OrderStatus.pending:
         return 'Pending';
+      case OrderStatus.confirmed:
+        return 'Confirmed';
       case OrderStatus.processing:
         return 'Processing';
       case OrderStatus.shipped:
@@ -568,6 +571,8 @@ extension OrderStatusExtension on OrderStatus {
     switch (this) {
       case OrderStatus.pending:
         return 'Order has been placed and is awaiting confirmation';
+      case OrderStatus.confirmed:
+        return 'Payment confirmed, order is being processed';
       case OrderStatus.processing:
         return 'Order is being prepared for shipment';
       case OrderStatus.shipped:
@@ -610,8 +615,8 @@ extension PaymentMethodExtension on PaymentMethod {
         return 'GrabPay';
       case PaymentMethod.paymaya:
         return 'PayMaya';
-      case PaymentMethod.bank_transfer:
-        return 'Bank Transfer';
+      case PaymentMethod.billEase:
+        return 'Buy Now, Pay Later (BillEase)';
     }
   }
 
@@ -625,8 +630,8 @@ extension PaymentMethodExtension on PaymentMethod {
         return 'grab_pay';
       case PaymentMethod.paymaya:
         return 'paymaya';
-      case PaymentMethod.bank_transfer:
-        return 'billease';
+      case PaymentMethod.billEase:
+        return 'Buy Now, Pay Later (BillEase)';
     }
   }
 }

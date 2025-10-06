@@ -180,7 +180,7 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
         content: Text(
           'Are you sure you want to cancel this payment? Your order will not be processed.',
           style: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.onSurface.withOpacity(0.8),
+            color: AppColors.onSurface.withValues(alpha:0.8),
           ),
         ),
         actions: [
@@ -236,7 +236,7 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
                 Text(
                   Uri.parse(_currentUrl).host,
                   style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.onSurface.withOpacity(0.6),
+                    color: AppColors.onSurface.withValues(alpha:0.6),
                   ),
                 ),
             ],

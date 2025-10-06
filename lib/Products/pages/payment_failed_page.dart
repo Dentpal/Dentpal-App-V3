@@ -132,7 +132,7 @@ class _PaymentFailedPageState extends State<PaymentFailedPage>
                             shape: BoxShape.circle,
                             boxShadow: [
                               BoxShadow(
-                                color: AppColors.error.withOpacity(0.3),
+                                color: AppColors.error.withValues(alpha: 0.3),
                                 spreadRadius: 20,
                                 blurRadius: 40,
                               ),
@@ -167,7 +167,7 @@ class _PaymentFailedPageState extends State<PaymentFailedPage>
                 Text(
                   widget.errorMessage ?? 'Sorry, we couldn\'t process your payment.\nPlease try again or use a different payment method.',
                   style: AppTextStyles.bodyLarge.copyWith(
-                    color: AppColors.onSurface.withOpacity(0.8),
+                    color: AppColors.onSurface.withValues(alpha:0.8),
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -179,10 +179,10 @@ class _PaymentFailedPageState extends State<PaymentFailedPage>
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: AppColors.error.withOpacity(0.1),
+                      color: AppColors.error.withValues(alpha:0.1),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: AppColors.error.withOpacity(0.2),
+                        color: AppColors.error.withValues(alpha:0.2),
                       ),
                     ),
                     child: Column(
@@ -294,7 +294,7 @@ class _PaymentFailedPageState extends State<PaymentFailedPage>
                       Text(
                         'Returning to cart in',
                         style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.onSurface.withOpacity(0.7),
+                          color: AppColors.onSurface.withValues(alpha:0.7),
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -308,7 +308,7 @@ class _PaymentFailedPageState extends State<PaymentFailedPage>
                       Text(
                         'seconds',
                         style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.onSurface.withOpacity(0.7),
+                          color: AppColors.onSurface.withValues(alpha:0.7),
                         ),
                       ),
                     ],
@@ -329,7 +329,7 @@ class _PaymentFailedPageState extends State<PaymentFailedPage>
         Text(
           label,
           style: AppTextStyles.bodySmall.copyWith(
-            color: AppColors.onSurface.withOpacity(0.6),
+            color: AppColors.onSurface.withValues(alpha:0.6),
           ),
         ),
         Flexible(
