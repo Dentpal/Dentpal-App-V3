@@ -90,6 +90,7 @@ class ProductService {
             updatedAt: product.updatedAt,
             isActive: product.isActive,
             isDraft: product.isDraft,
+            isArchived: product.isArchived,
             clickCounter: product.clickCounter,
             variations: variations,
           );
@@ -153,6 +154,7 @@ class ProductService {
           updatedAt: product.updatedAt,
           isActive: product.isActive,
           isDraft: product.isDraft,
+          isArchived: product.isArchived,
           clickCounter: product.clickCounter,
           variations: variations,
         );
@@ -320,6 +322,7 @@ class ProductService {
         'updatedAt': Timestamp.fromDate(now),
         'isActive': !isDraft, // If it's a draft, set isActive to false
         'isDraft': isDraft,
+        'isArchived': false, // New products are not archived by default
         'clickCounter': 0,
       });
       
@@ -537,6 +540,7 @@ class ProductService {
               updatedAt: product.updatedAt,
               isActive: product.isActive,
               isDraft: product.isDraft,
+              isArchived: product.isArchived,
               clickCounter: product.clickCounter,
               variations: variations,
             );

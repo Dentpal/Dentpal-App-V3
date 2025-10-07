@@ -21,6 +21,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
   final List<Product> _inactiveProducts = [];
   final List<Product> _outOfStockProducts = [];
   final List<Product> _draftProducts = [];
+  final List<Product> _archivedProducts = [];
   
   bool _isLoading = true;
   String? _errorMessage;
@@ -30,7 +31,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this); // Updated to 4 tabs
+    _tabController = TabController(length: 5, vsync: this); // Updated to 5 tabs
     _loadSellerProducts();
   }
   
@@ -117,6 +118,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
               sellerId: product.sellerId,
               isActive: product.isActive,
               isDraft: product.isDraft,
+              isArchived: product.isArchived,
               createdAt: product.createdAt,
               updatedAt: product.updatedAt,
               clickCounter: product.clickCounter,
@@ -145,9 +147,12 @@ class _SellerListingsPageState extends State<SellerListingsPage>
     _inactiveProducts.clear();
     _outOfStockProducts.clear();
     _draftProducts.clear();
+    _archivedProducts.clear();
     
     for (Product product in products) {
-      if (product.isDraft) {
+      if (product.isArchived == true) {
+        _archivedProducts.add(product);
+      } else if (product.isDraft) {
         _draftProducts.add(product);
       } else if (!product.isActive) {
         _inactiveProducts.add(product);
@@ -158,7 +163,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
       }
     }
     
-    AppLogger.d('📊 Products categorized - Active: ${_activeProducts.length}, Inactive: ${_inactiveProducts.length}, Out of Stock: ${_outOfStockProducts.length}, Drafts: ${_draftProducts.length}');
+    AppLogger.d('📊 Products categorized - Active: ${_activeProducts.length}, Inactive: ${_inactiveProducts.length}, Out of Stock: ${_outOfStockProducts.length}, Drafts: ${_draftProducts.length}, Archived: ${_archivedProducts.length}');
   }
   
   bool _isProductOutOfStock(Product product) {
@@ -238,6 +243,15 @@ class _SellerListingsPageState extends State<SellerListingsPage>
                   _publishDraft(product);
                 },
               ),
+            ] else if (product.isArchived) ...[
+              _buildBottomSheetOption(
+                icon: Icons.unarchive,
+                title: 'Unarchive Product',
+                onTap: () {
+                  Navigator.pop(context);
+                  _unarchiveProduct(product);
+                },
+              ),
             ] else ...[
               _buildBottomSheetOption(
                 icon: product.isActive ? Icons.visibility_off : Icons.visibility,
@@ -247,17 +261,16 @@ class _SellerListingsPageState extends State<SellerListingsPage>
                   _toggleProductStatus(product);
                 },
               ),
+              const SizedBox(height: 12),
+              _buildBottomSheetOption(
+                icon: Icons.archive,
+                title: 'Archive Product',
+                onTap: () {
+                  Navigator.pop(context);
+                  _archiveProduct(product);
+                },
+              ),
             ],
-            const SizedBox(height: 12),
-            _buildBottomSheetOption(
-              icon: Icons.delete,
-              title: 'Delete Product',
-              isDestructive: true,
-              onTap: () {
-                Navigator.pop(context);
-                _confirmDeleteProduct(product);
-              },
-            ),
           ],
         ),
       ),
@@ -373,90 +386,21 @@ class _SellerListingsPageState extends State<SellerListingsPage>
     }
   }
   
-  Future<void> _confirmDeleteProduct(Product product) async {
-    final shouldDelete = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.error.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                Icons.delete,
-                color: AppColors.error,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              'Delete Product',
-              style: AppTextStyles.titleMedium.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-        content: Text(
-          'Are you sure you want to delete "${product.name}"? This action cannot be undone.',
-          style: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.onSurface.withValues(alpha: 0.8),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.onSurface.withValues(alpha: 0.6),
-            ),
-            child: Text('Cancel', style: AppTextStyles.buttonMedium),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-              foregroundColor: AppColors.onPrimary,
-              elevation: 0,
-            ),
-            child: Text('Delete', style: AppTextStyles.buttonMedium),
-          ),
-        ],
-      ),
-    );
-
-    if (shouldDelete == true) {
-      await _deleteProduct(product);
-    }
-  }
-  
-  Future<void> _deleteProduct(Product product) async {
+  Future<void> _archiveProduct(Product product) async {
     try {
-      // Delete all variations first
-      QuerySnapshot variations = await FirebaseFirestore.instance
-          .collection('Product')
-          .doc(product.productId)
-          .collection('Variation')
-          .get();
-      
-      for (var variation in variations.docs) {
-        await variation.reference.delete();
-      }
-      
-      // Delete the product document
       await FirebaseFirestore.instance
           .collection('Product')
           .doc(product.productId)
-          .delete();
+          .update({
+        'isArchived': true,
+        'isActive': false,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Product "${product.name}" deleted successfully'),
+            content: Text('Product "${product.name}" archived successfully'),
             backgroundColor: AppColors.success,
           ),
         );
@@ -465,11 +409,46 @@ class _SellerListingsPageState extends State<SellerListingsPage>
         _loadSellerProducts();
       }
     } catch (e) {
-      AppLogger.d('❌ Error deleting product: $e');
+      AppLogger.d('❌ Error archiving product: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error deleting product: $e'),
+            content: Text('Error archiving product: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+  
+  Future<void> _unarchiveProduct(Product product) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('Product')
+          .doc(product.productId)
+          .update({
+        'isArchived': false,
+        'isActive': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Product "${product.name}" unarchived successfully'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        
+        // Refresh the list
+        _loadSellerProducts();
+      }
+    } catch (e) {
+      AppLogger.d('❌ Error unarchiving product: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error unarchiving product: $e'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -501,7 +480,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
           labelColor: AppColors.primary,
           unselectedLabelColor: AppColors.onSurface.withValues(alpha: 0.6),
           indicatorColor: AppColors.primary,
-          isScrollable: true, // Make tabs scrollable to fit all 4
+          isScrollable: true, // Make tabs scrollable to fit all 5
           tabs: [
             Tab(
               text: 'Active (${_activeProducts.length})',
@@ -514,6 +493,9 @@ class _SellerListingsPageState extends State<SellerListingsPage>
             ),
             Tab(
               text: 'Drafts (${_draftProducts.length})',
+            ),
+            Tab(
+              text: 'Archived (${_archivedProducts.length})',
             ),
           ],
         ),
@@ -566,6 +548,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
           _buildProductList(_inactiveProducts, 'inactive'),
           _buildProductList(_outOfStockProducts, 'out of stock'),
           _buildProductList(_draftProducts, 'drafts'),
+          _buildProductList(_archivedProducts, 'archived'),
         ],
       ),
     );
@@ -618,6 +601,10 @@ class _SellerListingsPageState extends State<SellerListingsPage>
       case 'drafts':
         message = 'No draft products\nSave products as drafts to work on them later';
         icon = Icons.drafts;
+        break;
+      case 'archived':
+        message = 'No archived products\nArchive products you want to keep but not display';
+        icon = Icons.archive;
         break;
       default:
         message = 'No products found';

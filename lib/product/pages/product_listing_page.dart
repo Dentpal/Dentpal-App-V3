@@ -1481,6 +1481,9 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
       // Exclude inactive products from product listing page
       if (product.isActive == false) return false;
       
+      // Exclude archived products from product listing page
+      if (product.isArchived == true) return false;
+      
       if (_selectedCategory == 'All') return true;
       
       // If a subcategory is selected, filter by subcategory
