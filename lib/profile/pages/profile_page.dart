@@ -283,6 +283,18 @@ class ProfilePage extends StatelessWidget {
                         },
                       ),
                       _buildDivider(),
+                      // Show My Listings option only for sellers
+                      if (userData?['role'] == 'seller') ...[
+                        _buildProfileOption(
+                          context,
+                          'My Listings',
+                          Icons.store_outlined,
+                          () {
+                            Navigator.pushNamed(context, '/seller-listings');
+                          },
+                        ),
+                        _buildDivider(),
+                      ],
                       _buildProfileOption(
                         context,
                         'Shipping Addresses',

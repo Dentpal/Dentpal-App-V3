@@ -12,6 +12,7 @@ class Product {
   final DateTime createdAt;
   final DateTime updatedAt;
   final bool isActive;
+  final bool isDraft;
   final int clickCounter;
   final List<ProductVariation>? variations;
 
@@ -26,6 +27,7 @@ class Product {
     required this.createdAt,
     required this.updatedAt,
     required this.isActive,
+    required this.isDraft,
     required this.clickCounter,
     this.variations,
   });
@@ -68,6 +70,7 @@ class Product {
       createdAt: createdAt,
       updatedAt: updatedAt,
       isActive: data['isActive'] ?? true,
+      isDraft: data['isDraft'] ?? false,
       clickCounter: data['clickCounter'] ?? 0,
       variations: null, // Variations will be fetched separately
     );
@@ -84,6 +87,7 @@ class Product {
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
       'isActive': isActive,
+      'isDraft': isDraft,
       'clickCounter': clickCounter,
     };
   }

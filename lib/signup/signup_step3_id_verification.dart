@@ -1,10 +1,10 @@
 // ignore_for_file: deprecated_member_use
 
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'signup_controller.dart';
 import 'id_ocr_service.dart';
+import 'id_verification_camera.dart';
 import 'package:dentpal/core/app_theme/index.dart';
 
 class SignupStep3IdVerification extends StatefulWidget {
@@ -25,8 +25,6 @@ class SignupStep3IdVerification extends StatefulWidget {
 
 class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
   File? _capturedImage;
-  bool _isProcessing = false;
-  final ImagePicker _picker = ImagePicker();
 
   @override
   Widget build(BuildContext context) {
@@ -71,24 +69,8 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
                 ),
                 const SizedBox(height: 24),
                 
-                // Show captured image or capture instructions
-                if (_capturedImage != null) ...[
-                  Container(
-                    height: 200,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.grey300),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.file(
-                        _capturedImage!,
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
+                // Show verification status - either captured image or verification result
+                if (_capturedImage != null || widget.controller.isIdVerified || widget.controller.idVerificationError != null) ...[
                   if (widget.controller.isIdVerified) ...[
                     Container(
                       padding: const EdgeInsets.all(12),
@@ -139,43 +121,19 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
                     ),
                   ],
                   const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _isProcessing ? null : _captureImage,
-                          icon: Icon(Icons.camera_alt),
-                          label: Text('Retake Photo'),
-                          style: OutlinedButton.styleFrom(
-                            padding: EdgeInsets.symmetric(vertical: 12),
-                            side: BorderSide(color: AppColors.primary),
-                            foregroundColor: AppColors.primary,
-                          ),
-                        ),
+                  // Only show recapture button since verification is automatic
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _captureImage,
+                      icon: Icon(Icons.camera_alt),
+                      label: Text('Recapture PRC ID'),
+                      style: OutlinedButton.styleFrom(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        side: BorderSide(color: AppColors.primary),
+                        foregroundColor: AppColors.primary,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _isProcessing ? null : _processImage,
-                          icon: _isProcessing 
-                              ? SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: AppColors.onPrimary,
-                                  ),
-                                )
-                              : Icon(Icons.document_scanner),
-                          label: Text(_isProcessing ? 'Processing...' : 'Verify ID'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: AppColors.onPrimary,
-                            padding: EdgeInsets.symmetric(vertical: 12),
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ] else ...[
                   Container(
@@ -194,7 +152,7 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Document Required',
+                          'Smart Verification Ready',
                           style: AppTextStyles.labelLarge.copyWith(
                             fontWeight: FontWeight.w600,
                             color: AppColors.primary,
@@ -202,7 +160,7 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Please prepare a valid, non-expired government-issued ID (passport, driver\'s license, or national ID card) with a clearly visible face photo',
+                          'Our smart camera will automatically detect, capture, and verify your PRC ID when positioned correctly. Simply hold your PRC ID steady in the frame.',
                           textAlign: TextAlign.center,
                           style: AppTextStyles.bodySmall.copyWith(
                             color: AppColors.primary,
@@ -214,7 +172,7 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
                           child: ElevatedButton.icon(
                             onPressed: _captureImage,
                             icon: Icon(Icons.camera_alt),
-                            label: Text('Capture ID Photo'),
+                            label: Text('Start Auto Verification'),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.primary,
                               foregroundColor: AppColors.onPrimary,
@@ -287,25 +245,63 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
 
   Future<void> _captureImage() async {
     try {
-      final XFile? image = await _picker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 80,
-        maxWidth: 1024,
-        maxHeight: 1024,
+      // Navigate to the auto-capture ID camera
+      final result = await Navigator.of(context).push<IdVerificationResult>(
+        MaterialPageRoute(
+          builder: (context) => IdVerificationCamera(
+            onIdVerified: (verificationResult) {
+              Navigator.of(context).pop(verificationResult);
+            },
+            onCancel: () {
+              Navigator.of(context).pop();
+            },
+            expectedFirstName: widget.controller.firstNameController.text,
+            expectedLastName: widget.controller.lastNameController.text,
+          ),
+        ),
       );
 
-      if (image != null) {
+      if (result != null) {
+        // ID was auto-captured and verified
         setState(() {
-          _capturedImage = File(image.path);
-          // Reset verification state when new image is captured
+          // Set the captured image path if available
+          if (result.isValid) {
+            // We don't have direct access to image path from result, but we have verification data
+            widget.controller.isIdVerified = true;
+            widget.controller.idNumber = result.registrationNumber;
+            widget.controller.idVerificationError = null;
+            widget.controller.idFaceImage = result.faceImage;
+            // Set a placeholder image to show verification was successful
+            _capturedImage = null; // We'll handle this differently
+          } else {
+            widget.controller.isIdVerified = false;
+            widget.controller.idVerificationError = result.errorMessage;
+            widget.controller.idNumber = null;
+            widget.controller.idFaceImage = null;
+            _capturedImage = null;
+          }
+        });
+      } else {
+        // User cancelled the camera - mark as failed
+        setState(() {
           widget.controller.isIdVerified = false;
-          widget.controller.idVerificationError = null;
+          widget.controller.idVerificationError = 'ID verification cancelled. Please try again to complete your registration.';
           widget.controller.idNumber = null;
+          widget.controller.idFaceImage = null;
+          _capturedImage = null;
         });
       }
     } catch (e) {
       SignupController.logOcrResult('ERROR', 'Failed to capture image: $e');
       if (mounted) {
+        setState(() {
+          widget.controller.isIdVerified = false;
+          widget.controller.idVerificationError = 'Unable to access camera. Please check permissions and try again.';
+          widget.controller.idNumber = null;
+          widget.controller.idFaceImage = null;
+          _capturedImage = null;
+        });
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Unable to access camera. Please check permissions and try again.'),
@@ -316,54 +312,4 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
     }
   }
 
-  Future<void> _processImage() async {
-    if (_capturedImage == null) return;
-
-    setState(() {
-      _isProcessing = true;
-      widget.controller.idVerificationError = null;
-    });
-
-    try {
-      final result = await IdOcrService.processIdImage(
-        _capturedImage!.path,
-        widget.controller.firstNameController.text,
-        widget.controller.lastNameController.text,
-      );
-
-      setState(() {
-        if (result.isValid) {
-          widget.controller.isIdVerified = true;
-          widget.controller.idNumber = result.registrationNumber;
-          widget.controller.idVerificationError = null;
-          widget.controller.idFaceImage = result.faceImage; // Store face image
-        } else {
-          widget.controller.isIdVerified = false;
-          widget.controller.idVerificationError = result.errorMessage;
-          widget.controller.idNumber = null;
-          widget.controller.idFaceImage = null; // Clear face image on failure
-        }
-        _isProcessing = false;
-      });
-
-      if (result.isValid && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('ID verified successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      setState(() {
-        _isProcessing = false;
-        widget.controller.isIdVerified = false;
-        widget.controller.idVerificationError = 'Unable to process ID image. Please try again with better lighting.';
-        widget.controller.idNumber = null;
-        widget.controller.idFaceImage = null; // Clear face image on error
-      });
-
-      SignupController.logOcrResult('ERROR', 'Failed to process image: $e');
-    }
-  }
 }

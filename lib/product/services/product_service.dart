@@ -89,6 +89,7 @@ class ProductService {
             createdAt: product.createdAt,
             updatedAt: product.updatedAt,
             isActive: product.isActive,
+            isDraft: product.isDraft,
             clickCounter: product.clickCounter,
             variations: variations,
           );
@@ -151,6 +152,7 @@ class ProductService {
           createdAt: product.createdAt,
           updatedAt: product.updatedAt,
           isActive: product.isActive,
+          isDraft: product.isDraft,
           clickCounter: product.clickCounter,
           variations: variations,
         );
@@ -285,7 +287,7 @@ class ProductService {
 
   // Add a new product to Firestore
   Future<Map<String, dynamic>> addProduct(
-      ProductFormModel productForm, List<VariationFormModel> variations) async {
+      ProductFormModel productForm, List<VariationFormModel> variations, {bool isDraft = false}) async {
     try {
       // First check if the user is a seller
       Map<String, dynamic> sellerStatus = await checkSellerStatus();
@@ -316,7 +318,8 @@ class ProductService {
         'sellerId': sellerId,
         'createdAt': Timestamp.fromDate(now),
         'updatedAt': Timestamp.fromDate(now),
-        'isActive': true,
+        'isActive': !isDraft, // If it's a draft, set isActive to false
+        'isDraft': isDraft,
         'clickCounter': 0,
       });
       
@@ -353,7 +356,7 @@ class ProductService {
 
   // Update an existing product in Firestore
   Future<Map<String, dynamic>> updateProduct(
-      String productId, ProductFormModel productForm, List<VariationFormModel> variations) async {
+      String productId, ProductFormModel productForm, List<VariationFormModel> variations, {bool? isDraft}) async {
     try {
       // First check if the user is a seller
       Map<String, dynamic> sellerStatus = await checkSellerStatus();
@@ -390,14 +393,22 @@ class ProductService {
       DocumentReference productRef = _firestore.collection('Product').doc(productId);
       DateTime now = DateTime.now();
       
-      await productRef.update({
+      Map<String, dynamic> updateData = {
         'name': productForm.name,
         'description': productForm.description,
         'imageURL': productForm.imageURL,
         'categoryID': productForm.categoryId,
         'subCategoryID': productForm.subCategoryId,
         'updatedAt': Timestamp.fromDate(now),
-      });
+      };
+      
+      // Add isDraft field if it's provided
+      if (isDraft != null) {
+        updateData['isDraft'] = isDraft;
+        updateData['isActive'] = !isDraft; // If it's a draft, set isActive to false
+      }
+      
+      await productRef.update(updateData);
       
       // Handle variations update
       // First, get existing variations
@@ -525,6 +536,7 @@ class ProductService {
               createdAt: product.createdAt,
               updatedAt: product.updatedAt,
               isActive: product.isActive,
+              isDraft: product.isDraft,
               clickCounter: product.clickCounter,
               variations: variations,
             );

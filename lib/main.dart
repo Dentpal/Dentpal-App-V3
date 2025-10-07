@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:dentpal/Products/products_module.dart';
+import 'package:dentpal/product/products_module.dart';
+import 'package:dentpal/product/pages/edit_product_page.dart';
+import 'package:dentpal/profile/pages/seller_listings_page.dart';
 import 'package:dentpal/auth_wrapper.dart';
 import 'package:dentpal/core/app_theme/app_theme.dart';
 import 'firebase_options.dart';
@@ -39,6 +41,7 @@ class MyApp extends StatelessWidget {
         '/products': (context) => const ProductListingPage(),
         '/cart': (context) => const CartPage(),
         '/add-product': (context) => const AddProductPage(),
+        '/seller-listings': (context) => const SellerListingsPage(),
       },
       onGenerateRoute: (settings) {
         // Handle dynamic product routes
@@ -50,6 +53,36 @@ class MyApp extends StatelessWidget {
           );
         }
         
+        // Handle edit product route
+        if (settings.name == '/edit-product') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          if (args != null && args['productId'] != null) {
+            return MaterialPageRoute(
+              settings: settings,
+              builder: (context) => FutureBuilder<Product?>(
+                future: _getProductForEdit(args['productId']),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Scaffold(
+                      body: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  
+                  if (snapshot.hasData && snapshot.data != null) {
+                    return EditProductPage(product: snapshot.data!);
+                  }
+                  
+                  return const Scaffold(
+                    body: Center(
+                      child: Text('Product not found'),
+                    ),
+                  );
+                },
+              ),
+            );
+          }
+        }
+        
         // Default to AuthWrapper for unknown routes
         return MaterialPageRoute(
           settings: settings,
@@ -58,6 +91,12 @@ class MyApp extends StatelessWidget {
       },
       debugShowCheckedModeBanner: false,
     );
+  }
+  
+  // Helper method to get product for editing
+  Future<Product?> _getProductForEdit(String productId) async {
+    final productService = ProductService();
+    return await productService.getProductById(productId);
   }
   
   String _getInitialRoute() {

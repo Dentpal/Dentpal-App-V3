@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import '../../Products/models/order_model.dart' as order_model;
+import '../../product/models/order_model.dart' as order_model;
 import '../../utils/app_logger.dart';
 
 class OrderService {

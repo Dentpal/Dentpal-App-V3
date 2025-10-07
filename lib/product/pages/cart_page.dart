@@ -3,7 +3,7 @@ import 'package:dentpal/utils/app_logger.dart';
 import '../models/cart_model.dart';
 import '../services/cart_service.dart';
 import '../widgets/seller_group_widget.dart';
-import '../pages/checkout_page.dart';
+import 'checkout_page.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import 'package:flutter/services.dart';

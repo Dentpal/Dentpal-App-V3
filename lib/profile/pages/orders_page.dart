@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
-import '../../Products/models/order_model.dart' as order_model;
+import '../../product/models/order_model.dart' as order_model;
 import '../services/order_service.dart';
 import 'order_details_page.dart';
 
@@ -670,9 +670,9 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
   String _formatStatus(order_model.OrderStatus status) {
     switch (status) {
       case order_model.OrderStatus.pending:
-        return 'Pending';
+        return 'Pending Payment';
       case order_model.OrderStatus.confirmed:
-        return 'Confirmed';
+        return 'Confirmed Payment';
       case order_model.OrderStatus.processing:
         return 'Processing';
       case order_model.OrderStatus.shipped:

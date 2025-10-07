@@ -1475,6 +1475,12 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     AppLogger.d('🔍 Total products: ${_products.length}');
     
     final filteredProducts = _products.where((product) {
+      // Exclude draft products from product listing page
+      if (product.isDraft == true) return false;
+      
+      // Exclude inactive products from product listing page
+      if (product.isActive == false) return false;
+      
       if (_selectedCategory == 'All') return true;
       
       // If a subcategory is selected, filter by subcategory

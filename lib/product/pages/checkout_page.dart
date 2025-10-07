@@ -8,7 +8,7 @@ import '../models/paymongo_model.dart';
 import '../services/checkout_service.dart';
 import '../services/cart_service.dart';
 import '../widgets/address_selection_widget.dart';
-import '../pages/paymongo_webview_page.dart';
+import 'paymongo_webview_page.dart';
 import '../../profile/models/shipping_address.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';

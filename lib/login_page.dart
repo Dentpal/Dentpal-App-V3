@@ -242,26 +242,22 @@ class _LoginPageState extends State<LoginPage> {
       if (mounted) {
         final uid = FirebaseAuth.instance.currentUser?.uid;
         if (uid != null) {
-          final doc = await FirebaseFirestore.instance.collection('User').doc(uid).get();
-          final name = doc.data()?['firstName'] ?? 'User';
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Login successful! Welcome back, $name.')),
-          );
           // Navigate to the home page after successful login
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (context) => const HomePage()),
           );
         } else {
-          // This shouldn't happen, but adding for debugging
-          ScaffoldMessenger.of(context).showSnackBar(
+            // If uid is null, force sign out and ask user to try again
+            await FirebaseAuth.instance.signOut();
+            ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
-                'Authentication successful but user is null! Please try again.',
+              'Something went wrong! Please log in again.',
               ),
               duration: Duration(seconds: 3),
               backgroundColor: Colors.orange,
             ),
-          );
+            );
         }
       }
     } on FirebaseAuthException catch (e) {
