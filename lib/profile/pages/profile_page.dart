@@ -6,6 +6,7 @@ import '../../core/app_theme/app_text_styles.dart';
 import '../../login_page.dart';
 import 'shipping_addresses_page.dart';
 import 'orders_page.dart';
+import 'seller_listings_page.dart';
 
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
@@ -290,7 +291,11 @@ class ProfilePage extends StatelessWidget {
                           'My Listings',
                           Icons.store_outlined,
                           () {
-                            Navigator.pushNamed(context, '/seller-listings');
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) => const SellerListingsPage(),
+                              ),
+                            );
                           },
                         ),
                         _buildDivider(),

@@ -7,7 +7,10 @@ import 'package:dentpal/product/products_module.dart';
 import 'package:dentpal/product/pages/edit_product_page.dart';
 import 'package:dentpal/profile/pages/seller_listings_page.dart';
 import 'package:dentpal/auth_wrapper.dart';
+import 'package:dentpal/home_page.dart';
+import 'package:dentpal/login_page.dart';
 import 'package:dentpal/core/app_theme/app_theme.dart';
+import 'package:dentpal/services/deep_link_service.dart';
 import 'firebase_options.dart';
 import 'package:dentpal/utils/web_utils.dart';
 void main() async {
@@ -28,14 +31,23 @@ void main() async {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
+  // Global navigator key for deep link navigation
+  static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
   @override
   Widget build(BuildContext context) {
+    // Initialize deep link service
+    DeepLinkService.initialize(navigatorKey);
+    
     return MaterialApp(
       title: 'DentPal',
       theme: AppTheme.lightTheme,
+      navigatorKey: navigatorKey,
       initialRoute: _getInitialRoute(),
       routes: {
-        '/': (context) => const AuthWrapper(),
+        '/': (context) => const HomePage(),
+        '/login': (context) => const LoginPage(),
+        '/auth': (context) => const AuthWrapper(),
         '/payment-success': (context) => const PaymentSuccessPage(),
         '/payment-failed': (context) => const PaymentFailedPage(),
         '/products': (context) => const ProductListingPage(),

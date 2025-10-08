@@ -331,36 +331,54 @@ class _LoginPageState extends State<LoginPage> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Logo with shadow
-                    SizedBox(
-                      width: 220,
-                      height: 160,
-                      child: Stack(
-                        children: [
-                          // Shadow
-                          ImageFiltered(
-                            imageFilter: ui.ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-                            child: ColorFiltered(
-                              colorFilter: ColorFilter.mode(
-                              Colors.white.withValues(alpha: 0.4),
-                                BlendMode.srcATop,
+                    // Logo with shadow - clickable button
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          // Navigate to home page when logo is clicked
+                          // Use pushAndRemoveUntil to clear the entire navigation stack
+                          Navigator.of(context).pushAndRemoveUntil(
+                            MaterialPageRoute(builder: (context) => const HomePage()),
+                            (route) => false, // Remove all previous routes
+                          );
+                        },
+                        borderRadius: BorderRadius.circular(20),
+                        splashColor: Colors.white.withValues(alpha: 0.2),
+                        highlightColor: Colors.white.withValues(alpha: 0.1),
+                        hoverColor: Colors.white.withValues(alpha: 0.1),
+                        child: Container(
+                          width: 220,
+                          height: 160,
+                          padding: const EdgeInsets.all(8),
+                          child: Stack(
+                            children: [
+                              // Shadow
+                              ImageFiltered(
+                                imageFilter: ui.ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+                                child: ColorFiltered(
+                                  colorFilter: ColorFilter.mode(
+                                  Colors.white.withValues(alpha: 0.4),
+                                    BlendMode.srcATop,
+                                  ),
+                                  child: Image.asset(
+                                    'lib/assets/icons/dentpal_vertical.png',
+                                    width: 220,
+                                    height: 160,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
                               ),
-                              child: Image.asset(
+                              // Actual image on top
+                              Image.asset(
                                 'lib/assets/icons/dentpal_vertical.png',
                                 width: 220,
                                 height: 160,
                                 fit: BoxFit.cover,
                               ),
-                            ),
+                            ],
                           ),
-                          // Actual image on top
-                          Image.asset(
-                            'lib/assets/icons/dentpal_vertical.png',
-                            width: 220,
-                            height: 160,
-                            fit: BoxFit.cover,
-                          ),
-                        ],
+                        ),
                       ),
                     ),
 

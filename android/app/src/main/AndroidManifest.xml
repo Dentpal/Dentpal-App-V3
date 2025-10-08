@@ -35,6 +35,34 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            
+            <!-- Deep Link Intent Filter for DentPal URLs -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <!-- Production domain -->
+                <data android:scheme="https"
+                      android:host="dentpal-store.web.app" />
+            </intent-filter>
+            
+            <!-- Deep Link Intent Filter for DentPal Sandbox Testing URLs -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <!-- Sandbox testing domain -->
+                <data android:scheme="https"
+                      android:host="dentpal-store-sandbox-testing.web.app" />
+            </intent-filter>
+            
+            <!-- Custom scheme fallback -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="dentpal" />
+            </intent-filter>
         </activity>
 
         <!-- UCrop Activity for image cropper -->

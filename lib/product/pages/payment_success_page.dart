@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
+import 'cart_page.dart';
 
 class PaymentSuccessPage extends StatefulWidget {
   final String? orderId;
@@ -93,8 +94,11 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage>
     if (widget.onReturnToCart != null) {
       widget.onReturnToCart!();
     } else {
-      // Navigate back to cart/home if no callback provided
-      Navigator.of(context).popUntil((route) => route.isFirst);
+      // Navigate to cart page using MaterialPageRoute to avoid URL changes
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const CartPage()),
+        (route) => false,
+      );
     }
   }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
+import 'cart_page.dart';
 import 'dart:async';
 
 class PaymentFailedPage extends StatefulWidget {
@@ -84,11 +85,11 @@ class _PaymentFailedPageState extends State<PaymentFailedPage>
 
   void _redirectToCart() {
     AppLogger.d('🔄 Redirecting to cart page...');
-    // In a web environment, you would use:
-    // html.window.location.href = '/cart';
-    
-    // For Flutter web, navigate back to cart
-    Navigator.of(context).pushNamedAndRemoveUntil('/cart', (route) => false);
+    // Navigate to cart page using MaterialPageRoute to avoid URL changes
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const CartPage()),
+      (route) => false,
+    );
   }
 
   void _retryPayment() {

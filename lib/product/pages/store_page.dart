@@ -7,7 +7,7 @@ import '../services/product_service.dart';
 import '../services/category_service.dart';
 import '../widgets/product_card.dart';
 import 'package:dentpal/utils/app_logger.dart';
-import 'product_detail_page.dart';
+import 'package:dentpal/utils/navigation_utils.dart';
 
 class StorePage extends StatefulWidget {
   final String sellerId;
@@ -598,12 +598,8 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
           return ProductCard(
             product: product,
             onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ProductDetailPage(productId: product.productId),
-                ),
-              );
+              // Navigate to product detail page with deep linking support
+              NavigationUtils.navigateToProductDetail(context, product.productId);
             },
           );
         },

@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.rrnewtech.dentpal",
+      "sha256_cert_fingerprints": [
+        "94:D6:A5:0A:C1:41:B5:74:0A:4C:7A:76:D1:CA:53:86:6D:4B:2F:8D:76:74:5C:02:07:19:F8:DE:62:C6:58:D9"
+      ]
+    }
+  }
+]
