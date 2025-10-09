@@ -13,11 +13,24 @@ import 'package:dentpal/core/app_theme/app_theme.dart';
 import 'package:dentpal/services/deep_link_service.dart';
 import 'firebase_options.dart';
 import 'package:dentpal/utils/web_utils.dart';
+import 'package:dentpal/utils/app_logger.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  
+  // Check if Firebase is already initialized
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (e) {
+    if (e.toString().contains('duplicate-app')) {
+      // Firebase is already initialized, which is fine
+      AppLogger.d('Firebase already initialized');
+    } else {
+      // Re-throw other errors
+      rethrow;
+    }
+  }
 
   // Set Firestore cache size to 100MB
   FirebaseFirestore.instance.settings = Settings(

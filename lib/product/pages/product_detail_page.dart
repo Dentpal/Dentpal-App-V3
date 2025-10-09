@@ -19,6 +19,8 @@ import 'store_page.dart';
 import '../../login_page.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/utils/navigation_utils.dart';
+import 'package:dentpal/services/chat_service.dart';
+import 'package:dentpal/profile/pages/chat_detail_page.dart';
 
 
 class ProductDetailPage extends StatefulWidget {
@@ -503,6 +505,83 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         );
       },
     );
+  }
+  
+  Future<void> _inquireAboutProduct(Product product) async {
+    // Check if user is authenticated first
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      _showLoginRequiredDialog();
+      return;
+    }
+
+    // Don't allow users to inquire about their own products
+    if (user.uid == product.sellerId) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('You cannot inquire about your own product'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    try {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      final chatService = ChatService();
+      
+      // Get current variation for product details
+      final selectedVariation = _selectedVariation;
+      String productName = product.name;
+      if (selectedVariation != null && selectedVariation.name.isNotEmpty) {
+        productName = '${product.name} - ${selectedVariation.name}';
+      }
+
+      // Create or get existing chat room
+      final chatRoomId = await chatService.getOrCreateChatRoom(
+        product.sellerId,
+        productId: product.productId,
+        productName: productName,
+        productImage: selectedVariation?.imageURL ?? product.imageURL,
+      );
+
+      // Close loading dialog
+      if (mounted) Navigator.of(context).pop();
+
+      // Navigate to chat
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChatDetailPage(
+              chatRoomId: chatRoomId,
+              otherUserId: product.sellerId,
+              otherUserName: 'Seller', // Will be updated with actual seller name in chat page
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      // Close loading dialog if still open
+      if (mounted) Navigator.of(context).pop();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to start chat: ${e.toString()}'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
   
   void _shareProduct(Product product) {
@@ -1783,38 +1862,70 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                           ],
                         ),
                       ),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: AppColors.primary,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(12),
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => StorePage(
-                                    sellerId: product.sellerId,
-                                    sellerData: sellerData,
+                      Row(
+                        children: [
+                          // Visit Store button
+                          Container(
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => StorePage(
+                                        sellerId: product.sellerId,
+                                        sellerData: sellerData,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  child: Text(
+                                    'Visit Store',
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      color: AppColors.onPrimary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
-                                ),
-                              );
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              child: Text(
-                                'Visit Store',
-                                style: AppTextStyles.bodySmall.copyWith(
-                                  color: AppColors.onPrimary,
-                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                             ),
                           ),
-                        ),
+                          
+                          const SizedBox(width: 8),
+                          
+                          // Inquire button
+                          Container(
+                            decoration: BoxDecoration(
+                              color: AppColors.secondary,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: () => _inquireAboutProduct(product),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  child: Text(
+                                    'Inquire',
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      color: AppColors.onSecondary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

@@ -7,14 +7,19 @@ import '../../login_page.dart';
 import 'shipping_addresses_page.dart';
 import 'orders_page.dart';
 import 'seller_listings_page.dart';
+import 'chats_page.dart';
 
-class ProfilePage extends StatelessWidget {
+class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
 
-  // Static cache to persist data across rebuilds
-  static Map<String, dynamic>? _userCache;
-  static Map<String, dynamic>? _sellerCache;
-  static bool _hasLoadedData = false;
+  @override
+  State<ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends State<ProfilePage> {
+  Map<String, dynamic>? _userCache;
+  Map<String, dynamic>? _sellerCache;
+  bool _hasLoadedData = false;
 
   Future<Map<String, dynamic>> _getUserData() async {
     if (_hasLoadedData && _userCache != null) {
@@ -300,6 +305,20 @@ class ProfilePage extends StatelessWidget {
                         ),
                         _buildDivider(),
                       ],
+                      // Chats option for all users
+                      _buildProfileOption(
+                        context,
+                        'Chats',
+                        Icons.chat_bubble_outline,
+                        () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => const ChatsPage(),
+                            ),
+                          );
+                        },
+                      ),
+                      _buildDivider(),
                       _buildProfileOption(
                         context,
                         'Shipping Addresses',
