@@ -1,8 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'cart_model.dart';
+import 'package:dentpal/utils/app_logger.dart';
 
 enum OrderStatus {
   pending,
+  confirmed,
   processing,
   shipped,
   delivered,
@@ -23,7 +25,7 @@ enum PaymentMethod {
   gcash,
   grabpay,
   paymaya,
-  bank_transfer
+  billEase
 }
 
 class Order {
@@ -60,68 +62,68 @@ class Order {
   factory Order.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     
-    print('🐛 Order.fromFirestore - Processing document: ${doc.id}');
-    print('🐛 Order.fromFirestore - Raw data keys: ${data.keys.toList()}');
+    AppLogger.d('🐛 Order.fromFirestore - Processing document: ${doc.id}');
+    AppLogger.d('🐛 Order.fromFirestore - Raw data keys: ${data.keys.toList()}');
     
     try {
       // Parse basic fields
       final userId = data['userId'] ?? data['buyerId'] ?? '';
-      print('🐛 Order.fromFirestore - userId: $userId');
+      AppLogger.d('🐛 Order.fromFirestore - userId: $userId');
       
       final sellerIds = List<String>.from(data['sellerIds'] ?? [data['sellerId'] ?? '']).where((id) => id.isNotEmpty).toList();
-      print('🐛 Order.fromFirestore - sellerIds: $sellerIds');
+      AppLogger.d('🐛 Order.fromFirestore - sellerIds: $sellerIds');
       
       // Parse items
-      print('🐛 Order.fromFirestore - Parsing items...');
+      AppLogger.d('🐛 Order.fromFirestore - Parsing items...');
       final items = (data['items'] as List<dynamic>?)
           ?.map((item) {
-            print('🐛 Order.fromFirestore - Item data: $item');
+            AppLogger.d('🐛 Order.fromFirestore - Item data: $item');
             return OrderItem.fromMap(item as Map<String, dynamic>);
           })
           .toList() ?? [];
-      print('🐛 Order.fromFirestore - Items parsed: ${items.length} items');
+      AppLogger.d('🐛 Order.fromFirestore - Items parsed: ${items.length} items');
       
       // Parse summary
-      print('🐛 Order.fromFirestore - Parsing summary...');
-      print('🐛 Order.fromFirestore - Summary data: ${data['summary']}');
+      AppLogger.d('🐛 Order.fromFirestore - Parsing summary...');
+      AppLogger.d('🐛 Order.fromFirestore - Summary data: ${data['summary']}');
       final summary = OrderSummary.fromMap(data['summary'] as Map<String, dynamic>);
       
       // Parse shipping info
-      print('🐛 Order.fromFirestore - Parsing shippingInfo...');
-      print('🐛 Order.fromFirestore - ShippingInfo data: ${data['shippingInfo']}');
+      AppLogger.d('🐛 Order.fromFirestore - Parsing shippingInfo...');
+      AppLogger.d('🐛 Order.fromFirestore - ShippingInfo data: ${data['shippingInfo']}');
       final shippingInfo = ShippingInfo.fromMap(data['shippingInfo'] as Map<String, dynamic>);
       
       // Parse payment info
-      print('🐛 Order.fromFirestore - Parsing paymentInfo...');
-      print('🐛 Order.fromFirestore - PaymentInfo data: ${data['paymentInfo']}');
+      AppLogger.d('🐛 Order.fromFirestore - Parsing paymentInfo...');
+      AppLogger.d('🐛 Order.fromFirestore - PaymentInfo data: ${data['paymentInfo']}');
       final paymentInfo = PaymentInfo.fromMap(data['paymentInfo'] as Map<String, dynamic>);
       
       // Parse status
-      print('🐛 Order.fromFirestore - Parsing status...');
-      print('🐛 Order.fromFirestore - Status value: ${data['status']} (type: ${data['status'].runtimeType})');
+      AppLogger.d('🐛 Order.fromFirestore - Parsing status...');
+      AppLogger.d('🐛 Order.fromFirestore - Status value: ${data['status']} (type: ${data['status'].runtimeType})');
       final status = OrderStatus.values.firstWhere(
         (e) => e.toString().split('.').last == (data['status']?.toString() ?? 'pending'),
         orElse: () => OrderStatus.pending,
       );
       
       // Parse timestamps
-      print('🐛 Order.fromFirestore - Parsing timestamps...');
-      print('🐛 Order.fromFirestore - CreatedAt: ${data['createdAt']} (type: ${data['createdAt'].runtimeType})');
-      print('🐛 Order.fromFirestore - UpdatedAt: ${data['updatedAt']} (type: ${data['updatedAt'].runtimeType})');
+      AppLogger.d('🐛 Order.fromFirestore - Parsing timestamps...');
+      AppLogger.d('🐛 Order.fromFirestore - CreatedAt: ${data['createdAt']} (type: ${data['createdAt'].runtimeType})');
+      AppLogger.d('🐛 Order.fromFirestore - UpdatedAt: ${data['updatedAt']} (type: ${data['updatedAt'].runtimeType})');
       final createdAt = (data['createdAt'] as Timestamp).toDate();
       final updatedAt = (data['updatedAt'] as Timestamp).toDate();
       
       // Parse status history
-      print('🐛 Order.fromFirestore - Parsing statusHistory...');
-      print('🐛 Order.fromFirestore - StatusHistory data: ${data['statusHistory']}');
+      AppLogger.d('🐛 Order.fromFirestore - Parsing statusHistory...');
+      AppLogger.d('🐛 Order.fromFirestore - StatusHistory data: ${data['statusHistory']}');
       final statusHistory = (data['statusHistory'] as List<dynamic>?)
           ?.map((item) {
-            print('🐛 Order.fromFirestore - StatusHistory item: $item');
+            AppLogger.d('🐛 Order.fromFirestore - StatusHistory item: $item');
             return OrderStatusUpdate.fromMap(item as Map<String, dynamic>);
           })
           .toList() ?? [];
       
-      print('🐛 Order.fromFirestore - All parsing completed successfully');
+      AppLogger.d('🐛 Order.fromFirestore - All parsing completed successfully');
       
       return Order(
         orderId: doc.id,
@@ -139,9 +141,9 @@ class Order {
         checkoutSessionId: data['checkoutSessionId'],
       );
     } catch (e, stackTrace) {
-      print('🐛 ❌ Order.fromFirestore - Error occurred: $e');
-      print('🐛 ❌ Order.fromFirestore - Stack trace: $stackTrace');
-      print('🐛 ❌ Order.fromFirestore - Document data: $data');
+      AppLogger.d('🐛 ❌ Order.fromFirestore - Error occurred: $e');
+      AppLogger.d('🐛 ❌ Order.fromFirestore - Stack trace: $stackTrace');
+      AppLogger.d('🐛 ❌ Order.fromFirestore - Document data: $data');
       rethrow;
     }
   }
@@ -405,13 +407,13 @@ class PaymentInfo {
   });
 
   factory PaymentInfo.fromMap(Map<String, dynamic> map) {
-    print('🐛 PaymentInfo.fromMap - Raw map: $map');
+    AppLogger.d('🐛 PaymentInfo.fromMap - Raw map: $map');
     
     try {
       // Handle paidAt timestamp conversion
       DateTime? paidAt;
       final paidAtValue = map['paidAt'];
-      print('🐛 PaymentInfo.fromMap - paidAt value: $paidAtValue (type: ${paidAtValue.runtimeType})');
+      AppLogger.d('🐛 PaymentInfo.fromMap - paidAt value: $paidAtValue (type: ${paidAtValue.runtimeType})');
       
       if (paidAtValue != null) {
         if (paidAtValue is Timestamp) {
@@ -427,7 +429,7 @@ class PaymentInfo {
 
       // Parse method enum
       final methodValue = map['method'];
-      print('🐛 PaymentInfo.fromMap - method value: $methodValue (type: ${methodValue.runtimeType})');
+      AppLogger.d('🐛 PaymentInfo.fromMap - method value: $methodValue (type: ${methodValue.runtimeType})');
       final method = PaymentMethod.values.firstWhere(
         (e) => e.toString().split('.').last == (methodValue?.toString() ?? 'card'),
         orElse: () => PaymentMethod.card,
@@ -435,13 +437,13 @@ class PaymentInfo {
 
       // Parse status enum
       final statusValue = map['status'];
-      print('🐛 PaymentInfo.fromMap - status value: $statusValue (type: ${statusValue.runtimeType})');
+      AppLogger.d('🐛 PaymentInfo.fromMap - status value: $statusValue (type: ${statusValue.runtimeType})');
       final status = PaymentStatus.values.firstWhere(
         (e) => e.toString().split('.').last == (statusValue?.toString() ?? 'pending'),
         orElse: () => PaymentStatus.pending,
       );
 
-      print('🐛 PaymentInfo.fromMap - Parsing completed successfully');
+      AppLogger.d('🐛 PaymentInfo.fromMap - Parsing completed successfully');
       
       return PaymentInfo(
         paymentIntentId: map['paymentIntentId'],
@@ -454,9 +456,9 @@ class PaymentInfo {
         failureReason: map['failureReason'],
       );
     } catch (e, stackTrace) {
-      print('🐛 ❌ PaymentInfo.fromMap - Error occurred: $e');
-      print('🐛 ❌ PaymentInfo.fromMap - Stack trace: $stackTrace');
-      print('🐛 ❌ PaymentInfo.fromMap - Input map: $map');
+      AppLogger.d('🐛 ❌ PaymentInfo.fromMap - Error occurred: $e');
+      AppLogger.d('🐛 ❌ PaymentInfo.fromMap - Stack trace: $stackTrace');
+      AppLogger.d('🐛 ❌ PaymentInfo.fromMap - Input map: $map');
       rethrow;
     }
   }
@@ -489,13 +491,13 @@ class OrderStatusUpdate {
   });
 
   factory OrderStatusUpdate.fromMap(Map<String, dynamic> map) {
-    print('🐛 OrderStatusUpdate.fromMap - Raw map: $map');
+    AppLogger.d('🐛 OrderStatusUpdate.fromMap - Raw map: $map');
     
     try {
       // Handle both Firestore Timestamp and Unix timestamp (from Firebase Functions)
       DateTime timestamp;
       final timestampValue = map['timestamp'];
-      print('🐛 OrderStatusUpdate.fromMap - timestamp value: $timestampValue (type: ${timestampValue.runtimeType})');
+      AppLogger.d('🐛 OrderStatusUpdate.fromMap - timestamp value: $timestampValue (type: ${timestampValue.runtimeType})');
       
       if (timestampValue is Timestamp) {
         timestamp = timestampValue.toDate();
@@ -506,19 +508,19 @@ class OrderStatusUpdate {
       } else if (timestampValue is String) {
         timestamp = DateTime.parse(timestampValue);
       } else {
-        print('🐛 ⚠️ OrderStatusUpdate.fromMap - Unexpected timestamp type, using current time');
+        AppLogger.d('🐛 ⚠️ OrderStatusUpdate.fromMap - Unexpected timestamp type, using current time');
         timestamp = DateTime.now(); // Fallback
       }
 
       // Parse status enum
       final statusValue = map['status'];
-      print('🐛 OrderStatusUpdate.fromMap - status value: $statusValue (type: ${statusValue.runtimeType})');
+      AppLogger.d('🐛 OrderStatusUpdate.fromMap - status value: $statusValue (type: ${statusValue.runtimeType})');
       final status = OrderStatus.values.firstWhere(
         (e) => e.toString().split('.').last == (statusValue?.toString() ?? 'pending'),
         orElse: () => OrderStatus.pending,
       );
 
-      print('🐛 OrderStatusUpdate.fromMap - Parsing completed successfully');
+      AppLogger.d('🐛 OrderStatusUpdate.fromMap - Parsing completed successfully');
 
       return OrderStatusUpdate(
         status: status,
@@ -527,9 +529,9 @@ class OrderStatusUpdate {
         updatedBy: map['updatedBy'],
       );
     } catch (e, stackTrace) {
-      print('🐛 ❌ OrderStatusUpdate.fromMap - Error occurred: $e');
-      print('🐛 ❌ OrderStatusUpdate.fromMap - Stack trace: $stackTrace');
-      print('🐛 ❌ OrderStatusUpdate.fromMap - Input map: $map');
+      AppLogger.d('🐛 ❌ OrderStatusUpdate.fromMap - Error occurred: $e');
+      AppLogger.d('🐛 ❌ OrderStatusUpdate.fromMap - Stack trace: $stackTrace');
+      AppLogger.d('🐛 ❌ OrderStatusUpdate.fromMap - Input map: $map');
       rethrow;
     }
   }
@@ -550,6 +552,8 @@ extension OrderStatusExtension on OrderStatus {
     switch (this) {
       case OrderStatus.pending:
         return 'Pending';
+      case OrderStatus.confirmed:
+        return 'Confirmed';
       case OrderStatus.processing:
         return 'Processing';
       case OrderStatus.shipped:
@@ -567,6 +571,8 @@ extension OrderStatusExtension on OrderStatus {
     switch (this) {
       case OrderStatus.pending:
         return 'Order has been placed and is awaiting confirmation';
+      case OrderStatus.confirmed:
+        return 'Payment confirmed, order is being processed';
       case OrderStatus.processing:
         return 'Order is being prepared for shipment';
       case OrderStatus.shipped:
@@ -609,8 +615,8 @@ extension PaymentMethodExtension on PaymentMethod {
         return 'GrabPay';
       case PaymentMethod.paymaya:
         return 'PayMaya';
-      case PaymentMethod.bank_transfer:
-        return 'Bank Transfer';
+      case PaymentMethod.billEase:
+        return 'Buy Now, Pay Later (BillEase)';
     }
   }
 
@@ -624,8 +630,8 @@ extension PaymentMethodExtension on PaymentMethod {
         return 'grab_pay';
       case PaymentMethod.paymaya:
         return 'paymaya';
-      case PaymentMethod.bank_transfer:
-        return 'billease';
+      case PaymentMethod.billEase:
+        return 'Buy Now, Pay Later (BillEase)';
     }
   }
 }

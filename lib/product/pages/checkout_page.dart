@@ -8,7 +8,7 @@ import '../models/paymongo_model.dart';
 import '../services/checkout_service.dart';
 import '../services/cart_service.dart';
 import '../widgets/address_selection_widget.dart';
-import '../pages/paymongo_webview_page.dart';
+import 'paymongo_webview_page.dart';
 import '../../profile/models/shipping_address.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
@@ -94,8 +94,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
         addressId: _selectedAddress!.id,
         notes: _orderNotes,
         paymentMethodTypes: [_selectedPaymentMethod!.paymongoType],
-        successUrl: 'https://dentpal.com/order-success', // Replace with your actual success URL
-        cancelUrl: 'https://dentpal.com/checkout?cancelled=true', // Replace with your actual cancel URL
+        successUrl: 'https://dentpal-store.web.app/payment-success', // Updated success URL
+        cancelUrl: 'https://dentpal-store.web.app/payment-failed', // Updated cancel URL
       );
 
       AppLogger.d('✅ Order created successfully');
@@ -869,7 +869,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         return Icons.local_taxi;
       case PaymentMethod.paymaya:
         return Icons.account_balance_wallet_outlined;
-      case PaymentMethod.bank_transfer:
+      case PaymentMethod.billEase:
         return Icons.account_balance;
     }
   }
@@ -1221,8 +1221,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
               MaterialPageRoute(
                 builder: (context) => PaymongoWebViewPage(
                   checkoutUrl: checkoutUrl,
-                  successUrl: 'https://dentpal.com/order-success',
-                  cancelUrl: 'https://dentpal.com/checkout',
+                  successUrl: 'https://dentpal-store.web.app/payment-success',
+                  cancelUrl: 'https://dentpal-store.web.app/payment-failed',
                   onPaymentComplete: (isSuccess, orderId) {
                     AppLogger.d('💳 Payment completed. Success: $isSuccess, Order ID: $orderId');
                     
@@ -1506,98 +1506,78 @@ class _CheckoutPageState extends State<CheckoutPage> {
     }
   }
 
-  void _handlePaymentSuccess(String? orderId) {
+  void _handlePaymentSuccess(String? orderId) async {
     AppLogger.d('✅ Payment completed successfully. Order ID: $orderId');
     
-    if (mounted) {
-      // Show success dialog
+    if (mounted && orderId != null) {
+      // Show loading dialog while verifying payment
       showDialog(
         context: context,
         barrierDismissible: false,
         builder: (context) => AlertDialog(
           backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.success.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  Icons.check_circle,
-                  color: AppColors.success,
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Payment Successful!',
-                style: AppTextStyles.titleMedium.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
               Text(
-                'Your payment has been processed successfully and your order has been confirmed.',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.onSurface.withValues(alpha: 0.8),
-                ),
+                'Verifying payment...',
+                style: AppTextStyles.bodyMedium,
               ),
-              if (orderId != null) ...[
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.grey50,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Order Reference:',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.onSurface.withValues(alpha: 0.6),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        orderId,
-                        style: AppTextStyles.bodySmall.copyWith(
-                          fontFamily: 'monospace',
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
             ],
           ),
-          actions: [
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).pop(); // Close dialog
-                Navigator.of(context).pop(); // Go back to previous page
-                widget.onOrderComplete?.call();
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.success,
-                foregroundColor: AppColors.onPrimary,
-                elevation: 0,
-              ),
-              child: Text('Continue Shopping', style: AppTextStyles.buttonMedium),
-            ),
-          ],
         ),
       );
+
+      try {
+        // Verify payment status with Paymongo
+        final wasUpdated = await _checkoutService.verifyPaymentStatus(orderId);
+        
+        if (mounted) {
+          Navigator.of(context).pop(); // Close loading dialog
+          
+          if (wasUpdated) {
+            AppLogger.d('✅ Payment verified and order updated to confirmed');
+          } else {
+            AppLogger.d('ℹ️ Payment status already verified');
+          }
+          
+          // Navigate to success page
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            '/payment-success',
+            (route) => route.settings.name == '/', // Clear stack until home
+          );
+          
+          // Call completion callback
+          widget.onOrderComplete?.call();
+        }
+      } catch (e) {
+        AppLogger.d('❌ Error verifying payment: $e');
+        
+        if (mounted) {
+          Navigator.of(context).pop(); // Close loading dialog
+          
+          // Still navigate to success page since payment completion was detected
+          // but show a message that verification will happen later
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            '/payment-success',
+            (route) => route.settings.name == '/', // Clear stack until home
+          );
+          
+          // Call completion callback
+          widget.onOrderComplete?.call();
+        }
+      }
+    } else if (mounted) {
+      // Navigate to success page even without order ID
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/payment-success',
+        (route) => route.settings.name == '/', // Clear stack until home
+      );
+      
+      // Call completion callback
+      widget.onOrderComplete?.call();
     }
   }
 
@@ -1605,67 +1585,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
     AppLogger.d('❌ Payment was cancelled by user');
     
     if (mounted) {
-      // Show cancellation dialog
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.warning.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  Icons.cancel_outlined,
-                  color: AppColors.warning,
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Payment Cancelled',
-                style: AppTextStyles.titleMedium.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          content: Text(
-            'Your payment was cancelled. Your cart items are still saved and you can try again whenever you\'re ready.',
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.onSurface.withValues(alpha: 0.8),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(); // Close dialog
-                Navigator.of(context).pop(); // Go back to checkout
-              },
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.onSurface.withValues(alpha: 0.6),
-              ),
-              child: Text('Try Again', style: AppTextStyles.buttonMedium),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).pop(); // Close dialog
-                Navigator.of(context).pop(); // Go back to previous page
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.onPrimary,
-                elevation: 0,
-              ),
-              child: Text('Back to Cart', style: AppTextStyles.buttonMedium),
-            ),
-          ],
-        ),
+      // Navigate to dedicated payment failed page instead of showing popup
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/payment-failed',
+        (route) => route.settings.name == '/', // Clear stack until home
       );
     }
   }

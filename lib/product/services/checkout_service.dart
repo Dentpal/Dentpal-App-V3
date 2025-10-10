@@ -177,7 +177,7 @@ class CheckoutService {
     }
   }
 
-  // Get order by ID using Firestore directly
+  // Get order by ID using Firestore directly (for checkout verification purposes only)
   Future<Order?> getOrder(String orderId) async {
     try {
       AppLogger.d('📦 Fetching order: $orderId');
@@ -207,61 +207,6 @@ class CheckoutService {
     }
   }
 
-  // Get user's orders with pagination using Firestore directly
-  Future<List<Order>> getUserOrders({
-    int limit = 20,
-    DocumentSnapshot? startAfter,
-  }) async {
-    try {
-      AppLogger.d('📋 Fetching user orders (limit: $limit)');
-
-      final userId = _getCurrentUserId();
-      
-      Query query = _firestore
-          .collection('Order')
-          .where('userId', isEqualTo: userId)
-          .orderBy('createdAt', descending: true)
-          .limit(limit);
-
-      if (startAfter != null) {
-        query = query.startAfterDocument(startAfter);
-      }
-
-      final querySnapshot = await query.get();
-      final orders = querySnapshot.docs
-          .map((doc) => Order.fromFirestore(doc))
-          .toList();
-
-      AppLogger.d('✅ Fetched ${orders.length} orders');
-      return orders;
-
-    } catch (e) {
-      AppLogger.d('❌ Error fetching user orders: $e');
-      rethrow;
-    }
-  }
-
-  // Get orders stream for real-time updates (using Firestore directly)
-  Stream<List<Order>> getUserOrdersStream({int limit = 20}) {
-    try {
-      final userId = _getCurrentUserId();
-      
-      return _firestore
-          .collection('Order')
-          .where('userId', isEqualTo: userId)
-          .orderBy('createdAt', descending: true)
-          .limit(limit)
-          .snapshots()
-          .map((snapshot) => snapshot.docs
-              .map((doc) => Order.fromFirestore(doc))
-              .toList());
-
-    } catch (e) {
-      AppLogger.d('❌ Error creating orders stream: $e');
-      rethrow;
-    }
-  }
-
   // Calculate shipping cost (placeholder implementation)
   Future<double> calculateShippingCost({
     required List<CartItem> items,
@@ -273,7 +218,6 @@ class CheckoutService {
       // - Weight/size calculation
       // - Carrier API integration
       // - Different rates for different sellers
-      
       // For now, return a fixed rate per seller
       final sellers = items.map((item) => item.sellerId).toSet();
       const shippingCostPerSeller = 50.0;
@@ -362,6 +306,54 @@ class CheckoutService {
     } catch (e) {
       AppLogger.d('❌ Error getting payment methods: $e');
       return [PaymentMethod.card]; // Fallback to card only
+    }
+  }
+
+  // Verify payment status with Paymongo and update order if needed
+  Future<bool> verifyPaymentStatus(String orderId) async {
+    try {
+      AppLogger.d('🔍 Verifying payment status for order: $orderId');
+
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('User not authenticated');
+      }
+
+      final idToken = await user.getIdToken();
+
+      final response = await http.post(
+        Uri.parse('https://us-central1-dentpal-161e5.cloudfunctions.net/verifyPaymentStatus'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $idToken',
+        },
+        body: json.encode({
+          'orderId': orderId,
+        }),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to verify payment status: ${response.body}');
+      }
+
+      final responseData = json.decode(response.body) as Map<String, dynamic>;
+      
+      if (responseData['success'] != true) {
+        throw Exception(responseData['error'] ?? 'Failed to verify payment status');
+      }
+
+      final data = responseData['data'] as Map<String, dynamic>;
+      final paymentStatus = data['paymentStatus'] as String;
+      final updatedStatus = data['status'] as String;
+
+      AppLogger.d('✅ Payment verification complete - Status: $paymentStatus, Order Status: $updatedStatus');
+      
+      // Return true if payment was confirmed and order was updated
+      return paymentStatus == 'paid' && updatedStatus == 'confirmed';
+
+    } catch (e) {
+      AppLogger.d('❌ Error verifying payment status: $e');
+      rethrow;
     }
   }
 

@@ -242,26 +242,22 @@ class _LoginPageState extends State<LoginPage> {
       if (mounted) {
         final uid = FirebaseAuth.instance.currentUser?.uid;
         if (uid != null) {
-          final doc = await FirebaseFirestore.instance.collection('User').doc(uid).get();
-          final name = doc.data()?['firstName'] ?? 'User';
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Login successful! Welcome back, $name.')),
-          );
           // Navigate to the home page after successful login
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (context) => const HomePage()),
           );
         } else {
-          // This shouldn't happen, but adding for debugging
-          ScaffoldMessenger.of(context).showSnackBar(
+            // If uid is null, force sign out and ask user to try again
+            await FirebaseAuth.instance.signOut();
+            ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
-                'Authentication successful but user is null! Please try again.',
+              'Something went wrong! Please log in again.',
               ),
               duration: Duration(seconds: 3),
               backgroundColor: Colors.orange,
             ),
-          );
+            );
         }
       }
     } on FirebaseAuthException catch (e) {
@@ -335,36 +331,54 @@ class _LoginPageState extends State<LoginPage> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Logo with shadow
-                    Container(
-                      width: 220,
-                      height: 160,
-                      child: Stack(
-                        children: [
-                          // Shadow
-                          ImageFiltered(
-                            imageFilter: ui.ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-                            child: ColorFiltered(
-                              colorFilter: ColorFilter.mode(
-                              Colors.white.withValues(alpha: 0.4),
-                                BlendMode.srcATop,
+                    // Logo with shadow - clickable button
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          // Navigate to home page when logo is clicked
+                          // Use pushAndRemoveUntil to clear the entire navigation stack
+                          Navigator.of(context).pushAndRemoveUntil(
+                            MaterialPageRoute(builder: (context) => const HomePage()),
+                            (route) => false, // Remove all previous routes
+                          );
+                        },
+                        borderRadius: BorderRadius.circular(20),
+                        splashColor: Colors.white.withValues(alpha: 0.2),
+                        highlightColor: Colors.white.withValues(alpha: 0.1),
+                        hoverColor: Colors.white.withValues(alpha: 0.1),
+                        child: Container(
+                          width: 220,
+                          height: 160,
+                          padding: const EdgeInsets.all(8),
+                          child: Stack(
+                            children: [
+                              // Shadow
+                              ImageFiltered(
+                                imageFilter: ui.ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+                                child: ColorFiltered(
+                                  colorFilter: ColorFilter.mode(
+                                  Colors.white.withValues(alpha: 0.4),
+                                    BlendMode.srcATop,
+                                  ),
+                                  child: Image.asset(
+                                    'lib/assets/icons/dentpal_vertical.png',
+                                    width: 220,
+                                    height: 160,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
                               ),
-                              child: Image.asset(
+                              // Actual image on top
+                              Image.asset(
                                 'lib/assets/icons/dentpal_vertical.png',
                                 width: 220,
                                 height: 160,
                                 fit: BoxFit.cover,
                               ),
-                            ),
+                            ],
                           ),
-                          // Actual image on top
-                          Image.asset(
-                            'lib/assets/icons/dentpal_vertical.png',
-                            width: 220,
-                            height: 160,
-                            fit: BoxFit.cover,
-                          ),
-                        ],
+                        ),
                       ),
                     ),
 

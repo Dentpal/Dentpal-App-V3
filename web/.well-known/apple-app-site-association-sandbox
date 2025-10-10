@@ -1,0 +1,22 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": [
+          "TEAMID.com.example.dentpal"
+        ],
+        "components": [
+          {
+            "/": "*",
+            "comment": "Matches all paths for DentPal product links"
+          }
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": [
+      "TEAMID.com.example.dentpal"
+    ]
+  }
+}

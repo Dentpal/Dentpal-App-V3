@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import '../models/product_model.dart';
 import '../services/product_service.dart';
 import '../services/user_service.dart';
@@ -11,21 +13,32 @@ import '../widgets/product_card.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import 'package:dentpal/utils/app_logger.dart';
-import 'product_detail_page.dart';
+import 'package:dentpal/utils/navigation_utils.dart';
+import 'cart_page.dart';
+import '../../login_page.dart';
+import 'package:flutter/services.dart';
 
-
-// Custom cache manager with 24 hour TTL
+// Custom cache manager with web compatibility
 class ProductImageCacheManager {
   static const key = 'productImageCache';
-  static CacheManager instance = CacheManager(
-    Config(
-      key,
-      stalePeriod: const Duration(days: 1),
-      maxNrOfCacheObjects: 200,
-      repo: JsonCacheInfoRepository(databaseName: key),
-      fileService: HttpFileService(),
-    ),
-  );
+  
+  static CacheManager get instance {
+    if (kIsWeb) {
+      // For web, use a simplified cache manager without persistent storage
+      return DefaultCacheManager();
+    } else {
+      // For mobile platforms, use the full cache manager with persistence
+      return CacheManager(
+        Config(
+          key,
+          stalePeriod: const Duration(days: 1),
+          maxNrOfCacheObjects: 200,
+          repo: JsonCacheInfoRepository(databaseName: key),
+          fileService: HttpFileService(),
+        ),
+      );
+    }
+  }
 }
 
 class ProductListingPage extends StatefulWidget {
@@ -72,58 +85,17 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
   @override
   bool get wantKeepAlive => true;
 
-  // Static instance for the singleton pattern
-  static _ProductListingPageState? _instance;
-  
   @override
   void initState() {
     super.initState();
     
-    // If we already have an instance, use its data
-    if (_instance != null) {
-      _products = _instance!._products;
-      _cacheTimestamp = _instance!._cacheTimestamp;
-      _categories = _instance!._categories;
-      _selectedCategory = _instance!._selectedCategory;
-      _isLoading = _instance!._isLoading;
-      _lastDocument = _instance!._lastDocument;
-      _hasMore = _instance!._hasMore;
-      _errorMessage = _instance!._errorMessage;
-      _isSeller = _instance!._isSeller;
-      _userFirstName = _instance!._userFirstName;
-      _categoryNameToId = _instance!._categoryNameToId;
-      _categoryIdToName = _instance!._categoryIdToName;
-      _subcategories = _instance!._subcategories;
-      _selectedSubCategory = _instance!._selectedSubCategory;
-      _isLoadingSubcategories = _instance!._isLoadingSubcategories;
-      _isSubcategoriesExpanded = _instance!._isSubcategoriesExpanded;
-      
-      // Check if cache is expired (older than 12 hours)
-      if (_isCacheExpired()) {
-        _resetAndRefresh();
-      }
-      
-      // Only check seller status if not already done
-      if (!_isSeller) {
-        _checkSellerStatus();
-      }
-      
-      // Load user name if not already loaded
-      if (_userFirstName == 'User') {
-        _loadUserName();
-      }
-    } else {
-      // First time initialization
-      _loadFirstPage();
-      _checkSellerStatus();
-      _loadUserName();
-    }
+    // Simple initialization without singleton pattern to avoid rebuild loops
+    _loadFirstPage();
+    _checkSellerStatus();
+    _loadUserName();
     
     // Add scroll listener for pagination
     _scrollController.addListener(_scrollListener);
-    
-    // Store this instance as the static instance
-    _instance = this;
     
     // Clean up old click tracking data (run async without waiting)
     _clickTrackingService.cleanupOldClickData();
@@ -137,15 +109,26 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     // Remove scroll listener to prevent memory leaks
     _scrollController.removeListener(_scrollListener);
     
-    // Don't clear the static instance on dispose, we want to keep it
-    // Only clean up resources if needed
-    AppLogger.d("🔴 ProductListingPage dispose called, keeping cached data");
+    AppLogger.d("🔴 ProductListingPage dispose called");
     super.dispose();
   }
   
   Future<void> _checkSellerStatus() async {
     try {
       AppLogger.d('🔄 ProductListingPage: Checking seller status...');
+      
+      // First check if user is authenticated
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        AppLogger.d('🔍 ProductListingPage: User not authenticated, setting _isSeller to false');
+        if (mounted) {
+          setState(() {
+            _isSeller = false;
+          });
+        }
+        return;
+      }
+      
       final result = await _productService.checkSellerStatus();
       AppLogger.d('🔍 ProductListingPage: Seller status result: $result');
       
@@ -166,12 +149,87 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
   }
   
   Future<void> _loadUserName() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      // User not authenticated, set generic name
+      if (mounted) {
+        setState(() {
+          _userFirstName = 'User';
+        });
+      }
+      return;
+    }
+    
     final firstName = await _userService.getUserFirstName();
     if (mounted) {
       setState(() {
         _userFirstName = firstName;
       });
     }
+  }
+  
+  void _showLoginRequiredDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.shopping_cart_outlined,
+                  color: AppColors.primary,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Login Required',
+                style: AppTextStyles.titleMedium.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            'You need to login to access your cart. Would you like to login now?',
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.onSurface.withValues(alpha: 0.8),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.onSurface.withValues(alpha: 0.6),
+              ),
+              child: Text('Cancel', style: AppTextStyles.buttonMedium),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (context) => const LoginPage()),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.onPrimary,
+                elevation: 0,
+              ),
+              child: Text('Login', style: AppTextStyles.buttonMedium),
+            ),
+          ],
+        );
+      },
+    );
   }
   
 
@@ -186,6 +244,8 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
   
   // Reset all pagination parameters and refresh the data
   void _resetAndRefresh() {
+    if (!mounted) return;
+    
     setState(() {
       _products = [];
       _lastDocument = null;
@@ -210,7 +270,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
   
   // Handle category selection
   void _onCategorySelected(String category) {
-    if (_selectedCategory == category) return;
+    if (_selectedCategory == category || !mounted) return;
     
     // Track category click if it's not 'All'
     if (category != 'All') {
@@ -241,18 +301,12 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     
     // Load first page with the new category
     _loadFirstPage();
-    
-    // Update the static instance
-    if (_instance != null) {
-      _instance!._selectedCategory = category;
-      _instance!._selectedSubCategory = null;
-      _instance!._subcategories = [];
-      _instance!._isSubcategoriesExpanded = false;
-    }
   }
 
   // Load subcategories for a given category
   Future<void> _loadSubcategories(String categoryName) async {
+    if (!mounted) return;
+    
     final categoryId = _categoryNameToId[categoryName];
     if (categoryId == null) return;
     
@@ -262,6 +316,9 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     
     try {
       final subcategories = await _categoryService.getSubCategories(categoryId);
+      
+      if (!mounted) return; // Check if widget is still mounted
+      
       if (mounted) {
         setState(() {
           _subcategories = subcategories;
@@ -269,13 +326,6 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
           // Auto-expand if subcategories are found
           _isSubcategoriesExpanded = subcategories.isNotEmpty;
         });
-        
-        // Update the static instance
-        if (_instance != null) {
-          _instance!._subcategories = subcategories;
-          _instance!._isLoadingSubcategories = false;
-          _instance!._isSubcategoriesExpanded = subcategories.isNotEmpty;
-        }
       }
     } catch (e) {
       AppLogger.d('❌ Error loading subcategories: $e');
@@ -291,7 +341,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
 
   // Handle subcategory selection
   void _onSubCategorySelected(String subCategoryId, String subCategoryName) {
-    if (_selectedSubCategory == subCategoryId) return;
+    if (_selectedSubCategory == subCategoryId || !mounted) return;
     
     // Track subcategory click (need categoryId)
     final categoryId = _categoryNameToId[_selectedCategory];
@@ -311,16 +361,11 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     
     // Load first page with the new subcategory
     _loadFirstPage();
-    
-    // Update the static instance
-    if (_instance != null) {
-      _instance!._selectedSubCategory = subCategoryId;
-    }
   }
   
   // Load the first page of products
   Future<void> _loadFirstPage() async {
-    if (_isLoading) return;
+    if (_isLoading || !mounted) return;
     
     setState(() {
       _isLoading = true;
@@ -337,6 +382,8 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
         categoryId: null, // Always load all products to avoid index issues
       );
       
+      if (!mounted) return; // Check if widget is still mounted
+      
       final newProducts = result['products'] as List<Product>;
       final lastDoc = result['lastDocument'] as DocumentSnapshot?;
       final hasMore = result['hasMore'] as bool;
@@ -346,6 +393,8 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
         try {
           // Fetch all categories from CategoryService
           final allCategories = await _categoryService.getCategories();
+          
+          if (!mounted) return; // Check if widget is still mounted
           
           AppLogger.d('🔍 DEBUG: Fetched ${allCategories.length} categories from service');
           
@@ -368,12 +417,6 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
           AppLogger.d('🔍 DEBUG: Final categories list: $_categories');
           AppLogger.d('🔍 DEBUG: Category name to ID mapping: $_categoryNameToId');
           
-          // Update static instance
-          if (_instance != null) {
-            _instance!._categories = _categories;
-            _instance!._categoryNameToId = _categoryNameToId;
-            _instance!._categoryIdToName = _categoryIdToName;
-          }
         } catch (e) {
           AppLogger.d('❌ Error loading categories: $e');
           // Fallback to just 'All' if category loading fails
@@ -381,37 +424,33 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
         }
       }
       
-      setState(() {
-        _products = newProducts;
-        _lastDocument = lastDoc;
-        _hasMore = hasMore;
-        _isLoading = false;
-        _cacheTimestamp = DateTime.now();
-        
-        // Update static instance
-        if (_instance != null) {
-          _instance!._products = _products;
-          _instance!._lastDocument = _lastDocument;
-          _instance!._hasMore = _hasMore;
-          _instance!._cacheTimestamp = _cacheTimestamp;
-        }
-      });
+      if (mounted) {
+        setState(() {
+          _products = newProducts;
+          _lastDocument = lastDoc;
+          _hasMore = hasMore;
+          _isLoading = false;
+          _cacheTimestamp = DateTime.now();
+        });
+      }
       
       AppLogger.d('✅ Loaded ${newProducts.length} products (first page)');
     } catch (e) {
       AppLogger.d('❌ Error loading first page: $e');
       AppLogger.d('Stack trace: ${StackTrace.current}');
       
-      setState(() {
-        _isLoading = false;
-        _errorMessage = e.toString();
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = e.toString();
+        });
+      }
     }
   }
   
   // Load the next page of products
   Future<void> _loadNextPage() async {
-    if (_isLoadingMore || !_hasMore || _lastDocument == null) return;
+    if (_isLoadingMore || !_hasMore || _lastDocument == null || !mounted) return;
     
     setState(() {
       _isLoadingMore = true;
@@ -427,32 +466,31 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
         categoryId: null, // Always load all products to avoid index issues
       );
       
+      if (!mounted) return; // Check if widget is still mounted
+      
       final newProducts = result['products'] as List<Product>;
       final lastDoc = result['lastDocument'] as DocumentSnapshot?;
       final hasMore = result['hasMore'] as bool;
       
-      setState(() {
-        _products.addAll(newProducts);
-        _lastDocument = lastDoc;
-        _hasMore = hasMore;
-        _isLoadingMore = false;
-        
-        // Update static instance
-        if (_instance != null) {
-          _instance!._products = _products;
-          _instance!._lastDocument = _lastDocument;
-          _instance!._hasMore = _hasMore;
-        }
-      });
+      if (mounted) {
+        setState(() {
+          _products.addAll(newProducts);
+          _lastDocument = lastDoc;
+          _hasMore = hasMore;
+          _isLoadingMore = false;
+        });
+      }
       
       AppLogger.d('✅ Loaded ${newProducts.length} more products');
     } catch (e) {
       AppLogger.d('❌ Error loading more products: $e');
       AppLogger.d('Stack trace: ${StackTrace.current}');
       
-      setState(() {
-        _isLoadingMore = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoadingMore = false;
+        });
+      }
     }
   }
   
@@ -499,6 +537,8 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
 
   // Handle pull-to-refresh with cache-first approach and change detection
   Future<void> _handleRefresh() async {
+    if (!mounted) return;
+    
     AppLogger.d('🔄 ProductListingPage: Pull-to-refresh triggered (cache-first approach)');
     
     try {
@@ -516,6 +556,8 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
         categoryId: null,
       );
       
+      if (!mounted) return; // Check if widget is still mounted
+      
       final freshProducts = result['products'] as List<Product>;
       
       // Fetch fresh categories
@@ -525,6 +567,9 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
       
       try {
         final allCategories = await _categoryService.getCategories();
+        
+        if (!mounted) return; // Check if widget is still mounted
+        
         for (var category in allCategories) {
           freshCategoriesList.add(category.categoryName);
           freshCategoryMapping[category.categoryName] = category.categoryId;
@@ -538,6 +583,8 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
         freshCategoriesList = _categories;
       }
       
+      if (!mounted) return; // Check if widget is still mounted
+      
       // Compare data for changes
       final hasProductChanges = _hasDataChanged(currentProducts, freshProducts);
       final hasCategoryChanges = _hasCategoryDataChanged(currentCategories, freshCategoryMapping);
@@ -546,27 +593,18 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
       if (hasAnyChanges || currentTimestamp == null || _isCacheExpired()) {
         AppLogger.d('🔄 Changes detected or cache expired - updating data');
         
-        // Update with fresh data
-        setState(() {
-          _products = freshProducts;
-          _lastDocument = result['lastDocument'] as DocumentSnapshot?;
-          _hasMore = result['hasMore'] as bool;
-          _categories = freshCategoriesList;
-          _categoryNameToId = freshCategoryMapping;
-          _categoryIdToName = freshCategoryIdToName;
-          _cacheTimestamp = DateTime.now();
-          _errorMessage = null;
-        });
-        
-        // Update static instance
-        if (_instance != null) {
-          _instance!._products = _products;
-          _instance!._lastDocument = _lastDocument;
-          _instance!._hasMore = _hasMore;
-          _instance!._categories = _categories;
-          _instance!._categoryNameToId = _categoryNameToId;
-          _instance!._categoryIdToName = _categoryIdToName;
-          _instance!._cacheTimestamp = _cacheTimestamp;
+        if (mounted) {
+          // Update with fresh data
+          setState(() {
+            _products = freshProducts;
+            _lastDocument = result['lastDocument'] as DocumentSnapshot?;
+            _hasMore = result['hasMore'] as bool;
+            _categories = freshCategoriesList;
+            _categoryNameToId = freshCategoryMapping;
+            _categoryIdToName = freshCategoryIdToName;
+            _cacheTimestamp = DateTime.now();
+            _errorMessage = null;
+          });
         }
         
         // Clear image cache only if there are actual changes
@@ -578,13 +616,10 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
         AppLogger.d('✅ Data updated: ${freshProducts.length} products, ${freshCategoriesList.length - 1} categories');
       } else {
         // No changes detected, just refresh timestamp
-        setState(() {
-          _cacheTimestamp = DateTime.now();
-        });
-        
-        // Update static instance timestamp
-        if (_instance != null) {
-          _instance!._cacheTimestamp = _cacheTimestamp;
+        if (mounted) {
+          setState(() {
+            _cacheTimestamp = DateTime.now();
+          });
         }
         
         AppLogger.d('ℹ️ No changes detected - cache timestamp refreshed');
@@ -595,7 +630,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
       AppLogger.d('Stack trace: ${StackTrace.current}');
       
       // Keep existing data on error, but show error state if we have no data
-      if (_products.isEmpty) {
+      if (_products.isEmpty && mounted) {
         setState(() {
           _errorMessage = 'Failed to refresh data: ${e.toString()}';
         });
@@ -649,7 +684,9 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
             child: Text('Cancel', style: AppTextStyles.buttonMedium),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () {
+              SystemNavigator.pop(); // Sends to background or closes app
+            },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.warning,
               foregroundColor: AppColors.onPrimary,
@@ -705,6 +742,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
             pinned: true,
             elevation: 0,
             backgroundColor: AppColors.surface,
+            automaticallyImplyLeading: false, // Disable automatic back button
             title: Row(
               children: [
                 Container(
@@ -798,7 +836,15 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                       constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                       icon: const Icon(Icons.shopping_cart, color: AppColors.onSurface),
                       onPressed: () {
-                        Navigator.pushNamed(context, '/cart');
+                        // Check if user is authenticated before navigating to cart
+                        final user = FirebaseAuth.instance.currentUser;
+                        if (user == null) {
+                          _showLoginRequiredDialog();
+                        } else {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (context) => const CartPage()),
+                          );
+                        }
                       },
                     ),
                   ],
@@ -1473,6 +1519,15 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     AppLogger.d('🔍 Total products: ${_products.length}');
     
     final filteredProducts = _products.where((product) {
+      // Exclude draft products from product listing page
+      if (product.isDraft == true) return false;
+      
+      // Exclude inactive products from product listing page
+      if (product.isActive == false) return false;
+      
+      // Exclude archived products from product listing page
+      if (product.isArchived == true) return false;
+      
       if (_selectedCategory == 'All') return true;
       
       // If a subcategory is selected, filter by subcategory
@@ -1555,13 +1610,8 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
               // Track product click
               _clickTrackingService.trackProductClick(product.productId);
               
-              // Navigate to product detail page
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ProductDetailPage(productId: product.productId),
-                ),
-              );
+              // Navigate to product detail page with deep linking support
+              NavigationUtils.navigateToProductDetail(context, product.productId);
             },
           );
         },

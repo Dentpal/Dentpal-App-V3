@@ -74,17 +74,31 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
 
     AppLogger.d('🔍 Checking URL for completion: $url');
 
-    // Check for success URL pattern
+    // Check for new success URL pattern (payment-success)
+    if (url.contains('payment-success') || url.contains('payment_success')) {
+      AppLogger.d('✅ Payment success detected from payment-success URL');
+      _handlePaymentSuccess(url);
+      return;
+    }
+
+    // Check for new failure URL pattern (payment-failed)
+    if (url.contains('payment-failed') || url.contains('payment_failed')) {
+      AppLogger.d('❌ Payment failure detected from payment-failed URL');
+      _handlePaymentFailure(url);
+      return;
+    }
+
+    // Check for success URL pattern (legacy)
     if (widget.successUrl != null && url.contains(widget.successUrl!)) {
       AppLogger.d('✅ Payment success detected');
       _handlePaymentSuccess(url);
       return;
     }
 
-    // Check for cancel URL pattern
+    // Check for cancel URL pattern (legacy)
     if (widget.cancelUrl != null && url.contains(widget.cancelUrl!)) {
       AppLogger.d('❌ Payment cancelled detected');
-      _handlePaymentCancel();
+      _handlePaymentFailure(url);
       return;
     }
 
@@ -98,7 +112,7 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
     // Check for common PayMongo cancel/error patterns
     if (url.contains('cancel') || url.contains('error') || url.contains('failed')) {
       AppLogger.d('❌ Payment failure detected by pattern matching');
-      _handlePaymentCancel();
+      _handlePaymentFailure(url);
       return;
     }
   }
@@ -109,103 +123,46 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
 
     // Extract order ID or session ID from URL if present
     String? orderId;
+    String? sessionId;
     final uri = Uri.parse(url);
     
     // Try to extract session_id or order_id from query parameters
-    orderId = uri.queryParameters['session_id'] ?? 
-              uri.queryParameters['order_id'] ?? 
-              uri.queryParameters['payment_intent_id'];
+    orderId = uri.queryParameters['order_id'];
+    sessionId = uri.queryParameters['session_id'] ?? 
+                uri.queryParameters['payment_intent_id'];
 
-    AppLogger.d('✅ Payment completed successfully. Order ID: $orderId');
+    AppLogger.d('✅ Payment completed successfully. Order ID: $orderId, Session ID: $sessionId');
     
-    // Show success message briefly before closing
+    // Close WebView and notify parent directly - no popup
     if (mounted) {
-      _showCompletionDialog(
-        title: 'Payment Successful!',
-        message: 'Your payment has been processed successfully.',
-        isSuccess: true,
-        orderId: orderId,
-      );
+      Navigator.of(context).pop(); // Close WebView
+      widget.onPaymentComplete(true, orderId);
     }
   }
 
-  void _handlePaymentCancel() {
+  void _handlePaymentFailure(String url) {
     if (_hasCalledCallback) return;
     _hasCalledCallback = true;
 
-    AppLogger.d('❌ Payment was cancelled');
+    // Extract order ID or session ID from URL if present
+    String? orderId;
+    String? sessionId;
+    String? errorMessage;
+    final uri = Uri.parse(url);
     
-    // Show cancel message briefly before closing
-    if (mounted) {
-      _showCompletionDialog(
-        title: 'Payment Cancelled',
-        message: 'Your payment was cancelled. You can try again if needed.',
-        isSuccess: false,
-        orderId: null,
-      );
-    }
-  }
+    orderId = uri.queryParameters['order_id'];
+    sessionId = uri.queryParameters['session_id'];
+    errorMessage = uri.queryParameters['error'] ?? 
+                   uri.queryParameters['message'] ?? 
+                   'Payment was cancelled or failed';
 
-  void _showCompletionDialog({
-    required String title,
-    required String message,
-    required bool isSuccess,
-    String? orderId,
-  }) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: isSuccess 
-                    ? AppColors.success.withValues(alpha: 0.1)
-                    : AppColors.warning.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                isSuccess ? Icons.check_circle : Icons.cancel,
-                color: isSuccess ? AppColors.success : AppColors.warning,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              title,
-              style: AppTextStyles.titleMedium.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-        content: Text(
-          message,
-          style: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.onSurface.withValues(alpha: 0.8),
-          ),
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop(); // Close dialog
-              Navigator.of(context).pop(); // Close webview page
-              widget.onPaymentComplete(isSuccess, orderId);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: isSuccess ? AppColors.success : AppColors.primary,
-              foregroundColor: AppColors.onPrimary,
-              elevation: 0,
-            ),
-            child: Text('Continue', style: AppTextStyles.buttonMedium),
-          ),
-        ],
-      ),
-    );
+    AppLogger.d('❌ Payment failed. Order ID: $orderId, Session ID: $sessionId, Error: $errorMessage');
+    
+    // Close WebView and notify parent directly - no popup
+    if (mounted) {
+      Navigator.of(context).pop(); // Close WebView
+      widget.onPaymentComplete(false, orderId);
+    }
   }
 
   void _handleBackPress() {
@@ -213,53 +170,33 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.warning.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                Icons.warning_outlined,
-                color: AppColors.warning,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              'Cancel Payment?',
-              style: AppTextStyles.titleMedium.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Cancel Payment',
+          style: AppTextStyles.titleMedium.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
         ),
         content: Text(
-          'Are you sure you want to cancel the payment process? Your order will not be completed.',
+          'Are you sure you want to cancel this payment? Your order will not be processed.',
           style: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.onSurface.withValues(alpha: 0.8),
+            color: AppColors.onSurface.withValues(alpha:0.8),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.onSurface.withValues(alpha: 0.6),
-            ),
             child: Text('Continue Payment', style: AppTextStyles.buttonMedium),
           ),
           ElevatedButton(
             onPressed: () {
               Navigator.of(context).pop(); // Close dialog
-              Navigator.of(context).pop(); // Close webview page
+              Navigator.of(context).pop(); // Close WebView
               widget.onPaymentComplete(false, null);
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.warning,
-              foregroundColor: AppColors.onPrimary,
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
               elevation: 0,
             ),
             child: Text('Cancel Payment', style: AppTextStyles.buttonMedium),
@@ -273,16 +210,15 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      onPopInvoked: (didPop) {
-        if (!didPop) {
-          _handleBackPress();
-        }
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _handleBackPress();
       },
       child: Scaffold(
-        backgroundColor: AppColors.background,
+        backgroundColor: AppColors.surface,
         appBar: AppBar(
-          elevation: 0,
           backgroundColor: AppColors.surface,
+          elevation: 0,
           leading: IconButton(
             onPressed: _handleBackPress,
             icon: const Icon(Icons.close, color: AppColors.onSurface),
@@ -300,7 +236,7 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
                 Text(
                   Uri.parse(_currentUrl).host,
                   style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.onSurface.withValues(alpha: 0.6),
+                    color: AppColors.onSurface.withValues(alpha:0.6),
                   ),
                 ),
             ],
@@ -330,11 +266,17 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      CircularProgressIndicator(color: AppColors.primary),
+                      CircularProgressIndicator(
+                        color: AppColors.primary,
+                        strokeWidth: 3,
+                      ),
                       SizedBox(height: 16),
                       Text(
                         'Loading payment page...',
-                        style: AppTextStyles.bodyMedium,
+                        style: TextStyle(
+                          color: AppColors.onSurface,
+                          fontSize: 16,
+                        ),
                       ),
                     ],
                   ),

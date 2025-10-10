@@ -72,7 +72,7 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
-                      color: AppColors.success.withOpacity(0.1),
+                      color: AppColors.success.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: AppColors.success),
                     ),
@@ -303,7 +303,7 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
                   width: 80,
                   height: 80,
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
+                    color: AppColors.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(40),
                   ),
                   child: Icon(
@@ -377,7 +377,6 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
         return;
       }
       
-      // Print for debugging
       AppLogger.d('Attempting to verify phone number: $formattedNumber');
       
       await FirebaseAuth.instance.verifyPhoneNumber(
@@ -395,7 +394,6 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
             _controller.isVerificationInProgress = false;
           });
           
-          // Print detailed error for debugging
           AppLogger.d('Firebase phone verification failed: ${e.code} - ${e.message}');
           
           String errorMessage = 'Verification failed. Please try again.';
@@ -491,7 +489,7 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
                   width: 80,
                   height: 80,
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
+                    color: AppColors.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(40),
                   ),
                   child: Icon(
@@ -802,7 +800,7 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
                   width: 80,
                   height: 80,
                   decoration: BoxDecoration(
-                    color: (isSuccess ? AppColors.success : AppColors.error).withOpacity(0.1),
+                    color: (isSuccess ? AppColors.success : AppColors.error).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(40),
                   ),
                   child: Icon(

@@ -46,7 +46,7 @@ class IdOcrService {
       if (!_isValidGovernmentId(rawText)) {
         return IdVerificationResult(
           isValid: false,
-          errorMessage: 'Please use a valid government-issued professional ID card.',
+          errorMessage: 'Please use a valid PRC Professional ID card.',
           registrationNumber: null,
           faceImage: null,
         );
@@ -73,7 +73,7 @@ class IdOcrService {
       SignupController.logOcrResult('ERROR', 'OCR processing failed: $e');
       return IdVerificationResult(
         isValid: false,
-        errorMessage: 'Unable to process ID image. Please try again with better lighting.',
+        errorMessage: 'Unable to process PRC ID image. Please try again with better lighting.',
         registrationNumber: null,
         faceImage: null,
       );
@@ -376,7 +376,7 @@ class IdOcrService {
       SignupController.logOcrResult('ERROR', 'Face detection failed - verification cannot proceed without face detection');
       return IdVerificationResult(
         isValid: false,
-        errorMessage: 'No face detected in the ID image. Please ensure your photo is clearly visible.',
+        errorMessage: 'No face detected in the PRC ID image. Please ensure your photo is clearly visible.',
         registrationNumber: null,
         faceImage: null,
       );
@@ -387,7 +387,7 @@ class IdOcrService {
       if (parsedData.validUntil!.isBefore(DateTime.now())) {
         return IdVerificationResult(
           isValid: false,
-          errorMessage: 'ID has expired. Please use a valid, non-expired government ID.',
+          errorMessage: 'PRC ID has expired. Please use a valid, non-expired PRC ID.',
           registrationNumber: parsedData.registrationNumber,
           faceImage: parsedData.faceImage,
         );
@@ -395,7 +395,7 @@ class IdOcrService {
     } else {
       return IdVerificationResult(
         isValid: false,
-        errorMessage: 'Unable to read expiry date from ID. Please ensure the ID is clear and well-lit.',
+        errorMessage: 'Unable to read expiry date from PRC ID. Please ensure the ID is clear and well-lit.',
         registrationNumber: parsedData.registrationNumber,
         faceImage: parsedData.faceImage,
       );
@@ -405,7 +405,7 @@ class IdOcrService {
     if (parsedData.registrationNumber == null) {
       return IdVerificationResult(
         isValid: false,
-        errorMessage: 'Unable to read registration number. Please ensure the ID text is clear.',
+        errorMessage: 'Unable to read registration number. Please ensure the PRC ID text is clear.',
         registrationNumber: null,
         faceImage: parsedData.faceImage,
       );
@@ -418,21 +418,21 @@ class IdOcrService {
     if (!firstNameFound && !lastNameFound) {
       return IdVerificationResult(
         isValid: false,
-        errorMessage: 'Name on ID does not match. Please ensure this is your personal ID.',
+        errorMessage: 'Name on PRC ID does not match. Please ensure this is your personal PRC ID.',
         registrationNumber: parsedData.registrationNumber,
         faceImage: parsedData.faceImage,
       );
     } else if (!firstNameFound) {
       return IdVerificationResult(
         isValid: false,
-        errorMessage: 'First name does not match ID. Please check your name entry.',
+        errorMessage: 'First name does not match PRC ID. Please check your name entry.',
         registrationNumber: parsedData.registrationNumber,
         faceImage: parsedData.faceImage,
       );
     } else if (!lastNameFound) {
       return IdVerificationResult(
         isValid: false,
-        errorMessage: 'Last name does not match ID. Please check your name entry.',
+        errorMessage: 'Last name does not match PRC ID. Please check your name entry.',
         registrationNumber: parsedData.registrationNumber,
         faceImage: parsedData.faceImage,
       );

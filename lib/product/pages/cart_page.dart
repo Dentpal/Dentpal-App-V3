@@ -3,9 +3,10 @@ import 'package:dentpal/utils/app_logger.dart';
 import '../models/cart_model.dart';
 import '../services/cart_service.dart';
 import '../widgets/seller_group_widget.dart';
-import '../pages/checkout_page.dart';
+import 'checkout_page.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
+import 'package:flutter/services.dart';
 
 class CartPage extends StatefulWidget {
   const CartPage({super.key, this.onBackPressed});
@@ -138,9 +139,12 @@ class _CartPageState extends State<CartPage>
       _instance!._cartSummary = null;
       _instance!._lastCacheTime = null;
     }
-    setState(() {
-      _sellerGroupsFuture = _loadSellerGroups();
-    });
+    // Check if widget is still mounted before calling setState
+    if (mounted) {
+      setState(() {
+        _sellerGroupsFuture = _loadSellerGroups();
+      });
+    }
   }
 
   @override
@@ -577,7 +581,9 @@ class _CartPageState extends State<CartPage>
             child: Text('Cancel', style: AppTextStyles.buttonMedium),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () {
+              SystemNavigator.pop(); // Sends to background or closes app
+            },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.warning,
               foregroundColor: AppColors.onPrimary,
@@ -606,7 +612,7 @@ class _CartPageState extends State<CartPage>
 
     return PopScope(
       canPop: false,
-      onPopInvoked: (didPop) async {
+      onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         
         final shouldExit = await _showExitConfirmation();
@@ -859,7 +865,7 @@ class _CartPageState extends State<CartPage>
                           Switch.adaptive(
                             value: _cachedSellerGroups?.every((group) => group.allItemsSelected) == true,
                             onChanged: _toggleSelectAllWeb,
-                            activeColor: AppColors.primary,
+                            activeThumbColor: AppColors.primary,
                           ),
                         ],
                       ),

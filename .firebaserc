@@ -7,6 +7,9 @@
       "hosting": {
         "dentpal-store": [
           "dentpal-store"
+        ],
+        "dentpal-store-sandbox-testing":[
+          "dentpal-store-sandbox-testing"
         ]
       }
     }

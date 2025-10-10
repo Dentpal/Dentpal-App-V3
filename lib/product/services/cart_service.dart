@@ -8,8 +8,8 @@ class CartService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // Get current user ID or throw error if not authenticated
-  String _getCurrentUserId() {
+  // Get current user ID or throw error if not authenticated (for methods that require auth)
+  String _getCurrentUserIdRequired() {
     final user = _auth.currentUser;
     if (user == null) {
       throw Exception('User not authenticated');
@@ -17,9 +17,9 @@ class CartService {
     return user.uid;
   }
 
-  // Get cart reference for current user
-  CollectionReference _getCartRef() {
-    final userId = _getCurrentUserId();
+  // Get cart reference for current user (throws if not authenticated)
+  CollectionReference _getCartRefRequired() {
+    final userId = _getCurrentUserIdRequired();
     return _firestore.collection('User').doc(userId).collection('Cart');
   }
 
@@ -30,7 +30,7 @@ class CartService {
     String? variationId
   }) async {
     try {
-      final cartRef = _getCartRef();
+      final cartRef = _getCartRefRequired();
       
       // Check if the product is already in the cart
       QuerySnapshot existingItems = await cartRef
@@ -66,7 +66,7 @@ class CartService {
   // Get user's cart items with product details
   Future<List<CartItem>> getCartItems() async {
     try {
-      final cartRef = _getCartRef();
+      final cartRef = _getCartRefRequired();
       QuerySnapshot cartSnapshot = await cartRef.orderBy('addedAt', descending: true).get();
       
       List<CartItem> cartItems = cartSnapshot.docs.map((doc) => CartItem.fromFirestore(doc)).toList();
@@ -230,7 +230,7 @@ class CartService {
   // Update item selection state
   Future<void> updateItemSelection(String cartItemId, bool isSelected) async {
     try {
-      await _getCartRef().doc(cartItemId).update({
+      await _getCartRefRequired().doc(cartItemId).update({
         'isSelected': isSelected,
       });
     } catch (e) {
@@ -243,7 +243,7 @@ class CartService {
   Future<void> batchUpdateItemSelections(Map<String, bool> itemSelections) async {
     try {
       WriteBatch batch = _firestore.batch();
-      final cartRef = _getCartRef();
+      final cartRef = _getCartRefRequired();
       
       for (var entry in itemSelections.entries) {
         batch.update(cartRef.doc(entry.key), {'isSelected': entry.value});
@@ -263,7 +263,7 @@ class CartService {
       if (quantity <= 0) {
         await removeCartItem(cartItemId);
       } else {
-        await _getCartRef().doc(cartItemId).update({'quantity': quantity});
+        await _getCartRefRequired().doc(cartItemId).update({'quantity': quantity});
       }
     } catch (e) {
       AppLogger.d('Error updating cart item: $e');
@@ -274,7 +274,7 @@ class CartService {
   // Remove item from cart
   Future<void> removeCartItem(String cartItemId) async {
     try {
-      await _getCartRef().doc(cartItemId).delete();
+      await _getCartRefRequired().doc(cartItemId).delete();
     } catch (e) {
       AppLogger.d('Error removing cart item: $e');
       rethrow;
@@ -284,7 +284,7 @@ class CartService {
   // Get a single cart item with product details (for background sync)
   Future<CartItem?> getCartItem(String cartItemId) async {
     try {
-      final cartRef = _getCartRef();
+      final cartRef = _getCartRefRequired();
       DocumentSnapshot cartDoc = await cartRef.doc(cartItemId).get();
       
       if (!cartDoc.exists) {
@@ -364,7 +364,7 @@ class CartService {
   // Clear the entire cart
   Future<void> clearCart() async {
     try {
-      QuerySnapshot cartSnapshot = await _getCartRef().get();
+      QuerySnapshot cartSnapshot = await _getCartRefRequired().get();
       
       for (var doc in cartSnapshot.docs) {
         await doc.reference.delete();

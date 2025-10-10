@@ -4,6 +4,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
+import 'package:dentpal/utils/app_logger.dart';
 
 class AddressMapWidget extends StatefulWidget {
   final String address;
@@ -150,7 +151,7 @@ class _AddressMapWidgetState extends State<AddressMapWidget> {
         widget.onLocationSelected(foundLocation.latitude, foundLocation.longitude);
         
         // Note: No auto-fill callback here, just map positioning
-        print('Map positioned to: ${foundLocation.latitude}, ${foundLocation.longitude}');
+        AppLogger.d('Map positioned to: ${foundLocation.latitude}, ${foundLocation.longitude}');
       } else {
         _selectedLocation = _defaultLocation;
       }
@@ -160,7 +161,7 @@ class _AddressMapWidgetState extends State<AddressMapWidget> {
         _error = 'Could not find location for this address. You can tap on the map to set location manually.';
       });
       _selectedLocation = _defaultLocation;
-      print('Map positioning failed: $e');
+      AppLogger.d('Map positioning failed: $e');
     } finally {
       setState(() {
         _isLoading = false;
@@ -201,7 +202,7 @@ class _AddressMapWidgetState extends State<AddressMapWidget> {
       try {
         await _reverseGeocode(position.latitude, position.longitude);
       } catch (reverseGeocodeError) {
-        print('Error in reverse geocoding: $reverseGeocodeError');
+        AppLogger.d('Error in reverse geocoding: $reverseGeocodeError');
       }
 
       if (_mapController != null) {
@@ -221,28 +222,28 @@ class _AddressMapWidgetState extends State<AddressMapWidget> {
   }
 
   Future<void> _reverseGeocode(double latitude, double longitude) async {
-    print('_reverseGeocode called with lat: $latitude, lng: $longitude');
-    print('onAddressFound callback is null: ${widget.onAddressFound == null}');
+    AppLogger.d('_reverseGeocode called with lat: $latitude, lng: $longitude');
+    AppLogger.d('onAddressFound callback is null: ${widget.onAddressFound == null}');
     
     if (widget.onAddressFound == null) return;
 
     try {
-      print('Starting placemarkFromCoordinates...');
+      AppLogger.d('Starting placemarkFromCoordinates...');
       List<Placemark> placemarks = await placemarkFromCoordinates(latitude, longitude);
-      print('Placemarks found: ${placemarks.length}');
+      AppLogger.d('Placemarks found: ${placemarks.length}');
       
       if (placemarks.isNotEmpty) {
         final placemark = placemarks.first;
-        print('First placemark raw data:');
-        print('- street: ${placemark.street}');
-        print('- thoroughfare: ${placemark.thoroughfare}');
-        print('- subThoroughfare: ${placemark.subThoroughfare}');
-        print('- locality: ${placemark.locality}');
-        print('- subAdministrativeArea: ${placemark.subAdministrativeArea}');
-        print('- administrativeArea: ${placemark.administrativeArea}');
-        print('- postalCode: ${placemark.postalCode}');
-        print('- country: ${placemark.country}');
-        print('- name: ${placemark.name}');
+        AppLogger.d('First placemark raw data:');
+        AppLogger.d('- street: ${placemark.street}');
+        AppLogger.d('- thoroughfare: ${placemark.thoroughfare}');
+        AppLogger.d('- subThoroughfare: ${placemark.subThoroughfare}');
+        AppLogger.d('- locality: ${placemark.locality}');
+        AppLogger.d('- subAdministrativeArea: ${placemark.subAdministrativeArea}');
+        AppLogger.d('- administrativeArea: ${placemark.administrativeArea}');
+        AppLogger.d('- postalCode: ${placemark.postalCode}');
+        AppLogger.d('- country: ${placemark.country}');
+        AppLogger.d('- name: ${placemark.name}');
         
         // Extract address components with null safety
         String street = '';
@@ -265,7 +266,7 @@ class _AddressMapWidgetState extends State<AddressMapWidget> {
             street = placemark.name!;
           }
         } catch (e) {
-          print('Error extracting street: $e');
+          AppLogger.d('Error extracting street: $e');
         }
 
         // Get city (try multiple fields)
@@ -275,37 +276,37 @@ class _AddressMapWidgetState extends State<AddressMapWidget> {
                  placemark.administrativeArea ?? 
                  '';
         } catch (e) {
-          print('Error extracting city: $e');
+          AppLogger.d('Error extracting city: $e');
         }
 
         // Get state/province
         try {
           state = placemark.administrativeArea ?? '';
         } catch (e) {
-          print('Error extracting state: $e');
+          AppLogger.d('Error extracting state: $e');
         }
 
         // Get postal code
         try {
           postalCode = placemark.postalCode ?? '';
         } catch (e) {
-          print('Error extracting postalCode: $e');
+          AppLogger.d('Error extracting postalCode: $e');
         }
 
         // Get country
         try {
           country = placemark.country ?? 'Philippines';
         } catch (e) {
-          print('Error extracting country: $e');
+          AppLogger.d('Error extracting country: $e');
           country = 'Philippines';
         }
 
-        print('Extracted components:');
-        print('- street: "$street"');
-        print('- city: "$city"');
-        print('- state: "$state"');
-        print('- postalCode: "$postalCode"');
-        print('- country: "$country"');
+        AppLogger.d('Extracted components:');
+        AppLogger.d('- street: "$street"');
+        AppLogger.d('- city: "$city"');
+        AppLogger.d('- state: "$state"');
+        AppLogger.d('- postalCode: "$postalCode"');
+        AppLogger.d('- country: "$country"');
 
         // Create address data map - ensure no null values
         Map<String, String> addressData = {
@@ -316,27 +317,27 @@ class _AddressMapWidgetState extends State<AddressMapWidget> {
           'country': country,
         };
 
-        print('Address data prepared: $addressData');
+        AppLogger.d('Address data prepared: $addressData');
 
         // Call the callback with the address data
         widget.onAddressFound!(addressData);
         
-        print('onAddressFound callback completed successfully');
+        AppLogger.d('onAddressFound callback completed successfully');
       } else {
-        print('No placemarks found for coordinates');
+        AppLogger.d('No placemarks found for coordinates');
         // Provide fallback data with coordinates
         _provideFallbackAddress(latitude, longitude);
       }
     } catch (e, stackTrace) {
-      print('Reverse geocoding failed: $e');
-      print('Stack trace: $stackTrace');
+      AppLogger.d('Reverse geocoding failed: $e');
+      AppLogger.d('Stack trace: $stackTrace');
       // Provide fallback data with coordinates
       _provideFallbackAddress(latitude, longitude);
     }
   }
 
   void _provideFallbackAddress(double latitude, double longitude) {
-    print('Providing fallback address data...');
+    AppLogger.d('Providing fallback address data...');
     
     if (widget.onAddressFound == null) return;
     
@@ -352,12 +353,12 @@ class _AddressMapWidgetState extends State<AddressMapWidget> {
       'country': 'Philippines',
     };
     
-    print('Fallback address data: $fallbackData');
+    AppLogger.d('Fallback address data: $fallbackData');
     
     // Call the callback with fallback data
     widget.onAddressFound!(fallbackData);
     
-    print('Fallback onAddressFound callback completed');
+    AppLogger.d('Fallback onAddressFound callback completed');
   }
 
   String _getAreaFromCoordinates(double latitude, double longitude) {

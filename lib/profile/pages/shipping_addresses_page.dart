@@ -5,6 +5,7 @@ import '../services/address_service.dart';
 import '../widgets/address_map_widget.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
+import 'package:dentpal/utils/app_logger.dart';
 
 class ShippingAddressesPage extends StatefulWidget {
   const ShippingAddressesPage({super.key});
@@ -571,7 +572,7 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
   }
 
   void _autoFillAddress(Map<String, String> addressData) {
-    print('_autoFillAddress called with: $addressData');
+    AppLogger.d('_autoFillAddress called with: $addressData');
     
     // Check if we got any meaningful data
     bool hasValidData = addressData['city']?.isNotEmpty == true || 
@@ -579,7 +580,7 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
                         addressData['street']?.isNotEmpty == true;
     
     if (!hasValidData) {
-      print('No valid address data found');
+      AppLogger.d('No valid address data found');
       // Show a different message if no data was found
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -615,7 +616,7 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
   }
 
   void _fillAddressFields(Map<String, String> addressData) {
-    print('_fillAddressFields called with: $addressData');
+    AppLogger.d('_fillAddressFields called with: $addressData');
     
     setState(() {
       _isAutoFilling = true; // Set flag to prevent map pin movement
@@ -624,34 +625,34 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
       if (_addressLine1Controller.text.trim().isEmpty && 
           addressData['street']?.isNotEmpty == true) {
         _addressLine1Controller.text = addressData['street']!;
-        print('Filled addressLine1: ${addressData['street']}');
+        AppLogger.d('Filled addressLine1: ${addressData['street']}');
       }
       
       if (_cityController.text.trim().isEmpty && 
           addressData['city']?.isNotEmpty == true) {
         _cityController.text = addressData['city']!;
-        print('Filled city: ${addressData['city']}');
+        AppLogger.d('Filled city: ${addressData['city']}');
       }
       
       if (_stateController.text.trim().isEmpty && 
           addressData['state']?.isNotEmpty == true) {
         _stateController.text = addressData['state']!;
-        print('Filled state: ${addressData['state']}');
+        AppLogger.d('Filled state: ${addressData['state']}');
       }
       
       if (_postalCodeController.text.trim().isEmpty && 
           addressData['postalCode']?.isNotEmpty == true) {
         _postalCodeController.text = addressData['postalCode']!;
-        print('Filled postalCode: ${addressData['postalCode']}');
+        AppLogger.d('Filled postalCode: ${addressData['postalCode']}');
       }
       
       if (_countryController.text.trim().isEmpty && 
           addressData['country']?.isNotEmpty == true) {
         _countryController.text = addressData['country']!;
-        print('Filled country: ${addressData['country']}');
+        AppLogger.d('Filled country: ${addressData['country']}');
       }
       
-      print('All fields filled successfully');
+      AppLogger.d('All fields filled successfully');
     });
     
     // Reset the flag after a brief delay to allow the UI to update

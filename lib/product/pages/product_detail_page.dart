@@ -1,9 +1,12 @@
 import 'package:dentpal/core/app_theme/index.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
 import '../models/product_model.dart';
 import '../services/product_service.dart';
 import '../services/cart_service.dart';
@@ -13,7 +16,11 @@ import '../utils/cart_feedback.dart';
 import 'cart_page.dart';
 import 'edit_product_page.dart';
 import 'store_page.dart';
+import '../../login_page.dart';
 import 'package:dentpal/utils/app_logger.dart';
+import 'package:dentpal/utils/navigation_utils.dart';
+import 'package:dentpal/services/chat_service.dart';
+import 'package:dentpal/profile/pages/chat_detail_page.dart';
 
 
 class ProductDetailPage extends StatefulWidget {
@@ -133,6 +140,9 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
     super.initState();
     _productFuture = _loadProduct();
     _quantityController.text = _quantity.toString();
+    
+    // Update URL for deep linking support
+    NavigationUtils.updatePageUrl('/product/${widget.productId}');
   }
   
   @override
@@ -367,6 +377,13 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   }
 
   void _addToCart(Product product) async {
+    // Check if user is authenticated first
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      _showLoginRequiredDialog();
+      return;
+    }
+
     // Prevent multiple simultaneous requests
     if (_isAddingToCart) return;
     
@@ -424,6 +441,469 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         });
       }
     }
+  }
+
+  void _showLoginRequiredDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.shopping_cart_outlined,
+                  color: AppColors.primary,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Login Required',
+                style: AppTextStyles.titleMedium.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            'You need to login to add items to your cart. Would you like to login now?',
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.onSurface.withValues(alpha: 0.8),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.onSurface.withValues(alpha: 0.6),
+              ),
+              child: Text('Cancel', style: AppTextStyles.buttonMedium),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (context) => const LoginPage()),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.onPrimary,
+                elevation: 0,
+              ),
+              child: Text('Login', style: AppTextStyles.buttonMedium),
+            ),
+          ],
+        );
+      },
+    );
+  }
+  
+  Future<void> _inquireAboutProduct(Product product) async {
+    // Check if user is authenticated first
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      _showLoginRequiredDialog();
+      return;
+    }
+
+    // Don't allow users to inquire about their own products
+    if (user.uid == product.sellerId) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('You cannot inquire about your own product'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    try {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      final chatService = ChatService();
+      
+      // Get current variation for product details
+      final selectedVariation = _selectedVariation;
+      String productName = product.name;
+      if (selectedVariation != null && selectedVariation.name.isNotEmpty) {
+        productName = '${product.name} - ${selectedVariation.name}';
+      }
+
+      // Create or get existing chat room
+      final chatRoomId = await chatService.getOrCreateChatRoom(
+        product.sellerId,
+        productId: product.productId,
+        productName: productName,
+        productImage: selectedVariation?.imageURL ?? product.imageURL,
+      );
+
+      // Close loading dialog
+      if (mounted) Navigator.of(context).pop();
+
+      // Navigate to chat
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChatDetailPage(
+              chatRoomId: chatRoomId,
+              otherUserId: product.sellerId,
+              otherUserName: 'Seller', // Will be updated with actual seller name in chat page
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      // Close loading dialog if still open
+      if (mounted) Navigator.of(context).pop();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to start chat: ${e.toString()}'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+  
+  void _shareProduct(Product product) {
+    // On mobile, use native share directly without showing our modal
+    if (!kIsWeb) {
+      final shareUrl = NavigationUtils.getProductShareUrl(product.productId);
+      final shareText = '${product.name}\n\nCheck out this product on DentPal: $shareUrl';
+      Share.share(shareText, subject: 'Check out this product on DentPal');
+      return;
+    }
+    
+    // On web, show our custom modal
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => _buildShareBottomSheet(product),
+    );
+  }
+
+  Widget _buildShareBottomSheet(Product product) {
+    final shareUrl = NavigationUtils.getProductShareUrl(product.productId);
+    final shareText = '${product.name}\n\nCheck out this product on DentPal: $shareUrl';
+    
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(24),
+          topRight: Radius.circular(24),
+        ),
+      ),
+      child: SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle bar
+            Container(
+              margin: const EdgeInsets.only(top: 12),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.onSurface.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            
+            // Header
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.share,
+                          color: AppColors.primary,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Share Product',
+                        style: AppTextStyles.titleLarge.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.onSurface,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close),
+                        iconSize: 20,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            
+            // Share options - horizontal scrollable list
+            SizedBox(
+              height: 100, // Fixed height to contain icon + label
+              child: Center(
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  shrinkWrap: true,
+                  children: [
+                    _buildShareOption(
+                      icon: Icons.facebook,
+                      label: 'Facebook',
+                      color: const Color(0xFF1877F2),
+                      onTap: () => _shareToFacebook(shareUrl, shareText),
+                    ),
+                    const SizedBox(width: 24),
+                    _buildShareOption(
+                      icon: Icons.messenger, // Facebook Messenger icon
+                      label: 'Messenger',
+                      color: const Color(0xFF00B2FF),
+                      onTap: () => _shareToMessenger(shareUrl, shareText),
+                    ),
+                    const SizedBox(width: 24),
+                    _buildShareOption(
+                      icon: Icons.email,
+                      label: 'Email',
+                      color: const Color(0xFF34A853),
+                      onTap: () => _shareToEmail(shareUrl, shareText),
+                    ),
+                    const SizedBox(width: 24),
+                    _buildShareOption(
+                      icon: Icons.message,
+                      label: 'SMS',
+                      color: const Color(0xFF0088CC),
+                      onTap: () => _shareToSMS(shareUrl, shareText),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+                  
+            const SizedBox(height: 24),
+            
+            // Copy link button
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: AppColors.primary.withValues(alpha: 0.2),
+                  ),
+                ),
+                child: ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.link,
+                      color: AppColors.primary,
+                      size: 20,
+                    ),
+                  ),
+                  title: Text(
+                    'Copy Link',
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.onSurface,
+                    ),
+                  ),
+                  subtitle: Text(
+                    shareUrl,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.onSurface.withValues(alpha: 0.6),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: const Icon(
+                    Icons.copy,
+                    color: AppColors.primary,
+                    size: 20,
+                  ),
+                  onTap: () => _copyLinkToClipboard(shareText),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+              ),
+            ),
+                  
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildShareOption({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              icon,
+              color: color,
+              size: 24,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.onSurface.withValues(alpha: 0.7),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _shareToFacebook(String url, String text) {
+    // On mobile, use native share dialog
+    if (!kIsWeb) {
+      Share.share(text, subject: 'Check out this product on DentPal');
+      Navigator.pop(context);
+      return;
+    }
+    
+    // On web, open Facebook share URL
+    final facebookUrl = 'https://www.facebook.com/sharer/sharer.php?u=${Uri.encodeComponent(url)}';
+    _openUrl(facebookUrl);
+  }
+
+  void _shareToMessenger(String url, String text) {
+    // On mobile, use native share dialog
+    if (!kIsWeb) {
+      Share.share(text, subject: 'Check out this product on DentPal');
+      Navigator.pop(context);
+      return;
+    }
+    
+    // On web, open Facebook Messenger with pre-filled message
+    final messengerUrl = 'https://www.messenger.com/new?text=${Uri.encodeComponent(text)}';
+    _openUrl(messengerUrl);
+  }
+
+  void _shareToEmail(String url, String text) {
+    // Email should work on both mobile and web
+    final emailUrl = 'mailto:?subject=${Uri.encodeComponent('Check out this product on DentPal')}&body=${Uri.encodeComponent(text)}';
+    _openUrl(emailUrl);
+  }
+
+  void _shareToSMS(String url, String text) {
+    // On mobile, use native share dialog  
+    if (!kIsWeb) {
+      Share.share(text, subject: 'Check out this product on DentPal');
+      Navigator.pop(context);
+      return;
+    }
+    
+    // On web, open SMS URL
+    final smsUrl = 'sms:?body=${Uri.encodeComponent(text)}';
+    _openUrl(smsUrl);
+  }
+
+  void _openUrl(String url) async {
+    try {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        if (mounted) Navigator.pop(context);
+      } else {
+        // Fall back to copying to clipboard if URL can't be opened
+        _copyLinkToClipboard(url, 'Link copied to clipboard!');
+      }
+    } catch (e) {
+      // Fall back to copying to clipboard on error
+      _copyLinkToClipboard(url, 'Link copied to clipboard!');
+    }
+  }
+
+  void _copyLinkToClipboard(String text, [String? customMessage]) {
+    Clipboard.setData(ClipboardData(text: text)).then((_) {
+      Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(
+                  Icons.check_circle,
+                  color: AppColors.onPrimary,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    customMessage ?? 'Link copied to clipboard!',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.onPrimary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: AppColors.primary,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            margin: const EdgeInsets.all(16),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    });
   }
   
   @override
@@ -662,9 +1142,29 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                           color: AppColors.onSurface.withValues(alpha: .1),
                         ),
                       ],
+                      // Share button
+                      IconButton(
+                        icon: const Icon(Icons.share, color: AppColors.onSurface),
+                        onPressed: () => _shareProduct(product),
+                      ),
+                      Container(
+                        width: 1,
+                        height: 24,
+                        color: AppColors.onSurface.withValues(alpha: .1),
+                      ),
                       IconButton(
                         icon: const Icon(Icons.shopping_cart, color: AppColors.onSurface),
-                        onPressed: () => Navigator.pushNamed(context, '/cart'),
+                        onPressed: () {
+                          // Check if user is authenticated before navigating to cart
+                          final user = FirebaseAuth.instance.currentUser;
+                          if (user == null) {
+                            _showLoginRequiredDialog();
+                          } else {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(builder: (context) => const CartPage()),
+                            );
+                          }
+                        },
                       ),
                     ],
                   ),
@@ -750,9 +1250,24 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 });
               },
             ),
+          // Share button
+          IconButton(
+            icon: const Icon(Icons.share, color: AppColors.onSurface),
+            onPressed: () => _shareProduct(product),
+          ),
           IconButton(
             icon: const Icon(Icons.shopping_cart, color: AppColors.onSurface),
-            onPressed: () => Navigator.pushNamed(context, '/cart'),
+            onPressed: () {
+              // Check if user is authenticated before navigating to cart
+              final user = FirebaseAuth.instance.currentUser;
+              if (user == null) {
+                _showLoginRequiredDialog();
+              } else {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (context) => const CartPage()),
+                );
+              }
+            },
           ),
           const SizedBox(width: 16),
         ],
@@ -821,7 +1336,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                       const SizedBox(height: 40),
                       
                       // Row 2: Description (Full Width)
-                      Container(
+                      SizedBox(
                         width: double.infinity,
                         child: _buildDescriptionSection(product),
                       ),
@@ -829,7 +1344,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                       const SizedBox(height: 24),
                       
                       // Row 3: Reviews (Full Width)
-                      Container(
+                      SizedBox(
                         width: double.infinity,
                         child: _buildReviewsSection(),
                       ),
@@ -913,7 +1428,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 bottom: 16,
                 left: 16,
                 right: 16,
-                child: Container(
+                child: SizedBox(
                   height: 90, // Increased height for better thumbnail visibility
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
@@ -957,7 +1472,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(14), // Slightly smaller to account for border
-                            child: Container(
+                            child: SizedBox(
                               width: 90,
                               height: 90,
                               child: variation.imageURL != null && variation.imageURL!.isNotEmpty
@@ -1122,14 +1637,14 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                     child: FadeTransition(opacity: animation, child: child),
                   );
                 },
-                child: Container(
+                child: SizedBox(
                   key: ValueKey(imageUrl), // important for detecting image change
                   width: double.infinity,
                   height: double.infinity,
                   child: imageUrl.isNotEmpty
                       ? CachedNetworkImage(
                           imageUrl: imageUrl,
-                          fit: BoxFit.contain, // Changed from cover to contain for better aspect ratio
+                          fit: BoxFit.cover, // Changed from cover to contain for better aspect ratio
                           filterQuality: FilterQuality.high,
                           fadeInDuration: const Duration(milliseconds: 300),
                           fadeOutDuration: const Duration(milliseconds: 100),
@@ -1347,38 +1862,70 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                           ],
                         ),
                       ),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: AppColors.primary,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(12),
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => StorePage(
-                                    sellerId: product.sellerId,
-                                    sellerData: sellerData,
+                      Row(
+                        children: [
+                          // Visit Store button
+                          Container(
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => StorePage(
+                                        sellerId: product.sellerId,
+                                        sellerData: sellerData,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  child: Text(
+                                    'Visit Store',
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      color: AppColors.onPrimary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
-                                ),
-                              );
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              child: Text(
-                                'Visit Store',
-                                style: AppTextStyles.bodySmall.copyWith(
-                                  color: AppColors.onPrimary,
-                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                             ),
                           ),
-                        ),
+                          
+                          const SizedBox(width: 8),
+                          
+                          // Inquire button
+                          Container(
+                            decoration: BoxDecoration(
+                              color: AppColors.secondary,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: () => _inquireAboutProduct(product),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  child: Text(
+                                    'Inquire',
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      color: AppColors.onSecondary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -1468,7 +2015,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(14), // Slightly smaller to account for border
-                      child: Container(
+                      child: SizedBox(
                         width: 70,
                         height: 70,
                         child: variation.imageURL != null && variation.imageURL!.isNotEmpty
@@ -1724,7 +2271,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
             ),
           ),
           // Quantity input field - simplified
-          Container(
+          SizedBox(
             width: 80,
             height: 48,
             child: TextField(

@@ -10,19 +10,17 @@ import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import 'package:dentpal/utils/app_logger.dart';
 
-class EditProductPage extends StatefulWidget {
-  final Product product;
-
-  const EditProductPage({Key? key, required this.product}) : super(key: key);
+class AddProductPage extends StatefulWidget {
+  const AddProductPage({Key? key}) : super(key: key);
 
   @override
-  State<EditProductPage> createState() => _EditProductPageState();
+  State<AddProductPage> createState() => _AddProductPageState();
 }
 
-class _EditProductPageState extends State<EditProductPage> {
+class _AddProductPageState extends State<AddProductPage> {
   final _formKey = GlobalKey<FormState>();
   final ProductFormModel _productForm = ProductFormModel();
-  List<VariationFormModel> _variations = [];
+  final List<VariationFormModel> _variations = [VariationFormModel()];
   final ProductService _productService = ProductService();
   final CategoryService _categoryService = CategoryService();
   final ImageUploadService _imageUploadService = ImageUploadService();
@@ -35,82 +33,21 @@ class _EditProductPageState extends State<EditProductPage> {
   bool _isLoading = false;
   bool _isCategoriesLoading = true;
   String _errorMessage = '';
+  bool _isSeller = false;
+  String _sellerMessage = '';
 
   // Dynamic categories and subcategories
   List<Category> _categories = [];
   List<SubCategory> _subCategories = [];
   String? _selectedCategoryId;
   String? _selectedSubCategoryId;
-  String? _originalCategoryId; // Store original values from product
-  String? _originalSubCategoryId;
 
   @override
   void initState() {
     super.initState();
-    _populateFormWithProduct();
+    _initializeVariationControllers();
+    _checkSellerStatus();
     _loadCategories();
-  }
-
-  // Populate the form with existing product data
-  void _populateFormWithProduct() {
-    final product = widget.product;
-
-    // Set basic product info
-    _nameController.text = product.name;
-    _descriptionController.text = product.description;
-    _productForm.name = product.name;
-    _productForm.description = product.description;
-    _productForm.imageURL = product.imageURL;
-    _productForm.categoryId = product.categoryId;
-    _productForm.subCategoryId = product.subCategoryId;
-
-    // Store the product's category and subcategory IDs but don't set them as selected yet
-    // They will be set when the categories are loaded and validated
-    _originalCategoryId = product.categoryId;
-    _originalSubCategoryId = product.subCategoryId;
-
-    // Populate variations
-    if (product.variations != null && product.variations!.isNotEmpty) {
-      _variations = product.variations!.map((variation) {
-        final variationForm = VariationFormModel();
-        variationForm.name = variation.name;
-        variationForm.price = variation.price;
-        variationForm.stock = variation.stock;
-        variationForm.sku = variation.sku;
-        variationForm.weight = variation.weight;
-        variationForm.imageURL = variation.imageURL;
-        variationForm.dimensions = variation.dimensions ?? {};
-        return variationForm;
-      }).toList();
-
-      // Initialize controllers for existing variations
-      _variationControllers.clear();
-      for (int i = 0; i < _variations.length; i++) {
-        final variation = _variations[i];
-        _variationControllers.add({
-          'name': TextEditingController(text: variation.name),
-          'price': TextEditingController(text: variation.price.toString()),
-          'stock': TextEditingController(text: variation.stock.toString()),
-          'sku': TextEditingController(text: variation.sku),
-          'weight': TextEditingController(
-            text: variation.weight?.toString() ?? '',
-          ),
-          'length': TextEditingController(
-            text: (variation.dimensions?['length']?.toString() ?? '0'),
-          ),
-          'width': TextEditingController(
-            text: (variation.dimensions?['width']?.toString() ?? '0'),
-          ),
-          'height': TextEditingController(
-            text: (variation.dimensions?['height']?.toString() ?? '0'),
-          ),
-        });
-      }
-    } else {
-      // If no variations, create a default one
-      _variations = [VariationFormModel()];
-      _initializeVariationControllers();
-    }
   }
 
   void _loadCategories() async {
@@ -122,27 +59,16 @@ class _EditProductPageState extends State<EditProductPage> {
       final categories = await _categoryService.getCategories();
       AppLogger.d('✅ Loaded ${categories.length} categories');
 
+      for (var cat in categories) {
+        AppLogger.d(
+          '  - Category: ${cat.categoryName} (ID: ${cat.categoryId})',
+        );
+      }
+
       setState(() {
         _categories = categories;
         _isCategoriesLoading = false;
-
-        // Validate and set the selected category from the original product data
-        if (_originalCategoryId != null &&
-            categories.any((cat) => cat.categoryId == _originalCategoryId)) {
-          _selectedCategoryId = _originalCategoryId;
-          _productForm.categoryId = _originalCategoryId!;
-        } else {
-          _selectedCategoryId = null;
-          _productForm.categoryId = '';
-          _selectedSubCategoryId = null;
-          _productForm.subCategoryId = null;
-        }
       });
-
-      // Load subcategories for the selected category if we have one
-      if (_selectedCategoryId != null) {
-        _loadSubCategories(_selectedCategoryId!);
-      }
     } catch (e) {
       AppLogger.d('❌ Error loading categories: $e');
       setState(() {
@@ -159,19 +85,16 @@ class _EditProductPageState extends State<EditProductPage> {
       final subCategories = await _categoryService.getSubCategories(categoryId);
       AppLogger.d('✅ Received ${subCategories.length} subcategories');
 
+      for (var subCat in subCategories) {
+        AppLogger.d(
+          '  - SubCategory: ${subCat.subCategoryName} (ID: ${subCat.subCategoryId}, CategoryID: ${subCat.categoryId})',
+        );
+      }
+
       setState(() {
         _subCategories = subCategories;
-        // Validate and set the selected subcategory from the original product data
-        if (_originalSubCategoryId != null &&
-            subCategories.any(
-              (sub) => sub.subCategoryId == _originalSubCategoryId,
-            )) {
-          _selectedSubCategoryId = _originalSubCategoryId;
-          _productForm.subCategoryId = _originalSubCategoryId!;
-        } else {
-          _selectedSubCategoryId = null;
-          _productForm.subCategoryId = null;
-        }
+        _selectedSubCategoryId = null; // Reset subcategory selection
+        _productForm.subCategoryId = null;
       });
     } catch (e) {
       AppLogger.d('❌ Error loading subcategories: $e');
@@ -207,6 +130,28 @@ class _EditProductPageState extends State<EditProductPage> {
       }
     }
     super.dispose();
+  }
+
+  Future<void> _checkSellerStatus() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final result = await _productService.checkSellerStatus();
+
+      setState(() {
+        _isSeller = result['isSeller'];
+        _sellerMessage = result['message'];
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isSeller = false;
+        _sellerMessage = 'Error: $e';
+        _isLoading = false;
+      });
+    }
   }
 
   void _addVariation() {
@@ -377,17 +322,20 @@ class _EditProductPageState extends State<EditProductPage> {
     }
   }
 
-  Future<void> _submitForm() async {
-    if (!_formKey.currentState!.validate()) {
+  Future<void> _submitForm({bool isDraft = false}) async {
+    if (!isDraft && !_formKey.currentState!.validate()) {
       return;
     }
 
-    // Check if main product image is selected (either existing or new)
-    if (_productForm.imageFile == null && _productForm.imageURL.isEmpty) {
-      setState(() {
-        _errorMessage = 'Please select a product image';
-      });
-      return;
+    // For drafts, we allow saving without validation
+    if (!isDraft) {
+      // Check if main product image is selected only for published products
+      if (_productForm.imageFile == null) {
+        setState(() {
+          _errorMessage = 'Please select a product image';
+        });
+        return;
+      }
     }
 
     // Save all form fields
@@ -422,9 +370,10 @@ class _EditProductPageState extends State<EditProductPage> {
     });
 
     try {
-      String productId = widget.product.productId;
+      // First, upload images to Firebase Storage
+      String productId = DateTime.now().millisecondsSinceEpoch.toString();
 
-      // Handle image uploads for main product image
+      // Upload main product image
       if (_productForm.imageFile != null) {
         final productImageBytes = await _imageUploadService.resizeImage(
           _productForm.imageFile!,
@@ -446,7 +395,7 @@ class _EditProductPageState extends State<EditProductPage> {
         }
       }
 
-      // Handle variation images
+      // Upload variation images
       for (int i = 0; i < _variations.length; i++) {
         if (_variations[i].imageFile != null) {
           final variationImageBytes = await _imageUploadService.resizeImage(
@@ -462,14 +411,15 @@ class _EditProductPageState extends State<EditProductPage> {
             if (variationImageUrl != null) {
               _variations[i].imageURL = variationImageUrl;
             }
+            // Note: Variation images are optional, so we don't throw an error if upload fails
           }
         }
       }
 
-      final result = await _productService.updateProduct(
-        productId,
+      final result = await _productService.addProduct(
         _productForm,
         _variations,
+        isDraft: isDraft,
       );
 
       setState(() {
@@ -478,19 +428,18 @@ class _EditProductPageState extends State<EditProductPage> {
 
       if (result['success']) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                result['message'] ?? 'Product updated successfully',
-              ),
-            ),
-          );
-          // Navigate back to product detail
+          final message = isDraft 
+              ? 'Product saved as draft successfully!' 
+              : 'Product added successfully!';
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(message)));
+          // Navigate back or to product detail
           Navigator.of(context).pop();
         }
       } else {
         setState(() {
-          _errorMessage = result['message'] ?? 'Failed to update product';
+          _errorMessage = result['message'];
         });
       }
     } catch (e) {
@@ -508,7 +457,7 @@ class _EditProductPageState extends State<EditProductPage> {
         backgroundColor: AppColors.background,
         appBar: AppBar(
           title: Text(
-            'Edit Product',
+            'Add Product',
             style: AppTextStyles.titleLarge.copyWith(
               color: AppColors.onSurface,
               fontWeight: FontWeight.w600,
@@ -523,6 +472,86 @@ class _EditProductPageState extends State<EditProductPage> {
         ),
         body: const Center(
           child: CircularProgressIndicator(color: AppColors.primary),
+        ),
+      );
+    }
+
+    if (!_isSeller) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          title: Text(
+            'Add Product',
+            style: AppTextStyles.titleLarge.copyWith(
+              color: AppColors.onSurface,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          backgroundColor: AppColors.surface,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.error_outline,
+                    size: 64,
+                    color: AppColors.error,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  'Seller Access Required',
+                  style: AppTextStyles.headlineMedium.copyWith(
+                    color: AppColors.onSurface,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _sellerMessage,
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+                const SizedBox(height: 32),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: AppColors.onPrimary,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 32,
+                      vertical: 16,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: Text(
+                    'Go Back',
+                    style: AppTextStyles.labelLarge.copyWith(
+                      color: AppColors.onPrimary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       );
     }
@@ -542,7 +571,7 @@ class _EditProductPageState extends State<EditProductPage> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(
-          'Edit Product',
+          'Add Product',
           style: AppTextStyles.titleLarge.copyWith(
             color: AppColors.onSurface,
             fontWeight: FontWeight.w600,
@@ -602,7 +631,7 @@ class _EditProductPageState extends State<EditProductPage> {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: AppColors.onSurface.withValues(alpha: 0.05),
+                        color: Colors.black.withValues(alpha: 0.05),
                         blurRadius: 10,
                         offset: const Offset(0, 2),
                       ),
@@ -625,18 +654,15 @@ class _EditProductPageState extends State<EditProductPage> {
                       filled: true,
                       fillColor: AppColors.surface,
                       contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
+                        horizontal: 16,
                         vertical: 16,
                       ),
                     ),
                     validator: (value) {
                       if (value == null || value.isEmpty) {
-                        return 'Please enter product name';
+                        return 'Name is required';
                       }
                       return null;
-                    },
-                    onSaved: (value) {
-                      _productForm.name = value!;
                     },
                   ),
                 ),
@@ -649,7 +675,7 @@ class _EditProductPageState extends State<EditProductPage> {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: AppColors.onSurface.withValues(alpha: 0.05),
+                        color: Colors.black.withValues(alpha: 0.05),
                         blurRadius: 10,
                         offset: const Offset(0, 2),
                       ),
@@ -672,7 +698,7 @@ class _EditProductPageState extends State<EditProductPage> {
                       filled: true,
                       fillColor: AppColors.surface,
                       contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
+                        horizontal: 16,
                         vertical: 16,
                       ),
                       alignLabelWithHint: true,
@@ -680,12 +706,9 @@ class _EditProductPageState extends State<EditProductPage> {
                     maxLines: 4,
                     validator: (value) {
                       if (value == null || value.isEmpty) {
-                        return 'Please enter product description';
+                        return 'Description is required';
                       }
                       return null;
-                    },
-                    onSaved: (value) {
-                      _productForm.description = value!;
                     },
                   ),
                 ),
@@ -699,7 +722,7 @@ class _EditProductPageState extends State<EditProductPage> {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: AppColors.onSurface.withValues(alpha: 0.05),
+                        color: Colors.black.withValues(alpha: 0.05),
                         blurRadius: 10,
                         offset: const Offset(0, 2),
                       ),
@@ -742,37 +765,31 @@ class _EditProductPageState extends State<EditProductPage> {
                       ),
                       if (_productForm.imageFile != null)
                         Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 20),
-                          height: 200,
+                          height: 250,
+                          width: double.infinity,
+                          margin: const EdgeInsets.symmetric(horizontal: 16),
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(12),
-                            image: DecorationImage(
-                              image: FileImage(_productForm.imageFile!),
-                              fit: BoxFit.cover,
-                            ),
+                            color: AppColors.surfaceVariant,
                           ),
-                        )
-                      else if (_productForm.imageURL.isNotEmpty)
-                        Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 20),
-                          height: 200,
-                          decoration: BoxDecoration(
+                          child: ClipRRect(
                             borderRadius: BorderRadius.circular(12),
-                            image: DecorationImage(
-                              image: NetworkImage(_productForm.imageURL),
+                            child: Image.file(
+                              _productForm.imageFile!,
                               fit: BoxFit.cover,
                             ),
                           ),
                         )
                       else
                         Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 20),
-                          height: 200,
+                          height: 150,
+                          margin: const EdgeInsets.symmetric(horizontal: 16),
                           decoration: BoxDecoration(
+                            color: AppColors.surfaceVariant,
                             borderRadius: BorderRadius.circular(12),
-                            color: AppColors.background,
                             border: Border.all(
-                              color: AppColors.onSurface.withValues(alpha: 0.2),
+                              color: AppColors.primary.withValues(alpha: 0.3),
+                              width: 2,
                               style: BorderStyle.solid,
                             ),
                           ),
@@ -781,15 +798,15 @@ class _EditProductPageState extends State<EditProductPage> {
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Icon(
-                                  Icons.add_photo_alternate,
+                                  Icons.add_a_photo,
                                   size: 48,
-                                  color: AppColors.onSurface.withValues(
-                                    alpha: 0.5,
+                                  color: AppColors.primary.withValues(
+                                    alpha: 0.7,
                                   ),
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  'Tap to add image',
+                                  'No image selected',
                                   style: AppTextStyles.bodyMedium.copyWith(
                                     color: AppColors.onSurface.withValues(
                                       alpha: 0.6,
@@ -801,29 +818,54 @@ class _EditProductPageState extends State<EditProductPage> {
                           ),
                         ),
                       Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Center(
-                          child: OutlinedButton.icon(
-                            onPressed: _pickProductImage,
-                            icon: const Icon(Icons.camera_alt),
-                            label: Text(
-                              (_productForm.imageFile != null ||
-                                      _productForm.imageURL.isNotEmpty)
-                                  ? 'Change Image'
-                                  : 'Add Image',
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: AppColors.primary,
-                              side: const BorderSide(color: AppColors.primary),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 24,
-                                vertical: 12,
+                        padding: const EdgeInsets.all(16.0),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: _pickProductImage,
+                                icon: const Icon(Icons.add_a_photo),
+                                label: Text(
+                                  _productForm.imageFile != null
+                                      ? 'Change Image'
+                                      : 'Add Image',
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor:
+                                      _productForm.imageFile != null
+                                      ? AppColors.secondary
+                                      : AppColors.primary,
+                                  foregroundColor: AppColors.onPrimary,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
                               ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
                             ),
-                          ),
+                            if (_productForm.imageFile != null) ...[
+                              const SizedBox(width: 12),
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: AppColors.error.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: IconButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _productForm.imageFile = null;
+                                    });
+                                  },
+                                  icon: const Icon(
+                                    Icons.delete,
+                                    color: AppColors.error,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                     ],
@@ -838,7 +880,7 @@ class _EditProductPageState extends State<EditProductPage> {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: AppColors.onSurface.withValues(alpha: 0.05),
+                        color: Colors.black.withValues(alpha: 0.05),
                         blurRadius: 10,
                         offset: const Offset(0, 2),
                       ),
@@ -861,7 +903,7 @@ class _EditProductPageState extends State<EditProductPage> {
                       filled: true,
                       fillColor: AppColors.surface,
                       contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
+                        horizontal: 16,
                         vertical: 16,
                       ),
                     ),
@@ -869,19 +911,13 @@ class _EditProductPageState extends State<EditProductPage> {
                       color: AppColors.onSurface,
                     ),
                     dropdownColor: AppColors.surface,
-                    value: _isCategoriesLoading
-                        ? null
-                        : (_categories.any(
-                                (cat) => cat.categoryId == _selectedCategoryId,
-                              )
-                              ? _selectedCategoryId
-                              : null),
+                    initialValue: _selectedCategoryId,
                     items: _isCategoriesLoading
                         ? [
                             DropdownMenuItem(
                               value: null,
                               child: Text(
-                                'Loading categories...',
+                                'Loading...',
                                 style: AppTextStyles.bodyMedium.copyWith(
                                   color: AppColors.onSurface.withValues(
                                     alpha: 0.6,
@@ -890,23 +926,17 @@ class _EditProductPageState extends State<EditProductPage> {
                               ),
                             ),
                           ]
-                        : _categories
-                              .where(
-                                (category) => category.categoryId.isNotEmpty,
-                              )
-                              .fold<Map<String, DropdownMenuItem<String>>>({}, (
-                                Map<String, DropdownMenuItem<String>> map,
-                                category,
-                              ) {
-                                map[category.categoryId] =
-                                    DropdownMenuItem<String>(
-                                      value: category.categoryId,
-                                      child: Text(category.categoryName),
-                                    );
-                                return map;
-                              })
-                              .values
-                              .toList(),
+                        : _categories.map((category) {
+                            return DropdownMenuItem(
+                              value: category.categoryId,
+                              child: Text(
+                                category.categoryName,
+                                style: AppTextStyles.bodyLarge.copyWith(
+                                  color: AppColors.onSurface,
+                                ),
+                              ),
+                            );
+                          }).toList(),
                     onChanged: _isCategoriesLoading
                         ? null
                         : (value) {
@@ -914,9 +944,6 @@ class _EditProductPageState extends State<EditProductPage> {
                             setState(() {
                               _selectedCategoryId = value;
                               _productForm.categoryId = value ?? '';
-                              _selectedSubCategoryId = null;
-                              _productForm.subCategoryId = null;
-                              _subCategories.clear();
                             });
                             if (value != null) {
                               _loadSubCategories(value);
@@ -935,7 +962,7 @@ class _EditProductPageState extends State<EditProductPage> {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: AppColors.onSurface.withValues(alpha: 0.05),
+                        color: Colors.black.withValues(alpha: 0.05),
                         blurRadius: 10,
                         offset: const Offset(0, 2),
                       ),
@@ -958,7 +985,7 @@ class _EditProductPageState extends State<EditProductPage> {
                       filled: true,
                       fillColor: AppColors.surface,
                       contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
+                        horizontal: 16,
                         vertical: 16,
                       ),
                     ),
@@ -966,20 +993,13 @@ class _EditProductPageState extends State<EditProductPage> {
                       color: AppColors.onSurface,
                     ),
                     dropdownColor: AppColors.surface,
-                    value: _selectedCategoryId == null
-                        ? null
-                        : (_subCategories.any(
-                                (sub) =>
-                                    sub.subCategoryId == _selectedSubCategoryId,
-                              )
-                              ? _selectedSubCategoryId
-                              : null),
+                    initialValue: _selectedSubCategoryId,
                     items: _selectedCategoryId == null
                         ? [
                             DropdownMenuItem(
                               value: null,
                               child: Text(
-                                'Select category first',
+                                'Select a category first',
                                 style: AppTextStyles.bodyMedium.copyWith(
                                   color: AppColors.onSurface.withValues(
                                     alpha: 0.6,
@@ -1002,24 +1022,17 @@ class _EditProductPageState extends State<EditProductPage> {
                               ),
                             ),
                           ]
-                        : _subCategories
-                              .where(
-                                (subCategory) =>
-                                    subCategory.subCategoryId.isNotEmpty,
-                              )
-                              .fold<Map<String, DropdownMenuItem<String>>>({}, (
-                                Map<String, DropdownMenuItem<String>> map,
-                                subCategory,
-                              ) {
-                                map[subCategory.subCategoryId] =
-                                    DropdownMenuItem<String>(
-                                      value: subCategory.subCategoryId,
-                                      child: Text(subCategory.subCategoryName),
-                                    );
-                                return map;
-                              })
-                              .values
-                              .toList(),
+                        : _subCategories.map((subCategory) {
+                            return DropdownMenuItem(
+                              value: subCategory.subCategoryId,
+                              child: Text(
+                                subCategory.subCategoryName,
+                                style: AppTextStyles.bodyLarge.copyWith(
+                                  color: AppColors.onSurface,
+                                ),
+                              ),
+                            );
+                          }).toList(),
                     onChanged: _selectedCategoryId == null
                         ? null
                         : (value) {
@@ -1047,7 +1060,7 @@ class _EditProductPageState extends State<EditProductPage> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Add different variations of your product (size, color, model, etc.)',
+                        'Add at least one variation with price, stock, and SKU',
                         style: AppTextStyles.bodyMedium.copyWith(
                           color: AppColors.onSurface.withValues(alpha: 0.7),
                         ),
@@ -1225,27 +1238,6 @@ class _EditProductPageState extends State<EditProductPage> {
                                         ),
                                       ),
                                     )
-                                  else if (_variations[index].imageURL !=
-                                          null &&
-                                      _variations[index].imageURL!.isNotEmpty)
-                                    Container(
-                                      height: 250,
-                                      width: double.infinity,
-                                      margin: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(8),
-                                        color: AppColors.surface,
-                                      ),
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: Image.network(
-                                          _variations[index].imageURL!,
-                                          fit: BoxFit.cover,
-                                        ),
-                                      ),
-                                    )
                                   else
                                     Container(
                                       height: 80,
@@ -1293,14 +1285,8 @@ class _EditProductPageState extends State<EditProductPage> {
                                                 _pickVariationImage(index),
                                             icon: const Icon(Icons.add_a_photo),
                                             label: Text(
-                                              (_variations[index].imageFile !=
-                                                          null ||
-                                                      (_variations[index]
-                                                                  .imageURL !=
-                                                              null &&
-                                                          _variations[index]
-                                                              .imageURL!
-                                                              .isNotEmpty))
+                                              _variations[index].imageFile !=
+                                                      null
                                                   ? 'Change Image'
                                                   : 'Add Image',
                                             ),
@@ -1323,12 +1309,7 @@ class _EditProductPageState extends State<EditProductPage> {
                                           ),
                                         ),
                                         if (_variations[index].imageFile !=
-                                                null ||
-                                            (_variations[index].imageURL !=
-                                                    null &&
-                                                _variations[index]
-                                                    .imageURL!
-                                                    .isNotEmpty)) ...[
+                                            null) ...[
                                           const SizedBox(width: 8),
                                           Container(
                                             decoration: BoxDecoration(
@@ -1342,8 +1323,6 @@ class _EditProductPageState extends State<EditProductPage> {
                                               onPressed: () {
                                                 setState(() {
                                                   _variations[index].imageFile =
-                                                      null;
-                                                  _variations[index].imageURL =
                                                       null;
                                                 });
                                               },
@@ -1850,22 +1829,18 @@ class _EditProductPageState extends State<EditProductPage> {
                     label: Text(
                       'Add Variation',
                       style: AppTextStyles.labelLarge.copyWith(
-                        color: AppColors.primary,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.primary,
-                      side: const BorderSide(
-                        color: AppColors.primary,
-                        width: 2,
-                      ),
+                      side: BorderSide(color: AppColors.primary, width: 2),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(16),
                       ),
                       padding: const EdgeInsets.symmetric(
                         horizontal: 24,
-                        vertical: 12,
+                        vertical: 16,
                       ),
                     ),
                   ),
@@ -1873,44 +1848,93 @@ class _EditProductPageState extends State<EditProductPage> {
 
                 const SizedBox(height: 12),
 
-                // Submit Button
-                Container(
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    gradient: _isLoading ? null : AppColors.primaryGradient,
-                    color: _isLoading ? AppColors.grey300 : null,
-                  ),
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _submitForm,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.transparent,
-                      foregroundColor: AppColors.onPrimary,
-                      shadowColor: Colors.transparent,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 18),
-                    ),
-                    child: _isLoading
-                        ? SizedBox(
-                            height: 24,
-                            width: 24,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                AppColors.onPrimary,
-                              ),
-                            ),
-                          )
-                        : Text(
-                            'Update Product',
-                            style: AppTextStyles.labelLarge.copyWith(
-                              color: AppColors.onPrimary,
-                              fontWeight: FontWeight.w600,
-                            ),
+                // Button Row: Save as Draft and Add Product
+                Row(
+                  children: [
+                    // Save as Draft Button
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: AppColors.primary,
+                            width: 2,
                           ),
-                  ),
+                        ),
+                        child: ElevatedButton(
+                          onPressed: _isLoading ? null : () => _submitForm(isDraft: true),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            foregroundColor: AppColors.primary,
+                            shadowColor: Colors.transparent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 18),
+                          ),
+                          child: _isLoading
+                              ? SizedBox(
+                                  height: 24,
+                                  width: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      AppColors.primary,
+                                    ),
+                                  ),
+                                )
+                              : Text(
+                                  'Save as Draft',
+                                  style: AppTextStyles.labelLarge.copyWith(
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    // Add Product Button
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          gradient: _isLoading ? null : AppColors.primaryGradient,
+                          color: _isLoading ? AppColors.grey300 : null,
+                        ),
+                        child: ElevatedButton(
+                          onPressed: _isLoading ? null : () => _submitForm(isDraft: false),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            foregroundColor: AppColors.onPrimary,
+                            shadowColor: Colors.transparent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 18),
+                          ),
+                          child: _isLoading
+                              ? SizedBox(
+                                  height: 24,
+                                  width: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      AppColors.onPrimary,
+                                    ),
+                                  ),
+                                )
+                              : Text(
+                                  'Add Product',
+                                  style: AppTextStyles.labelLarge.copyWith(
+                                    color: AppColors.onPrimary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 24),
               ],
@@ -1926,7 +1950,7 @@ class _EditProductPageState extends State<EditProductPage> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(
-          'Edit Product',
+          'Add Product',
           style: AppTextStyles.titleLarge.copyWith(
             color: AppColors.onSurface,
             fontWeight: FontWeight.w600,
@@ -2030,18 +2054,18 @@ class _EditProductPageState extends State<EditProductPage> {
                         ),
                         child: _isLoading
                             ? SizedBox(
-                                height: 24,
-                                width: 24,
+                                height: 28,
+                                width: 28,
                                 child: CircularProgressIndicator(
-                                  strokeWidth: 2,
+                                  strokeWidth: 3,
                                   valueColor: AlwaysStoppedAnimation<Color>(
                                     AppColors.onPrimary,
                                   ),
                                 ),
                               )
                             : Text(
-                                'Update Product',
-                                style: AppTextStyles.labelLarge.copyWith(
+                                'Add Product',
+                                style: AppTextStyles.titleMedium.copyWith(
                                   color: AppColors.onPrimary,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -2049,6 +2073,7 @@ class _EditProductPageState extends State<EditProductPage> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 40),
                 ],
               ),
             ),
@@ -2096,9 +2121,7 @@ class _EditProductPageState extends State<EditProductPage> {
             child: Container(
               width: double.infinity,
               decoration: BoxDecoration(
-                color:
-                    (_productForm.imageFile != null ||
-                        _productForm.imageURL.isNotEmpty)
+                color: _productForm.imageFile != null
                     ? Colors.transparent
                     : AppColors.background,
                 borderRadius: BorderRadius.circular(16),
@@ -2114,45 +2137,6 @@ class _EditProductPageState extends State<EditProductPage> {
                       child: Image.file(
                         _productForm.imageFile!,
                         fit: BoxFit.cover,
-                      ),
-                    )
-                  : _productForm.imageURL.isNotEmpty
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: Image.network(
-                        _productForm.imageURL,
-                        fit: BoxFit.cover,
-                        loadingBuilder: (context, child, loadingProgress) {
-                          if (loadingProgress == null) return child;
-                          return Center(
-                            child: CircularProgressIndicator(
-                              color: AppColors.primary,
-                              value: loadingProgress.expectedTotalBytes != null
-                                  ? loadingProgress.cumulativeBytesLoaded /
-                                        loadingProgress.expectedTotalBytes!
-                                  : null,
-                            ),
-                          );
-                        },
-                        errorBuilder: (context, error, stackTrace) {
-                          return Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.error_outline,
-                                size: 48,
-                                color: AppColors.error,
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Failed to load image',
-                                style: AppTextStyles.bodySmall.copyWith(
-                                  color: AppColors.error,
-                                ),
-                              ),
-                            ],
-                          );
-                        },
                       ),
                     )
                   : Column(
@@ -2182,15 +2166,11 @@ class _EditProductPageState extends State<EditProductPage> {
             child: OutlinedButton.icon(
               onPressed: _pickProductImage,
               icon: Icon(
-                (_productForm.imageFile != null ||
-                        _productForm.imageURL.isNotEmpty)
-                    ? Icons.edit
-                    : Icons.add_a_photo,
+                _productForm.imageFile != null ? Icons.edit : Icons.add_a_photo,
                 size: 20,
               ),
               label: Text(
-                (_productForm.imageFile != null ||
-                        _productForm.imageURL.isNotEmpty)
+                _productForm.imageFile != null
                     ? 'Change Image'
                     : 'Browse Files',
                 style: AppTextStyles.labelLarge.copyWith(
@@ -2335,9 +2315,6 @@ class _EditProductPageState extends State<EditProductPage> {
                         setState(() {
                           _selectedCategoryId = value;
                           _productForm.categoryId = value ?? '';
-                          _selectedSubCategoryId = null;
-                          _productForm.subCategoryId = null;
-                          _subCategories.clear();
                         });
                         if (value != null) {
                           _loadSubCategories(value);
@@ -2478,7 +2455,7 @@ class _EditProductPageState extends State<EditProductPage> {
         ),
         style: AppTextStyles.bodyLarge.copyWith(color: AppColors.onSurface),
         dropdownColor: AppColors.surface,
-        value: value,
+        initialValue: value,
         items: items,
         onChanged: onChanged,
         validator: validator,
@@ -2516,7 +2493,7 @@ class _EditProductPageState extends State<EditProductPage> {
                       color: AppColors.onSurface,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 8),
                   Text(
                     'Add at least one variation with price, stock, and SKU',
                     style: AppTextStyles.bodyMedium.copyWith(
@@ -2532,6 +2509,7 @@ class _EditProductPageState extends State<EditProductPage> {
                   'Add Variation',
                   style: AppTextStyles.labelLarge.copyWith(
                     fontWeight: FontWeight.w600,
+                    color: AppColors.surface,
                   ),
                 ),
                 style: ElevatedButton.styleFrom(
@@ -2587,18 +2565,9 @@ class _EditProductPageState extends State<EditProductPage> {
               if (_variations.length > 1)
                 IconButton(
                   onPressed: () => _removeVariation(index),
-                  icon: Icon(
-                    Icons.delete_outline,
-                    color: AppColors.error,
-                    size: 20,
-                  ),
+                  icon: const Icon(Icons.delete_outline),
+                  color: AppColors.error,
                   tooltip: 'Remove Variation',
-                  style: IconButton.styleFrom(
-                    backgroundColor: AppColors.error.withValues(alpha: 0.1),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
                 ),
             ],
           ),
@@ -2611,76 +2580,27 @@ class _EditProductPageState extends State<EditProductPage> {
               Expanded(
                 flex: 2,
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Variation Image
                     Container(
-                      height: 200,
                       width: double.infinity,
+                      height: 150,
                       decoration: BoxDecoration(
-                        color:
-                            (_variations[index].imageFile != null ||
-                                (_variations[index].imageURL?.isNotEmpty ??
-                                    false))
+                        color: _variations[index].imageFile != null
                             ? Colors.transparent
                             : AppColors.surface,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: AppColors.onSurface.withValues(alpha: 0.2),
-                          width: 1,
+                          style: BorderStyle.solid,
                         ),
                       ),
                       child: _variations[index].imageFile != null
                           ? ClipRRect(
-                              borderRadius: BorderRadius.circular(11),
+                              borderRadius: BorderRadius.circular(10),
                               child: Image.file(
                                 _variations[index].imageFile!,
                                 fit: BoxFit.cover,
-                              ),
-                            )
-                          : (_variations[index].imageURL?.isNotEmpty ?? false)
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(11),
-                              child: Image.network(
-                                _variations[index].imageURL!,
-                                fit: BoxFit.cover,
-                                loadingBuilder:
-                                    (context, child, loadingProgress) {
-                                      if (loadingProgress == null) return child;
-                                      return Center(
-                                        child: CircularProgressIndicator(
-                                          color: AppColors.primary,
-                                          value:
-                                              loadingProgress
-                                                      .expectedTotalBytes !=
-                                                  null
-                                              ? loadingProgress
-                                                        .cumulativeBytesLoaded /
-                                                    loadingProgress
-                                                        .expectedTotalBytes!
-                                              : null,
-                                        ),
-                                      );
-                                    },
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        Icons.error_outline,
-                                        size: 32,
-                                        color: AppColors.error,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'Failed to load',
-                                        style: AppTextStyles.bodySmall.copyWith(
-                                          color: AppColors.error,
-                                        ),
-                                      ),
-                                    ],
-                                  );
-                                },
                               ),
                             )
                           : Column(
@@ -2688,7 +2608,7 @@ class _EditProductPageState extends State<EditProductPage> {
                               children: [
                                 Icon(
                                   Icons.image_outlined,
-                                  size: 40,
+                                  size: 32,
                                   color: AppColors.onSurface.withValues(
                                     alpha: 0.4,
                                   ),
@@ -2706,24 +2626,18 @@ class _EditProductPageState extends State<EditProductPage> {
                             ),
                     ),
                     const SizedBox(height: 12),
-
-                    // Upload button
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
                         onPressed: () => _pickVariationImage(index),
                         icon: Icon(
-                          (_variations[index].imageFile != null ||
-                                  (_variations[index].imageURL?.isNotEmpty ??
-                                      false))
+                          _variations[index].imageFile != null
                               ? Icons.edit
-                              : Icons.add_a_photo,
+                              : Icons.photo,
                           size: 16,
                         ),
                         label: Text(
-                          (_variations[index].imageFile != null ||
-                                  (_variations[index].imageURL?.isNotEmpty ??
-                                      false))
+                          _variations[index].imageFile != null
                               ? 'Change'
                               : 'Add Image',
                           style: AppTextStyles.labelMedium,
@@ -2748,7 +2662,7 @@ class _EditProductPageState extends State<EditProductPage> {
                 flex: 3,
                 child: Column(
                   children: [
-                    // Row 1: Name + Price
+                    // First row - Name and Price
                     Row(
                       children: [
                         Expanded(
@@ -2758,7 +2672,7 @@ class _EditProductPageState extends State<EditProductPage> {
                             icon: Icons.label_outline,
                             validator: (value) {
                               if (value == null || value.isEmpty) {
-                                return 'Name is required';
+                                return 'Variation name is required';
                               }
                               return null;
                             },
@@ -2768,14 +2682,14 @@ class _EditProductPageState extends State<EditProductPage> {
                         Expanded(
                           child: _buildWebTextField(
                             controller: controllers['price']!,
-                            label: 'Price *',
-                            icon: Icons.attach_money,
+                            label: 'Price (₱) *',
+                            icon: Icons.money_rounded,
                             validator: (value) {
                               if (value == null || value.isEmpty) {
                                 return 'Price is required';
                               }
                               final price = double.tryParse(value);
-                              if (price == null || price < 0) {
+                              if (price == null || price <= 0) {
                                 return 'Enter a valid price';
                               }
                               return null;
@@ -2786,7 +2700,7 @@ class _EditProductPageState extends State<EditProductPage> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Row 2: Stock + SKU + Weight
+                    // Second row - Stock, SKU and Weight
                     Row(
                       children: [
                         Expanded(
@@ -2810,21 +2724,15 @@ class _EditProductPageState extends State<EditProductPage> {
                         Expanded(
                           child: _buildWebTextField(
                             controller: controllers['sku']!,
-                            label: 'SKU *',
-                            icon: Icons.qr_code,
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return 'SKU is required';
-                              }
-                              return null;
-                            },
+                            label: 'SKU',
+                            icon: Icons.qr_code_outlined,
                           ),
                         ),
                         const SizedBox(width: 16),
                         Expanded(
                           child: _buildWebTextField(
                             controller: controllers['weight']!,
-                            label: 'Weight (kg)',
+                            label: 'Weight (g)',
                             icon: Icons.scale_outlined,
                           ),
                         ),
@@ -2832,7 +2740,7 @@ class _EditProductPageState extends State<EditProductPage> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Row 3: Dimensions
+                    // Third row - Dimensions only
                     Row(
                       children: [
                         Expanded(
@@ -2855,7 +2763,7 @@ class _EditProductPageState extends State<EditProductPage> {
                           child: _buildWebTextField(
                             controller: controllers['height']!,
                             label: 'Height (cm)',
-                            icon: Icons.height,
+                            icon: Icons.straighten,
                           ),
                         ),
                       ],
