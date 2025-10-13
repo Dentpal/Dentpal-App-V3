@@ -7,30 +7,6 @@ import cors = require('cors');
 admin.initializeApp();
 const db = admin.firestore();
 
-// Country name to ISO code mapping
-function getCountryCode(countryName: string): string {
-  const countryMap: { [key: string]: string } = {
-    'philippines': 'PH',
-    'united states': 'US',
-    'united states of america': 'US',
-    'canada': 'CA',
-    'united kingdom': 'GB',
-    'australia': 'AU',
-    'singapore': 'SG',
-    'malaysia': 'MY',
-    'thailand': 'TH',
-    'vietnam': 'VN',
-    'indonesia': 'ID',
-    'japan': 'JP',
-    'south korea': 'KR',
-    'china': 'CN',
-    'india': 'IN',
-  };
-
-  const normalized = countryName.toLowerCase().trim();
-  return countryMap[normalized] || 'PH'; // Default to Philippines
-}
-
 // Configure CORS
 const corsHandler = cors({ 
   origin: true, // Allow all origins for now
@@ -58,11 +34,34 @@ async function verifyAuth(request: functions.Request): Promise<string> {
   }
 }
 
+// Country name to ISO code mapping
+function getCountryCode(countryName: string): string {
+  const countryMap: { [key: string]: string } = {
+    'philippines': 'PH',
+    'united states': 'US',
+    'united states of america': 'US',
+    'canada': 'CA',
+    'united kingdom': 'GB',
+    'australia': 'AU',
+    'singapore': 'SG',
+    'malaysia': 'MY',
+    'thailand': 'TH',
+    'vietnam': 'VN',
+    'indonesia': 'ID',
+    'japan': 'JP',
+    'south korea': 'KR',
+    'china': 'CN',
+    'india': 'IN',
+  };
+
+  const normalized = countryName.toLowerCase().trim();
+  return countryMap[normalized] || 'PH'; // Default to Philippines
+}
+
 // ====================================
-// CHECKOUT FUNCTIONS
+// PAYMONGO CHECKOUT SESSION FUNCTION
 // ====================================
 
-// Create Paymongo Checkout Session (New preferred method)
 export const createCheckoutSession = functions
   .runWith({
     secrets: ['PAYMONGO_SECRET_KEY'],
@@ -113,17 +112,9 @@ export const createCheckoutSession = functions
           return;
         }
 
-        // TODO: Implement checkout session creation logic
-        // This would involve:
-        // 1. Fetch cart items from Firestore
-        // 2. Calculate totals
-        // 3. Create order in Firestore
-        // 4. Create Paymongo checkout session
-        // 5. Return order and checkout session data
-
-        // Get user's cart items with detailed debugging
-        console.log(`🛒 Checking ${cartItemIds.length} cart items for user ${userId}:`, cartItemIds);
+        console.log(`🛒 Creating checkout session for user ${userId} with ${cartItemIds.length} cart items`);
         
+        // Get user's cart items
         const cartPromises = cartItemIds.map(async (cartItemId: string) => {
           const cartDoc = await db
             .collection('User')
@@ -133,22 +124,10 @@ export const createCheckoutSession = functions
             .get();
 
           if (!cartDoc.exists) {
-            console.error(`❌ Cart item ${cartItemId} not found in database`);
-            
-            // Debug: Check what cart items actually exist for this user
-            const allCartItems = await db
-              .collection('User')
-              .doc(userId)
-              .collection('Cart')
-              .get();
-            
-            const existingCartIds = allCartItems.docs.map(doc => doc.id);
-            console.log(`🔍 User ${userId} has ${existingCartIds.length} cart items:`, existingCartIds);
-            
+            console.error(`❌ Cart item ${cartItemId} not found`);
             throw new Error(`Cart item ${cartItemId} not found`);
           }
 
-          console.log(`✅ Found cart item ${cartItemId}:`, cartDoc.data());
           return { id: cartDoc.id, ...cartDoc.data() };
         });
 
@@ -182,13 +161,10 @@ export const createCheckoutSession = functions
 
           const product = productDoc.data();
           
-          // Get variation details from the Variation subcollection
           let variationPrice = 0;
           let variationName = '';
           
           if (cartItem.variationId) {
-            console.log(`🔍 Fetching variation ${cartItem.variationId} for product ${cartItem.productId}`);
-            
             const variationDoc = await db
               .collection('Product')
               .doc(cartItem.productId)
@@ -200,15 +176,14 @@ export const createCheckoutSession = functions
               const variationData = variationDoc.data();
               variationPrice = variationData?.price || 0;
               variationName = variationData?.name || '';
-              console.log(`✅ Found variation: ${variationName} with price: ${variationPrice}`);
             } else {
               console.error(`❌ Variation ${cartItem.variationId} not found for product ${cartItem.productId}`);
-              throw new Error(`Variation ${cartItem.variationId} not found`);
+              // Fallback to base product price instead of throwing error
+              variationPrice = product?.price || 0;
+              variationName = 'Default';
             }
           } else {
-            // Fallback to product base price if no variation
             variationPrice = product?.price || 0;
-            console.log(`📦 Using product base price: ${variationPrice}`);
           }
 
           // Get seller info
@@ -238,7 +213,7 @@ export const createCheckoutSession = functions
         // Get unique seller IDs
         const sellerIds = [...new Set(orderItems.map(item => item.sellerId))];
 
-        // Create order document with new structure
+        // Create order document
         const orderRef = await db.collection('Order').add({
           userId: userId,
           sellerIds: sellerIds,
@@ -317,11 +292,11 @@ export const createCheckoutSession = functions
               success_url: successUrl || `${process.env.APP_URL}/order-success?session_id={CHECKOUT_SESSION_ID}`,
               cancel_url: cancelUrl || `${process.env.APP_URL}/checkout?cancelled=true`,
               metadata: {
-            order_id: orderRef.id,
-            user_id: userId,
-            seller_ids: sellerIds.join(','),
-            cart_item_ids: cartItemIds,
-          },
+                order_id: orderRef.id,
+                user_id: userId,
+                seller_ids: sellerIds.join(','),
+                cart_item_ids: cartItemIds.join(','),
+              },
               billing: {
                 name: userData?.displayName || shippingAddress?.fullName,
                 email: userData?.email,
@@ -365,7 +340,9 @@ export const createCheckoutSession = functions
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
 
-        const responseData = {
+        console.log(`✅ Checkout session created: ${checkoutSession.id} for order: ${orderRef.id}`);
+
+        response.status(200).json({
           success: true,
           data: {
             order_id: orderRef.id,
@@ -373,12 +350,10 @@ export const createCheckoutSession = functions
             total_amount: totalAmount,
             currency: 'PHP',
           },
-        };
-
-        response.status(200).json(responseData);
+        });
 
       } catch (error: any) {
-        console.error('Error creating checkout session:', error);
+        console.error('❌ Error creating checkout session:', error);
         response.status(error.message.includes('authenticated') ? 401 : 500).json({
           success: false,
           error: error.message || 'Failed to create checkout session'
@@ -387,119 +362,126 @@ export const createCheckoutSession = functions
     });
   });
 
-// Create Payment Intent (Legacy method)
-export const createPaymentIntent = functions
+// ====================================
+// PAYMONGO WEBHOOK HANDLER
+// ====================================
+
+export const handlePaymongoWebhook = functions
   .runWith({
-    secrets: ['PAYMONGO_SECRET_KEY'],
-    memory: '512MB',
-    timeoutSeconds: 240
+    memory: '256MB',
+    timeoutSeconds: 60
   })
-  .https.onRequest(async (request, response) => {
-    corsHandler(request, response, async () => {
+  .https.onRequest(async (req, res) => {
+    corsHandler(req, res, async () => {
       try {
-        const userId = await verifyAuth(request);
+        console.log('📬 Received Paymongo webhook:', JSON.stringify(req.body, null, 2));
+
+        const webhookData = req.body?.data;
         
-        // TODO: Implement payment intent creation logic
-        response.status(501).json({
-          success: false,
-          error: 'Payment intent creation not yet implemented'
+        if (!webhookData) {
+          console.error('❌ No webhook data received');
+          res.status(400).json({
+            success: false,
+            error: 'Invalid webhook data'
+          });
+          return;
+        }
+
+        // Extract the actual event data from the webhook
+        const eventType = webhookData.type;
+        const eventAttributes = webhookData.attributes;
+
+        console.log(`📬 Processing webhook event: ${eventType}`);
+        console.log('📬 Event attributes:', JSON.stringify(eventAttributes, null, 2));
+
+        // Handle checkout session events
+        if (eventType === 'event') {
+          // For Paymongo webhooks, the actual event data is nested
+          const actualEventType = eventAttributes.type;
+          const eventData = eventAttributes.data;
+          
+          console.log(`📬 Actual event type: ${actualEventType}`);
+          
+          switch (actualEventType) {
+            case 'checkout_session.payment.paid':
+              await handleCheckoutSessionPaymentPaid(eventData.attributes);
+              break;
+            
+            case 'checkout_session.payment.failed':
+              await handleCheckoutSessionPaymentFailed(eventData.attributes);
+              break;
+              
+            case 'checkout_session':
+              // Handle general checkout session updates - check if payment was completed
+              const sessionData = eventData.attributes;
+              const sessionStatus = sessionData.status;
+              const paymentMethodUsed = sessionData.payment_method_used;
+              
+              console.log(`📬 Checkout session update - Status: ${sessionStatus}, Payment Method: ${paymentMethodUsed}`);
+              
+              // If session has a payment method and is active, treat as payment completed
+              if (sessionStatus === 'active' && paymentMethodUsed) {
+                console.log('🎯 Treating active session with payment method as paid');
+                await handleCheckoutSessionPaymentPaid(sessionData);
+              } else if (sessionStatus === 'expired' || sessionStatus === 'cancelled') {
+                console.log('❌ Session expired or cancelled');
+                await handleCheckoutSessionPaymentFailed(sessionData);
+              }
+              break;
+            
+            default:
+              console.log(`🔄 Unhandled webhook event type: ${actualEventType}`);
+          }
+        } else {
+          // Direct event handling (fallback)
+          switch (eventType) {
+            case 'checkout_session.payment.paid':
+              await handleCheckoutSessionPaymentPaid(eventAttributes);
+              break;
+            
+            case 'checkout_session.payment.failed':
+              await handleCheckoutSessionPaymentFailed(eventAttributes);
+              break;
+            
+            default:
+              console.log(`🔄 Unhandled webhook event type: ${eventType}`);
+          }
+        }
+
+        res.status(200).json({
+          success: true,
+          message: 'Webhook processed successfully'
         });
 
       } catch (error: any) {
-        console.error('Error creating payment intent:', error);
-        response.status(error.message.includes('authenticated') ? 401 : 500).json({
+        console.error('❌ Error handling webhook:', error);
+        res.status(500).json({
           success: false,
-          error: error.message || 'Failed to create payment intent'
+          error: 'Webhook processing failed'
         });
       }
     });
   });
 
-// Paymongo Webhook Handler
-export const handlePaymongoWebhook = functions.https.onRequest(async (req, res) => {
-  corsHandler(req, res, async () => {
-    try {
-      // Log the full webhook payload for debugging
-      console.log('📬 Received Paymongo webhook - Full payload:', JSON.stringify(req.body, null, 2));
-
-      const webhookData = req.body?.data;
-      
-      if (!webhookData) {
-        console.error('❌ No webhook data received');
-        res.status(400).json({
-          success: false,
-          error: 'Invalid webhook data'
-        });
-        return;
-      }
-
-      const eventType = webhookData.type;
-      const eventAttributes = webhookData.attributes;
-
-      console.log(`📬 Processing webhook event: ${eventType}`);
-      console.log(`📬 Event attributes:`, JSON.stringify(eventAttributes, null, 2));
-
-      // Handle different webhook events
-      switch (eventType) {
-        case 'checkout_session.payment.paid':
-          await handlePaymentPaid(eventAttributes);
-          break;
-        
-        case 'checkout_session.payment.failed':
-          await handlePaymentFailed(eventAttributes);
-          break;
-        
-        case 'checkout_session':
-          // Handle checkout session status changes
-          console.log(`📬 Checkout session status: ${eventAttributes.status}`);
-          if (eventAttributes.status === 'paid') {
-            await handlePaymentPaid(eventAttributes);
-          } else if (eventAttributes.status === 'failed' || eventAttributes.status === 'expired') {
-            await handlePaymentFailed(eventAttributes);
-          } else {
-            console.log(`🔄 Unhandled checkout session status: ${eventAttributes.status}`);
-          }
-          break;
-        
-        case 'payment.paid':
-          await handleDirectPaymentPaid(eventAttributes);
-          break;
-        
-        case 'payment.failed':
-          await handleDirectPaymentFailed(eventAttributes);
-          break;
-        
-        default:
-          console.log(`🔄 Unhandled webhook event type: ${eventType}`);
-      }
-
-      res.status(200).json({
-        success: true,
-        message: 'Webhook processed successfully'
-      });
-
-    } catch (error: any) {
-      console.error('❌ Error handling webhook:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Webhook processing failed'
-      });
-    }
-  });
-});
-
-// Helper function to handle successful payments
-async function handlePaymentPaid(eventAttributes: any) {
+// Helper function to handle successful checkout session payments
+async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
   try {
-    const checkoutSessionId = eventAttributes.checkout_session_id;
-    // Get order_id from the checkout session metadata
     const orderId = eventAttributes.metadata?.order_id;
     const userId = eventAttributes.metadata?.user_id;
+    const checkoutSessionId = eventAttributes.id;
+    const paymentMethodUsed = eventAttributes.payment_method_used;
+    const status = eventAttributes.status;
     
-    console.log(`✅ Payment successful for checkout session: ${checkoutSessionId}, order: ${orderId}`);
+    console.log(`✅ Processing payment event - Session: ${checkoutSessionId}, Order: ${orderId}, Status: ${status}, Payment Method: ${paymentMethodUsed}`);
+
+    // Check if payment is actually completed
+    if (status !== 'paid' && status !== 'active') {
+      console.log(`⚠️ Payment not completed yet. Status: ${status}`);
+      return;
+    }
 
     if (!orderId) {
-      console.error('❌ No order ID found in payment webhook');
+      console.error('❌ No order ID found in webhook metadata');
       return;
     }
 
@@ -514,10 +496,11 @@ async function handlePaymentPaid(eventAttributes: any) {
 
     const orderData = orderDoc.data();
 
-    // Determine payment method from checkout session attributes
+    // Map payment method from Paymongo to our format
     let paymentMethod = 'card'; // default
-    if (eventAttributes.payment_method_used) {
-      switch (eventAttributes.payment_method_used.toLowerCase()) {
+    
+    if (paymentMethodUsed) {
+      switch (paymentMethodUsed.toLowerCase()) {
         case 'gcash':
           paymentMethod = 'gcash';
           break;
@@ -530,51 +513,61 @@ async function handlePaymentPaid(eventAttributes: any) {
         case 'billease':
           paymentMethod = 'billEase';
           break;
+        case 'card':
+        case 'credit_card':
+        case 'debit_card':
+          paymentMethod = 'card';
+          break;
         default:
           paymentMethod = 'card';
       }
     }
 
-    // Update order with payment success
-    const transactionId = eventAttributes.payment_intent_id || 
-                         eventAttributes.id || 
-                         checkoutSessionId || 
-                         `cs_${Date.now()}`;
+    // For active status with a payment method, treat as paid
+    const finalStatus = (status === 'active' && paymentMethodUsed) ? 'paid' : status;
+    const orderStatus = finalStatus === 'paid' ? 'confirmed' : 'pending';
+
+    // Get transaction ID
+    const transactionId = eventAttributes.payments?.[0]?.data?.id || 
+                         eventAttributes.payment_intent?.id || 
+                         checkoutSessionId;
 
     await orderRef.update({
-      status: 'confirmed',
-      'paymentInfo.status': 'paid',
+      status: orderStatus,
+      'paymentInfo.status': finalStatus,
       'paymentInfo.method': paymentMethod,
       'paymentInfo.paidAt': admin.firestore.FieldValue.serverTimestamp(),
-      'paymentInfo.transactionId': transactionId,
+      'paymentInfo.paymentIntentId': transactionId,
+      'paymentInfo.checkoutSessionId': checkoutSessionId,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       statusHistory: admin.firestore.FieldValue.arrayUnion({
-        status: 'confirmed',
+        status: orderStatus,
         timestamp: new Date(),
-        note: `Payment confirmed via webhook - Method: ${paymentMethod}`,
+        note: `Payment ${finalStatus} via ${paymentMethod}`,
       }),
     });
 
-    console.log(`✅ Order ${orderId} updated to confirmed status`);
+    console.log(`✅ Order ${orderId} updated to ${orderStatus} status with payment ${finalStatus}`);
 
-    // Clear cart items only after successful payment
-    if (userId && orderData?.metadata?.cart_item_ids) {
-      const cartItemIds = orderData.metadata.cart_item_ids;
-      const removeCartPromises = cartItemIds.map(async (cartItemId: string) => {
+    // Clear cart items after successful payment
+    if (userId && (orderData?.metadata?.cart_item_ids || eventAttributes.metadata?.cart_item_ids)) {
+      const cartItemIds = orderData?.metadata?.cart_item_ids || eventAttributes.metadata?.cart_item_ids;
+      const itemsArray = Array.isArray(cartItemIds) 
+        ? cartItemIds 
+        : cartItemIds.split(',');
+        
+      const removeCartPromises = itemsArray.map(async (cartItemId: string) => {
         await db
           .collection('User')
           .doc(userId)
           .collection('Cart')
-          .doc(cartItemId)
+          .doc(cartItemId.trim())
           .delete();
       });
 
       await Promise.all(removeCartPromises);
-      console.log(`🗑️ Cleared ${cartItemIds.length} cart items for user ${userId}`);
+      console.log(`🗑️ Cleared ${itemsArray.length} cart items for user ${userId}`);
     }
-
-    // Additional logic: Send confirmation email, update inventory, etc.
-    // TODO: Add notification logic here
 
   } catch (error) {
     console.error('❌ Error handling payment paid:', error);
@@ -582,14 +575,13 @@ async function handlePaymentPaid(eventAttributes: any) {
   }
 }
 
-// Helper function to handle failed payments
-async function handlePaymentFailed(eventAttributes: any) {
+// Helper function to handle failed checkout session payments
+async function handleCheckoutSessionPaymentFailed(eventAttributes: any) {
   try {
-    const checkoutSessionId = eventAttributes.checkout_session_id;
-    // Get order_id from the checkout session metadata
     const orderId = eventAttributes.metadata?.order_id;
+    const checkoutSessionId = eventAttributes.id;
     
-    console.log(`❌ Payment failed for checkout session: ${checkoutSessionId}, order: ${orderId}`);
+    console.log(`❌ Payment failed - Session: ${checkoutSessionId}, Order: ${orderId}`);
 
     if (!orderId) {
       console.error('❌ No order ID found in payment failure webhook');
@@ -605,7 +597,6 @@ async function handlePaymentFailed(eventAttributes: any) {
       return;
     }
 
-    // Update order with payment failure
     await orderRef.update({
       status: 'payment_failed',
       'paymentInfo.status': 'failed',
@@ -626,596 +617,3 @@ async function handlePaymentFailed(eventAttributes: any) {
     throw error;
   }
 }
-
-// Helper function to handle direct payment success (for non-checkout session payments)
-async function handleDirectPaymentPaid(eventAttributes: any) {
-  try {
-    console.log(`✅ Direct payment successful: ${eventAttributes.id}`);
-    // Handle direct payment success if needed
-    // This is for payments not created through checkout sessions
-  } catch (error) {
-    console.error('❌ Error handling direct payment paid:', error);
-    throw error;
-  }
-}
-
-// Helper function to handle direct payment failure
-async function handleDirectPaymentFailed(eventAttributes: any) {
-  try {
-    console.log(`❌ Direct payment failed: ${eventAttributes.id}`);
-    // Handle direct payment failure if needed
-  } catch (error) {
-    console.error('❌ Error handling direct payment failed:', error);
-    throw error;
-  }
-}
-
-// ====================================
-// PAYMENT VERIFICATION FUNCTION
-// ====================================
-
-// Verify payment status by querying Paymongo API
-export const verifyPaymentStatus = functions
-  .runWith({
-    secrets: ['PAYMONGO_SECRET_KEY'],
-    memory: '256MB',
-    timeoutSeconds: 60
-  })
-  .https.onRequest(async (request, response) => {
-    corsHandler(request, response, async () => {
-      try {
-        const userId = await verifyAuth(request);
-        const { orderId } = request.body;
-
-        if (!orderId) {
-          response.status(400).json({
-            success: false,
-            error: 'Order ID is required'
-          });
-          return;
-        }
-
-        // Get the order
-        const orderRef = db.collection('Order').doc(orderId);
-        const orderDoc = await orderRef.get();
-
-        if (!orderDoc.exists) {
-          response.status(404).json({
-            success: false,
-            error: 'Order not found'
-          });
-          return;
-        }
-
-        const orderData = orderDoc.data()!;
-
-        // Check if user owns this order
-        if (orderData.userId !== userId) {
-          response.status(403).json({
-            success: false,
-            error: 'Access denied'
-          });
-          return;
-        }
-
-        const checkoutSessionId = orderData.checkoutSessionId;
-        if (!checkoutSessionId) {
-          response.status(400).json({
-            success: false,
-            error: 'No checkout session found for this order'
-          });
-          return;
-        }
-
-        // Query Paymongo API to get checkout session status
-        const PAYMONGO_SECRET_KEY = process.env.PAYMONGO_SECRET_KEY;
-        
-        try {
-          const paymongoResponse = await axios.get(
-            `${PAYMONGO_BASE_URL}/checkout_sessions/${checkoutSessionId}`,
-            {
-              headers: {
-                'Authorization': `Basic ${Buffer.from(PAYMONGO_SECRET_KEY + ':').toString('base64')}`,
-                'Content-Type': 'application/json',
-              },
-            }
-          );
-
-          const checkoutSession = paymongoResponse.data.data;
-          const sessionStatus = checkoutSession.attributes.status;
-          const paymentIntentId = checkoutSession.attributes.payment_intent?.id;
-
-          console.log(`🔍 Checkout session ${checkoutSessionId} status: ${sessionStatus}`);
-
-          // If payment is completed but order is still pending, update it
-          if (sessionStatus === 'paid' && orderData.status === 'pending') {
-            console.log(`🔄 Updating order ${orderId} status from pending to confirmed`);
-            
-            // Determine payment method
-            let paymentMethod = 'card';
-            const payments = checkoutSession.attributes.payments || [];
-            if (payments.length > 0) {
-              const paymentMethodUsed = payments[0].attributes.source?.type;
-              switch (paymentMethodUsed) {
-                case 'gcash':
-                  paymentMethod = 'gcash';
-                  break;
-                case 'grab_pay':
-                  paymentMethod = 'grabpay';
-                  break;
-                case 'paymaya':
-                  paymentMethod = 'paymaya';
-                  break;
-                case 'billease':
-                  paymentMethod = 'billEase';
-                  break;
-                default:
-                  paymentMethod = 'card';
-              }
-            }
-
-            await orderRef.update({
-              status: 'confirmed',
-              'paymentInfo.status': 'paid',
-              'paymentInfo.method': paymentMethod,
-              'paymentInfo.paidAt': admin.firestore.FieldValue.serverTimestamp(),
-              'paymentInfo.transactionId': paymentIntentId,
-              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-              statusHistory: admin.firestore.FieldValue.arrayUnion({
-                status: 'confirmed',
-                timestamp: new Date(),
-                note: `Payment confirmed via manual verification - Method: ${paymentMethod}`,
-              }),
-            });
-
-            // Clear cart items
-            if (orderData.metadata?.cart_item_ids) {
-              const cartItemIds = orderData.metadata.cart_item_ids;
-              const removeCartPromises = cartItemIds.map(async (cartItemId: string) => {
-                await db
-                  .collection('User')
-                  .doc(userId)
-                  .collection('Cart')
-                  .doc(cartItemId)
-                  .delete();
-              });
-
-              await Promise.all(removeCartPromises);
-              console.log(`🗑️ Cleared ${cartItemIds.length} cart items for user ${userId}`);
-            }
-
-            response.json({
-              success: true,
-              message: 'Payment verified and order updated',
-              data: {
-                orderId,
-                status: 'confirmed',
-                paymentStatus: 'paid'
-              }
-            });
-          } else {
-            response.json({
-              success: true,
-              message: 'Payment status verified',
-              data: {
-                orderId,
-                status: orderData.status,
-                paymentStatus: sessionStatus,
-                checkoutSessionStatus: sessionStatus
-              }
-            });
-          }
-
-        } catch (paymongoError: any) {
-          console.error('❌ Error querying Paymongo API:', paymongoError);
-          response.status(500).json({
-            success: false,
-            error: 'Failed to verify payment status with Paymongo'
-          });
-        }
-
-      } catch (error: any) {
-        console.error('❌ Error verifying payment status:', error);
-        response.status(error.message.includes('authenticated') ? 401 : 500).json({
-          success: false,
-          error: error.message || 'Failed to verify payment status'
-        });
-      }
-    });
-  });
-
-// ====================================
-// ORDER MANAGEMENT FUNCTIONS
-// ====================================
-
-// Update order status (for sellers/admins)
-export const updateOrderStatus = functions.https.onRequest(async (request, response) => {
-  corsHandler(request, response, async () => {
-    try {
-      const userId = await verifyAuth(request);
-      const { orderId, status, note } = request.body;
-
-      if (!orderId || !status) {
-        response.status(400).json({
-          success: false,
-          error: 'Order ID and status are required'
-        });
-        return;
-      }
-
-      // Get the order to verify permissions
-      const orderRef = db.collection('Order').doc(orderId);
-      const orderDoc = await orderRef.get();
-
-      if (!orderDoc.exists) {
-        response.status(404).json({
-          success: false,
-          error: 'Order not found'
-        });
-        return;
-      }
-
-      const orderData = orderDoc.data()!;
-
-      // Check if user has permission to update this order
-      // Either the customer or one of the sellers
-      if (orderData.userId !== userId && !orderData.sellerIds.includes(userId)) {
-        response.status(403).json({
-          success: false,
-          error: 'Access denied: Cannot update this order'
-        });
-        return;
-      }
-
-      // Update order status
-      await orderRef.update({
-        status: status,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        statusHistory: admin.firestore.FieldValue.arrayUnion({
-          status: status,
-          timestamp: new Date(),
-          note: note || `Status updated to ${status}`,
-          updatedBy: userId,
-        }),
-      });
-
-      response.json({
-        success: true,
-        message: 'Order status updated successfully'
-      });
-
-    } catch (error: any) {
-      console.error('Error updating order status:', error);
-      response.status(error.message.includes('authenticated') ? 401 : 500).json({
-        success: false,
-        error: error.message || 'Failed to update order status'
-      });
-    }
-  });
-});
-
-// Cancel order (for customers)
-export const cancelOrder = functions.https.onRequest(async (request, response) => {
-  corsHandler(request, response, async () => {
-    try {
-      const userId = await verifyAuth(request);
-      const { orderId, reason } = request.body;
-
-      if (!orderId) {
-        response.status(400).json({
-          success: false,
-          error: 'Order ID is required'
-        });
-        return;
-      }
-
-      // Get the order to verify ownership
-      const orderRef = db.collection('Order').doc(orderId);
-      const orderDoc = await orderRef.get();
-
-      if (!orderDoc.exists) {
-        response.status(404).json({
-          success: false,
-          error: 'Order not found'
-        });
-        return;
-      }
-
-      const orderData = orderDoc.data()!;
-
-      // Check if user owns this order
-      if (orderData.userId !== userId) {
-        response.status(403).json({
-          success: false,
-          error: 'Access denied: Cannot cancel this order'
-        });
-        return;
-      }
-
-      // Check if order can be cancelled (only pending and processing orders)
-      const currentStatus = orderData.status;
-      if (!['pending', 'processing'].includes(currentStatus)) {
-        response.status(400).json({
-          success: false,
-          error: `Cannot cancel order with status: ${currentStatus}`
-        });
-        return;
-      }
-
-      // Update order status to cancelled
-      await orderRef.update({
-        status: 'cancelled',
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        statusHistory: admin.firestore.FieldValue.arrayUnion({
-          status: 'cancelled',
-          timestamp: new Date(),
-          note: reason || 'Order cancelled by customer',
-          updatedBy: userId,
-        }),
-        cancellationInfo: {
-          cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
-          cancelledBy: userId,
-          reason: reason || 'Customer requested cancellation',
-        },
-      });
-
-      // TODO: Handle refund logic if payment was already processed
-      // TODO: Restore inventory if needed
-      // TODO: Send cancellation notifications
-
-      response.json({
-        success: true,
-        message: 'Order cancelled successfully'
-      });
-
-    } catch (error: any) {
-      console.error('Error cancelling order:', error);
-      response.status(error.message.includes('authenticated') ? 401 : 500).json({
-        success: false,
-        error: error.message || 'Failed to cancel order'
-      });
-    }
-  });
-});
-
-// Get all orders for authenticated user
-export const getUserOrders = functions.https.onRequest(async (request, response) => {
-  corsHandler(request, response, async () => {
-    try {
-      const userId = await verifyAuth(request);
-      
-      // Parse query parameters
-      const statusFilter = request.query.status as string;
-      const limit = parseInt(request.query.limit as string || '20');
-      const offset = parseInt(request.query.offset as string || '0');
-
-      let query = db
-        .collection('Order')
-        .where('userId', '==', userId)
-        .orderBy('createdAt', 'desc');
-
-      // Apply status filter if provided
-      if (statusFilter) {
-        query = query.where('status', '==', statusFilter);
-      }
-
-      // Apply pagination
-      const ordersSnapshot = await query.limit(limit).offset(offset).get();
-      
-      const orders = ordersSnapshot.docs.map(doc => ({
-        id: doc.id,
-        data: doc.data(),
-      }));
-
-      response.json({
-        success: true,
-        data: orders
-      });
-
-    } catch (error: any) {
-      console.error('Error getting user orders:', error);
-      response.status(error.message.includes('authenticated') ? 401 : 500).json({
-        success: false,
-        error: error.message || 'Failed to get orders'
-      });
-    }
-  });
-});
-
-// Get specific order by ID
-export const getOrder = functions.https.onRequest(async (request, response) => {
-  corsHandler(request, response, async () => {
-    try {
-      const userId = await verifyAuth(request);
-      
-      // Extract order ID from URL path
-      const urlParts = request.url.split('/');
-      const orderId = urlParts[urlParts.length - 1];
-
-      if (!orderId) {
-        response.status(400).json({
-          success: false,
-          error: 'Order ID is required'
-        });
-        return;
-      }
-
-      const orderDoc = await db.collection('Order').doc(orderId).get();
-      
-      if (!orderDoc.exists) {
-        response.status(404).json({
-          success: false,
-          error: 'Order not found'
-        });
-        return;
-      }
-
-      const orderData = orderDoc.data();
-      
-      // Verify order belongs to the authenticated user
-      if (orderData?.userId !== userId) {
-        response.status(403).json({
-          success: false,
-          error: 'Access denied: Order does not belong to current user'
-        });
-        return;
-      }
-
-      response.json({
-        success: true,
-        data: {
-          id: orderDoc.id,
-          data: orderData
-        }
-      });
-
-    } catch (error: any) {
-      console.error('Error getting order:', error);
-      response.status(error.message.includes('authenticated') ? 401 : 500).json({
-        success: false,
-        error: error.message || 'Failed to get order'
-      });
-    }
-  });
-});
-
-// Get order statistics for authenticated user
-export const getOrderStatistics = functions.https.onRequest(async (request, response) => {
-  corsHandler(request, response, async () => {
-    try {
-      const userId = await verifyAuth(request);
-      
-      // Get all orders for the user
-      const ordersSnapshot = await db
-        .collection('Order')
-        .where('userId', '==', userId)
-        .get();
-
-      let totalOrders = 0;
-      let totalSpent = 0;
-      let deliveredOrders = 0;
-      let pendingOrders = 0;
-      let processingOrders = 0;
-      let shippedOrders = 0;
-      let cancelledOrders = 0;
-
-      ordersSnapshot.docs.forEach(doc => {
-        const orderData = doc.data();
-        totalOrders++;
-        
-        // Add to total spent
-        if (orderData.summary?.total) {
-          totalSpent += orderData.summary.total;
-        }
-
-        // Count by status
-        switch (orderData.status) {
-          case 'delivered':
-            deliveredOrders++;
-            break;
-          case 'pending':
-            pendingOrders++;
-            break;
-          case 'processing':
-            processingOrders++;
-            break;
-          case 'shipped':
-            shippedOrders++;
-            break;
-          case 'cancelled':
-            cancelledOrders++;
-            break;
-        }
-      });
-
-      response.json({
-        success: true,
-        data: {
-          totalOrders,
-          totalSpent,
-          deliveredOrders,
-          pendingOrders,
-          processingOrders,
-          shippedOrders,
-          cancelledOrders
-        }
-      });
-
-    } catch (error: any) {
-      console.error('Error getting order statistics:', error);
-      response.status(error.message.includes('authenticated') ? 401 : 500).json({
-        success: false,
-        error: error.message || 'Failed to get order statistics'
-      });
-    }
-  });
-});
-
-// Search orders by query
-export const searchOrders = functions.https.onRequest(async (request, response) => {
-  corsHandler(request, response, async () => {
-    try {
-      const userId = await verifyAuth(request);
-      
-      const query = request.query.q as string;
-      
-      if (!query || query.trim().length === 0) {
-        response.status(400).json({
-          success: false,
-          error: 'Search query is required'
-        });
-        return;
-      }
-
-      // Get all orders for the user
-      const ordersSnapshot = await db
-        .collection('Order')
-        .where('userId', '==', userId)
-        .orderBy('createdAt', 'desc')
-        .get();
-
-      const searchTerm = query.toLowerCase().trim();
-      const matchingOrders: any[] = [];
-
-      ordersSnapshot.docs.forEach(doc => {
-        const orderData = doc.data();
-        const orderId = doc.id.toLowerCase();
-        
-        // Search in order ID
-        if (orderId.includes(searchTerm)) {
-          matchingOrders.push({
-            id: doc.id,
-            data: orderData
-          });
-          return;
-        }
-
-        // Search in order items (product names)
-        if (orderData.items && Array.isArray(orderData.items)) {
-          const hasMatchingItem = orderData.items.some((item: any) => 
-            item.productName && item.productName.toLowerCase().includes(searchTerm)
-          );
-          
-          if (hasMatchingItem) {
-            matchingOrders.push({
-              id: doc.id,
-              data: orderData
-            });
-          }
-        }
-      });
-
-      response.json({
-        success: true,
-        data: matchingOrders
-      });
-
-    } catch (error: any) {
-      console.error('Error searching orders:', error);
-      response.status(error.message.includes('authenticated') ? 401 : 500).json({
-        success: false,
-        error: error.message || 'Failed to search orders'
-      });
-    }
-  });
-});

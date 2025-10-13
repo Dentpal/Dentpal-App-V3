@@ -657,6 +657,11 @@ class OrderDetailsPage extends StatelessWidget {
         textColor = AppColors.grey600;
         icon = Icons.refresh;
         break;
+      case order_model.OrderStatus.payment_failed:
+        backgroundColor = AppColors.error.withValues(alpha: 0.1);
+        textColor = AppColors.error;
+        icon = Icons.error;
+        break;
     }
 
     return Container(
@@ -711,6 +716,8 @@ class OrderDetailsPage extends StatelessWidget {
         return 'Order Cancelled';
       case order_model.OrderStatus.refunded:
         return 'Order Refunded';
+      case order_model.OrderStatus.payment_failed:
+        return 'Payment Failed';
     }
   }
 
@@ -721,11 +728,11 @@ class OrderDetailsPage extends StatelessWidget {
       case order_model.PaymentMethod.gcash:
         return 'GCash';
       case order_model.PaymentMethod.grabpay:
-        return 'GrabPay';
+        return 'Grab Pay';
       case order_model.PaymentMethod.paymaya:
         return 'PayMaya';
       case order_model.PaymentMethod.billEase:
-        return 'BillEase';
+        return 'BillEase (Buy Now Pay Later)';
     }
   }
 
@@ -760,6 +767,8 @@ class OrderDetailsPage extends StatelessWidget {
         return AppColors.error;
       case order_model.OrderStatus.refunded:
         return AppColors.grey600;
+      case order_model.OrderStatus.payment_failed:
+        return AppColors.error;
     }
   }
 

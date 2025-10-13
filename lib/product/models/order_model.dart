@@ -9,7 +9,8 @@ enum OrderStatus {
   shipped,
   delivered,
   cancelled,
-  refunded
+  refunded,
+  payment_failed
 }
 
 enum PaymentStatus {
@@ -564,6 +565,8 @@ extension OrderStatusExtension on OrderStatus {
         return 'Cancelled';
       case OrderStatus.refunded:
         return 'Refunded';
+      case OrderStatus.payment_failed:
+        return 'Payment Failed';
     }
   }
 
@@ -583,6 +586,8 @@ extension OrderStatusExtension on OrderStatus {
         return 'Order has been cancelled';
       case OrderStatus.refunded:
         return 'Order has been refunded';
+      case OrderStatus.payment_failed:
+        return 'Payment failed for this order';
     }
   }
 }
@@ -612,11 +617,11 @@ extension PaymentMethodExtension on PaymentMethod {
       case PaymentMethod.gcash:
         return 'GCash';
       case PaymentMethod.grabpay:
-        return 'GrabPay';
+        return 'Grab Pay';
       case PaymentMethod.paymaya:
         return 'PayMaya';
       case PaymentMethod.billEase:
-        return 'Buy Now, Pay Later (BillEase)';
+        return 'BillEase (Buy Now Pay Later)';
     }
   }
 
