@@ -8,6 +8,7 @@ import 'shipping_addresses_page.dart';
 import 'orders_page.dart';
 import 'seller_listings_page.dart';
 import 'chats_page.dart';
+import 'settings/settings_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -351,10 +352,9 @@ class _ProfilePageState extends State<ProfilePage> {
                         'Settings',
                         Icons.settings_outlined,
                         () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: const Text('Settings feature coming soon'),
-                              backgroundColor: AppColors.primary,
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => const SettingsPage(),
                             ),
                           );
                         },
