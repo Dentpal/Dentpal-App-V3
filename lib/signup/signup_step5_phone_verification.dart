@@ -261,6 +261,9 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
         'displayName': '${_controller.firstName} ${_controller.lastName}',
         'photoURL': null, // Will be updated when the user adds a profile photo
         'fullName': '${_controller.firstName} ${_controller.lastName}',
+        'firstName': _controller.firstName,
+        'middleName': '', // No middle name in signup flow
+        'lastName': _controller.lastName,
         'contactNumber': _controller.formattedPhoneNumber,
         'email': _controller.email,
         'gender': _controller.gender,

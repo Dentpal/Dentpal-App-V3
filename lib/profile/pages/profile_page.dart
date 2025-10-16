@@ -209,11 +209,18 @@ class _ProfilePageState extends State<ProfilePage> {
                   child: CircleAvatar(
                     radius: 60,
                     backgroundColor: AppColors.primary,
-                    child: Icon(
-                      Icons.person,
-                      size: 60,
-                      color: AppColors.onPrimary,
-                    ),
+                    backgroundImage: userData?['photoURL'] != null && 
+                                   userData!['photoURL'].toString().isNotEmpty
+                        ? NetworkImage(userData['photoURL'])
+                        : null,
+                    child: userData?['photoURL'] == null || 
+                           userData!['photoURL'].toString().isEmpty
+                        ? Icon(
+                            Icons.person,
+                            size: 60,
+                            color: AppColors.onPrimary,
+                          )
+                        : null,
                   ),
                 ),
                 const SizedBox(height: 24),
