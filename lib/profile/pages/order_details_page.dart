@@ -662,6 +662,11 @@ class OrderDetailsPage extends StatelessWidget {
         textColor = AppColors.error;
         icon = Icons.error;
         break;
+      case order_model.OrderStatus.expired:
+        backgroundColor = AppColors.grey400.withValues(alpha: 0.1);
+        textColor = AppColors.grey600;
+        icon = Icons.schedule;
+        break;
     }
 
     return Container(
@@ -718,6 +723,8 @@ class OrderDetailsPage extends StatelessWidget {
         return 'Order Refunded';
       case order_model.OrderStatus.payment_failed:
         return 'Payment Failed';
+      case order_model.OrderStatus.expired:
+        return 'Order Expired';
     }
   }
 
@@ -769,6 +776,8 @@ class OrderDetailsPage extends StatelessWidget {
         return AppColors.grey600;
       case order_model.OrderStatus.payment_failed:
         return AppColors.error;
+      case order_model.OrderStatus.expired:
+        return AppColors.grey600;
     }
   }
 

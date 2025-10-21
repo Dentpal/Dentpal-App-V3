@@ -62,6 +62,7 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
 
   @override
   void initState() {
+    AppLogger.d('🎭 FaceVerificationCamera initState called');
     super.initState();
     _initializeCamera();
     _initializeFaceDetector();
@@ -74,8 +75,10 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
         enableLandmarks: true,
         enableClassification: true,
         enableTracking: true,
-        minFaceSize: 0.1,
-        performanceMode: FaceDetectorMode.accurate,
+        minFaceSize: Platform.isIOS ? 0.05 : 0.1, // Lower threshold for iOS
+        performanceMode: Platform.isIOS 
+            ? FaceDetectorMode.fast  // Use fast mode for better real-time performance on iOS
+            : FaceDetectorMode.accurate,
       ),
     );
   }
@@ -90,7 +93,7 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
 
       _cameraController = CameraController(
         frontCamera,
-        ResolutionPreset.high,
+        Platform.isIOS ? ResolutionPreset.medium : ResolutionPreset.high, // Use medium for better iOS performance
         enableAudio: false,
         imageFormatGroup: Platform.isAndroid
             ? ImageFormatGroup.nv21
@@ -119,7 +122,7 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
   }
 
   void _processCameraImage(CameraImage cameraImage) async {
-    if (_isProcessing || _isCapturing) return;
+    if (_isProcessing || _isCapturing || _captureCountdown > 0) return;
     
     setState(() {
       _isProcessing = true;
@@ -134,6 +137,18 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
           setState(() {
             _faces = faces;
             _faceDetected = faces.isNotEmpty;
+            
+            // Debug logging for iOS
+            if (Platform.isIOS) {
+              AppLogger.d('iOS Face Detection - Faces found: ${faces.length}');
+              if (faces.isNotEmpty) {
+                final face = faces.first;
+                AppLogger.d('Face box: ${face.boundingBox.width}x${face.boundingBox.height}');
+                AppLogger.d('Head angles Y: ${face.headEulerAngleY}, Z: ${face.headEulerAngleZ}');
+                AppLogger.d('Eye probabilities L: ${face.leftEyeOpenProbability}, R: ${face.rightEyeOpenProbability}');
+              }
+            }
+            
             _updateStatusMessage(faces);
           });
         }
@@ -150,6 +165,11 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
   }
 
   void _updateStatusMessage(List<Face> faces) {
+    // Don't update status during capture process
+    if (_isCapturing || _captureCountdown > 0) {
+      return;
+    }
+    
     if (faces.isEmpty) {
       _statusMessage = "No face detected. Move closer to camera.";
       _statusColor = AppColors.warning;
@@ -182,7 +202,9 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
       final face = faces.first;
       
       // Check if face is properly positioned for initial detection
-      if (face.boundingBox.width < 150 || face.boundingBox.height < 150) {
+      // iOS typically reports smaller bounding boxes, so adjust thresholds
+      final minFaceSize = Platform.isIOS ? 100 : 150;
+      if (face.boundingBox.width < minFaceSize || face.boundingBox.height < minFaceSize) {
         _statusMessage = "Move closer to the camera";
         _statusColor = AppColors.warning;
         _resetLivenessCheck();
@@ -220,6 +242,14 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
     _leftTurnFrames = 0;
     _rightTurnFrames = 0;
     _centerFrames = 0;
+    
+    // Reset status message when not capturing
+    if (!_isCapturing && mounted) {
+      setState(() {
+        _statusMessage = "Position your face in the frame";
+        _statusColor = AppColors.grey600;
+      });
+    }
   }
 
   void _performLivenessChecks(Face face) {
@@ -277,22 +307,30 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
 
   void _startCaptureCountdown() {
     _captureCountdown = 3;
-    _statusMessage = "Capturing in $_captureCountdown...";
-    _statusColor = AppColors.primary;
+    
+    setState(() {
+      _statusMessage = "Capturing in $_captureCountdown...";
+      _statusColor = AppColors.primary;
+    });
     
     _captureTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      setState(() {
-        _captureCountdown--;
-        if (_captureCountdown > 0) {
-          _statusMessage = "Capturing in $_captureCountdown...";
-        } else {
-          _statusMessage = "Capturing now!";
-          timer.cancel();
-          _captureTimer = null;
-          // Automatically capture the photo
-          _captureAndVerifyFace();
-        }
-      });
+      if (mounted) {
+        setState(() {
+          _captureCountdown--;
+          if (_captureCountdown > 0) {
+            _statusMessage = "Capturing in $_captureCountdown...";
+          } else {
+            _statusMessage = "Capturing now! Hold still...";
+            timer.cancel();
+            _captureTimer = null;
+            // Automatically capture the photo
+            _captureAndVerifyFace();
+          }
+        });
+      } else {
+        timer.cancel();
+        _captureTimer = null;
+      }
     });
   }
 
@@ -300,19 +338,26 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
     bool eyesClosed = false;
     
     if (face.leftEyeOpenProbability != null && face.rightEyeOpenProbability != null) {
-      eyesClosed = face.leftEyeOpenProbability! < 0.3 && face.rightEyeOpenProbability! < 0.3;
+      // iOS might need more lenient eye closure detection
+      final eyeClosureThreshold = Platform.isIOS ? 0.4 : 0.3;
+      eyesClosed = face.leftEyeOpenProbability! < eyeClosureThreshold && 
+                   face.rightEyeOpenProbability! < eyeClosureThreshold;
     }
     
     if (eyesClosed) {
       _eyesClosedFrames++;
       _eyesOpenFrames = 0;
-      if (_eyesClosedFrames >= 3 && !_eyesClosed) {
+      // Use fewer frames for iOS for more responsive detection
+      final minClosedFrames = Platform.isIOS ? 2 : 3;
+      if (_eyesClosedFrames >= minClosedFrames && !_eyesClosed) {
         _eyesClosed = true;
       }
     } else {
       _eyesOpenFrames++;
       _eyesClosedFrames = 0;
-      if (_eyesOpenFrames >= 3 && _eyesClosed) {
+      // Use fewer frames for iOS for more responsive detection
+      final minOpenFrames = Platform.isIOS ? 2 : 3;
+      if (_eyesOpenFrames >= minOpenFrames && _eyesClosed) {
         _blinkDetected = true;
         _eyesClosed = false;
       }
@@ -320,9 +365,11 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
   }
 
   void _checkForLeftTurn() {
-    if (_currentHeadAngleY > 15) {  // Head turned left (positive angle)
+    // iOS might have different angle conventions, so adjust thresholds
+    final leftThreshold = Platform.isIOS ? 10 : 15;
+    if (_currentHeadAngleY > leftThreshold) {  // Head turned left (positive angle)
       _leftTurnFrames++;
-      if (_leftTurnFrames >= 10) {  // Hold position for 10 frames
+      if (_leftTurnFrames >= (Platform.isIOS ? 8 : 10)) {  // Slightly fewer frames for iOS
         _leftTurnDetected = true;
       }
     } else {
@@ -331,9 +378,11 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
   }
 
   void _checkForCenterPosition() {
-    if (_currentHeadAngleY.abs() < 10) {  // Head in center position
+    // More lenient center position for iOS
+    final centerThreshold = Platform.isIOS ? 15 : 10;
+    if (_currentHeadAngleY.abs() < centerThreshold) {  // Head in center position
       _centerFrames++;
-      if (_centerFrames >= 10) {  // Hold position for 10 frames
+      if (_centerFrames >= (Platform.isIOS ? 8 : 10)) {  // Slightly fewer frames for iOS
         _centerPositionDetected = true;
       }
     } else {
@@ -342,9 +391,11 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
   }
 
   void _checkForRightTurn() {
-    if (_currentHeadAngleY < -15) {  // Head turned right (negative angle)
+    // iOS might have different angle conventions, so adjust thresholds
+    final rightThreshold = Platform.isIOS ? -10 : -15;
+    if (_currentHeadAngleY < rightThreshold) {  // Head turned right (negative angle)
       _rightTurnFrames++;
-      if (_rightTurnFrames >= 10) {  // Hold position for 10 frames
+      if (_rightTurnFrames >= (Platform.isIOS ? 8 : 10)) {  // Slightly fewer frames for iOS
         _rightTurnDetected = true;
       }
     } else {
@@ -358,7 +409,13 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
     
     InputImageRotation? rotation;
     if (Platform.isIOS) {
-      rotation = InputImageRotationValue.fromRawValue(sensorOrientation);
+      // For iOS, we need to handle rotation differently for front camera
+      if (camera.lensDirection == CameraLensDirection.front) {
+        // Front camera on iOS typically needs 270 degree rotation for portrait
+        rotation = InputImageRotation.rotation270deg;
+      } else {
+        rotation = InputImageRotation.rotation90deg;
+      }
     } else if (Platform.isAndroid) {
       var rotationCompensation = _orientations[_cameraController!.value.deviceOrientation];
       if (rotationCompensation == null) return null;
@@ -373,13 +430,29 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
     if (rotation == null) return null;
 
     final format = InputImageFormatValue.fromRawValue(cameraImage.format.raw);
-    if (format == null ||
-        (Platform.isAndroid && format != InputImageFormat.nv21) ||
-        (Platform.isIOS && format != InputImageFormat.bgra8888)) {
+    InputImageFormat finalFormat;
+    
+    if (format == null) {
+      // iOS fallback - assume bgra8888 if format detection fails
+      if (Platform.isIOS) {
+        AppLogger.d('iOS: Format detection failed, using bgra8888 fallback');
+        finalFormat = InputImageFormat.bgra8888;
+      } else {
+        return null;
+      }
+    } else if (Platform.isAndroid && format != InputImageFormat.nv21) {
       return null;
+    } else if (Platform.isIOS && format != InputImageFormat.bgra8888) {
+      AppLogger.d('iOS: Unexpected format ${format.name}, trying to proceed anyway');
+      finalFormat = format;
+    } else {
+      finalFormat = format;
     }
 
-    if (cameraImage.planes.length != 1) return null;
+    // iOS can have multiple planes, Android typically has 1
+    if (Platform.isAndroid && cameraImage.planes.length != 1) return null;
+    if (Platform.isIOS && cameraImage.planes.isEmpty) return null;
+    
     final plane = cameraImage.planes.first;
 
     return InputImage.fromBytes(
@@ -387,7 +460,7 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
       metadata: InputImageMetadata(
         size: Size(cameraImage.width.toDouble(), cameraImage.height.toDouble()),
         rotation: rotation,
-        format: format,
+        format: finalFormat,
         bytesPerRow: plane.bytesPerRow,
       ),
     );
@@ -410,55 +483,92 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
     
     // Check if face meets quality criteria
     final face = _faces.first;
-    if (face.boundingBox.width < 150 || face.boundingBox.height < 150) {
+    final minFaceSize = Platform.isIOS ? 100 : 150;
+    if (face.boundingBox.width < minFaceSize || face.boundingBox.height < minFaceSize) {
       _showSnackBar("Move closer to the camera");
       return;
     }
     
     // Final check: face should be in center position for capture
-    if (face.headEulerAngleY!.abs() > 10 || face.headEulerAngleZ!.abs() > 10) {
+    // More lenient angle checking for iOS
+    final angleThreshold = Platform.isIOS ? 15 : 10;
+    if (face.headEulerAngleY!.abs() > angleThreshold || face.headEulerAngleZ!.abs() > angleThreshold) {
       _showSnackBar("Please look straight at the camera for capture");
       return;
     }
     
-    if ((face.leftEyeOpenProbability != null && face.leftEyeOpenProbability! < 0.7) ||
-        (face.rightEyeOpenProbability != null && face.rightEyeOpenProbability! < 0.7)) {
+    // More lenient eye open probability for iOS
+    final eyeOpenThreshold = Platform.isIOS ? 0.5 : 0.7;
+    if ((face.leftEyeOpenProbability != null && face.leftEyeOpenProbability! < eyeOpenThreshold) ||
+        (face.rightEyeOpenProbability != null && face.rightEyeOpenProbability! < eyeOpenThreshold)) {
       _showSnackBar("Please keep your eyes open for capture");
       return;
     }
 
     setState(() {
       _isCapturing = true;
+      _statusMessage = "Capturing image...";
+      _statusColor = AppColors.primary;
     });
 
     try {
       // Stop the image stream before capturing
       await _cameraController!.stopImageStream();
       
+      // Add a small delay to ensure the stream is fully stopped
+      await Future.delayed(const Duration(milliseconds: 100));
+      
+      // Update status before capture
+      if (mounted) {
+        setState(() {
+          _statusMessage = "Processing...";
+        });
+      }
+      
       // Capture the image
       final XFile imageFile = await _cameraController!.takePicture();
       final Uint8List imageBytes = await imageFile.readAsBytes();
+      
+      // Update status during verification
+      if (mounted) {
+        setState(() {
+          _statusMessage = "Verifying face...";
+        });
+      }
       
       // Verify the captured image has a face
       final inputImage = InputImage.fromFilePath(imageFile.path);
       final capturedFaces = await _faceDetector.processImage(inputImage);
       
       if (capturedFaces.isNotEmpty) {
+        // Success - update status and call callback
+        if (mounted) {
+          setState(() {
+            _statusMessage = "Face verification successful!";
+            _statusColor = AppColors.success;
+          });
+        }
+        
+        // Small delay to show success message
+        await Future.delayed(const Duration(milliseconds: 500));
+        
         widget.onFaceVerified(imageBytes);
       } else {
         _showSnackBar("No face detected in captured image. Please try again.");
-        // Reset liveness check
+        // Reset and restart
         _resetLivenessCheck();
-        // Restart image stream
-        _cameraController!.startImageStream(_processCameraImage);
+        if (mounted && _cameraController != null) {
+          _cameraController!.startImageStream(_processCameraImage);
+        }
       }
     } catch (e) {
       AppLogger.d('Error capturing image: $e');
       _showSnackBar("Failed to capture image. Please try again.");
-      // Reset liveness check
+      // Reset and restart
       _resetLivenessCheck();
-      // Restart image stream
-      _cameraController!.startImageStream(_processCameraImage);
+      if (mounted && _cameraController != null) {
+        _cameraController!.startImageStream(_processCameraImage);
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -705,7 +815,9 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
   @override
   void dispose() {
     _resetTimer?.cancel();
+    _resetTimer = null;
     _captureTimer?.cancel();
+    _captureTimer = null;
     _cameraController?.stopImageStream();
     _cameraController?.dispose();
     _faceDetector.close();

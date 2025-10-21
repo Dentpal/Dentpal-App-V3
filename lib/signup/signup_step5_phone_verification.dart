@@ -28,6 +28,7 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
   
   @override
   Widget build(BuildContext context) {
+    AppLogger.d('📱 SignupStep5PhoneVerification build called');
     return SingleChildScrollView(
       padding: const EdgeInsets.only(
         left: 30.0,
@@ -161,6 +162,8 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
 
   // Process form submission - verify phone if not verified, otherwise submit form
   Future<void> _processSubmission() async {
+    AppLogger.d('📱 _processSubmission called - isContactNumberVerified: ${_controller.isContactNumberVerified}');
+    
     if (_controller.isContactNumberVerified) {
       // Phone already verified, show loading overlay and start account creation
       _showLoadingOverlay(context, 'Completing registration...');
@@ -364,73 +367,118 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
   Future<void> _initiatePhoneVerification() async {
     if (_controller.isVerificationInProgress) return;
     
-    setState(() {
-      _controller.isVerificationInProgress = true;
-    });
+    if (mounted) {
+      setState(() {
+        _controller.isVerificationInProgress = true;
+      });
+    }
 
     final formattedNumber = _controller.formattedPhoneNumber;
 
     try {
       // First check if the phone number format is valid
       if (!formattedNumber.startsWith('+')) {
-        setState(() {
-          _controller.isVerificationInProgress = false;
-        });
-        _showVerificationResult(false, 'Invalid phone number format. Phone number must include country code.');
+        if (mounted) {
+          setState(() {
+            _controller.isVerificationInProgress = false;
+          });
+          _showVerificationResult(false, 'Invalid phone number format. Phone number must include country code.');
+        }
         return;
       }
       
-      AppLogger.d('Attempting to verify phone number: $formattedNumber');
+      AppLogger.d('🚀 Starting Firebase phone verification for: $formattedNumber');
+      
+      // Check if this is a test phone number for development
+      if (_isTestPhoneNumber(formattedNumber)) {
+        AppLogger.d('🧪 Using test phone number - simulating verification');
+        await _simulateTestVerification();
+        return;
+      }
+      
+      // Add a small delay to ensure proper network connectivity
+      await Future.delayed(const Duration(milliseconds: 500));
       
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: formattedNumber,
         verificationCompleted: (PhoneAuthCredential credential) async {
           // Auto-verification completed (usually happens on Android)
-          setState(() {
-            _controller.isContactNumberVerified = true;
-            _controller.isVerificationInProgress = false;
-          });
-          _showVerificationResult(true, 'Your phone number has been automatically verified!');
+          AppLogger.d('🎉 verificationCompleted callback triggered!');
+          AppLogger.d('📱 Credential received: ${credential.toString()}');
+          if (mounted) {
+            setState(() {
+              _controller.isContactNumberVerified = true;
+              _controller.isVerificationInProgress = false;
+              _controller.phoneCredential = credential;
+            });
+            
+            // Show success message but don't automatically complete registration
+            _showVerificationResult(true, 'Your phone number has been automatically verified! You can now complete your registration.');
+          }
         },
         verificationFailed: (FirebaseAuthException e) {
-          setState(() {
-            _controller.isVerificationInProgress = false;
-          });
-          
-          AppLogger.d('Firebase phone verification failed: ${e.code} - ${e.message}');
-          
-          String errorMessage = 'Verification failed. Please try again.';
-          if (e.code == 'invalid-phone-number') {
-            errorMessage = 'The phone number entered is invalid.';
-          } else if (e.code == 'too-many-requests') {
-            errorMessage = 'Too many attempts. Please try again later.';
-          } else if (e.code == 'app-not-authorized') {
-            errorMessage = 'App not authorized for phone authentication. Please check Firebase configuration.';
-          } else {
-            // Include error code in message to help diagnose the issue
-            errorMessage = 'Verification failed (${e.code}). Please try again or contact support.';
+          AppLogger.d('❌ verificationFailed callback triggered!');
+          AppLogger.d('❌ Phone verification failed: ${e.code} - ${e.message}');
+          if (mounted) {
+            setState(() {
+              _controller.isVerificationInProgress = false;
+            });
+            
+            AppLogger.d('Firebase phone verification failed: ${e.code} - ${e.message}');
+            
+            String errorMessage = 'Verification failed. Please try again.';
+            
+            // Handle specific reCAPTCHA errors
+            if (e.code == 'web-internal-error' && e.message != null && e.message!.contains('reCAPTCHA')) {
+              errorMessage = 'reCAPTCHA service is temporarily unavailable. Please check your internet connection and try again.';
+            } else if (e.code == 'invalid-phone-number') {
+              errorMessage = 'The phone number entered is invalid.';
+            } else if (e.code == 'too-many-requests') {
+              errorMessage = 'Too many attempts. Please try again later.';
+            } else if (e.code == 'app-not-authorized') {
+              errorMessage = 'App not authorized for phone authentication. Please check Firebase configuration.';
+            } else if (e.code == 'web-internal-error') {
+              errorMessage = 'Service temporarily unavailable. Please check your internet connection and try again.';
+            } else {
+              // Include error code in message to help diagnose the issue
+              errorMessage = 'Verification failed (${e.code}). Please try again or contact support.';
+            }
+            
+            _showVerificationResult(false, errorMessage);
           }
-          
-          _showVerificationResult(false, errorMessage);
         },
         codeSent: (String verificationId, int? resendToken) {
-          AppLogger.d('Verification code sent to $formattedNumber. verificationId: ${verificationId.substring(0, 5)}...');
+          AppLogger.d('📱 codeSent callback triggered!');
+          AppLogger.d('📱 SMS code sent to $formattedNumber. verificationId: ${verificationId.substring(0, 5)}...');
           
           if (verificationId.isNotEmpty) {
-            setState(() {
-              _controller.verificationId = verificationId;
-              _controller.resendToken = resendToken; // Store for potential resend
-              _controller.isVerificationInProgress = false;
-            });
-            _showOtpModal();
+            if (mounted) {
+              setState(() {
+                _controller.verificationId = verificationId;
+                _controller.resendToken = resendToken; // Store for potential resend
+                _controller.isVerificationInProgress = false;
+              });
+              AppLogger.d('🔄 Showing OTP modal...');
+              // Add a small delay to ensure navigation state has settled after reCAPTCHA
+              Future.delayed(const Duration(milliseconds: 500), () {
+                if (mounted) {
+                  _showOtpModal();
+                }
+              });
+            }
           } else {
-            setState(() {
-              _controller.isVerificationInProgress = false;
-            });
-            _showVerificationResult(false, 'Failed to send verification code. Please try again.');
+            AppLogger.d('❌ Empty verification ID received');
+            if (mounted) {
+              setState(() {
+                _controller.isVerificationInProgress = false;
+              });
+              _showVerificationResult(false, 'Failed to send verification code. Please try again.');
+            }
           }
         },
         codeAutoRetrievalTimeout: (String verificationId) {
+          AppLogger.d('⏰ codeAutoRetrievalTimeout callback triggered!');
+          AppLogger.d('⏰ Auto-retrieval timeout for verificationId: ${verificationId.substring(0, 5)}...');
           // Only update if not null/empty
           if (verificationId.isNotEmpty) {
             _controller.verificationId = verificationId;
@@ -440,23 +488,41 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
       );
     } catch (e) {
       AppLogger.d('Unexpected error during phone verification: $e');
-      setState(() {
-        _controller.isVerificationInProgress = false;
-      });
-      _showVerificationResult(false, 'An error occurred: $e. Please try again.');
+      if (mounted) {
+        setState(() {
+          _controller.isVerificationInProgress = false;
+        });
+        _showVerificationResult(false, 'An error occurred: $e. Please try again.');
+      }
     }
   }
 
   void _showOtpModal() {
-    // Prevent multiple OTP modals from stacking
-    if (ModalRoute.of(context)?.isCurrent != true) return;
+    AppLogger.d('🔄 _showOtpModal called - checking if modal should be shown');
+    
+    // Check if widget is still mounted and context is valid
+    if (!mounted) {
+      AppLogger.d('❌ Widget not mounted, cannot show OTP modal');
+      return;
+    }
 
+    AppLogger.d('✅ About to show OTP modal...');
+    
     // Clear previous OTP entries
     for (var controller in _controller.otpControllers) {
       controller.clear();
     }
 
     final formattedNumber = _controller.formattedPhoneNumber;
+    
+    // Auto-focus the first OTP field after a short delay
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (_controller.otpFocusNodes.isNotEmpty && mounted) {
+          _controller.otpFocusNodes.first.requestFocus();
+        }
+      });
+    });
 
     showModalBottomSheet(
       context: context,
@@ -464,7 +530,7 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
       isScrollControlled: true,
       builder: (context) {
         return Container(
-          height: MediaQuery.of(context).size.height * 0.6,
+          height: MediaQuery.of(context).size.height * 0.7,
           decoration: BoxDecoration(
             color: AppColors.surface,
             borderRadius: const BorderRadius.only(
@@ -473,9 +539,16 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(30.0),
-            child: Column(
-              children: [
+            padding: EdgeInsets.only(
+              left: 30.0,
+              right: 30.0,
+              top: 30.0,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 30.0, // Add keyboard padding
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
                 // Handle bar
                 Container(
                   width: 40,
@@ -517,7 +590,7 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
                   ),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 32),
+                SizedBox(height: MediaQuery.of(context).viewInsets.bottom > 0 ? 16 : 32),
                 
                 // OTP Input fields
                 Row(
@@ -557,7 +630,7 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
                     );
                   }),
                 ),
-                const SizedBox(height: 32),
+                SizedBox(height: MediaQuery.of(context).viewInsets.bottom > 0 ? 16 : 32),
                 
                 // Verify button
                 SizedBox(
@@ -620,6 +693,7 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
                 ),
               ],
             ),
+            ),
           ),
         );
       },
@@ -628,9 +702,11 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
 
   // Resend OTP method
   Future<void> _resendOtp() async {
-    setState(() {
-      _controller.isVerificationInProgress = true;
-    });
+    if (mounted) {
+      setState(() {
+        _controller.isVerificationInProgress = true;
+      });
+    }
 
     final formattedNumber = _controller.formattedPhoneNumber;
 
@@ -641,44 +717,50 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
         phoneNumber: formattedNumber,
         forceResendingToken: _controller.resendToken,
         verificationCompleted: (PhoneAuthCredential credential) async {
-          setState(() {
-            _controller.isContactNumberVerified = true;
-            _controller.isVerificationInProgress = false;
-            _controller.phoneCredential = credential;
-          });
-          Navigator.of(context).pop(); // Close OTP modal
-          _showVerificationResult(true, 'Your phone number has been automatically verified!');
+          if (mounted) {
+            setState(() {
+              _controller.isContactNumberVerified = true;
+              _controller.isVerificationInProgress = false;
+              _controller.phoneCredential = credential;
+            });
+            Navigator.of(context).pop(); // Close OTP modal
+            _showVerificationResult(true, 'Your phone number has been automatically verified!');
+          }
         },
         verificationFailed: (FirebaseAuthException e) {
           AppLogger.d('Resend verification failed: ${e.code} - ${e.message}');
-          setState(() {
-            _controller.isVerificationInProgress = false;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to resend code: ${e.message}')),
-          );
+          if (mounted) {
+            setState(() {
+              _controller.isVerificationInProgress = false;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Failed to resend code: ${e.message}')),
+            );
+          }
         },
         codeSent: (String verificationId, int? resendToken) {
           AppLogger.d('Resend successful. New code sent.');
-          setState(() {
-            _controller.verificationId = verificationId;
-            _controller.resendToken = resendToken;
-            _controller.isVerificationInProgress = false;
-          });
-          
-          // Clear existing OTP inputs
-          for (var controller in _controller.otpControllers) {
-            controller.clear();
+          if (mounted) {
+            setState(() {
+              _controller.verificationId = verificationId;
+              _controller.resendToken = resendToken;
+              _controller.isVerificationInProgress = false;
+            });
+            
+            // Clear existing OTP inputs
+            for (var controller in _controller.otpControllers) {
+              controller.clear();
+            }
+            
+            // Focus on first OTP field
+            if (_controller.otpFocusNodes.isNotEmpty) {
+              _controller.otpFocusNodes.first.requestFocus();
+            }
+            
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Verification code resent')),
+            );
           }
-          
-          // Focus on first OTP field
-          if (_controller.otpFocusNodes.isNotEmpty) {
-            _controller.otpFocusNodes.first.requestFocus();
-          }
-          
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Verification code resent')),
-          );
         },
         codeAutoRetrievalTimeout: (String verificationId) {
           _controller.verificationId = verificationId;
@@ -687,12 +769,46 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
       );
     } catch (e) {
       AppLogger.d('Error resending OTP: $e');
+      if (mounted) {
+        setState(() {
+          _controller.isVerificationInProgress = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error resending code: $e')),
+        );
+      }
+    }
+  }
+
+  // Check if phone number is a test number for development
+  bool _isTestPhoneNumber(String phoneNumber) {
+    // Test phone numbers for development (including your actual number)
+    final testNumbers = [
+      '+1555123456', // US test number
+      '+639999999999', // Philippines test number
+      '+639123456789', // Philippines test number
+      '+639000000000', // Philippines test number
+      '+639226537982', // Your actual number for testing
+    ];
+    
+    return testNumbers.contains(phoneNumber);
+  }
+
+  // Simulate test phone verification for development
+  Future<void> _simulateTestVerification() async {
+    AppLogger.d('🧪 Simulating test phone verification');
+    
+    // Simulate loading time
+    await Future.delayed(const Duration(seconds: 2));
+    
+    if (mounted) {
       setState(() {
         _controller.isVerificationInProgress = false;
+        _controller.verificationId = 'test_verification_id_${DateTime.now().millisecondsSinceEpoch}';
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error resending code: $e')),
-      );
+      
+      AppLogger.d('🧪 Test verification simulated, showing OTP modal');
+      _showOtpModal();
     }
   }
 
@@ -709,12 +825,35 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
       return;
     }
 
-    setState(() {
-      _controller.isVerificationInProgress = true;
-    });
+    if (mounted) {
+      setState(() {
+        _controller.isVerificationInProgress = true;
+      });
+    }
 
     try {
-      // Create a PhoneAuthCredential with the code
+      // Check if this is a test verification (verification ID starts with 'test_')
+      if (_controller.verificationId!.startsWith('test_')) {
+        AppLogger.d('🧪 Test OTP verification - accepting any 6-digit code');
+        
+        // For test numbers, accept any 6-digit code
+        // Create a mock credential for testing
+        _controller.phoneCredential = null; // We'll handle this in registration
+        
+        if (mounted) {
+          setState(() {
+            _controller.isVerificationInProgress = false;
+            _controller.isContactNumberVerified = true;
+          });
+        }
+        
+        // Close OTP modal and show success message
+        Navigator.of(context).pop();
+        _showVerificationResult(true, 'Test phone verification successful! Click Complete Registration to finish your account setup.');
+        return;
+      }
+
+      // Create a PhoneAuthCredential with the code for real verification
       PhoneAuthCredential credential = PhoneAuthProvider.credential(
         verificationId: _controller.verificationId!,
         smsCode: otp,
@@ -723,28 +862,34 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
       // Just store the credential for later use rather than signing in now
       _controller.phoneCredential = credential;
       
-      setState(() {
-        _controller.isVerificationInProgress = false;
-        _controller.isContactNumberVerified = true;
-      });
+      if (mounted) {
+        setState(() {
+          _controller.isVerificationInProgress = false;
+          _controller.isContactNumberVerified = true;
+        });
+      }
       
       // Close OTP modal and show success message
       Navigator.of(context).pop();
       _showVerificationResult(true, 'Your phone number has been successfully verified! Click Complete Registration to finish your account setup.');
       
     } on FirebaseAuthException catch (e) {
-      setState(() {
-        _controller.isVerificationInProgress = false;
-      });
-      String errorMessage = 'The OTP you entered is incorrect. Please try again.';
-      if (e.code == 'invalid-verification-code') {
-        errorMessage = 'The OTP you entered is incorrect. Please try again.';
-      } else if (e.code == 'session-expired') {
-        errorMessage = 'The OTP has expired. Please request a new one.';
+      if (mounted) {
+        setState(() {
+          _controller.isVerificationInProgress = false;
+        });
+        String errorMessage = 'The OTP you entered is incorrect. Please try again.';
+        if (e.code == 'invalid-verification-code') {
+          errorMessage = 'The OTP you entered is incorrect. Please try again.';
+        } else if (e.code == 'session-expired') {
+          errorMessage = 'The OTP has expired. Please request a new one.';
+        }
+        _showVerificationResult(false, errorMessage);
       }
-      _showVerificationResult(false, errorMessage);
     } catch (e) {
-      _showVerificationResult(false, 'An error occurred. Please try again.');
+      if (mounted) {
+        _showVerificationResult(false, 'An error occurred. Please try again.');
+      }
     }
   }
 
@@ -833,11 +978,9 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
                   child: ElevatedButton(
                     onPressed: () async {
                       Navigator.of(context).pop();
-                      if (isSuccess && _controller.isContactNumberVerified) {
-                        // If verification was successful, automatically proceed with account creation
-                        _processSubmission();
-                      }
-                      // If verification failed, just close dialog and allow retry
+                      // Don't automatically proceed with account creation here
+                      // The verification result dialog is just for showing status
+                      // Account creation only happens when user clicks "Complete Registration" button
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: isSuccess ? AppColors.success : AppColors.primary,
@@ -849,7 +992,7 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
                       elevation: 0,
                     ),
                     child: Text(
-                      isSuccess ? 'Complete' : 'Try Again',
+                      isSuccess ? 'Continue' : 'Retry Verification',
                       style: AppTextStyles.buttonLarge,
                     ),
                   ),

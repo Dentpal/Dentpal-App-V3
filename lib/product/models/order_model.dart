@@ -12,7 +12,8 @@ enum OrderStatus {
   delivered,
   cancelled,
   refunded,
-  payment_failed
+  payment_failed,
+  expired
 }
 
 enum PaymentStatus {
@@ -569,6 +570,8 @@ extension OrderStatusExtension on OrderStatus {
         return 'Refunded';
       case OrderStatus.payment_failed:
         return 'Payment Failed';
+      case OrderStatus.expired:
+        return 'Expired';
     }
   }
 
@@ -590,6 +593,8 @@ extension OrderStatusExtension on OrderStatus {
         return 'Order has been refunded';
       case OrderStatus.payment_failed:
         return 'Payment failed for this order';
+      case OrderStatus.expired:
+        return 'Order expired due to payment timeout';
     }
   }
 }

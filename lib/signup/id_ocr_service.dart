@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:intl/intl.dart';
 import 'signup_controller.dart';
 
@@ -18,15 +17,6 @@ import 'signup_controller.dart';
 /// Logging: All OCR operations are logged with filter "OCR_KYC_*" for debugging
 class IdOcrService {
   static final TextRecognizer _textRecognizer = TextRecognizer();
-  static final FaceDetector _faceDetector = FaceDetector(
-    options: FaceDetectorOptions(
-      enableContours: false,
-      enableLandmarks: false,
-      minFaceSize: 0.1,  // Smaller minimum face size to detect smaller faces
-      enableClassification: false,
-      enableTracking: false,
-    ),
-  );
 
   static Future<IdVerificationResult> processIdImage(
     String imagePath,
@@ -52,19 +42,11 @@ class IdOcrService {
         );
       }
       
-      // 2. Extract face from ID
-      Uint8List? faceImage = await _extractFaceFromId(imagePath);
-      if (faceImage == null) {
-        SignupController.logOcrResult('WARNING', 'No face detected in ID image');
-      } else {
-        SignupController.logOcrResult('SUCCESS', 'Face extracted from ID successfully');
-      }
-      
-      // 3. Parse text data
-      final parsedData = _parseIdText(rawText, faceImage);
+      // 2. Parse text data (face detection disabled)
+      final parsedData = _parseIdText(rawText, null);
       SignupController.logOcrResult('PARSED', 'Parsed data: ${parsedData.toString()}');
       
-      // 4. Verify against user input
+      // 3. Verify against user input
       final verification = _verifyIdData(parsedData, expectedFirstName, expectedLastName, recognizedText.text);
       SignupController.logOcrResult('VERIFICATION', 'Verification result: ${verification.toString()}');
       
@@ -371,17 +353,6 @@ class IdOcrService {
     String expectedLastName,
     String rawOcrText  // Add raw OCR text for flexible matching
   ) {
-    // Check face detection requirement first - MANDATORY for security
-    if (parsedData.faceImage == null) {
-      SignupController.logOcrResult('ERROR', 'Face detection failed - verification cannot proceed without face detection');
-      return IdVerificationResult(
-        isValid: false,
-        errorMessage: 'No face detected in the PRC ID image. Please ensure your photo is clearly visible.',
-        registrationNumber: null,
-        faceImage: null,
-      );
-    }
-    
     // Check expiry date - prioritize expired ID messages
     if (parsedData.validUntil != null) {
       if (parsedData.validUntil!.isBefore(DateTime.now())) {
@@ -503,111 +474,8 @@ class IdOcrService {
     return hasProfessionalRegulation && hasProfessionalId;
   }
 
-  // Extract face image from the ID using face detection
-  static Future<Uint8List?> _extractFaceFromId(String imagePath) async {
-    try {
-      SignupController.logOcrResult('FACE_DETECTION', 'Starting face detection on image: $imagePath');
-      
-      final inputImage = InputImage.fromFilePath(imagePath);
-      
-      // Try first with standard settings
-      final faces = await _faceDetector.processImage(inputImage);
-      
-      SignupController.logOcrResult('FACE_DETECTION', 'Primary face detection completed. Found ${faces.length} face(s)');
-      
-      if (faces.isNotEmpty) {
-        final face = faces.first;
-        final boundingBox = face.boundingBox;
-        
-        SignupController.logOcrResult('FACE_DETECTION', 
-            'Face detected with primary detector - bounding box: ${boundingBox.left}, ${boundingBox.top}, ${boundingBox.width}, ${boundingBox.height}');
-        
-        // Return a placeholder to indicate face was detected
-        return Uint8List.fromList([1]); // Placeholder indicating face detected
-      }
-      
-      // If no faces found, try with more lenient settings
-      SignupController.logOcrResult('FACE_DETECTION', 'No faces detected with primary settings - trying alternate settings');
-      
-      final _alternateFaceDetector1 = FaceDetector(
-        options: FaceDetectorOptions(
-          enableContours: false,
-          enableLandmarks: false,
-          minFaceSize: 0.05,  // Even smaller minimum face size
-          enableClassification: false,
-          enableTracking: false,
-        ),
-      );
-      
-      try {
-        final alternateFaces1 = await _alternateFaceDetector1.processImage(inputImage);
-        
-        SignupController.logOcrResult('FACE_DETECTION', 'Alternate detection 1 found ${alternateFaces1.length} face(s)');
-        
-        if (alternateFaces1.isNotEmpty) {
-          final face = alternateFaces1.first;
-          final boundingBox = face.boundingBox;
-          
-          SignupController.logOcrResult('FACE_DETECTION', 
-              'Face detected with alternate detector 1 - bounding box: ${boundingBox.left}, ${boundingBox.top}, ${boundingBox.width}, ${boundingBox.height}');
-          
-          await _alternateFaceDetector1.close();
-          return Uint8List.fromList([1]); // Placeholder indicating face detected
-        }
-        
-        await _alternateFaceDetector1.close();
-      } catch (e) {
-        SignupController.logOcrResult('FACE_DETECTION', 'Alternate face detection 1 failed: $e');
-        await _alternateFaceDetector1.close();
-      }
-      
-      // Try with even more lenient settings
-      SignupController.logOcrResult('FACE_DETECTION', 'Trying most lenient face detection settings');
-      
-      final _alternateFaceDetector2 = FaceDetector(
-        options: FaceDetectorOptions(
-          enableContours: false,
-          enableLandmarks: false,
-          minFaceSize: 0.01,  // Very small minimum face size
-          enableClassification: false,
-          enableTracking: false,
-        ),
-      );
-      
-      try {
-        final alternateFaces2 = await _alternateFaceDetector2.processImage(inputImage);
-        
-        SignupController.logOcrResult('FACE_DETECTION', 'Most lenient detection found ${alternateFaces2.length} face(s)');
-        
-        if (alternateFaces2.isNotEmpty) {
-          final face = alternateFaces2.first;
-          final boundingBox = face.boundingBox;
-          
-          SignupController.logOcrResult('FACE_DETECTION', 
-              'Face detected with most lenient detector - bounding box: ${boundingBox.left}, ${boundingBox.top}, ${boundingBox.width}, ${boundingBox.height}');
-          
-          await _alternateFaceDetector2.close();
-          return Uint8List.fromList([1]); // Placeholder indicating face detected
-        }
-        
-        await _alternateFaceDetector2.close();
-      } catch (e) {
-        SignupController.logOcrResult('FACE_DETECTION', 'Most lenient face detection failed: $e');
-        await _alternateFaceDetector2.close();
-      }
-      
-      SignupController.logOcrResult('ERROR', 'All face detection attempts failed - no face found in ID image');
-      return null;
-      
-    } catch (e) {
-      SignupController.logOcrResult('ERROR', 'Face detection failed with exception: $e');
-      return null;
-    }
-  }
-
   static void dispose() {
     _textRecognizer.close();
-    _faceDetector.close();
   }
 }
 

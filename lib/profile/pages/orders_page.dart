@@ -33,6 +33,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     order_model.OrderStatus.delivered,
     order_model.OrderStatus.cancelled,
     order_model.OrderStatus.payment_failed,
+    order_model.OrderStatus.expired,
   ];
 
   @override
@@ -648,6 +649,11 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
         textColor = AppColors.error;
         icon = Icons.error;
         break;
+      case order_model.OrderStatus.expired:
+        backgroundColor = AppColors.grey400.withValues(alpha: 0.1);
+        textColor = AppColors.grey600;
+        icon = Icons.schedule;
+        break;
     }
 
     return Container(
@@ -691,6 +697,8 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
         return 'Refunded';
       case order_model.OrderStatus.payment_failed:
         return 'Payment Failed';
+      case order_model.OrderStatus.expired:
+        return 'Expired';
     }
   }
 

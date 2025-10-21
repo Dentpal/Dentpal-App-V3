@@ -10,6 +10,12 @@ yarn-error.log*
 # Dependency directories
 node_modules/
 
-# Build outputs
+# Build outputs (ignored)
 lib/
 *.tsbuildinfo
+
+# Explicitly include source files
+!src/
+!src/**/*.ts
+!src/**/*.js
+!src/**/*.json
