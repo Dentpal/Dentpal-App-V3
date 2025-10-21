@@ -8,6 +8,7 @@ import 'shipping_addresses_page.dart';
 import 'orders_page.dart';
 import 'seller_listings_page.dart';
 import 'chats_page.dart';
+import 'settings/settings_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -208,11 +209,18 @@ class _ProfilePageState extends State<ProfilePage> {
                   child: CircleAvatar(
                     radius: 60,
                     backgroundColor: AppColors.primary,
-                    child: Icon(
-                      Icons.person,
-                      size: 60,
-                      color: AppColors.onPrimary,
-                    ),
+                    backgroundImage: userData?['photoURL'] != null && 
+                                   userData!['photoURL'].toString().isNotEmpty
+                        ? NetworkImage(userData['photoURL'])
+                        : null,
+                    child: userData?['photoURL'] == null || 
+                           userData!['photoURL'].toString().isEmpty
+                        ? Icon(
+                            Icons.person,
+                            size: 60,
+                            color: AppColors.onPrimary,
+                          )
+                        : null,
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -351,10 +359,9 @@ class _ProfilePageState extends State<ProfilePage> {
                         'Settings',
                         Icons.settings_outlined,
                         () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: const Text('Settings feature coming soon'),
-                              backgroundColor: AppColors.primary,
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => const SettingsPage(),
                             ),
                           );
                         },
