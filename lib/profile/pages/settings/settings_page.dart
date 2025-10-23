@@ -5,6 +5,7 @@ import '../../../core/app_theme/app_colors.dart';
 import '../../../core/app_theme/app_text_styles.dart';
 import 'change_mobile_page.dart';
 import 'change_password_page.dart';
+import 'edit_profile_page.dart';
 import 'data_privacy_page.dart';
 import 'terms_conditions_page.dart';
 import 'privacy_policy_page.dart';
@@ -135,7 +136,11 @@ class _SettingsPageState extends State<SettingsPage> {
                         'Edit Profile',
                         Icons.person_outline,
                         () {
-                          _showComingSoonSnackBar(context, 'Edit profile');
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => const EditProfilePage(),
+                            ),
+                          );
                         },
                       ),
                       // Show Edit Seller Profile only for sellers
