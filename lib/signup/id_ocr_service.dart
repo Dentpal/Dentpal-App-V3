@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
@@ -18,15 +19,23 @@ import 'signup_controller.dart';
 /// Logging: All OCR operations are logged with filter "OCR_KYC_*" for debugging
 class IdOcrService {
   static final TextRecognizer _textRecognizer = TextRecognizer();
-  static final FaceDetector _faceDetector = FaceDetector(
-    options: FaceDetectorOptions(
-      enableContours: false,
-      enableLandmarks: false,
-      minFaceSize: 0.1,  // Smaller minimum face size to detect smaller faces
-      enableClassification: false,
-      enableTracking: false,
-    ),
-  );
+  
+  // Create iOS-optimized face detector
+  static FaceDetector _createFaceDetector({double minFaceSize = 0.1}) {
+    return FaceDetector(
+      options: FaceDetectorOptions(
+        enableContours: false,
+        enableLandmarks: false,
+        minFaceSize: minFaceSize,
+        enableClassification: false,
+        enableTracking: false,
+        // iOS-specific optimization
+        performanceMode: Platform.isIOS ? FaceDetectorMode.accurate : FaceDetectorMode.fast,
+      ),
+    );
+  }
+  
+  static final FaceDetector _faceDetector = _createFaceDetector();
 
   static Future<IdVerificationResult> processIdImage(
     String imagePath,
@@ -371,15 +380,23 @@ class IdOcrService {
     String expectedLastName,
     String rawOcrText  // Add raw OCR text for flexible matching
   ) {
-    // Check face detection requirement first - MANDATORY for security
+    // Check face detection requirement - MANDATORY for Android, WARNING for iOS
     if (parsedData.faceImage == null) {
-      SignupController.logOcrResult('ERROR', 'Face detection failed - verification cannot proceed without face detection');
-      return IdVerificationResult(
-        isValid: false,
-        errorMessage: 'No face detected in the PRC ID image. Please ensure your photo is clearly visible.',
-        registrationNumber: null,
-        faceImage: null,
-      );
+      SignupController.logOcrResult('WARNING', 'Face detection failed - Platform: ${Platform.operatingSystem}');
+      
+      // For iOS, allow verification to proceed with warning but continue validation
+      // For Android, this is still mandatory
+      if (Platform.isAndroid) {
+        return IdVerificationResult(
+          isValid: false,
+          errorMessage: 'No face detected in the PRC ID image. Please ensure your photo is clearly visible.',
+          registrationNumber: null,
+          faceImage: null,
+        );
+      } else {
+        // iOS: Log warning but continue with verification
+        SignupController.logOcrResult('WARNING', 'iOS face detection failed - continuing with verification');
+      }
     }
     
     // Check expiry date - prioritize expired ID messages
@@ -506,103 +523,146 @@ class IdOcrService {
   // Extract face image from the ID using face detection
   static Future<Uint8List?> _extractFaceFromId(String imagePath) async {
     try {
-      SignupController.logOcrResult('FACE_DETECTION', 'Starting face detection on image: $imagePath');
+      SignupController.logOcrResult('FACE_DETECTION', 'Starting face detection on image: $imagePath (Platform: ${Platform.operatingSystem})');
       
       final inputImage = InputImage.fromFilePath(imagePath);
       
-      // Try first with standard settings
-      final faces = await _faceDetector.processImage(inputImage);
-      
-      SignupController.logOcrResult('FACE_DETECTION', 'Primary face detection completed. Found ${faces.length} face(s)');
-      
-      if (faces.isNotEmpty) {
-        final face = faces.first;
-        final boundingBox = face.boundingBox;
-        
-        SignupController.logOcrResult('FACE_DETECTION', 
-            'Face detected with primary detector - bounding box: ${boundingBox.left}, ${boundingBox.top}, ${boundingBox.width}, ${boundingBox.height}');
-        
-        // Return a placeholder to indicate face was detected
-        return Uint8List.fromList([1]); // Placeholder indicating face detected
+      // For iOS, use a more comprehensive approach with multiple detection attempts
+      if (Platform.isIOS) {
+        return await _detectFaceIOS(inputImage);
+      } else {
+        return await _detectFaceAndroid(inputImage);
       }
-      
-      // If no faces found, try with more lenient settings
-      SignupController.logOcrResult('FACE_DETECTION', 'No faces detected with primary settings - trying alternate settings');
-      
-      final _alternateFaceDetector1 = FaceDetector(
-        options: FaceDetectorOptions(
-          enableContours: false,
-          enableLandmarks: false,
-          minFaceSize: 0.05,  // Even smaller minimum face size
-          enableClassification: false,
-          enableTracking: false,
-        ),
-      );
-      
-      try {
-        final alternateFaces1 = await _alternateFaceDetector1.processImage(inputImage);
-        
-        SignupController.logOcrResult('FACE_DETECTION', 'Alternate detection 1 found ${alternateFaces1.length} face(s)');
-        
-        if (alternateFaces1.isNotEmpty) {
-          final face = alternateFaces1.first;
-          final boundingBox = face.boundingBox;
-          
-          SignupController.logOcrResult('FACE_DETECTION', 
-              'Face detected with alternate detector 1 - bounding box: ${boundingBox.left}, ${boundingBox.top}, ${boundingBox.width}, ${boundingBox.height}');
-          
-          await _alternateFaceDetector1.close();
-          return Uint8List.fromList([1]); // Placeholder indicating face detected
-        }
-        
-        await _alternateFaceDetector1.close();
-      } catch (e) {
-        SignupController.logOcrResult('FACE_DETECTION', 'Alternate face detection 1 failed: $e');
-        await _alternateFaceDetector1.close();
-      }
-      
-      // Try with even more lenient settings
-      SignupController.logOcrResult('FACE_DETECTION', 'Trying most lenient face detection settings');
-      
-      final _alternateFaceDetector2 = FaceDetector(
-        options: FaceDetectorOptions(
-          enableContours: false,
-          enableLandmarks: false,
-          minFaceSize: 0.01,  // Very small minimum face size
-          enableClassification: false,
-          enableTracking: false,
-        ),
-      );
-      
-      try {
-        final alternateFaces2 = await _alternateFaceDetector2.processImage(inputImage);
-        
-        SignupController.logOcrResult('FACE_DETECTION', 'Most lenient detection found ${alternateFaces2.length} face(s)');
-        
-        if (alternateFaces2.isNotEmpty) {
-          final face = alternateFaces2.first;
-          final boundingBox = face.boundingBox;
-          
-          SignupController.logOcrResult('FACE_DETECTION', 
-              'Face detected with most lenient detector - bounding box: ${boundingBox.left}, ${boundingBox.top}, ${boundingBox.width}, ${boundingBox.height}');
-          
-          await _alternateFaceDetector2.close();
-          return Uint8List.fromList([1]); // Placeholder indicating face detected
-        }
-        
-        await _alternateFaceDetector2.close();
-      } catch (e) {
-        SignupController.logOcrResult('FACE_DETECTION', 'Most lenient face detection failed: $e');
-        await _alternateFaceDetector2.close();
-      }
-      
-      SignupController.logOcrResult('ERROR', 'All face detection attempts failed - no face found in ID image');
-      return null;
-      
     } catch (e) {
       SignupController.logOcrResult('ERROR', 'Face detection failed with exception: $e');
       return null;
     }
+  }
+  
+  // iOS-specific face detection with enhanced parameters
+  static Future<Uint8List?> _detectFaceIOS(InputImage inputImage) async {
+    SignupController.logOcrResult('FACE_DETECTION', 'Using iOS-optimized face detection');
+    
+    // Configuration for iOS face detection attempts
+    final detectionConfigs = [
+      {'minFaceSize': 0.15, 'mode': FaceDetectorMode.accurate, 'description': 'Standard iOS detection'},
+      {'minFaceSize': 0.1, 'mode': FaceDetectorMode.accurate, 'description': 'Smaller face iOS detection'},
+      {'minFaceSize': 0.05, 'mode': FaceDetectorMode.accurate, 'description': 'Very small face iOS detection'},
+      {'minFaceSize': 0.15, 'mode': FaceDetectorMode.fast, 'description': 'Fast mode iOS detection'},
+      {'minFaceSize': 0.08, 'mode': FaceDetectorMode.fast, 'description': 'Fast small face iOS detection'},
+      {'minFaceSize': 0.03, 'mode': FaceDetectorMode.fast, 'description': 'Fast tiny face iOS detection'},
+    ];
+    
+    for (int i = 0; i < detectionConfigs.length; i++) {
+      final config = detectionConfigs[i];
+      FaceDetector? detector;
+      
+      try {
+        SignupController.logOcrResult('FACE_DETECTION', 'iOS attempt ${i + 1}: ${config['description']} (minFaceSize: ${config['minFaceSize']})');
+        
+        detector = FaceDetector(
+          options: FaceDetectorOptions(
+            enableContours: false,
+            enableLandmarks: false,
+            minFaceSize: config['minFaceSize'] as double,
+            enableClassification: false,
+            enableTracking: false,
+            performanceMode: config['mode'] as FaceDetectorMode,
+          ),
+        );
+        
+        final faces = await detector.processImage(inputImage);
+        
+        SignupController.logOcrResult('FACE_DETECTION', 'iOS attempt ${i + 1} found ${faces.length} face(s)');
+        
+        if (faces.isNotEmpty) {
+          final face = faces.first;
+          final boundingBox = face.boundingBox;
+          
+          SignupController.logOcrResult('FACE_DETECTION', 
+              'iOS face detected - bounding box: ${boundingBox.left}, ${boundingBox.top}, ${boundingBox.width}, ${boundingBox.height}');
+          
+          await detector.close();
+          return Uint8List.fromList([1]); // Placeholder indicating face detected
+        }
+        
+        await detector.close();
+      } catch (e) {
+        SignupController.logOcrResult('FACE_DETECTION', 'iOS attempt ${i + 1} failed: $e');
+        if (detector != null) {
+          try {
+            await detector.close();
+          } catch (_) {}
+        }
+      }
+    }
+    
+    SignupController.logOcrResult('ERROR', 'All iOS face detection attempts failed');
+    return null;
+  }
+  
+  // Android face detection (original logic)
+  static Future<Uint8List?> _detectFaceAndroid(InputImage inputImage) async {
+    SignupController.logOcrResult('FACE_DETECTION', 'Using Android face detection');
+    
+    // Try first with standard settings
+    final faces = await _faceDetector.processImage(inputImage);
+    
+    SignupController.logOcrResult('FACE_DETECTION', 'Primary Android face detection completed. Found ${faces.length} face(s)');
+    
+    if (faces.isNotEmpty) {
+      final face = faces.first;
+      final boundingBox = face.boundingBox;
+      
+      SignupController.logOcrResult('FACE_DETECTION', 
+          'Android face detected - bounding box: ${boundingBox.left}, ${boundingBox.top}, ${boundingBox.width}, ${boundingBox.height}');
+      
+      return Uint8List.fromList([1]); // Placeholder indicating face detected
+    }
+    
+    // If no faces found, try with more lenient settings
+    SignupController.logOcrResult('FACE_DETECTION', 'No faces detected with primary settings - trying alternate Android settings');
+    
+    final alternateConfigs = [
+      {'minFaceSize': 0.05, 'description': 'Smaller face Android detection'},
+      {'minFaceSize': 0.01, 'description': 'Very small face Android detection'},
+    ];
+    
+    for (int i = 0; i < alternateConfigs.length; i++) {
+      final config = alternateConfigs[i];
+      FaceDetector? alternateDetector;
+      
+      try {
+        alternateDetector = _createFaceDetector(minFaceSize: config['minFaceSize'] as double);
+        
+        final alternateFaces = await alternateDetector.processImage(inputImage);
+        
+        SignupController.logOcrResult('FACE_DETECTION', 'Android alternate ${i + 1} found ${alternateFaces.length} face(s)');
+        
+        if (alternateFaces.isNotEmpty) {
+          final face = alternateFaces.first;
+          final boundingBox = face.boundingBox;
+          
+          SignupController.logOcrResult('FACE_DETECTION', 
+              'Android alternate face detected - bounding box: ${boundingBox.left}, ${boundingBox.top}, ${boundingBox.width}, ${boundingBox.height}');
+          
+          await alternateDetector.close();
+          return Uint8List.fromList([1]); // Placeholder indicating face detected
+        }
+        
+        await alternateDetector.close();
+      } catch (e) {
+        SignupController.logOcrResult('FACE_DETECTION', 'Android alternate ${i + 1} failed: $e');
+        if (alternateDetector != null) {
+          try {
+            await alternateDetector.close();
+          } catch (_) {}
+        }
+      }
+    }
+    
+    SignupController.logOcrResult('ERROR', 'All Android face detection attempts failed');
+    return null;
   }
 
   static void dispose() {

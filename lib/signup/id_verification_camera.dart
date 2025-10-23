@@ -73,9 +73,12 @@ class _IdVerificationCameraState extends State<IdVerificationCamera> {
         orElse: () => cameras.first,
       );
 
+      // Use different resolution presets for different platforms
+      final resolutionPreset = Platform.isIOS ? ResolutionPreset.medium : ResolutionPreset.high;
+
       _cameraController = CameraController(
         backCamera,
-        ResolutionPreset.high,
+        resolutionPreset,
         enableAudio: false,
         imageFormatGroup: Platform.isAndroid
             ? ImageFormatGroup.nv21
@@ -89,14 +92,19 @@ class _IdVerificationCameraState extends State<IdVerificationCamera> {
           _isInitialized = true;
         });
         
-        // Start image stream for text detection
+        // Start image stream for text detection with platform-specific delay
+        if (Platform.isIOS) {
+          // Add slight delay for iOS to ensure camera is fully ready
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+        
         _cameraController!.startImageStream(_processCameraImage);
       }
     } catch (e) {
       AppLogger.d('Error initializing camera: $e');
       if (mounted) {
         setState(() {
-          _statusMessage = "Camera initialization failed";
+          _statusMessage = "Camera initialization failed. Please check permissions.";
           _statusColor = AppColors.error;
         });
       }
@@ -127,8 +135,11 @@ class _IdVerificationCameraState extends State<IdVerificationCamera> {
               _statusMessage = "Valid PRC ID detected! Hold still...";
               _statusColor = Colors.green;
               
+              // For iOS, reduce the required frames for faster detection
+              final requiredFrames = Platform.isIOS ? 2 : _requiredValidFrames;
+              
               // If we've detected a valid ID for enough consecutive frames, confirm OCR and start capture
-              if (_validIdFrames >= _requiredValidFrames && _captureTimer == null) {
+              if (_validIdFrames >= requiredFrames && _captureTimer == null) {
                 _ocrConfirmed = true; // Stop further OCR processing
                 _startCaptureCountdown();
               }

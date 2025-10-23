@@ -50,13 +50,14 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
-	<!-- Permissions for image picker -->
+	<!-- Permissions for camera and photo library -->
 	<key>NSCameraUsageDescription</key>
-	<string>This app needs access to camera to take product photos</string>
+	<string>DentPal requires access to your camera to take profile photos, capture ID images, verify your identity, and photograph products.</string>
+
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>This app needs access to photo library to select product images</string>
-	
+	<string>DentPal requires access to your photo library to upload profile photos, ID images, and product photos for verification purposes.</string>
 	<!-- Permissions for location services -->
+	
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>This app needs access to your location to help set your delivery address accurately</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
@@ -85,7 +86,9 @@
 			</array>
 		</dict>
 	</array>
-	<key>NSCameraUsageDescription</key>
-	<string>This app needs access to the camera for face verification during signup.</string>
+	
+	<!-- ML Kit configuration for better performance -->
+	<key>FIREBASE_ML_VISION_FACE_MODEL</key>
+	<string>1</string>
 </dict>
 </plist>

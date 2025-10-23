@@ -7,8 +7,6 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:html' as html;
-import 'dart:ui_web' as ui_web;
 import '../../../core/app_theme/app_colors.dart';
 import '../../../core/app_theme/app_text_styles.dart';
 import '../../../utils/app_logger.dart';
@@ -287,17 +285,19 @@ class _EditProfilePageState extends State<EditProfilePage> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ListTile(
-                leading: Icon(Icons.camera_alt_outlined, color: AppColors.primary),
-                title: Text('Take Photo', style: AppTextStyles.bodyLarge),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _takePhoto();
-                },
-              ),
+              // Show camera option only for mobile platforms
+              if (!kIsWeb)
+                ListTile(
+                  leading: Icon(Icons.camera_alt_outlined, color: AppColors.primary),
+                  title: Text('Take Photo', style: AppTextStyles.bodyLarge),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _takePhoto();
+                  },
+                ),
               ListTile(
                 leading: Icon(Icons.photo_library_outlined, color: AppColors.primary),
-                title: Text('Choose from Gallery', style: AppTextStyles.bodyLarge),
+                title: Text(kIsWeb ? 'Upload Photo' : 'Choose from Gallery', style: AppTextStyles.bodyLarge),
                 onTap: () {
                   Navigator.of(context).pop();
                   _pickImageFromGallery();
@@ -321,72 +321,93 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   Future<void> _takePhoto() async {
     try {
+      // Camera functionality only available on mobile platforms
       if (kIsWeb) {
-        // For web, show camera dialog
-        await _showWebCameraDialog();
-      } else {
-        // For mobile, request camera permission and use camera directly
-        final status = await Permission.camera.request();
-        if (!status.isGranted) {
-          _showErrorSnackBar('Camera permission is required to take photos');
+        _showErrorSnackBar('Camera is not available on web. Please use the upload option.');
+        return;
+      }
+
+      final ImagePicker picker = ImagePicker();
+      
+      // For iOS, let ImagePicker handle the permission request automatically
+      // For Android, we can still do permission checks if needed
+      if (Theme.of(context).platform == TargetPlatform.android) {
+        // Check current permission status for Android
+        PermissionStatus cameraStatus = await Permission.camera.status;
+        
+        if (cameraStatus.isDenied) {
+          // Request permission if not granted
+          cameraStatus = await Permission.camera.request();
+        }
+        
+        if (cameraStatus.isPermanentlyDenied) {
+          // Show dialog to go to settings if permanently denied
+          await _showPermissionDeniedDialog();
           return;
         }
-
-        final ImagePicker picker = ImagePicker();
-        final XFile? image = await picker.pickImage(
-          source: ImageSource.camera,
-          maxWidth: 1080,
-          maxHeight: 1080,
-          imageQuality: 85,
-        );
-
-        if (image != null) {
-          await _processSelectedImage(image);
+        
+        if (!cameraStatus.isGranted) {
+          _showErrorSnackBar('Camera permission is required to take photos. Please grant permission in your device settings.');
+          return;
         }
+      }
+
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1080,
+        maxHeight: 1080,
+        imageQuality: 85,
+      );
+
+      if (image != null) {
+        await _processSelectedImage(image);
       }
     } catch (e) {
       AppLogger.d('Error taking photo: $e');
-      _showErrorSnackBar('Failed to take photo');
+      
+      // Check if it's a permission error and handle accordingly
+      if (e.toString().contains('camera_access_denied') || 
+          e.toString().contains('Permission denied') ||
+          e.toString().contains('NotAllowedError')) {
+        // For iOS, show dialog to go to settings after permission denial
+        if (Theme.of(context).platform == TargetPlatform.iOS) {
+          await _showPermissionDeniedDialog();
+        } else {
+          _showErrorSnackBar('Camera permission is required to take photos. Please grant permission in your device settings.');
+        }
+      } else {
+        _showErrorSnackBar('Failed to take photo. Please try again.');
+      }
     }
   }
 
-  Future<void> _showWebCameraDialog() async {
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          child: Container(
-            width: 500,
-            height: 600,
-            padding: const EdgeInsets.all(20),
-            child: _WebCameraWidget(
-              onPhotoTaken: (Uint8List imageBytes) async {
-                Navigator.of(context).pop();
-                
-                setState(() {
-                  _selectedImageBytes = imageBytes;
-                  _selectedImageFile = null;
-                  _hasNewPhoto = true;
-                });
-                
-                _showSuccessSnackBar('Photo captured successfully');
-              },
-              onCancel: () {
-                Navigator.of(context).pop();
-              },
-            ),
-          ),
-        );
-      },
-    );
-  }
+
 
   Future<void> _pickImageFromGallery() async {
     try {
       final ImagePicker picker = ImagePicker();
+      
+      // For iOS, let ImagePicker handle the permission request automatically
+      // For Android, we can still do permission checks if needed
+      if (!kIsWeb && Theme.of(context).platform == TargetPlatform.android) {
+        // Check photo library permission for Android if needed
+        PermissionStatus photosStatus = await Permission.photos.status;
+        
+        if (photosStatus.isDenied) {
+          photosStatus = await Permission.photos.request();
+        }
+        
+        if (photosStatus.isPermanentlyDenied) {
+          await _showPhotoLibraryPermissionDeniedDialog();
+          return;
+        }
+        
+        if (!photosStatus.isGranted) {
+          _showErrorSnackBar('Photo library access is required to select images. Please grant permission in your device settings.');
+          return;
+        }
+      }
+
       final XFile? image = await picker.pickImage(
         source: ImageSource.gallery,
         maxWidth: 1080,
@@ -399,7 +420,20 @@ class _EditProfilePageState extends State<EditProfilePage> {
       }
     } catch (e) {
       AppLogger.d('Error picking image: $e');
-      _showErrorSnackBar('Failed to select image');
+      
+      // Check if it's a permission error and handle accordingly
+      if (e.toString().contains('photo_access_denied') || 
+          e.toString().contains('Permission denied') ||
+          e.toString().contains('NotAllowedError')) {
+        // For iOS, show dialog to go to settings after permission denial
+        if (Theme.of(context).platform == TargetPlatform.iOS) {
+          await _showPhotoLibraryPermissionDeniedDialog();
+        } else {
+          _showErrorSnackBar('Photo library access is required to select images. Please grant permission in your device settings.');
+        }
+      } else {
+        _showErrorSnackBar('Failed to select image. Please try again.');
+      }
     }
   }
 
@@ -800,6 +834,156 @@ class _EditProfilePageState extends State<EditProfilePage> {
     }
   }
 
+  Future<void> _showPermissionDeniedDialog() async {
+    await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.camera_alt_outlined,
+                  color: AppColors.warning,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Camera Permission Required',
+                style: AppTextStyles.titleMedium.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Camera access has been permanently denied. To take photos, please:',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.onSurface.withValues(alpha: 0.8),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '1. Go to device Settings\n2. Find DentPal app\n3. Enable Camera permission',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.onSurface.withValues(alpha: 0.7),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.onSurface.withValues(alpha: 0.6),
+              ),
+              child: Text('Cancel', style: AppTextStyles.buttonMedium),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                openAppSettings();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.onPrimary,
+                elevation: 0,
+              ),
+              child: Text('Open Settings', style: AppTextStyles.buttonMedium),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _showPhotoLibraryPermissionDeniedDialog() async {
+    await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.photo_library_outlined,
+                  color: AppColors.warning,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Photo Access Required',
+                style: AppTextStyles.titleMedium.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Photo library access has been permanently denied. To select photos, please:',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.onSurface.withValues(alpha: 0.8),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '1. Go to device Settings\n2. Find DentPal app\n3. Enable Photos permission',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.onSurface.withValues(alpha: 0.7),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.onSurface.withValues(alpha: 0.6),
+              ),
+              child: Text('Cancel', style: AppTextStyles.buttonMedium),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                openAppSettings();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.onPrimary,
+                elevation: 0,
+              ),
+              child: Text('Open Settings', style: AppTextStyles.buttonMedium),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   List<Widget> _buildChangesList() {
     final changes = <Widget>[];
     
@@ -960,7 +1144,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: !_hasChanges(),
-      onPopInvoked: (didPop) {
+      onPopInvokedWithResult: (didPop, result) {
         if (!didPop && _hasChanges()) {
           _showDiscardChangesDialog();
         }
@@ -1113,7 +1297,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: DropdownButtonFormField<String>(
-                              value: _selectedGender.isEmpty ? null : _selectedGender,
+                              initialValue: _selectedGender.isEmpty ? null : _selectedGender,
                               decoration: InputDecoration(
                                 prefixIcon: Icon(
                                   Icons.wc_outlined,
@@ -1519,319 +1703,3 @@ class _EditProfilePageState extends State<EditProfilePage> {
   }
 }
 
-class _WebCameraWidget extends StatefulWidget {
-  final Function(Uint8List) onPhotoTaken;
-  final VoidCallback onCancel;
-
-  const _WebCameraWidget({
-    required this.onPhotoTaken,
-    required this.onCancel,
-  });
-
-  @override
-  State<_WebCameraWidget> createState() => _WebCameraWidgetState();
-}
-
-class _WebCameraWidgetState extends State<_WebCameraWidget> {
-  html.VideoElement? _videoElement;
-  html.MediaStream? _stream;
-  bool _isInitializing = true;
-  bool _hasPermission = false;
-  String? _errorMessage;
-  String? _viewType;
-
-  @override
-  void initState() {
-    super.initState();
-    if (kIsWeb) {
-      _initializeCamera();
-    }
-  }
-
-  @override
-  void dispose() {
-    _stopCamera();
-    super.dispose();
-  }
-
-  Future<void> _initializeCamera() async {
-    try {
-      // Request camera permission and get media stream
-      final mediaDevices = html.window.navigator.mediaDevices;
-      if (mediaDevices == null) {
-        setState(() {
-          _errorMessage = 'Camera not supported in this browser';
-          _isInitializing = false;
-        });
-        return;
-      }
-
-      _stream = await mediaDevices.getUserMedia({
-        'video': {
-          'width': {'ideal': 640},
-          'height': {'ideal': 480},
-          'facingMode': 'user', // Front camera
-        }
-      });
-
-      _videoElement = html.VideoElement()
-        ..srcObject = _stream
-        ..autoplay = true
-        ..muted = true
-        ..style.width = '100%'
-        ..style.height = '100%'
-        ..style.objectFit = 'cover';
-
-      // Register the video element with Flutter's platform view registry
-      _viewType = 'camera-view-${_videoElement.hashCode}';
-      // ignore: undefined_prefixed_name
-      ui_web.platformViewRegistry.registerViewFactory(
-        _viewType!,
-        (int viewId) => _videoElement!,
-      );
-
-      setState(() {
-        _hasPermission = true;
-        _isInitializing = false;
-      });
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Camera permission denied or camera not available';
-        _isInitializing = false;
-      });
-      AppLogger.d('Camera initialization error: $e');
-    }
-  }
-
-  void _stopCamera() {
-    if (_stream != null) {
-      _stream!.getTracks().forEach((track) => track.stop());
-      _stream = null;
-    }
-    _videoElement = null;
-  }
-
-  Future<void> _takePhoto() async {
-    if (_videoElement == null || _stream == null) return;
-
-    try {
-      // Create a canvas to capture the video frame
-      final canvas = html.CanvasElement();
-      final context = canvas.getContext('2d') as html.CanvasRenderingContext2D;
-      
-      canvas.width = _videoElement!.videoWidth;
-      canvas.height = _videoElement!.videoHeight;
-      
-      // Draw the current video frame to canvas
-      context.drawImageScaled(_videoElement!, 0, 0, canvas.width!, canvas.height!);
-      
-      // Convert canvas to blob
-      final blob = await canvas.toBlob('image/jpeg', 0.85);
-      
-      // Convert blob to Uint8List
-      final reader = html.FileReader();
-      reader.readAsArrayBuffer(blob);
-      
-      await reader.onLoad.first;
-      final Uint8List imageBytes = Uint8List.fromList(
-        (reader.result as List<int>),
-      );
-
-      // Check file size (3MB limit)
-      if (imageBytes.length > 3 * 1024 * 1024) {
-        _showErrorMessage('Image size is too large. Please try again.');
-        return;
-      }
-
-      widget.onPhotoTaken(imageBytes);
-    } catch (e) {
-      AppLogger.d('Error taking photo: $e');
-      _showErrorMessage('Failed to capture photo. Please try again.');
-    }
-  }
-
-  void _showErrorMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppColors.error,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        // Header
-        Row(
-          children: [
-            Icon(Icons.camera_alt, color: AppColors.primary, size: 24),
-            const SizedBox(width: 12),
-            Text(
-              'Take Photo',
-              style: AppTextStyles.titleLarge.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const Spacer(),
-            IconButton(
-              onPressed: widget.onCancel,
-              icon: Icon(Icons.close, color: AppColors.onSurface),
-            ),
-          ],
-        ),
-        const SizedBox(height: 20),
-        
-        // Camera View
-        Expanded(
-          child: Container(
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: AppColors.grey900,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: AppColors.primary.withValues(alpha: 0.3),
-                width: 2,
-              ),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: _buildCameraContent(),
-            ),
-          ),
-        ),
-        
-        const SizedBox(height: 20),
-        
-        // Controls
-        if (_hasPermission && !_isInitializing) ...[
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              // Cancel Button
-              OutlinedButton(
-                onPressed: widget.onCancel,
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: AppColors.onSurface.withValues(alpha: 0.3)),
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                ),
-                child: Text(
-                  'Cancel',
-                  style: AppTextStyles.buttonMedium.copyWith(
-                    color: AppColors.onSurface.withValues(alpha: 0.8),
-                  ),
-                ),
-              ),
-              
-              // Take Photo Button
-              ElevatedButton.icon(
-                onPressed: _takePhoto,
-                icon: Icon(Icons.camera_alt, color: AppColors.onPrimary),
-                label: Text(
-                  'Take Photo',
-                  style: AppTextStyles.buttonMedium.copyWith(
-                    color: AppColors.onPrimary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ] else if (_errorMessage != null) ...[
-          ElevatedButton(
-            onPressed: widget.onCancel,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            ),
-            child: Text(
-              'Close',
-              style: AppTextStyles.buttonMedium.copyWith(
-                color: AppColors.onPrimary,
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildCameraContent() {
-    if (_isInitializing) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(color: AppColors.primary),
-            SizedBox(height: 16),
-            Text(
-              'Initializing camera...',
-              style: AppTextStyles.bodyMedium,
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (_errorMessage != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.camera_alt_outlined,
-              size: 64,
-              color: AppColors.error,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _errorMessage!,
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.error,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Please ensure camera permissions are granted and try again.',
-              style: AppTextStyles.bodySmall.copyWith(
-                color: AppColors.onSurface.withValues(alpha: 0.6),
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (_hasPermission && _videoElement != null && _viewType != null) {
-      return Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: BoxDecoration(
-          color: AppColors.grey900,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: HtmlElementView(
-          viewType: _viewType!,
-        ),
-      );
-    }
-
-    return const Center(
-      child: Text(
-        'Camera not available',
-        style: AppTextStyles.bodyMedium,
-      ),
-    );
-  }
-}

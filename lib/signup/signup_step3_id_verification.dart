@@ -109,11 +109,27 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
                           Icon(Icons.error_outline, color: AppColors.error, size: 20),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: Text(
-                              widget.controller.idVerificationError!,
-                              style: AppTextStyles.bodySmall.copyWith(
-                                color: AppColors.error,
-                              ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  widget.controller.idVerificationError!,
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.error,
+                                  ),
+                                ),
+                                // Add iOS-specific tip if it's a face detection error on iOS
+                                if (Platform.isIOS && widget.controller.idVerificationError!.contains('face')) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'iOS Tip: Ensure good lighting and hold the ID steady. The verification may still proceed even if face detection has issues.',
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      color: AppColors.grey600,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                           ),
                         ],
