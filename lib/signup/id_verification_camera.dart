@@ -113,34 +113,44 @@ class _IdVerificationCameraState extends State<IdVerificationCamera> {
     try {
       final inputImage = _inputImageFromCameraImage(cameraImage);
       if (inputImage != null && _textRecognizer != null) {
-        final recognizedText = await _textRecognizer!.processImage(inputImage);
-        final text = recognizedText.text.toUpperCase();
-        
-        // Check if this looks like a valid government ID
-        bool isValidId = _isValidGovernmentId(text);
-        
-        if (mounted) {
-          setState(() {
-            if (isValidId) {
-              _validIdFrames++;
-              _idDetected = true;
-              _statusMessage = "Valid PRC ID detected! Hold still...";
-              _statusColor = Colors.green;
-              
-              // If we've detected a valid ID for enough consecutive frames, confirm OCR and start capture
-              if (_validIdFrames >= _requiredValidFrames && _captureTimer == null) {
-                _ocrConfirmed = true; // Stop further OCR processing
-                _startCaptureCountdown();
+        try {
+          final recognizedText = await _textRecognizer!.processImage(inputImage);
+          final text = recognizedText.text.toUpperCase();
+          
+          // Check if this looks like a valid government ID
+          bool isValidId = _isValidGovernmentId(text);
+          
+          if (mounted) {
+            setState(() {
+              if (isValidId) {
+                _validIdFrames++;
+                _idDetected = true;
+                _statusMessage = "Valid PRC ID detected! Hold still...";
+                _statusColor = Colors.green;
+                
+                // If we've detected a valid ID for enough consecutive frames, confirm OCR and start capture
+                if (_validIdFrames >= _requiredValidFrames && _captureTimer == null) {
+                  _ocrConfirmed = true; // Stop further OCR processing
+                  _startCaptureCountdown();
+                }
+              } else if (!_ocrConfirmed) {
+                // Only reset if OCR hasn't been confirmed yet
+                _validIdFrames = 0;
+                _idDetected = false;
+                _statusMessage = "Position your PRC ID in the frame";
+                _statusColor = AppColors.grey600;
+                _cancelCapture();
               }
-            } else if (!_ocrConfirmed) {
-              // Only reset if OCR hasn't been confirmed yet
-              _validIdFrames = 0;
-              _idDetected = false;
-              _statusMessage = "Position your PRC ID in the frame";
-              _statusColor = AppColors.grey600;
-              _cancelCapture();
-            }
-          });
+            });
+          }
+        } on PlatformException catch (e) {
+          // Handle camera buffer issues gracefully
+          if (e.code == 'IllegalArgumentException' && e.message?.contains('Bad position') == true) {
+            AppLogger.d('Camera buffer issue detected, skipping frame: ${e.message}');
+            // Simply skip this frame and continue with next one
+          } else {
+            AppLogger.d('ML Kit error processing image: $e');
+          }
         }
       }
     } catch (e) {
@@ -155,11 +165,9 @@ class _IdVerificationCameraState extends State<IdVerificationCamera> {
   }
 
   bool _isValidGovernmentId(String text) {
-    // Check for required government phrases
-    bool hasProfessionalRegulation = text.contains('PROFESSIONAL REGULATION COMMISSION');
-    bool hasProfessionalId = text.contains('PROFESSIONAL IDENTIFICATION CARD');
-    
-    return hasProfessionalRegulation && hasProfessionalId;
+    // Simple check: look for PRC-related keywords
+    return (text.contains('PRC') || text.contains('PROFESSIONAL REGULATION')) &&
+           (text.contains('IDENTIFICATION') || text.contains('ID CARD'));
   }
 
   void _startCaptureCountdown() {

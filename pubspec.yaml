@@ -33,7 +33,7 @@ dependencies:
   google_mlkit_face_detection: ^0.13.1
   tensorflow_face_verification: ^0.1.2
   http: ^1.1.0
-  camera: ^0.11.2
+  camera: ^0.11.0+2
   path_provider: ^2.1.1
   permission_handler: ^12.0.1
   google_maps_flutter: ^2.5.0
@@ -50,6 +50,7 @@ dev_dependencies:
     sdk: flutter
 
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.13.1
 
 flutter:
   uses-material-design: true
@@ -67,3 +68,18 @@ flutter:
       fonts:
         - asset: lib/assets/fonts/Roboto-Regular.ttf
           weight: 900
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "lib/assets/icons/dentpal_icon.png"
+  min_sdk_android: 24 # android min sdk min:16, default 21
+  web:
+    generate: true
+    image_path: "lib/assets/icons/dentpal_icon.png"
+    background_color: "#hexcode"
+    theme_color: "#hexcode"
+  windows:
+    generate: true
+    image_path: "lib/assets/icons/dentpal_icon.png"
+    icon_size: 48 # min:48, max:256, default: 48

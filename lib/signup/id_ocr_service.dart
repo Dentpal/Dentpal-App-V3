@@ -1,22 +1,27 @@
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-import 'package:intl/intl.dart';
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'signup_controller.dart';
 
-/// OCR Service for Philippine Professional ID Verification
+/// Simplified OCR Service for Philippine PRC ID Verification
 /// 
-/// This service processes government-issued IDs (especially PRC Professional IDs)
-/// and extracts key information for verification:
-/// 
-/// 1. Reads ID as a whole block using Google ML Kit
-/// 2. Parses and extracts: First Name, Last Name, Registration Number, Expiry Date
-/// 3. Compares names with user input using fuzzy matching (80% similarity threshold)
-/// 4. Validates ID expiry date
-/// 5. Stores registration number temporarily for account creation
-/// 
-/// Logging: All OCR operations are logged with filter "OCR_KYC_*" for debugging
+/// Validates:
+/// 1. Government ID header (PRC)
+/// 2. First name match
+/// 3. Last name match  
+/// 4. Registration number extraction
+/// 5. Valid expiry date
+/// 6. Face detection on ID
 class IdOcrService {
   static final TextRecognizer _textRecognizer = TextRecognizer();
+  static final FaceDetector _faceDetector = FaceDetector(
+    options: FaceDetectorOptions(
+      enableClassification: false,
+      enableLandmarks: false,
+      enableTracking: false,
+    ),
+  );
 
   static Future<IdVerificationResult> processIdImage(
     String imagePath,
@@ -24,487 +29,249 @@ class IdOcrService {
     String expectedLastName,
   ) async {
     try {
-      SignupController.logOcrResult('START', 'Starting ID OCR processing');
+      SignupController.logOcrResult('START', 'Starting simplified ID OCR');
       
       final inputImage = InputImage.fromFilePath(imagePath);
       final recognizedText = await _textRecognizer.processImage(inputImage);
-      final rawText = recognizedText.text;
+      final rawText = recognizedText.text.toUpperCase();
       
-      SignupController.logOcrResult('RAW_TEXT', 'Raw OCR output:\\n$rawText');
+      SignupController.logOcrResult('RAW_TEXT', 'OCR Output:\n$rawText');
       
-      // 1. Validate government ID format
-      if (!_isValidGovernmentId(rawText)) {
+      // Step 1: Detect face on ID
+      final faces = await _faceDetector.processImage(inputImage);
+      if (faces.isEmpty) {
+        SignupController.logOcrResult('ERROR', 'No face detected on ID');
         return IdVerificationResult(
           isValid: false,
-          errorMessage: 'Please use a valid PRC Professional ID card.',
+          errorMessage: 'No photo detected on ID. Please ensure the ID photo is visible.',
+          registrationNumber: null,
+          faceImage: null,
+        );
+      }
+      SignupController.logOcrResult('SUCCESS', 'Face detected on ID');
+      
+      // Step 2: Check if this is a valid PRC ID
+      if (!_isPrcId(rawText)) {
+        SignupController.logOcrResult('ERROR', 'Not a valid PRC ID');
+        return IdVerificationResult(
+          isValid: false,
+          errorMessage: 'This is not a valid PRC Professional ID. Please use your PRC ID.',
           registrationNumber: null,
           faceImage: null,
         );
       }
       
-      // 2. Parse text data (face detection disabled)
-      final parsedData = _parseIdText(rawText, null);
-      SignupController.logOcrResult('PARSED', 'Parsed data: ${parsedData.toString()}');
+      // Step 3: Find registration number
+      String? regNumber = _extractRegistrationNumber(rawText);
+      if (regNumber == null) {
+        SignupController.logOcrResult('ERROR', 'Registration number not found');
+        return IdVerificationResult(
+          isValid: false,
+          errorMessage: 'Could not read registration number. Please ensure the ID is clear.',
+          registrationNumber: null,
+          faceImage: null,
+        );
+      }
+      SignupController.logOcrResult('SUCCESS', 'Registration: $regNumber');
       
-      // 3. Verify against user input
-      final verification = _verifyIdData(parsedData, expectedFirstName, expectedLastName, recognizedText.text);
-      SignupController.logOcrResult('VERIFICATION', 'Verification result: ${verification.toString()}');
+      // Step 3: Check if ID is expired
+      bool isExpired = _isIdExpired(rawText);
+      if (isExpired) {
+        SignupController.logOcrResult('ERROR', 'ID is expired');
+        return IdVerificationResult(
+          isValid: false,
+          errorMessage: 'Your PRC ID has expired. Please renew it before registration.',
+          registrationNumber: regNumber,
+        );
+      }
       
-      return verification;
+      // Step 4: Verify names
+      bool firstNameMatch = _findName(rawText, expectedFirstName);
+      bool lastNameMatch = _findName(rawText, expectedLastName);
+      
+      if (!firstNameMatch && !lastNameMatch) {
+        SignupController.logOcrResult('ERROR', 'Neither name found');
+        return IdVerificationResult(
+          isValid: false,
+          errorMessage: 'Name does not match. Please ensure this is your PRC ID.',
+          registrationNumber: regNumber,
+        );
+      }
+      
+      if (!firstNameMatch) {
+        SignupController.logOcrResult('ERROR', 'First name not found');
+        return IdVerificationResult(
+          isValid: false,
+          errorMessage: 'First name does not match. Please check your entry.',
+          registrationNumber: regNumber,
+          faceImage: null,
+        );
+      }
+      
+      if (!lastNameMatch) {
+        SignupController.logOcrResult('ERROR', 'Last name not found');
+        return IdVerificationResult(
+          isValid: false,
+          errorMessage: 'Last name does not match. Please check your entry.',
+          registrationNumber: regNumber,
+          faceImage: null,
+        );
+      }
+      
+      // All checks passed! Read the image file and convert to bytes
+      SignupController.logOcrResult('SUCCESS', 'ID verification successful');
+      final imageFile = File(imagePath);
+      final imageBytes = await imageFile.readAsBytes();
+      
+      return IdVerificationResult(
+        isValid: true,
+        errorMessage: null,
+        registrationNumber: regNumber,
+        faceImage: imageBytes, // Return image as Uint8List
+      );
+      
     } catch (e) {
-      SignupController.logOcrResult('ERROR', 'OCR processing failed: $e');
+      SignupController.logOcrResult('ERROR', 'OCR failed: $e');
       return IdVerificationResult(
         isValid: false,
-        errorMessage: 'Unable to process PRC ID image. Please try again with better lighting.',
+        errorMessage: 'Failed to read ID. Please try again with better lighting.',
         registrationNumber: null,
         faceImage: null,
       );
     }
   }
 
-  static ParsedIdData _parseIdText(String rawText, Uint8List? faceImage) {
-    // Clean the text and split into lines
-    List<String> lines = rawText
-        .split('\n')
-        .map((line) => line.trim())
-        .where((line) => line.isNotEmpty)
-        .toList();
-
-    String? firstName;
-    String? lastName;
-    String? registrationNumber;
-    DateTime? validUntil;
-    List<DateTime> allDatesFound = []; // Collect all dates found in ID
-
-    SignupController.logOcrResult('DEBUG', 'Processing ${lines.length} lines');
-
-    // Based on the actual OCR output, let's use position-based and pattern-based extraction
-    for (int i = 0; i < lines.length; i++) {
-      String line = lines[i].trim();
-      SignupController.logOcrResult('DEBUG', 'Line $i: "$line"');
-      
-      // Look for registration number patterns  
-      // Pattern 1: "REGISTRATION NO.0086157" or "REGISTRATION NO. 0086157"
-      if (RegExp(r'REGISTRATION\s*NO\.?\s*(\d+)', caseSensitive: false).hasMatch(line)) {
-        Match? match = RegExp(r'REGISTRATION\s*NO\.?\s*(\d+)', caseSensitive: false).firstMatch(line);
-        if (match != null) {
-          registrationNumber = match.group(1);
-          SignupController.logOcrResult('DEBUG', 'Found registration number from pattern 1: $registrationNumber (from: $line)');
-        }
-      }
-      // Pattern 2: More specific for "REGISTRATION NO.0086157" (no space after dot)  
-      else if (RegExp(r'REGISTRATION\s*NO\.(\d+)', caseSensitive: false).hasMatch(line)) {
-        Match? match = RegExp(r'REGISTRATION\s*NO\.(\d+)', caseSensitive: false).firstMatch(line);
-        if (match != null) {
-          registrationNumber = match.group(1);
-          SignupController.logOcrResult('DEBUG', 'Found registration number from pattern 2: $registrationNumber (from: $line)');
-        }
-      }
-      // Pattern 3: Handle OCR typos like "REGISTRATON"
-      else if (RegExp(r'REGISTR[AI]T[IO]N\s*NO\.?\s*(\d+)', caseSensitive: false).hasMatch(line)) {
-        Match? match = RegExp(r'REGISTR[AI]T[IO]N\s*NO\.?\s*(\d+)', caseSensitive: false).firstMatch(line);
-        if (match != null) {
-          registrationNumber = match.group(1);
-          SignupController.logOcrResult('DEBUG', 'Found registration number from pattern 3: $registrationNumber (from: $line)');
-        }
-      }
-      // Pattern 4: Look for standalone registration number (pure digits, 4+ characters)
-      else if (RegExp(r'^\d{4,}$').hasMatch(line)) {
-        registrationNumber = line;
-        SignupController.logOcrResult('DEBUG', 'Found registration number from pattern 4: $registrationNumber');
-      }
-      
-      // Look for dates (format: MM/dd/yyyy or similar, may have arrow prefix)
-      if (RegExp(r'^[►>]?\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$').hasMatch(line)) {
-        // Remove arrow character if present
-        String cleanLine = line.replaceAll(RegExp(r'^[►>]'), '');
-        DateTime? parsedDate = _parseDate(cleanLine);
-        if (parsedDate != null) {
-          allDatesFound.add(parsedDate);
-          SignupController.logOcrResult('DEBUG', 'Found date: $parsedDate (from: $line)');
-        }
-      }
-      
-      // Look for names - they should be pure alphabetic with spaces, reasonable length
-      if (_isActualName(line)) {
-        String cleanedLine = line.replaceAll('►', '').replaceAll('>', '').trim();
-        
-        // Based on typical ID layout, first name comes before last name
-        // If we haven't found any names yet, this could be the last name (typically appears first)
-        if (lastName == null) {
-          lastName = cleanedLine.toUpperCase().trim();
-          SignupController.logOcrResult('DEBUG', 'Found last name: $lastName (from: $line)');
-        } else if (firstName == null && cleanedLine.length >= 2) {
-          // This should be the first name (comes after last name)
-          String name = cleanedLine.toUpperCase().trim();
-          // Handle common OCR errors
-          if (name == "UAN") {
-            name = "JUAN";
-          }
-          firstName = name;
-          SignupController.logOcrResult('DEBUG', 'Found first name: $firstName (from: $line)');
-        }
-      }
-    }
-
-    // If we still haven't found names, try a more targeted approach
-    if (firstName == null || lastName == null) {
-      SignupController.logOcrResult('DEBUG', 'Attempting targeted name extraction');
-      
-      // Look for specific patterns in the OCR output
-      for (int i = 0; i < lines.length; i++) {
-        String line = lines[i].trim();
-        
-        // Based on the log, we know the pattern:
-        // "DELA CRUZ" appears around line 9
-        // "UAN" (should be JUAN) appears around line 10  
-        // "SANTOS" appears around line 11
-        
-        if (line == "DELA CRUZ" || (line.contains("DELA") && line.contains("CRUZ"))) {
-          lastName = "DELA CRUZ";
-          SignupController.logOcrResult('DEBUG', 'Targeted: Found last name: $lastName');
-        }
-        
-        if (line == "UAN" || line == "JUAN") {
-          firstName = "JUAN";
-          SignupController.logOcrResult('DEBUG', 'Targeted: Found first name: $firstName');
-        }
-        
-        // Look for the registration number in text
-        if (line == "0012345") {
-          registrationNumber = line;
-          SignupController.logOcrResult('DEBUG', 'Targeted: Found registration number: $registrationNumber');
-        }
-      }
-    }
-
-    // If we still haven't found registration number, do a broader search
-    if (registrationNumber == null) {
-      SignupController.logOcrResult('DEBUG', 'Attempting broader registration number search');
-      
-      // Search through all text for any 7-digit number (common PRC registration format)
-      String allText = rawText.toUpperCase();
-      RegExp regNumberPattern = RegExp(r'\b\d{7}\b'); // Look for 7-digit numbers
-      Match? match = regNumberPattern.firstMatch(allText);
-      if (match != null) {
-        registrationNumber = match.group(0);
-        SignupController.logOcrResult('DEBUG', 'Found 7-digit registration number: $registrationNumber');
-      } else {
-        // Try 6-digit numbers as fallback
-        RegExp regNumberPattern6 = RegExp(r'\b\d{6}\b');
-        Match? match6 = regNumberPattern6.firstMatch(allText);
-        if (match6 != null) {
-          registrationNumber = match6.group(0);
-          SignupController.logOcrResult('DEBUG', 'Found 6-digit registration number: $registrationNumber');
-        }
-      }
-    }
-
-    // Analyze all dates found to determine validity
-    DateTime today = DateTime.now();
-    if (allDatesFound.isNotEmpty) {
-      allDatesFound.sort(); // Sort dates chronologically
-      
-      // Check if at least one date is in the future (ID is still valid)
-      bool hasValidDate = allDatesFound.any((date) => date.isAfter(today));
-      
-      if (hasValidDate) {
-        // Use the latest date as the expiry date
-        validUntil = allDatesFound.last;
-        SignupController.logOcrResult('DEBUG', 'ID is valid - latest date: $validUntil');
-      } else {
-        // All dates are in the past, but we still need to set validUntil for error reporting
-        validUntil = allDatesFound.last;
-        SignupController.logOcrResult('DEBUG', 'ID appears expired - all dates in past, latest: $validUntil');
-      }
-      
-      SignupController.logOcrResult('DEBUG', 'Total dates found: ${allDatesFound.length}, Dates: $allDatesFound');
-    } else {
-      SignupController.logOcrResult('WARNING', 'No dates found in ID');
-    }
-
-    return ParsedIdData(
-      firstName: firstName,
-      lastName: lastName,
-      registrationNumber: registrationNumber,
-      validUntil: validUntil,
-      faceImage: faceImage,
-    );
+  /// Check if text contains PRC ID markers
+  static bool _isPrcId(String text) {
+    bool hasPRC = text.contains('PROFESSIONAL REGULATION COMMISSION') ||
+                  text.contains('PROFESSIONAL REGULATION') ||
+                  text.contains('PRC');
+    
+    bool hasIDCard = text.contains('PROFESSIONAL IDENTIFICATION CARD') ||
+                     text.contains('IDENTIFICATION CARD') ||
+                     (text.contains('PROF') && text.contains('CARD'));
+    
+    SignupController.logOcrResult('CHECK', 'PRC: $hasPRC, ID Card: $hasIDCard');
+    return hasPRC && hasIDCard;
   }
 
-  static bool _isActualName(String text) {
-    // Check if text looks like an actual name
-    String upperText = text.toUpperCase().trim();
-    
-    // Clean up OCR artifacts like arrows
-    upperText = upperText.replaceAll('►', '').replaceAll('>', '').trim();
-    
-    // Must be alphabetic with spaces only (after cleaning)
-    if (!RegExp(r'^[A-Z\s]+$').hasMatch(upperText)) {
-      return false;
+  /// Extract registration number from text
+  static String? _extractRegistrationNumber(String text) {
+    // Pattern 1: "REGISTRATION NO. 1234567" or "REGISTRATION NO.1234567"
+    RegExp pattern1 = RegExp(r'REGISTRATION\s*NO\.?\s*(\d{4,8})');
+    Match? match = pattern1.firstMatch(text);
+    if (match != null) {
+      String number = match.group(1)!;
+      SignupController.logOcrResult('FOUND', 'Reg pattern 1: $number');
+      return number;
     }
-    
-    // Reasonable length for a name
-    if (upperText.length < 2 || upperText.length > 50) {
-      return false;
+
+    // Pattern 2: "REG NO. 1234567" or similar variants
+    RegExp pattern2 = RegExp(r'REG(?:ISTRATION)?\s*NO\.?\s*(\d{4,8})');
+    match = pattern2.firstMatch(text);
+    if (match != null) {
+      String number = match.group(1)!;
+      SignupController.logOcrResult('FOUND', 'Reg pattern 2: $number');
+      return number;
     }
-    
-    // Exclude common non-name phrases
-    List<String> excludedPhrases = [
-      'NAME', 'REGISTRATION', 'PROFESSIONAL', 'COMMISSION', 'CARD', 
-      'MIDDLE', 'FIRST', 'LAST', 'VALID', 'DATE', 'REPUBLIC', 
-      'PHILIPPINES', 'IDENTIFICATION', 'THERAPY', 'TECHNICIAN',
-      'OCCUPATIONAL', 'UNTIL', 'REGULATION', 'PRC', 'NO', 'NUMERO',
-      'RIGISTRATNON', 'REGASTRATKON', 'VON', 'MEDICAL', 'TECHNOLOGIST'
-    ];
-    
-    for (String phrase in excludedPhrases) {
-      if (upperText.contains(phrase)) {
-        return false;
+
+    // Pattern 3: Standalone 6-7 digit number (most common format)
+    List<String> lines = text.split('\n');
+    for (String line in lines) {
+      RegExp digitPattern = RegExp(r'^\d{6,7}$');
+      Match? digitMatch = digitPattern.firstMatch(line.trim());
+      if (digitMatch != null) {
+        String number = digitMatch.group(0)!;
+        SignupController.logOcrResult('FOUND', 'Reg pattern 3: $number');
+        return number;
       }
     }
-    
-    // Should not be a standalone single character (unless it's a valid single name)
-    if (upperText.length == 1) {
-      return false;
-    }
-    
-    return true;
+
+    SignupController.logOcrResult('ERROR', 'No registration number found');
+    return null;
   }
 
-  static DateTime? _parseDate(String dateText) {
-    try {
-      // Clean the text first
-      String cleanText = dateText.replaceAll(RegExp(r'[^\d\/\-]'), '');
-      
-      SignupController.logOcrResult('DEBUG', 'Parsing date: "$dateText" -> "$cleanText"');
-      
-      // Try different date formats commonly found on IDs
-      List<String> dateFormats = [
-        'M/d/yyyy',    // 1/25/2022
-        'MM/dd/yyyy',  // 01/25/2022
-        'd/M/yyyy',    // 25/1/2022
-        'dd/MM/yyyy',  // 25/01/2022
-        'yyyy-MM-dd',
-        'MM-dd-yyyy',
-        'dd-MM-yyyy',
-        'M/d/yy',      // 1/25/22
-        'MM/dd/yy',    // 01/25/22
-        'd/M/yy',      // 25/1/22
-        'dd/MM/yy',    // 25/01/22
-      ];
-
-      for (String format in dateFormats) {
-        try {
-          DateFormat formatter = DateFormat(format);
-          DateTime parsed = formatter.parseStrict(cleanText);
-          SignupController.logOcrResult('DEBUG', 'Successfully parsed with format $format: $parsed');
-          return parsed;
-        } catch (e) {
-          // Continue to next format
-        }
-      }
-      
-      // Try manual parsing for common patterns
-      RegExp datePattern = RegExp(r'(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4}|\d{2})');
-      Match? match = datePattern.firstMatch(cleanText);
-      if (match != null) {
+  /// Check if any date in the text indicates expiry
+  static bool _isIdExpired(String text) {
+    DateTime now = DateTime.now();
+    
+    // Look for date patterns
+    RegExp datePattern = RegExp(r'(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})');
+    Iterable<Match> matches = datePattern.allMatches(text);
+    
+    for (Match match in matches) {
+      try {
         int part1 = int.parse(match.group(1)!);
         int part2 = int.parse(match.group(2)!);
-        int yearPart = int.parse(match.group(3)!);
+        int year = int.parse(match.group(3)!);
         
-        // Handle 2-digit years
-        int year = yearPart < 100 ? (yearPart > 50 ? 1900 + yearPart : 2000 + yearPart) : yearPart;
-        
-        // Try both MM/dd/yyyy and dd/MM/yyyy
-        try {
-          // Try MM/dd/yyyy format first (common in Philippines)
-          if (part1 <= 12 && part2 <= 31) {
-            DateTime date = DateTime(year, part1, part2);
-            SignupController.logOcrResult('DEBUG', 'Manual parse MM/dd/yyyy: $date');
-            return date;
+        // Try MM/dd/yyyy (common in Philippines)
+        if (part1 <= 12 && part2 <= 31) {
+          DateTime date = DateTime(year, part1, part2);
+          SignupController.logOcrResult('DATE', 'Found date: $date (${date.isAfter(now) ? "valid" : "expired"})');
+          
+          // If date is in the future, ID is still valid
+          if (date.isAfter(now)) {
+            return false; // Not expired
           }
-        } catch (e) {
-          // Continue
         }
-        
-        try {
-          // Try dd/MM/yyyy format
-          if (part2 <= 12 && part1 <= 31) {
-            DateTime date = DateTime(year, part2, part1);
-            SignupController.logOcrResult('DEBUG', 'Manual parse dd/MM/yyyy: $date');
-            return date;
-          }
-        } catch (e) {
-          // Continue
-        }
+      } catch (e) {
+        continue;
       }
-      
-      return null;
-    } catch (e) {
-      SignupController.logOcrResult('DEBUG', 'Date parsing failed: $e');
-      return null;
     }
+    
+    // If we found dates but none are in the future, it's expired
+    // If we found no dates, assume not expired (benefit of doubt)
+    bool expired = matches.isNotEmpty;
+    SignupController.logOcrResult('EXPIRY', 'ID expired: $expired');
+    return expired;
   }
 
-  static IdVerificationResult _verifyIdData(
-    ParsedIdData parsedData, 
-    String expectedFirstName, 
-    String expectedLastName,
-    String rawOcrText  // Add raw OCR text for flexible matching
-  ) {
-    // Check expiry date - prioritize expired ID messages
-    if (parsedData.validUntil != null) {
-      if (parsedData.validUntil!.isBefore(DateTime.now())) {
-        return IdVerificationResult(
-          isValid: false,
-          errorMessage: 'PRC ID has expired. Please use a valid, non-expired PRC ID.',
-          registrationNumber: parsedData.registrationNumber,
-          faceImage: parsedData.faceImage,
-        );
-      }
-    } else {
-      return IdVerificationResult(
-        isValid: false,
-        errorMessage: 'Unable to read expiry date from PRC ID. Please ensure the ID is clear and well-lit.',
-        registrationNumber: parsedData.registrationNumber,
-        faceImage: parsedData.faceImage,
-      );
-    }
+  /// Find if name exists in text (flexible matching)
+  static bool _findName(String text, String name) {
+    String normalizedName = name.toUpperCase().trim();
     
-    // Check registration number
-    if (parsedData.registrationNumber == null) {
-      return IdVerificationResult(
-        isValid: false,
-        errorMessage: 'Unable to read registration number. Please ensure the PRC ID text is clear.',
-        registrationNumber: null,
-        faceImage: parsedData.faceImage,
-      );
-    }
+    // Split name into words (for "JUAN DELA CRUZ" -> ["JUAN", "DELA", "CRUZ"])
+    List<String> nameWords = normalizedName
+        .split(' ')
+        .where((w) => w.isNotEmpty && w.length >= 2)
+        .toList();
     
-    // Check name matches - combine both name checks into one user-friendly message
-    bool firstNameFound = _flexibleNameMatch(expectedFirstName, parsedData.firstName, rawOcrText);
-    bool lastNameFound = _flexibleNameMatch(expectedLastName, parsedData.lastName, rawOcrText);
+    SignupController.logOcrResult('NAME_CHECK', 'Looking for: $normalizedName (${nameWords.length} words)');
     
-    if (!firstNameFound && !lastNameFound) {
-      return IdVerificationResult(
-        isValid: false,
-        errorMessage: 'Name on PRC ID does not match. Please ensure this is your personal PRC ID.',
-        registrationNumber: parsedData.registrationNumber,
-        faceImage: parsedData.faceImage,
-      );
-    } else if (!firstNameFound) {
-      return IdVerificationResult(
-        isValid: false,
-        errorMessage: 'First name does not match PRC ID. Please check your name entry.',
-        registrationNumber: parsedData.registrationNumber,
-        faceImage: parsedData.faceImage,
-      );
-    } else if (!lastNameFound) {
-      return IdVerificationResult(
-        isValid: false,
-        errorMessage: 'Last name does not match PRC ID. Please check your name entry.',
-        registrationNumber: parsedData.registrationNumber,
-        faceImage: parsedData.faceImage,
-      );
-    }
-    
-    // All validations passed
-    return IdVerificationResult(
-      isValid: true,
-      errorMessage: null,
-      registrationNumber: parsedData.registrationNumber,
-      faceImage: parsedData.faceImage,
-    );
-  }
-
-  static bool _flexibleNameMatch(String expectedName, String? parsedName, String rawOcrText) {
-    String normalizedExpected = expectedName.toUpperCase().trim();
-    String normalizedRawText = rawOcrText.toUpperCase();
-    
-    SignupController.logOcrResult('DEBUG', 'Flexible matching for: "$normalizedExpected"');
-    
-    // Split the expected name into individual words
-    List<String> expectedWords = normalizedExpected.split(' ').where((word) => word.isNotEmpty && word.length >= 2).toList();
-    
-    // Check if ANY word from the expected name appears ANYWHERE in the raw OCR text
-    for (String word in expectedWords) {
-      if (normalizedRawText.contains(word)) {
-        SignupController.logOcrResult('DEBUG', 'Found "$word" in OCR text');
+    // Check if ANY significant word from the name appears in text
+    for (String word in nameWords) {
+      if (text.contains(word)) {
+        SignupController.logOcrResult('NAME_MATCH', 'Found "$word" in OCR text');
         return true;
       }
       
-      // Also check for slight variations (e.g., "JUAN" vs "UAN")
-      if (word.length >= 3) {
-        String shortVersion = word.substring(1); // Remove first character
-        if (normalizedRawText.contains(shortVersion)) {
-          SignupController.logOcrResult('DEBUG', 'Found variation "$shortVersion" for "$word" in OCR text');
+      // Also check substring match (e.g., "UAN" for "JUAN")
+      if (word.length >= 4) {
+        String substring = word.substring(1); // Remove first letter
+        if (text.contains(substring)) {
+          SignupController.logOcrResult('NAME_MATCH', 'Found substring "$substring" for "$word"');
           return true;
         }
       }
     }
     
-    // If we have a parsed name, also check against that
-    if (parsedName != null) {
-      String normalizedParsed = parsedName.toUpperCase().trim();
-      
-      for (String word in expectedWords) {
-        if (normalizedParsed.contains(word)) {
-          SignupController.logOcrResult('DEBUG', 'Found "$word" in parsed name "$normalizedParsed"');
-          return true;
-        }
-      }
-    }
-    
-    SignupController.logOcrResult('DEBUG', 'No match found for "$normalizedExpected"');
+    SignupController.logOcrResult('NAME_NO_MATCH', 'Name "$normalizedName" not found');
     return false;
-  }
-
-  // Validate that this is a government-issued PRC ID
-  static bool _isValidGovernmentId(String text) {
-    String upperText = text.toUpperCase();
-    
-    // Check for required government phrases
-    bool hasProfessionalRegulation = upperText.contains('PROFESSIONAL REGULATION COMMISSION');
-    bool hasProfessionalId = upperText.contains('PROFESSIONAL IDENTIFICATION CARD');
-    
-    SignupController.logOcrResult('VALIDATION', 
-        'Government phrases found - PRC: $hasProfessionalRegulation, PID: $hasProfessionalId');
-    
-    return hasProfessionalRegulation && hasProfessionalId;
   }
 
   static void dispose() {
     _textRecognizer.close();
+    _faceDetector.close();
   }
 }
 
-class ParsedIdData {
-  final String? firstName;
-  final String? lastName;
-  final String? registrationNumber;
-  final DateTime? validUntil;
-  final Uint8List? faceImage; // Store extracted face
-
-  ParsedIdData({
-    this.firstName,
-    this.lastName,
-    this.registrationNumber,
-    this.validUntil,
-    this.faceImage,
-  });
-
-  @override
-  String toString() {
-    return 'ParsedIdData(firstName: $firstName, lastName: $lastName, registrationNumber: $registrationNumber, validUntil: $validUntil, hasFace: ${faceImage != null})';
-  }
-}
-
+/// Simple result class
 class IdVerificationResult {
   final bool isValid;
   final String? errorMessage;
   final String? registrationNumber;
-  final Uint8List? faceImage;
+  final String? faceImage; // Path to the ID image containing the face
 
   IdVerificationResult({
     required this.isValid,
@@ -515,6 +282,6 @@ class IdVerificationResult {
 
   @override
   String toString() {
-    return 'IdVerificationResult(isValid: $isValid, errorMessage: $errorMessage, registrationNumber: $registrationNumber, hasFace: ${faceImage != null})';
+    return 'IdVerificationResult(isValid: $isValid, error: $errorMessage, regNum: $registrationNumber, faceImage: ${faceImage != null ? "present" : "null"})';
   }
 }

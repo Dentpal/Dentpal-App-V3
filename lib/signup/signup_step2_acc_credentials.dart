@@ -69,10 +69,12 @@ class _SignupStep2AccCredentialsState extends State<SignupStep2AccCredentials> {
   
   @override
   Widget build(BuildContext context) {
-    return Form(
-      key: _controller.formKeyStep2,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.only(
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Form(
+        key: _controller.formKeyStep2,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.only(
           left: 30.0,
           right: 30.0,
           top: 30.0
@@ -335,6 +337,7 @@ class _SignupStep2AccCredentialsState extends State<SignupStep2AccCredentials> {
           ],
         ),
       ),
+      )
     );
   }
 }

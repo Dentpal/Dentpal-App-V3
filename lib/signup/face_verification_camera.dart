@@ -131,26 +131,36 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
     try {
       final inputImage = _inputImageFromCameraImage(cameraImage);
       if (inputImage != null) {
-        final faces = await _faceDetector.processImage(inputImage);
-        
-        if (mounted) {
-          setState(() {
-            _faces = faces;
-            _faceDetected = faces.isNotEmpty;
-            
-            // Debug logging for iOS
-            if (Platform.isIOS) {
-              AppLogger.d('iOS Face Detection - Faces found: ${faces.length}');
-              if (faces.isNotEmpty) {
-                final face = faces.first;
-                AppLogger.d('Face box: ${face.boundingBox.width}x${face.boundingBox.height}');
-                AppLogger.d('Head angles Y: ${face.headEulerAngleY}, Z: ${face.headEulerAngleZ}');
-                AppLogger.d('Eye probabilities L: ${face.leftEyeOpenProbability}, R: ${face.rightEyeOpenProbability}');
+        try {
+          final faces = await _faceDetector.processImage(inputImage);
+          
+          if (mounted) {
+            setState(() {
+              _faces = faces;
+              _faceDetected = faces.isNotEmpty;
+              
+              // Debug logging for iOS
+              if (Platform.isIOS) {
+                AppLogger.d('iOS Face Detection - Faces found: ${faces.length}');
+                if (faces.isNotEmpty) {
+                  final face = faces.first;
+                  AppLogger.d('Face box: ${face.boundingBox.width}x${face.boundingBox.height}');
+                  AppLogger.d('Head angles Y: ${face.headEulerAngleY}, Z: ${face.headEulerAngleZ}');
+                  AppLogger.d('Eye probabilities L: ${face.leftEyeOpenProbability}, R: ${face.rightEyeOpenProbability}');
+                }
               }
-            }
-            
-            _updateStatusMessage(faces);
-          });
+              
+              _updateStatusMessage(faces);
+            });
+          }
+        } on PlatformException catch (e) {
+          // Handle camera buffer issues gracefully
+          if (e.code == 'IllegalArgumentException' && e.message?.contains('Bad position') == true) {
+            AppLogger.d('Camera buffer issue detected, skipping frame: ${e.message}');
+            // Simply skip this frame and continue with next one
+          } else {
+            AppLogger.d('ML Kit error processing image: $e');
+          }
         }
       }
     } catch (e) {

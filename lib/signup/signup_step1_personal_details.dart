@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'signup_controller.dart';
 import 'package:dentpal/core/app_theme/index.dart';
 
@@ -25,15 +26,20 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
   
   @override
   Widget build(BuildContext context) {
-    return Form(
-      key: _controller.formKeyStep1,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.only(
-          left: 30.0,
-          right: 30.0,
-          top: 30.0
-        ),
-        child: Column(
+    return GestureDetector(
+      onTap: () {
+        // Dismiss keyboard when tapping outside text fields
+        FocusScope.of(context).unfocus();
+      },
+      child: Form(
+        key: _controller.formKeyStep1,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.only(
+            left: 30.0,
+            right: 30.0,
+            top: 30.0
+          ),
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
@@ -45,6 +51,7 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
             const SizedBox(height: 4),
             TextFormField(
               controller: _controller.firstNameController,
+              textCapitalization: TextCapitalization.words,
               style: AppTextStyles.inputText,
               decoration: InputDecoration(
                 hintText: 'Enter your first name',
@@ -93,6 +100,7 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
             TextFormField(
               controller: _controller.lastNameController,
               style: AppTextStyles.inputText,
+              textCapitalization: TextCapitalization.words,
               decoration: InputDecoration(
                 hintText: 'Enter your last name',
                 hintStyle: AppTextStyles.inputHint,
@@ -139,8 +147,12 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
             const SizedBox(height: 4),
             TextFormField(
               controller: _controller.contactNumberController,
-              keyboardType: TextInputType.phone,
+              keyboardType: TextInputType.number,
+              inputFormatters: <TextInputFormatter>[
+                FilteringTextInputFormatter.digitsOnly, // Allows only digits (0-9) 
+              ],
               style: AppTextStyles.inputText,
+              maxLength: 11,
               onChanged: (value) {
                 // Enable or disable verification button based on input format
                 setState(() {
@@ -406,6 +418,7 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
           ],
         ),
       ),
+      )
     );
   }
   
