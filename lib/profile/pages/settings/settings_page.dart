@@ -5,6 +5,9 @@ import '../../../core/app_theme/app_colors.dart';
 import '../../../core/app_theme/app_text_styles.dart';
 import 'change_mobile_page.dart';
 import 'change_password_page.dart';
+import 'data_privacy_page.dart';
+import 'terms_conditions_page.dart';
+import 'privacy_policy_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -204,7 +207,11 @@ class _SettingsPageState extends State<SettingsPage> {
                         'Data Privacy',
                         Icons.privacy_tip_outlined,
                         () {
-                          _showComingSoonSnackBar(context, 'Data privacy');
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => const DataPrivacyPage(),
+                            ),
+                          );
                         },
                       ),
                       _buildDivider(),
@@ -213,7 +220,11 @@ class _SettingsPageState extends State<SettingsPage> {
                         'Terms and Conditions',
                         Icons.description_outlined,
                         () {
-                          _showComingSoonSnackBar(context, 'Terms and conditions');
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => const TermsConditionsPage(),
+                            ),
+                          );
                         },
                       ),
                       _buildDivider(),
@@ -222,7 +233,11 @@ class _SettingsPageState extends State<SettingsPage> {
                         'Privacy Policy',
                         Icons.shield_outlined,
                         () {
-                          _showComingSoonSnackBar(context, 'Privacy policy');
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => const PrivacyPolicyPage(),
+                            ),
+                          );
                         },
                       ),
                     ],
