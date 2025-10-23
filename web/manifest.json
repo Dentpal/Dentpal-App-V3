@@ -1,11 +1,11 @@
 {
-    "name": "dentpal",
-    "short_name": "dentpal",
+    "name": "Dentpal",
+    "short_name": "Dentpal",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#hexcode",
+    "theme_color": "#hexcode",
+    "description": "Dentpal - The first dental e-commerce store for dental professionals and practitioners.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

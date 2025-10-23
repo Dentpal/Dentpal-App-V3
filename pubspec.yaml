@@ -4,7 +4,7 @@ description: "Dentpal - The first dental e-commerce store for dental professiona
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 1.3.0+1
+version: 1.5.0+1
 
 environment:
   sdk: ^3.9.0
@@ -50,6 +50,7 @@ dev_dependencies:
     sdk: flutter
 
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.1
 
 flutter:
   uses-material-design: true
@@ -58,6 +59,7 @@ flutter:
     - lib/assets/icons/dentpal_vertical.png
     - lib/assets/icons/facebook-logo.png
     - lib/assets/icons/google-logo.png
+    - lib/assets/icons/dentpal_icon.png
 
   fonts:
     - family: Poppins
@@ -67,3 +69,22 @@ flutter:
       fonts:
         - asset: lib/assets/fonts/Roboto-Regular.ttf
           weight: 900
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "lib/assets/icons/dentpal_icon.png"
+  remove_alpha_ios: true
+  min_sdk_android: 21 # android min sdk min:16, default 21
+  web:
+    generate: true
+    image_path: "lib/assets/icons/dentpal_icon.png"
+    background_color: "#hexcode"
+    theme_color: "#hexcode"
+  windows:
+    generate: true
+    image_path: "lib/assets/icons/dentpal_icon.png"
+    icon_size: 48 # min:48, max:256, default: 48
+  macos:
+    generate: true
+    image_path: "lib/assets/icons/dentpal_icon.png"
