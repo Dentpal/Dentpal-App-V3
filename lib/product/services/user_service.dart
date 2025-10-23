@@ -27,9 +27,16 @@ class UserService {
   Future<String> getUserFirstName() async {
     try {
       final userData = await getCurrentUserData();
-      if (userData != null && userData['fullName'] != null) {
-        final fullName = userData['fullName'] as String;
-        return fullName.split(' ').first;
+      if (userData != null) {
+        // First try to get from the firstName field
+        if (userData['firstName'] != null && userData['firstName'].toString().isNotEmpty) {
+          return userData['firstName'] as String;
+        }
+        // Fall back to parsing fullName for backward compatibility
+        if (userData['fullName'] != null) {
+          final fullName = userData['fullName'] as String;
+          return fullName.split(' ').first;
+        }
       }
       return 'User';
     } catch (e) {
