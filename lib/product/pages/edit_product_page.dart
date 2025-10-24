@@ -10,6 +10,8 @@ import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import 'package:dentpal/utils/app_logger.dart';
 
+enum UnsavedChangesAction { saveAsDraft, discard }
+
 class EditProductPage extends StatefulWidget {
   final Product product;
 
@@ -35,6 +37,7 @@ class _EditProductPageState extends State<EditProductPage> {
   bool _isLoading = false;
   bool _isCategoriesLoading = true;
   String _errorMessage = '';
+  bool _hasUnsavedChanges = false;
 
   // Dynamic categories and subcategories
   List<Category> _categories = [];
@@ -49,6 +52,100 @@ class _EditProductPageState extends State<EditProductPage> {
     super.initState();
     _populateFormWithProduct();
     _loadCategories();
+    _setupChangeListeners();
+  }
+
+  void _setupChangeListeners() {
+    _nameController.addListener(_markAsChanged);
+    _descriptionController.addListener(_markAsChanged);
+  }
+
+  void _markAsChanged() {
+    if (!_hasUnsavedChanges) {
+      setState(() {
+        _hasUnsavedChanges = true;
+      });
+    }
+  }
+
+  Future<UnsavedChangesAction?> _showUnsavedChangesDialog() async {
+    return showDialog<UnsavedChangesAction>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text(
+            'Unsaved Changes',
+            style: AppTextStyles.titleLarge.copyWith(
+              color: AppColors.onSurface,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          content: Text(
+            'You have unsaved changes. What would you like to do?',
+            style: AppTextStyles.bodyLarge.copyWith(
+              color: AppColors.onSurface.withValues(alpha: 0.8),
+            ),
+          ),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () {
+                        Navigator.of(context).pop(UnsavedChangesAction.discard);
+                      },
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.error,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      child: Text(
+                        'Discard',
+                        style: AppTextStyles.labelMedium.copyWith(
+                          color: AppColors.error,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        Navigator.of(context).pop(UnsavedChangesAction.saveAsDraft);
+                        await _submitForm(isDraft: true);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: AppColors.onPrimary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      child: Text(
+                        'Save Draft',
+                        style: AppTextStyles.labelMedium.copyWith(
+                          color: AppColors.onPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   // Populate the form with existing product data
@@ -194,6 +291,11 @@ class _EditProductPageState extends State<EditProductPage> {
       'width': TextEditingController(text: '0'),
       'height': TextEditingController(text: '0'),
     });
+    
+    // Add listeners to variation controllers
+    for (var controller in _variationControllers.last.values) {
+      controller.addListener(_markAsChanged);
+    }
   }
 
   @override
@@ -223,6 +325,13 @@ class _EditProductPageState extends State<EditProductPage> {
         'width': TextEditingController(text: '0'),
         'height': TextEditingController(text: '0'),
       });
+      
+      // Add listeners to new variation controllers
+      for (var controller in _variationControllers.last.values) {
+        controller.addListener(_markAsChanged);
+      }
+      
+      _markAsChanged(); // Adding a variation counts as a change
     });
   }
 
@@ -235,6 +344,7 @@ class _EditProductPageState extends State<EditProductPage> {
         for (var controller in controllers.values) {
           controller.dispose();
         }
+        _markAsChanged(); // Removing a variation counts as a change
       });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -265,6 +375,7 @@ class _EditProductPageState extends State<EditProductPage> {
       if (pickedFile != null) {
         setState(() {
           _productForm.imageFile = pickedFile;
+          _markAsChanged(); // Image selection counts as a change
         });
       }
     } catch (e) {
@@ -314,6 +425,7 @@ class _EditProductPageState extends State<EditProductPage> {
       if (pickedFile != null) {
         setState(() {
           _variations[index].imageFile = pickedFile;
+          _markAsChanged(); // Variation image selection counts as a change
         });
       }
     } catch (e) {
@@ -492,6 +604,8 @@ class _EditProductPageState extends State<EditProductPage> {
               content: Text(message),
             ),
           );
+          // Reset unsaved changes flag before navigating
+          _hasUnsavedChanges = false;
           // Navigate back to product detail
           Navigator.of(context).pop();
         }
@@ -545,23 +659,42 @@ class _EditProductPageState extends State<EditProductPage> {
   }
 
   Widget _buildMobileLayout() {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: Text(
-          'Edit Product',
-          style: AppTextStyles.titleLarge.copyWith(
-            color: AppColors.onSurface,
-            fontWeight: FontWeight.w600,
+    return PopScope(
+      canPop: !_hasUnsavedChanges,
+      onPopInvokedWithResult: (bool didPop, result) async {
+        if (!didPop && _hasUnsavedChanges) {
+          final action = await _showUnsavedChangesDialog();
+          if (action == UnsavedChangesAction.discard && mounted) {
+            Navigator.of(context).pop();
+          }
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          title: Text(
+            'Edit Product',
+            style: AppTextStyles.titleLarge.copyWith(
+              color: AppColors.onSurface,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          backgroundColor: AppColors.surface,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
+            onPressed: () async {
+              if (_hasUnsavedChanges) {
+                final action = await _showUnsavedChangesDialog();
+                if (action == UnsavedChangesAction.discard && mounted) {
+                  Navigator.of(context).pop();
+                }
+              } else {
+                Navigator.of(context).pop();
+              }
+            },
           ),
         ),
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(20.0),
@@ -924,6 +1057,7 @@ class _EditProductPageState extends State<EditProductPage> {
                               _selectedSubCategoryId = null;
                               _productForm.subCategoryId = null;
                               _subCategories.clear();
+                              _markAsChanged(); // Category selection counts as a change
                             });
                             if (value != null) {
                               _loadSubCategories(value);
@@ -1033,6 +1167,7 @@ class _EditProductPageState extends State<EditProductPage> {
                             setState(() {
                               _selectedSubCategoryId = value;
                               _productForm.subCategoryId = value;
+                              _markAsChanged(); // Subcategory selection counts as a change
                             });
                           },
                     validator: (_) => _productForm.validateSubCategory(),
@@ -1571,7 +1706,7 @@ class _EditProductPageState extends State<EditProductPage> {
                                     ),
                                     validator: (value) {
                                       if (value == null || value.isEmpty) {
-                                        return 'SKU is required';
+                                        return 'Product SKU is required';
                                       }
                                       return null;
                                     },
@@ -1883,51 +2018,49 @@ class _EditProductPageState extends State<EditProductPage> {
                 // Button Row: Save as Draft and Update Product
                 Row(
                   children: [
-                    // Save as Draft Button (only show if product is not currently a draft)
-                    if (!widget.product.isDraft) ...[
-                      Expanded(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: AppColors.primary,
-                              width: 2,
-                            ),
-                          ),
-                          child: ElevatedButton(
-                            onPressed: _isLoading ? null : () => _submitForm(isDraft: true),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              foregroundColor: AppColors.primary,
-                              shadowColor: Colors.transparent,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              padding: const EdgeInsets.symmetric(vertical: 18),
-                            ),
-                            child: _isLoading
-                                ? SizedBox(
-                                    height: 24,
-                                    width: 24,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        AppColors.primary,
-                                      ),
-                                    ),
-                                  )
-                                : Text(
-                                    'Save as Draft',
-                                    style: AppTextStyles.labelLarge.copyWith(
-                                      color: AppColors.primary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
+                    // Save as Draft Button
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: AppColors.primary,
+                            width: 2,
                           ),
                         ),
+                        child: ElevatedButton(
+                          onPressed: _isLoading ? null : () => _submitForm(isDraft: true),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            foregroundColor: AppColors.primary,
+                            shadowColor: Colors.transparent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 18),
+                          ),
+                          child: _isLoading
+                              ? SizedBox(
+                                  height: 24,
+                                  width: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      AppColors.primary,
+                                    ),
+                                  ),
+                                )
+                              : Text(
+                                  'Save as Draft',
+                                  style: AppTextStyles.labelLarge.copyWith(
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                        ),
                       ),
-                      const SizedBox(width: 12),
-                    ],
+                    ),
+                    const SizedBox(width: 12),
                     // Update Product Button
                     Expanded(
                       child: Container(
@@ -1976,27 +2109,47 @@ class _EditProductPageState extends State<EditProductPage> {
           ),
         ),
       ),
+      )
     );
   }
 
   Widget _buildWebLayout() {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: Text(
-          'Edit Product',
-          style: AppTextStyles.titleLarge.copyWith(
-            color: AppColors.onSurface,
-            fontWeight: FontWeight.w600,
+    return PopScope(
+      canPop: !_hasUnsavedChanges,
+      onPopInvoked: (bool didPop) async {
+        if (!didPop && _hasUnsavedChanges) {
+          final action = await _showUnsavedChangesDialog();
+          if (action == UnsavedChangesAction.discard && mounted) {
+            Navigator.of(context).pop();
+          }
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          title: Text(
+            'Edit Product',
+            style: AppTextStyles.titleLarge.copyWith(
+              color: AppColors.onSurface,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          backgroundColor: AppColors.surface,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
+            onPressed: () async {
+              if (_hasUnsavedChanges) {
+                final action = await _showUnsavedChangesDialog();
+                if (action == UnsavedChangesAction.discard && mounted) {
+                  Navigator.of(context).pop();
+                }
+              } else {
+                Navigator.of(context).pop();
+              }
+            },
           ),
         ),
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
       body: SingleChildScrollView(
         child: Center(
           child: Container(
@@ -2066,46 +2219,93 @@ class _EditProductPageState extends State<EditProductPage> {
 
                   const SizedBox(height: 40),
 
-                  // Submit Button
-                  Center(
-                    child: Container(
-                      width: 400,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        gradient: _isLoading ? null : AppColors.primaryGradient,
-                        color: _isLoading ? AppColors.grey300 : null,
-                      ),
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _submitForm,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.transparent,
-                          foregroundColor: AppColors.onPrimary,
-                          shadowColor: Colors.transparent,
-                          shape: RoundedRectangleBorder(
+                  // Button Row: Save as Draft and Update Product
+                  Row(
+                    children: [
+                      // Save as Draft Button  
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: AppColors.primary,
+                              width: 2,
+                            ),
                           ),
-                          padding: const EdgeInsets.symmetric(vertical: 20),
-                        ),
-                        child: _isLoading
-                            ? SizedBox(
-                                height: 24,
-                                width: 24,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    AppColors.onPrimary,
-                                  ),
-                                ),
-                              )
-                            : Text(
-                                'Update Product',
-                                style: AppTextStyles.labelLarge.copyWith(
-                                  color: AppColors.onPrimary,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                          child: ElevatedButton(
+                            onPressed: _isLoading ? null : () => _submitForm(isDraft: true),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              foregroundColor: AppColors.primary,
+                              shadowColor: Colors.transparent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
                               ),
+                              padding: const EdgeInsets.symmetric(vertical: 18),
+                            ),
+                            child: _isLoading
+                                ? SizedBox(
+                                    height: 24,
+                                    width: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        AppColors.primary,
+                                      ),
+                                    ),
+                                  )
+                                : Text(
+                                    'Save as Draft',
+                                    style: AppTextStyles.labelLarge.copyWith(
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 24),
+                      // Update Product Button
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            gradient: _isLoading ? null : AppColors.primaryGradient,
+                            color: _isLoading ? AppColors.grey300 : null,
+                          ),
+                          child: ElevatedButton(
+                            onPressed: _isLoading ? null : () => _submitForm(isDraft: false),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              foregroundColor: AppColors.onPrimary,
+                              shadowColor: Colors.transparent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 18),
+                            ),
+                            child: _isLoading
+                                ? SizedBox(
+                                    height: 24,
+                                    width: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        AppColors.onPrimary,
+                                      ),
+                                    ),
+                                  )
+                                : Text(
+                                    widget.product.isDraft ? 'Publish Product' : 'Update Product',
+                                    style: AppTextStyles.labelLarge.copyWith(
+                                      color: AppColors.onPrimary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -2113,7 +2313,8 @@ class _EditProductPageState extends State<EditProductPage> {
           ),
         ),
       ),
-    );
+       ) // End of Scaffold
+    ); // End of PopScope
   }
 
   Widget _buildWebProductImageSection() {
@@ -2306,7 +2507,7 @@ class _EditProductPageState extends State<EditProductPage> {
                 icon: Icons.shopping_bag_outlined,
                 validator: (value) {
                   if (value == null || value.isEmpty) {
-                    return 'Name is required';
+                    return 'ProductName is required';
                   }
                   return null;
                 },
@@ -2396,6 +2597,7 @@ class _EditProductPageState extends State<EditProductPage> {
                           _selectedSubCategoryId = null;
                           _productForm.subCategoryId = null;
                           _subCategories.clear();
+                          _markAsChanged(); // Category selection counts as a change
                         });
                         if (value != null) {
                           _loadSubCategories(value);
@@ -2452,6 +2654,7 @@ class _EditProductPageState extends State<EditProductPage> {
                         setState(() {
                           _selectedSubCategoryId = value;
                           _productForm.subCategoryId = value;
+                          _markAsChanged(); // Subcategory selection counts as a change
                         });
                       },
                 validator: (_) => _productForm.validateSubCategory(),
@@ -2816,7 +3019,7 @@ class _EditProductPageState extends State<EditProductPage> {
                             icon: Icons.label_outline,
                             validator: (value) {
                               if (value == null || value.isEmpty) {
-                                return 'Name is required';
+                                return 'Variation Name is required';
                               }
                               return null;
                             },
@@ -2872,7 +3075,7 @@ class _EditProductPageState extends State<EditProductPage> {
                             icon: Icons.qr_code,
                             validator: (value) {
                               if (value == null || value.isEmpty) {
-                                return 'SKU is required';
+                                return 'Product SKU is required';
                               }
                               return null;
                             },

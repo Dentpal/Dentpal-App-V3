@@ -16,6 +16,11 @@ class Product {
   final bool isArchived;
   final int clickCounter;
   final List<ProductVariation>? variations;
+  final bool hasWarranty;
+  final String? warrantyType;
+  final int? warrantyPeriod;
+  final String? warrantyPeriodUnit;
+  final String? warrantyPolicy;
 
   Product({
     required this.productId,
@@ -32,6 +37,11 @@ class Product {
     required this.isArchived,
     required this.clickCounter,
     this.variations,
+    required this.hasWarranty,
+    this.warrantyType,
+    this.warrantyPeriod,
+    this.warrantyPeriodUnit,
+    this.warrantyPolicy,
   });
 
   factory Product.fromFirestore(DocumentSnapshot doc) {
@@ -76,6 +86,11 @@ class Product {
       isArchived: data['isArchived'] ?? false,
       clickCounter: data['clickCounter'] ?? 0,
       variations: null, // Variations will be fetched separately
+      hasWarranty: data['hasWarranty'] ?? false,
+      warrantyType: data['warrantyType'],
+      warrantyPeriod: data['warrantyPeriod'],
+      warrantyPeriodUnit: data['warrantyPeriodUnit'],
+      warrantyPolicy: data['warrantyPolicy'],
     );
   }
 
@@ -93,6 +108,11 @@ class Product {
       'isDraft': isDraft,
       'isArchived': isArchived,
       'clickCounter': clickCounter,
+      'hasWarranty': hasWarranty,
+      'warrantyType': warrantyType,
+      'warrantyPeriod': warrantyPeriod,
+      'warrantyPeriodUnit': warrantyPeriodUnit,
+      'warrantyPolicy': warrantyPolicy,
     };
   }
 

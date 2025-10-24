@@ -9,17 +9,23 @@ class ProductFormModel {
   String? subCategoryId = '';
   List<VariationFormModel> variations = [];
   
+  // Warranty fields
+  bool hasWarranty = false;
+  String warrantyType = '';
+  String warrantyPeriod = '';
+  String warrantyPolicy = '';
+  
   // Validation
   String? validateName() {
     if (name.isEmpty) {
-      return 'Name is required';
+      return 'Product Name is required';
     }
     return null;
   }
   
   String? validateDescription() {
     if (description.isEmpty) {
-      return 'Description is required';
+      return 'Product Description is required';
     }
     return null;
   }
@@ -40,7 +46,28 @@ class ProductFormModel {
   
   String? validateSubCategory() {
     if (subCategoryId == null || subCategoryId!.isEmpty) {
-      return 'SubCategory is required';
+      return 'Sub Category is required';
+    }
+    return null;
+  }
+  
+  String? validateWarrantyType() {
+    if (hasWarranty && warrantyType.isEmpty) {
+      return 'Warranty type is required when warranty is enabled';
+    }
+    return null;
+  }
+  
+  String? validateWarrantyPeriod() {
+    if (hasWarranty && warrantyPeriod.isEmpty) {
+      return 'Warranty period is required when warranty is enabled';
+    }
+    return null;
+  }
+  
+  String? validateWarrantyPolicy() {
+    if (hasWarranty && warrantyPolicy.isEmpty) {
+      return 'Warranty policy is required';
     }
     return null;
   }
@@ -51,7 +78,7 @@ class ProductFormModel {
     }
     
     for (var variation in variations) {
-      if (variation.price <= 0 || variation.stock < 0 || variation.sku.isEmpty) {
+      if (variation.priceWithVat <= 0 || variation.stock < 0 || variation.sku.isEmpty) {
         return false;
       }
     }
@@ -64,7 +91,7 @@ class VariationFormModel {
   String name = '';
   String? imageURL;
   File? imageFile;
-  double price = 0;
+  double price = 0; // Original price without VAT
   int stock = 0;
   String sku = '';
   double? weight;
@@ -74,9 +101,18 @@ class VariationFormModel {
     'height': 0.0,
   };
   
+  // VAT constants
+  static const double vatRate = 0.12; // 12% VAT
+  
+  // Calculate price with VAT (this is what gets saved)
+  double get priceWithVat => price * (1 + vatRate);
+  
+  // Calculate VAT amount
+  double get vatAmount => price * vatRate;
+  
   // Validation
   String? validatePrice() {
-    if (price <= 0) {
+    if (priceWithVat <= 0) {
       return 'Price must be greater than 0';
     }
     return null;
@@ -91,7 +127,7 @@ class VariationFormModel {
   
   String? validateSKU() {
     if (sku.isEmpty) {
-      return 'SKU is required';
+      return 'Product SKU is required';
     }
     return null;
   }

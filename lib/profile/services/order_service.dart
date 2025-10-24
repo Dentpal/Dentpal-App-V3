@@ -78,6 +78,8 @@ class OrderService {
         'deliveredOrders': deliveredOrders,
         'pendingOrders': pendingOrders,
         'cancelledOrders': cancelledOrders,
+        'expiredOrders': orders.where((order) => 
+          order.status == order_model.OrderStatus.expired).length,
       };
 
       AppLogger.d('✅ Calculated order statistics: $statistics');
@@ -91,6 +93,7 @@ class OrderService {
         'deliveredOrders': 0,
         'pendingOrders': 0,
         'cancelledOrders': 0,
+        'expiredOrders': 0,
       };
     }
   }

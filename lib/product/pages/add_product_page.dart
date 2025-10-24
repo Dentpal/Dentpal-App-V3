@@ -10,6 +10,8 @@ import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import 'package:dentpal/utils/app_logger.dart';
 
+enum UnsavedChangesAction { saveAsDraft, discard }
+
 class AddProductPage extends StatefulWidget {
   const AddProductPage({Key? key}) : super(key: key);
 
@@ -28,6 +30,7 @@ class _AddProductPageState extends State<AddProductPage> {
   // Add controllers for all text fields
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _warrantyPolicyController = TextEditingController();
   final List<Map<String, TextEditingController>> _variationControllers = [];
 
   bool _isLoading = false;
@@ -35,12 +38,33 @@ class _AddProductPageState extends State<AddProductPage> {
   String _errorMessage = '';
   bool _isSeller = false;
   String _sellerMessage = '';
+  bool _hasUnsavedChanges = false;
 
   // Dynamic categories and subcategories
   List<Category> _categories = [];
   List<SubCategory> _subCategories = [];
   String? _selectedCategoryId;
   String? _selectedSubCategoryId;
+  String _selectedWarrantyPeriod = '';
+
+  // Warranty options
+  final List<String> _warrantyTypes = [
+    'Local Manufacturer Warranty',
+    'Local Supplier Warranty',
+    'Local Supplier Refund Warranty',
+    'International Manufacturer Warranty',
+    'International Seller Warranty',
+  ];
+  
+  final List<String> _warrantyPeriods = [
+    '6 months',
+    '1 year',
+    '2 years',
+    '3 years',
+    '4 years',
+    '5 years',
+    'Lifetime warranty',
+  ];
 
   @override
   void initState() {
@@ -48,6 +72,101 @@ class _AddProductPageState extends State<AddProductPage> {
     _initializeVariationControllers();
     _checkSellerStatus();
     _loadCategories();
+    _setupChangeListeners();
+  }
+
+  void _setupChangeListeners() {
+    _nameController.addListener(_markAsChanged);
+    _descriptionController.addListener(_markAsChanged);
+    _warrantyPolicyController.addListener(_markAsChanged);
+  }
+
+  void _markAsChanged() {
+    if (!_hasUnsavedChanges) {
+      setState(() {
+        _hasUnsavedChanges = true;
+      });
+    }
+  }
+
+  Future<UnsavedChangesAction?> _showUnsavedChangesDialog() async {
+    return showDialog<UnsavedChangesAction>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text(
+            'Unsaved Changes',
+            style: AppTextStyles.titleLarge.copyWith(
+              color: AppColors.onSurface,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          content: Text(
+            'You have unsaved changes. What would you like to do?',
+            style: AppTextStyles.bodyLarge.copyWith(
+              color: AppColors.onSurface.withValues(alpha: 0.8),
+            ),
+          ),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () {
+                        Navigator.of(context).pop(UnsavedChangesAction.discard);
+                      },
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.error,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      child: Text(
+                        'Discard',
+                        style: AppTextStyles.labelMedium.copyWith(
+                          color: AppColors.error,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        Navigator.of(context).pop(UnsavedChangesAction.saveAsDraft);
+                        await _submitForm(isDraft: true);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: AppColors.onPrimary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      child: Text(
+                        'Save Draft',
+                        style: AppTextStyles.labelMedium.copyWith(
+                          color: AppColors.onPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _loadCategories() async {
@@ -117,6 +236,11 @@ class _AddProductPageState extends State<AddProductPage> {
       'width': TextEditingController(text: '0'),
       'height': TextEditingController(text: '0'),
     });
+    
+    // Add listeners to variation controllers
+    for (var controller in _variationControllers.last.values) {
+      controller.addListener(_markAsChanged);
+    }
   }
 
   @override
@@ -124,6 +248,7 @@ class _AddProductPageState extends State<AddProductPage> {
     // Dispose all controllers to prevent memory leaks
     _nameController.dispose();
     _descriptionController.dispose();
+    _warrantyPolicyController.dispose();
     for (var controllers in _variationControllers) {
       for (var controller in controllers.values) {
         controller.dispose();
@@ -168,6 +293,13 @@ class _AddProductPageState extends State<AddProductPage> {
         'width': TextEditingController(text: '0'),
         'height': TextEditingController(text: '0'),
       });
+      
+      // Add listeners to new variation controllers
+      for (var controller in _variationControllers.last.values) {
+        controller.addListener(_markAsChanged);
+      }
+      
+      _markAsChanged(); // Adding a variation counts as a change
     });
   }
 
@@ -180,6 +312,7 @@ class _AddProductPageState extends State<AddProductPage> {
         for (var controller in controllers.values) {
           controller.dispose();
         }
+        _markAsChanged(); // Removing a variation counts as a change
       });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -210,6 +343,7 @@ class _AddProductPageState extends State<AddProductPage> {
       if (pickedFile != null) {
         setState(() {
           _productForm.imageFile = pickedFile;
+          _markAsChanged(); // Image selection counts as a change
         });
       }
     } catch (e) {
@@ -259,6 +393,7 @@ class _AddProductPageState extends State<AddProductPage> {
       if (pickedFile != null) {
         setState(() {
           _variations[index].imageFile = pickedFile;
+          _markAsChanged(); // Variation image selection counts as a change
         });
       }
     } catch (e) {
@@ -336,6 +471,16 @@ class _AddProductPageState extends State<AddProductPage> {
         });
         return;
       }
+
+      // Validate that each variation has an image
+      for (int i = 0; i < _variations.length; i++) {
+        if (_variations[i].imageFile == null) {
+          setState(() {
+            _errorMessage = 'Please select an image for variation ${i + 1}';
+          });
+          return;
+        }
+      }
     }
 
     // Save all form fields
@@ -344,12 +489,14 @@ class _AddProductPageState extends State<AddProductPage> {
     // Manually transfer values from controllers to models
     _productForm.name = _nameController.text;
     _productForm.description = _descriptionController.text;
+    _productForm.hasWarranty = _productForm.hasWarranty;
+    _productForm.warrantyPolicy = _warrantyPolicyController.text;
 
     // Set variation values from controllers
     for (int i = 0; i < _variations.length; i++) {
       final controllers = _variationControllers[i];
       _variations[i].name = controllers['name']!.text;
-      _variations[i].price = double.tryParse(controllers['price']!.text) ?? 0;
+      _variations[i].price = double.tryParse(controllers['price']!.text) ?? 0; // This is the base price without VAT
       _variations[i].stock = int.tryParse(controllers['stock']!.text) ?? 0;
       _variations[i].sku = controllers['sku']!.text;
       _variations[i].weight = controllers['weight']!.text.isNotEmpty
@@ -434,6 +581,8 @@ class _AddProductPageState extends State<AddProductPage> {
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(SnackBar(content: Text(message)));
+          // Reset unsaved changes flag before navigating
+          _hasUnsavedChanges = false;
           // Navigate back or to product detail
           Navigator.of(context).pop();
         }
@@ -567,592 +716,738 @@ class _AddProductPageState extends State<AddProductPage> {
   }
 
   Widget _buildMobileLayout() {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: Text(
-          'Add Product',
-          style: AppTextStyles.titleLarge.copyWith(
-            color: AppColors.onSurface,
-            fontWeight: FontWeight.w600,
+    return PopScope(
+      canPop: !_hasUnsavedChanges,
+      onPopInvokedWithResult: (bool didPop, result) async {
+        if (!didPop && _hasUnsavedChanges) {
+          final action = await _showUnsavedChangesDialog();
+          if (action == UnsavedChangesAction.discard && mounted) {
+            Navigator.of(context).pop();
+          }
+        }
+      },
+      child: GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: Scaffold(
+          backgroundColor: AppColors.background,
+          appBar: AppBar(
+            title: Text(
+              'Add Product',
+              style: AppTextStyles.titleLarge.copyWith(
+                color: AppColors.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            backgroundColor: AppColors.surface,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
+              onPressed: () async {
+                if (_hasUnsavedChanges) {
+                  final action = await _showUnsavedChangesDialog();
+                  if (action == UnsavedChangesAction.discard && mounted) {
+                    Navigator.of(context).pop();
+                  }
+                } else {
+                  Navigator.of(context).pop();
+                }
+              },
+            ),
           ),
-        ),
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (_errorMessage.isNotEmpty)
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 20.0),
-                    padding: const EdgeInsets.all(16.0),
-                    decoration: BoxDecoration(
-                      color: AppColors.error.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppColors.error.withValues(alpha: 0.3),
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.error_outline,
-                          color: AppColors.error,
-                          size: 20,
+        body: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (_errorMessage.isNotEmpty)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 20.0),
+                      padding: const EdgeInsets.all(16.0),
+                      decoration: BoxDecoration(
+                        color: AppColors.error.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.error.withValues(alpha: 0.3),
+                          width: 1,
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            _errorMessage,
-                            style: AppTextStyles.bodyMedium.copyWith(
-                              color: AppColors.error,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                // Product Name
-                Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
                       ),
-                    ],
-                  ),
-                  child: TextFormField(
-                    controller: _nameController,
-                    style: AppTextStyles.bodyLarge.copyWith(
-                      color: AppColors.onSurface,
-                    ),
-                    decoration: InputDecoration(
-                      labelText: 'Product Name *',
-                      labelStyle: AppTextStyles.labelLarge.copyWith(
-                        color: AppColors.onSurface.withValues(alpha: 0.7),
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide.none,
-                      ),
-                      filled: true,
-                      fillColor: AppColors.surface,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 16,
-                      ),
-                    ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Name is required';
-                      }
-                      return null;
-                    },
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                // Product Description
-                Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: TextFormField(
-                    controller: _descriptionController,
-                    style: AppTextStyles.bodyLarge.copyWith(
-                      color: AppColors.onSurface,
-                    ),
-                    decoration: InputDecoration(
-                      labelText: 'Description *',
-                      labelStyle: AppTextStyles.labelLarge.copyWith(
-                        color: AppColors.onSurface.withValues(alpha: 0.7),
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide.none,
-                      ),
-                      filled: true,
-                      fillColor: AppColors.surface,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 16,
-                      ),
-                      alignLabelWithHint: true,
-                    ),
-                    maxLines: 4,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Description is required';
-                      }
-                      return null;
-                    },
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                // Product Image
-                Container(
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+                      child: Row(
                         children: [
-                          const Padding(
-                            padding: EdgeInsets.only(
-                              left: 20,
-                              top: 20,
-                              bottom: 8,
-                            ),
-                            child: Icon(
-                              Icons.camera_alt,
-                              color: AppColors.primary,
-                            ),
+                          Icon(
+                            Icons.error_outline,
+                            color: AppColors.error,
+                            size: 20,
                           ),
+                          const SizedBox(width: 12),
                           Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.only(
-                                left: 12,
-                                top: 20,
-                                right: 20,
-                                bottom: 8,
-                              ),
-                              child: Text(
-                                'Product Image *',
-                                style: AppTextStyles.titleMedium.copyWith(
-                                  color: AppColors.onSurface,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                            child: Text(
+                              _errorMessage,
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                color: AppColors.error,
                               ),
                             ),
                           ),
                         ],
                       ),
-                      if (_productForm.imageFile != null)
-                        Container(
-                          height: 250,
-                          width: double.infinity,
-                          margin: const EdgeInsets.symmetric(horizontal: 16),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            color: AppColors.surfaceVariant,
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: Image.file(
-                              _productForm.imageFile!,
-                              fit: BoxFit.cover,
+                    ),
+
+                  // Product Name
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: TextFormField(
+                      controller: _nameController,
+                      style: AppTextStyles.bodyLarge.copyWith(
+                        color: AppColors.onSurface,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: 'Product Name *',
+                        labelStyle: AppTextStyles.labelLarge.copyWith(
+                          color: AppColors.onSurface.withValues(alpha: 0.7),
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                        filled: true,
+                        fillColor: AppColors.surface,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 16,
+                        ),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Product Name is required';
+                        }
+                        if (value.length < 10) {
+                          return 'Product name must be at least 10 characters long';
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Product Description
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: TextFormField(
+                      controller: _descriptionController,
+                      style: AppTextStyles.bodyLarge.copyWith(
+                        color: AppColors.onSurface,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: 'Description *',
+                        labelStyle: AppTextStyles.labelLarge.copyWith(
+                          color: AppColors.onSurface.withValues(alpha: 0.7),
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                        filled: true,
+                        fillColor: AppColors.surface,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 16,
+                        ),
+                        alignLabelWithHint: true,
+                      ),
+                      maxLines: 4,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Description is required';
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Product Image
+                  Container(
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Padding(
+                              padding: EdgeInsets.only(
+                                left: 20,
+                                top: 20,
+                                bottom: 8,
+                              ),
+                              child: Icon(
+                                Icons.camera_alt,
+                                color: AppColors.primary,
+                              ),
                             ),
-                          ),
-                        )
-                      else
-                        Container(
-                          height: 150,
-                          margin: const EdgeInsets.symmetric(horizontal: 16),
-                          decoration: BoxDecoration(
-                            color: AppColors.surfaceVariant,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: AppColors.primary.withValues(alpha: 0.3),
-                              width: 2,
-                              style: BorderStyle.solid,
-                            ),
-                          ),
-                          child: Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.add_a_photo,
-                                  size: 48,
-                                  color: AppColors.primary.withValues(
-                                    alpha: 0.7,
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(
+                                  left: 12,
+                                  top: 20,
+                                  right: 20,
+                                  bottom: 8,
+                                ),
+                                child: Text(
+                                  'Product Image *',
+                                  style: AppTextStyles.titleMedium.copyWith(
+                                    color: AppColors.onSurface,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'No image selected',
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (_productForm.imageFile != null)
+                          Container(
+                            height: 250,
+                            width: double.infinity,
+                            margin: const EdgeInsets.symmetric(horizontal: 16),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              color: AppColors.surfaceVariant,
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Image.file(
+                                _productForm.imageFile!,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          )
+                        else
+                          Container(
+                            height: 150,
+                            margin: const EdgeInsets.symmetric(horizontal: 16),
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceVariant,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: AppColors.primary.withValues(alpha: 0.3),
+                                width: 2,
+                                style: BorderStyle.solid,
+                              ),
+                            ),
+                            child: Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.add_a_photo,
+                                    size: 48,
+                                    color: AppColors.primary.withValues(
+                                      alpha: 0.7,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'No image selected',
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      color: AppColors.onSurface.withValues(
+                                        alpha: 0.6,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: _pickProductImage,
+                                  icon: const Icon(Icons.add_a_photo),
+                                  label: Text(
+                                    _productForm.imageFile != null
+                                        ? 'Change Image'
+                                        : 'Add Image',
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor:
+                                        _productForm.imageFile != null
+                                        ? AppColors.secondary
+                                        : AppColors.primary,
+                                    foregroundColor: AppColors.onPrimary,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              if (_productForm.imageFile != null) ...[
+                                const SizedBox(width: 12),
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: AppColors.error.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: IconButton(
+                                    onPressed: () {
+                                      setState(() {
+                                        _productForm.imageFile = null;
+                                      });
+                                    },
+                                    icon: const Icon(
+                                      Icons.delete,
+                                      color: AppColors.error,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Category
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: DropdownButtonFormField<String>(
+                      decoration: InputDecoration(
+                        labelText: 'Category *',
+                        labelStyle: AppTextStyles.labelLarge.copyWith(
+                          color: AppColors.onSurface.withValues(alpha: 0.7),
+                        ),
+                        prefixIcon: const Icon(
+                          Icons.category,
+                          color: AppColors.primary,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                        filled: true,
+                        fillColor: AppColors.surface,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 16,
+                        ),
+                      ),
+                      style: AppTextStyles.bodyLarge.copyWith(
+                        color: AppColors.onSurface,
+                      ),
+                      dropdownColor: AppColors.surface,
+                      initialValue: _selectedCategoryId,
+                      items: _isCategoriesLoading
+                          ? [
+                              DropdownMenuItem(
+                                value: null,
+                                child: Text(
+                                  'Loading...',
                                   style: AppTextStyles.bodyMedium.copyWith(
                                     color: AppColors.onSurface.withValues(
                                       alpha: 0.6,
                                     ),
                                   ),
                                 ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: _pickProductImage,
-                                icon: const Icon(Icons.add_a_photo),
-                                label: Text(
-                                  _productForm.imageFile != null
-                                      ? 'Change Image'
-                                      : 'Add Image',
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor:
-                                      _productForm.imageFile != null
-                                      ? AppColors.secondary
-                                      : AppColors.primary,
-                                  foregroundColor: AppColors.onPrimary,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
+                              ),
+                            ]
+                          : _categories.map((category) {
+                              return DropdownMenuItem(
+                                value: category.categoryId,
+                                child: Text(
+                                  category.categoryName,
+                                  style: AppTextStyles.bodyLarge.copyWith(
+                                    color: AppColors.onSurface,
                                   ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                                ),
+                              );
+                            }).toList(),
+                      onChanged: _isCategoriesLoading
+                          ? null
+                          : (value) {
+                              AppLogger.d('🔍 Category selected: $value');
+                              setState(() {
+                                _selectedCategoryId = value;
+                                _productForm.categoryId = value ?? '';
+                                _markAsChanged(); // Category selection counts as a change
+                              });
+                              if (value != null) {
+                                _loadSubCategories(value);
+                              }
+                            },
+                      validator: (_) => _productForm.validateCategory(),
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // SubCategory
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: DropdownButtonFormField<String>(
+                      decoration: InputDecoration(
+                        labelText: 'SubCategory *',
+                        labelStyle: AppTextStyles.labelLarge.copyWith(
+                          color: AppColors.onSurface.withValues(alpha: 0.7),
+                        ),
+                        prefixIcon: const Icon(
+                          Icons.subdirectory_arrow_right,
+                          color: AppColors.primary,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                        filled: true,
+                        fillColor: AppColors.surface,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 16,
+                        ),
+                      ),
+                      style: AppTextStyles.bodyLarge.copyWith(
+                        color: AppColors.onSurface,
+                      ),
+                      dropdownColor: AppColors.surface,
+                      initialValue: _selectedSubCategoryId,
+                      items: _selectedCategoryId == null
+                          ? [
+                              DropdownMenuItem(
+                                value: null,
+                                child: Text(
+                                  'Select a category first',
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    color: AppColors.onSurface.withValues(
+                                      alpha: 0.6,
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                            if (_productForm.imageFile != null) ...[
-                              const SizedBox(width: 12),
-                              Container(
-                                decoration: BoxDecoration(
-                                  color: AppColors.error.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(8),
+                            ]
+                          : _subCategories.isEmpty
+                          ? [
+                              DropdownMenuItem(
+                                value: null,
+                                child: Text(
+                                  'No subcategories available',
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    color: AppColors.onSurface.withValues(
+                                      alpha: 0.6,
+                                    ),
+                                  ),
                                 ),
-                                child: IconButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      _productForm.imageFile = null;
-                                    });
-                                  },
-                                  icon: const Icon(
-                                    Icons.delete,
-                                    color: AppColors.error,
+                              ),
+                            ]
+                          : _subCategories.map((subCategory) {
+                              return DropdownMenuItem(
+                                value: subCategory.subCategoryId,
+                                child: Text(
+                                  subCategory.subCategoryName,
+                                  style: AppTextStyles.bodyLarge.copyWith(
+                                    color: AppColors.onSurface,
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                      onChanged: _selectedCategoryId == null
+                          ? null
+                          : (value) {
+                              setState(() {
+                                _selectedSubCategoryId = value;
+                                _productForm.subCategoryId = value;
+                                _markAsChanged(); // Subcategory selection counts as a change
+                              });
+                            },
+                      validator: (_) => _productForm.validateSubCategory(),
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // Warranty Section
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(20.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.verified_user_outlined,
+                                color: AppColors.primary,
+                                size: 24,
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                'Product Warranty',
+                                style: AppTextStyles.titleMedium.copyWith(
+                                  color: AppColors.onSurface,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          
+                          // Warranty checkbox
+                          Row(
+                            children: [
+                              Checkbox(
+                                value: _productForm.hasWarranty,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _productForm.hasWarranty = value ?? false;
+                                    if (!_productForm.hasWarranty) {
+                                      _warrantyPolicyController.clear();
+                                      _productForm.warrantyPolicy = '';
+                                      _productForm.warrantyType = '';
+                                      _productForm.warrantyPeriod = '';
+                                      _selectedWarrantyPeriod = '';
+                                    }
+                                    _markAsChanged(); // Warranty checkbox change counts as a change
+                                  });
+                                },
+                                activeColor: AppColors.primary,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'This product includes warranty',
+                                  style: AppTextStyles.bodyLarge.copyWith(
+                                    color: AppColors.onSurface,
                                   ),
                                 ),
                               ),
                             ],
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                // Category
-                Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: DropdownButtonFormField<String>(
-                    decoration: InputDecoration(
-                      labelText: 'Category *',
-                      labelStyle: AppTextStyles.labelLarge.copyWith(
-                        color: AppColors.onSurface.withValues(alpha: 0.7),
-                      ),
-                      prefixIcon: const Icon(
-                        Icons.category,
-                        color: AppColors.primary,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide.none,
-                      ),
-                      filled: true,
-                      fillColor: AppColors.surface,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 16,
-                      ),
-                    ),
-                    style: AppTextStyles.bodyLarge.copyWith(
-                      color: AppColors.onSurface,
-                    ),
-                    dropdownColor: AppColors.surface,
-                    initialValue: _selectedCategoryId,
-                    items: _isCategoriesLoading
-                        ? [
-                            DropdownMenuItem(
-                              value: null,
-                              child: Text(
-                                'Loading...',
-                                style: AppTextStyles.bodyMedium.copyWith(
-                                  color: AppColors.onSurface.withValues(
-                                    alpha: 0.6,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ]
-                        : _categories.map((category) {
-                            return DropdownMenuItem(
-                              value: category.categoryId,
-                              child: Text(
-                                category.categoryName,
-                                style: AppTextStyles.bodyLarge.copyWith(
-                                  color: AppColors.onSurface,
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                    onChanged: _isCategoriesLoading
-                        ? null
-                        : (value) {
-                            AppLogger.d('🔍 Category selected: $value');
-                            setState(() {
-                              _selectedCategoryId = value;
-                              _productForm.categoryId = value ?? '';
-                            });
-                            if (value != null) {
-                              _loadSubCategories(value);
-                            }
-                          },
-                    validator: (_) => _productForm.validateCategory(),
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // SubCategory
-                Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: DropdownButtonFormField<String>(
-                    decoration: InputDecoration(
-                      labelText: 'SubCategory *',
-                      labelStyle: AppTextStyles.labelLarge.copyWith(
-                        color: AppColors.onSurface.withValues(alpha: 0.7),
-                      ),
-                      prefixIcon: const Icon(
-                        Icons.subdirectory_arrow_right,
-                        color: AppColors.primary,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide.none,
-                      ),
-                      filled: true,
-                      fillColor: AppColors.surface,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 16,
-                      ),
-                    ),
-                    style: AppTextStyles.bodyLarge.copyWith(
-                      color: AppColors.onSurface,
-                    ),
-                    dropdownColor: AppColors.surface,
-                    initialValue: _selectedSubCategoryId,
-                    items: _selectedCategoryId == null
-                        ? [
-                            DropdownMenuItem(
-                              value: null,
-                              child: Text(
-                                'Select a category first',
-                                style: AppTextStyles.bodyMedium.copyWith(
-                                  color: AppColors.onSurface.withValues(
-                                    alpha: 0.6,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ]
-                        : _subCategories.isEmpty
-                        ? [
-                            DropdownMenuItem(
-                              value: null,
-                              child: Text(
-                                'No subcategories available',
-                                style: AppTextStyles.bodyMedium.copyWith(
-                                  color: AppColors.onSurface.withValues(
-                                    alpha: 0.6,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ]
-                        : _subCategories.map((subCategory) {
-                            return DropdownMenuItem(
-                              value: subCategory.subCategoryId,
-                              child: Text(
-                                subCategory.subCategoryName,
-                                style: AppTextStyles.bodyLarge.copyWith(
-                                  color: AppColors.onSurface,
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                    onChanged: _selectedCategoryId == null
-                        ? null
-                        : (value) {
-                            setState(() {
-                              _selectedSubCategoryId = value;
-                              _productForm.subCategoryId = value;
-                            });
-                          },
-                    validator: (_) => _productForm.validateSubCategory(),
-                  ),
-                ),
-
-                const SizedBox(height: 32),
-                Container(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Product Variations',
-                        style: AppTextStyles.titleLarge.copyWith(
-                          color: AppColors.onSurface,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Add at least one variation with price, stock, and SKU',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.onSurface.withValues(alpha: 0.7),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Variations
-                ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: _variations.length,
-                  itemBuilder: (context, index) {
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 20),
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.05),
-                            blurRadius: 10,
-                            offset: const Offset(0, 2),
                           ),
-                        ],
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(20.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary.withValues(
-                                      alpha: 0.1,
-                                    ),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    'Variation ${index + 1}',
-                                    style: AppTextStyles.labelLarge.copyWith(
-                                      color: AppColors.primary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                Container(
-                                  decoration: BoxDecoration(
-                                    color: AppColors.error.withValues(
-                                      alpha: 0.1,
-                                    ),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: IconButton(
-                                    icon: const Icon(
-                                      Icons.delete,
-                                      color: AppColors.error,
-                                    ),
-                                    onPressed: () => _removeVariation(index),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 20),
-
-                            // Variation Name
-                            TextFormField(
-                              controller: _variationControllers[index]['name'],
+                          
+                          // Warranty fields (shown only if warranty is enabled)
+                          if (_productForm.hasWarranty) ...[
+                            const SizedBox(height: 16),
+                            
+                            // Warranty Type dropdown
+                            DropdownButtonFormField<String>(
+                              initialValue: _productForm.warrantyType.isEmpty ? null : _productForm.warrantyType,
                               style: AppTextStyles.bodyLarge.copyWith(
                                 color: AppColors.onSurface,
                               ),
                               decoration: InputDecoration(
-                                labelText: 'Variation Name *',
+                                labelText: 'Warranty Type *',
                                 labelStyle: AppTextStyles.labelLarge.copyWith(
-                                  color: AppColors.onSurface.withValues(
-                                    alpha: 0.7,
+                                  color: AppColors.onSurface.withValues(alpha: 0.7),
+                                ),
+                                prefixIcon: Icon(Icons.category_outlined, color: AppColors.primary),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: AppColors.grey300,
+                                    width: 1,
                                   ),
                                 ),
-                                hintText: 'e.g., Small, Blue, Standard',
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: AppColors.grey300,
+                                    width: 1,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: AppColors.primary,
+                                    width: 2,
+                                  ),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 16,
+                                ),
+                              ),
+                              isExpanded: true,
+                              items: _warrantyTypes.map((type) {
+                                return DropdownMenuItem<String>(
+                                  value: type,
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    child: Text(
+                                      type,
+                                      style: AppTextStyles.bodyMedium.copyWith(
+                                        color: AppColors.onSurface,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 2,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (value) {
+                                setState(() {
+                                  _productForm.warrantyType = value ?? '';
+                                  _markAsChanged(); // Warranty type change counts as a change
+                                });
+                              },
+                              validator: (value) {
+                                if (_productForm.hasWarranty && (value == null || value.isEmpty)) {
+                                  return 'Warranty type is required';
+                                }
+                                return null;
+                              },
+                            ),
+                            
+                            const SizedBox(height: 16),
+                            
+                            // Warranty Period section
+                            DropdownButtonFormField<String>(
+                              initialValue: _selectedWarrantyPeriod.isEmpty ? null : _selectedWarrantyPeriod,
+                              style: AppTextStyles.bodyLarge.copyWith(
+                                color: AppColors.onSurface,
+                              ),
+                              decoration: InputDecoration(
+                                labelText: 'Warranty Period *',
+                                labelStyle: AppTextStyles.labelLarge.copyWith(
+                                  color: AppColors.onSurface.withValues(alpha: 0.7),
+                                ),
+                                prefixIcon: Icon(Icons.schedule_outlined, color: AppColors.primary),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: AppColors.grey300,
+                                    width: 1,
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: AppColors.grey300,
+                                    width: 1,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: AppColors.primary,
+                                    width: 2,
+                                  ),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 16,
+                                ),
+                              ),
+                              isExpanded: true,
+                              items: _warrantyPeriods.map((period) {
+                                return DropdownMenuItem<String>(
+                                  value: period,
+                                  child: Text(
+                                    period,
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      color: AppColors.onSurface,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (value) {
+                                setState(() {
+                                  _selectedWarrantyPeriod = value ?? '';
+                                  _markAsChanged(); // Warranty period change counts as a change
+                                });
+                              },
+                              validator: (value) {
+                                if (_productForm.hasWarranty && (value == null || value.isEmpty)) {
+                                  return 'Warranty period is required';
+                                }
+                                return null;
+                              },
+                            ),
+                            
+                            const SizedBox(height: 16),
+                            
+                            // Warranty policy text field
+                            TextFormField(
+                              controller: _warrantyPolicyController,
+                              style: AppTextStyles.bodyLarge.copyWith(
+                                color: AppColors.onSurface,
+                              ),
+                              decoration: InputDecoration(
+                                labelText: 'Warranty Policy *',
+                                labelStyle: AppTextStyles.labelLarge.copyWith(
+                                  color: AppColors.onSurface.withValues(alpha: 0.7),
+                                ),
+                                hintText: 'Describe the warranty terms and conditions',
                                 hintStyle: AppTextStyles.bodyMedium.copyWith(
-                                  color: AppColors.onSurface.withValues(
-                                    alpha: 0.5,
-                                  ),
+                                  color: AppColors.onSurface.withValues(alpha: 0.5),
                                 ),
+                                prefixIcon: Icon(Icons.policy_outlined, color: AppColors.primary),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(12),
                                   borderSide: BorderSide(
@@ -1186,173 +1481,331 @@ class _AddProductPageState extends State<AddProductPage> {
                                   vertical: 12,
                                 ),
                               ),
+                              maxLines: 4,
                               validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Variation name is required';
+                                if (_productForm.hasWarranty && (value == null || value.isEmpty)) {
+                                  return 'Warranty policy is required';
                                 }
                                 return null;
                               },
                             ),
-                            const SizedBox(height: 20),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
 
-                            // Variation Image (Optional)
-                            Container(
-                              width: double.infinity,
-                              decoration: BoxDecoration(
-                                color: AppColors.surfaceVariant,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: AppColors.grey300,
-                                  width: 1,
-                                ),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                  const SizedBox(height: 32),
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Product Variations',
+                          style: AppTextStyles.titleLarge.copyWith(
+                            color: AppColors.onSurface,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Add at least one variation with price, stock, and SKU. Prices shown include 12% VAT.',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.onSurface.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Variations
+                  ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: _variations.length,
+                    itemBuilder: (context, index) {
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 20),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(20.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Padding(
-                                    padding: const EdgeInsets.all(12.0),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withValues(
+                                        alpha: 0.1,
+                                      ),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
                                     child: Text(
-                                      'Variation Image (Optional)',
+                                      'Variation ${index + 1}',
                                       style: AppTextStyles.labelLarge.copyWith(
-                                        color: AppColors.onSurface,
-                                        fontWeight: FontWeight.w500,
+                                        color: AppColors.primary,
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                   ),
-                                  if (_variations[index].imageFile != null)
-                                    Container(
-                                      height: 250,
-                                      width: double.infinity,
-                                      margin: const EdgeInsets.symmetric(
-                                        horizontal: 12,
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      color: AppColors.error.withValues(
+                                        alpha: 0.1,
                                       ),
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(8),
-                                        color: AppColors.surface,
-                                      ),
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: Image.file(
-                                          _variations[index].imageFile!,
-                                          fit: BoxFit.cover,
-                                        ),
-                                      ),
-                                    )
-                                  else
-                                    Container(
-                                      height: 80,
-                                      margin: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.surface,
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                          color: AppColors.grey300,
-                                          width: 1,
-                                        ),
-                                      ),
-                                      child: Center(
-                                        child: Column(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          children: [
-                                            Icon(
-                                              Icons.image,
-                                              size: 32,
-                                              color: AppColors.onSurface
-                                                  .withValues(alpha: 0.5),
-                                            ),
-                                            Text(
-                                              'No image',
-                                              style: AppTextStyles.bodySmall
-                                                  .copyWith(
-                                                    color: AppColors.onSurface
-                                                        .withValues(alpha: 0.5),
-                                                  ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
+                                      borderRadius: BorderRadius.circular(8),
                                     ),
-                                  Padding(
-                                    padding: const EdgeInsets.all(12.0),
-                                    child: Row(
-                                      children: [
-                                        Expanded(
-                                          child: OutlinedButton.icon(
-                                            onPressed: () =>
-                                                _pickVariationImage(index),
-                                            icon: const Icon(Icons.add_a_photo),
-                                            label: Text(
-                                              _variations[index].imageFile !=
-                                                      null
-                                                  ? 'Change Image'
-                                                  : 'Add Image',
-                                            ),
-                                            style: OutlinedButton.styleFrom(
-                                              foregroundColor:
-                                                  AppColors.primary,
-                                              side: BorderSide(
-                                                color: AppColors.primary,
-                                                width: 1.5,
-                                              ),
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                              ),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    vertical: 8,
-                                                  ),
-                                            ),
-                                          ),
-                                        ),
-                                        if (_variations[index].imageFile !=
-                                            null) ...[
-                                          const SizedBox(width: 8),
-                                          Container(
-                                            decoration: BoxDecoration(
-                                              color: AppColors.error.withValues(
-                                                alpha: 0.1,
-                                              ),
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
-                                            ),
-                                            child: IconButton(
-                                              onPressed: () {
-                                                setState(() {
-                                                  _variations[index].imageFile =
-                                                      null;
-                                                });
-                                              },
-                                              icon: const Icon(
-                                                Icons.delete,
-                                                color: AppColors.error,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ],
+                                    child: IconButton(
+                                      icon: const Icon(
+                                        Icons.delete,
+                                        color: AppColors.error,
+                                      ),
+                                      onPressed: () => _removeVariation(index),
                                     ),
                                   ),
                                 ],
                               ),
-                            ),
-                            const SizedBox(height: 20),
+                              const SizedBox(height: 20),
 
-                            // Price and Stock Row
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextFormField(
+                              // Variation Name
+                              TextFormField(
+                                controller: _variationControllers[index]['name'],
+                                style: AppTextStyles.bodyLarge.copyWith(
+                                  color: AppColors.onSurface,
+                                ),
+                                decoration: InputDecoration(
+                                  labelText: 'Variation Name *',
+                                  labelStyle: AppTextStyles.labelLarge.copyWith(
+                                    color: AppColors.onSurface.withValues(
+                                      alpha: 0.7,
+                                    ),
+                                  ),
+                                  hintText: 'e.g., Small, Blue, Standard',
+                                  hintStyle: AppTextStyles.bodyMedium.copyWith(
+                                    color: AppColors.onSurface.withValues(
+                                      alpha: 0.5,
+                                    ),
+                                  ),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(
+                                      color: AppColors.grey300,
+                                      width: 1,
+                                    ),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(
+                                      color: AppColors.grey300,
+                                      width: 1,
+                                    ),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(
+                                      color: AppColors.primary,
+                                      width: 2,
+                                    ),
+                                  ),
+                                  errorBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(
+                                      color: AppColors.error,
+                                      width: 1,
+                                    ),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 12,
+                                  ),
+                                ),
+                                validator: (value) {
+                                  if (value == null || value.isEmpty) {
+                                    return 'Variation name is required';
+                                  }
+                                  if (value.length < 10) {
+                                    return 'Variation name must be at least 10 characters long';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 20),
+
+                              // Variation Image (Optional)
+                              Container(
+                                width: double.infinity,
+                                decoration: BoxDecoration(
+                                  color: AppColors.surfaceVariant,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: AppColors.grey300,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.all(12.0),
+                                      child: Text(
+                                        'Variation Image (Optional)',
+                                        style: AppTextStyles.labelLarge.copyWith(
+                                          color: AppColors.onSurface,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                    if (_variations[index].imageFile != null)
+                                      Container(
+                                        height: 250,
+                                        width: double.infinity,
+                                        margin: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(8),
+                                          color: AppColors.surface,
+                                        ),
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(8),
+                                          child: Image.file(
+                                            _variations[index].imageFile!,
+                                            fit: BoxFit.cover,
+                                          ),
+                                        ),
+                                      )
+                                    else
+                                      Container(
+                                        height: 80,
+                                        margin: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.surface,
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(
+                                            color: AppColors.grey300,
+                                            width: 1,
+                                          ),
+                                        ),
+                                        child: Center(
+                                          child: Column(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              Icon(
+                                                Icons.image,
+                                                size: 32,
+                                                color: AppColors.onSurface
+                                                    .withValues(alpha: 0.5),
+                                              ),
+                                              Text(
+                                                'No image',
+                                                style: AppTextStyles.bodySmall
+                                                    .copyWith(
+                                                      color: AppColors.onSurface
+                                                          .withValues(alpha: 0.5),
+                                                    ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    Padding(
+                                      padding: const EdgeInsets.all(12.0),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: OutlinedButton.icon(
+                                              onPressed: () =>
+                                                  _pickVariationImage(index),
+                                              icon: const Icon(Icons.add_a_photo),
+                                              label: Text(
+                                                _variations[index].imageFile !=
+                                                        null
+                                                    ? 'Change Image'
+                                                    : 'Add Image',
+                                              ),
+                                              style: OutlinedButton.styleFrom(
+                                                foregroundColor:
+                                                    AppColors.primary,
+                                                side: BorderSide(
+                                                  color: AppColors.primary,
+                                                  width: 1.5,
+                                                ),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      vertical: 8,
+                                                    ),
+                                              ),
+                                            ),
+                                          ),
+                                          if (_variations[index].imageFile !=
+                                              null) ...[
+                                            const SizedBox(width: 8),
+                                            Container(
+                                              decoration: BoxDecoration(
+                                                color: AppColors.error.withValues(
+                                                  alpha: 0.1,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                              ),
+                                              child: IconButton(
+                                                onPressed: () {
+                                                  setState(() {
+                                                    _variations[index].imageFile =
+                                                        null;
+                                                  });
+                                                },
+                                                icon: const Icon(
+                                                  Icons.delete,
+                                                  color: AppColors.error,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+
+                              // Price Section (full width)
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  TextFormField(
                                     controller:
                                         _variationControllers[index]['price'],
                                     style: AppTextStyles.bodyLarge.copyWith(
                                       color: AppColors.onSurface,
                                     ),
                                     decoration: InputDecoration(
-                                      labelText: 'Price *',
+                                      labelText: 'Base Price (excluding VAT) *',
                                       labelStyle: AppTextStyles.labelLarge
                                           .copyWith(
                                             color: AppColors.onSurface
@@ -1400,6 +1853,9 @@ class _AddProductPageState extends State<AddProductPage> {
                                           ),
                                     ),
                                     keyboardType: TextInputType.number,
+                                    onChanged: (value) {
+                                      setState(() {}); // Trigger rebuild to update VAT calculation
+                                    },
                                     validator: (value) {
                                       if (value == null || value.isEmpty) {
                                         return 'Price is required';
@@ -1408,561 +1864,692 @@ class _AddProductPageState extends State<AddProductPage> {
                                       if (price == null) {
                                         return 'Please enter a valid number';
                                       }
-                                      if (price <= 0) {
-                                        return 'Price must be greater than 0';
+                                      if (price < 1) {
+                                        return 'Price must be at least ₱1';
                                       }
                                       return null;
                                     },
                                   ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: TextFormField(
-                                    controller:
-                                        _variationControllers[index]['stock'],
-                                    style: AppTextStyles.bodyLarge.copyWith(
-                                      color: AppColors.onSurface,
-                                    ),
-                                    decoration: InputDecoration(
-                                      labelText: 'Stock *',
-                                      labelStyle: AppTextStyles.labelLarge
-                                          .copyWith(
-                                            color: AppColors.onSurface
-                                                .withValues(alpha: 0.7),
+                                  
+                                  // VAT calculation display
+                                  const SizedBox(height: 12),
+                                  Builder(builder: (context) {
+                                    final priceText = _variationControllers[index]['price']!.text;
+                                    final basePrice = double.tryParse(priceText) ?? 0;
+                                    final vatAmount = basePrice * 0.12;
+                                    final totalPrice = basePrice + vatAmount;
+                                    
+                                    if (basePrice > 0) {
+                                      return Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(16),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.surface,
+                                          borderRadius: BorderRadius.circular(12),
+                                          border: Border.all(
+                                            color: AppColors.primary.withValues(alpha: 0.2),
                                           ),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
-                                          color: AppColors.grey300,
-                                          width: 1,
                                         ),
-                                      ),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
-                                          color: AppColors.grey300,
-                                          width: 1,
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'VAT Calculation',
+                                              style: AppTextStyles.labelLarge.copyWith(
+                                                color: AppColors.onSurface,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 12),
+                                            Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                Text(
+                                                  'Base Price:',
+                                                  style: AppTextStyles.bodyMedium.copyWith(
+                                                    color: AppColors.onSurface.withValues(alpha: 0.7),
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '₱${basePrice.toStringAsFixed(2)}',
+                                                  style: AppTextStyles.bodyMedium.copyWith(
+                                                    color: AppColors.onSurface,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                Text(
+                                                  'VAT (12%):',
+                                                  style: AppTextStyles.bodyMedium.copyWith(
+                                                    color: AppColors.onSurface.withValues(alpha: 0.7),
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '₱${vatAmount.toStringAsFixed(2)}',
+                                                  style: AppTextStyles.bodyMedium.copyWith(
+                                                    color: AppColors.onSurface,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const Divider(height: 16),
+                                            Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                Text(
+                                                  'Final Price:',
+                                                  style: AppTextStyles.labelLarge.copyWith(
+                                                    color: AppColors.onSurface,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '₱${totalPrice.toStringAsFixed(2)}',
+                                                  style: AppTextStyles.labelLarge.copyWith(
+                                                    color: Colors.green,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
                                         ),
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
-                                          color: AppColors.primary,
-                                          width: 2,
-                                        ),
-                                      ),
-                                      errorBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
-                                          color: AppColors.error,
-                                          width: 1,
-                                        ),
-                                      ),
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                            horizontal: 16,
-                                            vertical: 12,
-                                          ),
-                                    ),
-                                    keyboardType: TextInputType.number,
-                                    validator: (value) {
-                                      if (value == null || value.isEmpty) {
-                                        return 'Stock is required';
-                                      }
-                                      final stock = int.tryParse(value);
-                                      if (stock == null) {
-                                        return 'Please enter a valid number';
-                                      }
-                                      if (stock < 0) {
-                                        return 'Stock cannot be negative';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 20),
+                                      );
+                                    }
+                                    return const SizedBox.shrink();
+                                  }),
+                                ],
+                              ),
+                              const SizedBox(height: 20),
 
-                            // SKU with Barcode Scanner
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextFormField(
-                                    controller:
-                                        _variationControllers[index]['sku'],
-                                    style: AppTextStyles.bodyLarge.copyWith(
-                                      color: AppColors.onSurface,
+                              // Stock Row
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller:
+                                          _variationControllers[index]['stock'],
+                                      style: AppTextStyles.bodyLarge.copyWith(
+                                        color: AppColors.onSurface,
+                                      ),
+                                      decoration: InputDecoration(
+                                        labelText: 'Stock *',
+                                        labelStyle: AppTextStyles.labelLarge
+                                            .copyWith(
+                                              color: AppColors.onSurface
+                                                  .withValues(alpha: 0.7),
+                                            ),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: AppColors.grey300,
+                                            width: 1,
+                                          ),
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: AppColors.grey300,
+                                            width: 1,
+                                          ),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: AppColors.primary,
+                                            width: 2,
+                                          ),
+                                        ),
+                                        errorBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: AppColors.error,
+                                            width: 1,
+                                          ),
+                                        ),
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 16,
+                                              vertical: 12,
+                                            ),
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                      validator: (value) {
+                                        if (value == null || value.isEmpty) {
+                                          return 'Stock is required';
+                                        }
+                                        final stock = int.tryParse(value);
+                                        if (stock == null) {
+                                          return 'Please enter a valid number';
+                                        }
+                                        if (stock < 0) {
+                                          return 'Stock cannot be negative';
+                                        }
+                                        return null;
+                                      },
                                     ),
-                                    decoration: InputDecoration(
-                                      labelText: 'SKU *',
-                                      labelStyle: AppTextStyles.labelLarge
-                                          .copyWith(
-                                            color: AppColors.onSurface
-                                                .withValues(alpha: 0.7),
-                                          ),
-                                      hintText: 'Unique product identifier',
-                                      hintStyle: AppTextStyles.bodyMedium
-                                          .copyWith(
-                                            color: AppColors.onSurface
-                                                .withValues(alpha: 0.5),
-                                          ),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
-                                          color: AppColors.grey300,
-                                          width: 1,
-                                        ),
-                                      ),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
-                                          color: AppColors.grey300,
-                                          width: 1,
-                                        ),
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
-                                          color: AppColors.primary,
-                                          width: 2,
-                                        ),
-                                      ),
-                                      errorBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
-                                          color: AppColors.error,
-                                          width: 1,
-                                        ),
-                                      ),
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                            horizontal: 16,
-                                            vertical: 12,
-                                          ),
-                                    ),
-                                    validator: (value) {
-                                      if (value == null || value.isEmpty) {
-                                        return 'SKU is required';
-                                      }
-                                      return null;
-                                    },
                                   ),
-                                ),
-                                const SizedBox(width: 12),
-                                Container(
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary.withValues(
-                                      alpha: 0.1,
+                                ],
+                              ),
+                              const SizedBox(height: 20),
+
+                              // SKU with Barcode Scanner
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller:
+                                          _variationControllers[index]['sku'],
+                                      style: AppTextStyles.bodyLarge.copyWith(
+                                        color: AppColors.onSurface,
+                                      ),
+                                      decoration: InputDecoration(
+                                        labelText: 'SKU *',
+                                        labelStyle: AppTextStyles.labelLarge
+                                            .copyWith(
+                                              color: AppColors.onSurface
+                                                  .withValues(alpha: 0.7),
+                                            ),
+                                        hintText: 'Unique product identifier',
+                                        hintStyle: AppTextStyles.bodyMedium
+                                            .copyWith(
+                                              color: AppColors.onSurface
+                                                  .withValues(alpha: 0.5),
+                                            ),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: AppColors.grey300,
+                                            width: 1,
+                                          ),
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: AppColors.grey300,
+                                            width: 1,
+                                          ),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: AppColors.primary,
+                                            width: 2,
+                                          ),
+                                        ),
+                                        errorBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                            color: AppColors.error,
+                                            width: 1,
+                                          ),
+                                        ),
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 16,
+                                              vertical: 12,
+                                            ),
+                                      ),
+                                      validator: (value) {
+                                        if (value == null || value.isEmpty) {
+                                          return 'Product SKU is required';
+                                        }
+                                        return null;
+                                      },
                                     ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withValues(
+                                        alpha: 0.1,
+                                      ),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: AppColors.primary,
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                    child: IconButton(
+                                      onPressed: () => _scanBarcode(index),
+                                      icon: const Icon(
+                                        Icons.qr_code_scanner,
+                                        color: AppColors.primary,
+                                      ),
+                                      tooltip: 'Scan Barcode',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 20),
+
+                              // Weight
+                              TextFormField(
+                                controller:
+                                    _variationControllers[index]['weight'],
+                                style: AppTextStyles.bodyLarge.copyWith(
+                                  color: AppColors.onSurface,
+                                ),
+                                decoration: InputDecoration(
+                                  labelText: 'Weight (g) *',
+                                  labelStyle: AppTextStyles.labelLarge.copyWith(
+                                    color: AppColors.onSurface.withValues(
+                                      alpha: 0.7,
+                                    ),
+                                  ),
+                                  border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: AppColors.primary,
-                                      width: 1.5,
+                                    borderSide: BorderSide(
+                                      color: AppColors.grey300,
+                                      width: 1,
                                     ),
                                   ),
-                                  child: IconButton(
-                                    onPressed: () => _scanBarcode(index),
-                                    icon: const Icon(
-                                      Icons.qr_code_scanner,
-                                      color: AppColors.primary,
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(
+                                      color: AppColors.grey300,
+                                      width: 1,
                                     ),
-                                    tooltip: 'Scan Barcode',
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(
+                                      color: AppColors.primary,
+                                      width: 2,
+                                    ),
+                                  ),
+                                  errorBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(
+                                      color: AppColors.error,
+                                      width: 1,
+                                    ),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 12,
                                   ),
                                 ),
-                              ],
-                            ),
-                            const SizedBox(height: 20),
-
-                            // Weight (Optional)
-                            TextFormField(
-                              controller:
-                                  _variationControllers[index]['weight'],
-                              style: AppTextStyles.bodyLarge.copyWith(
-                                color: AppColors.onSurface,
-                              ),
-                              decoration: InputDecoration(
-                                labelText: 'Weight (g) (Optional)',
-                                labelStyle: AppTextStyles.labelLarge.copyWith(
-                                  color: AppColors.onSurface.withValues(
-                                    alpha: 0.7,
-                                  ),
-                                ),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(
-                                    color: AppColors.grey300,
-                                    width: 1,
-                                  ),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(
-                                    color: AppColors.grey300,
-                                    width: 1,
-                                  ),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(
-                                    color: AppColors.primary,
-                                    width: 2,
-                                  ),
-                                ),
-                                errorBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(
-                                    color: AppColors.error,
-                                    width: 1,
-                                  ),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 12,
-                                ),
-                              ),
-                              keyboardType: TextInputType.number,
-                              validator: (value) {
-                                if (value != null && value.isNotEmpty) {
+                                keyboardType: TextInputType.number,
+                                validator: (value) {
+                                  if (value == null || value.isEmpty) {
+                                    return 'Weight is required';
+                                  }
                                   final weight = double.tryParse(value);
                                   if (weight == null) {
                                     return 'Please enter a valid number';
                                   }
-                                  if (weight < 0) {
-                                    return 'Weight cannot be negative';
+                                  if (weight <= 0) {
+                                    return 'Weight must be greater than 0';
                                   }
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 20),
-
-                            // Dimensions
-                            Text(
-                              'Dimensions (Optional)',
-                              style: AppTextStyles.titleSmall.copyWith(
-                                color: AppColors.onSurface,
-                                fontWeight: FontWeight.w600,
+                                  return null;
+                                },
                               ),
-                            ),
-                            const SizedBox(height: 12),
+                              const SizedBox(height: 20),
 
-                            // Dimensions fields
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextFormField(
-                                    controller:
-                                        _variationControllers[index]['length'],
-                                    style: AppTextStyles.bodyMedium.copyWith(
-                                      color: AppColors.onSurface,
-                                    ),
-                                    decoration: InputDecoration(
-                                      labelText: 'Length (cm)',
-                                      labelStyle: AppTextStyles.labelMedium
-                                          .copyWith(
-                                            color: AppColors.onSurface
-                                                .withValues(alpha: 0.7),
+                              // Dimensions
+                              Text(
+                                'Dimensions (Optional)',
+                                style: AppTextStyles.titleSmall.copyWith(
+                                  color: AppColors.onSurface,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+
+                              // Dimensions fields
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller:
+                                          _variationControllers[index]['length'],
+                                      style: AppTextStyles.bodyMedium.copyWith(
+                                        color: AppColors.onSurface,
+                                      ),
+                                      decoration: InputDecoration(
+                                        labelText: 'Length (cm) *',
+                                        labelStyle: AppTextStyles.labelMedium
+                                            .copyWith(
+                                              color: AppColors.onSurface
+                                                  .withValues(alpha: 0.7),
+                                            ),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(10),
+                                          borderSide: BorderSide(
+                                            color: AppColors.grey300,
+                                            width: 1,
                                           ),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(10),
-                                        borderSide: BorderSide(
-                                          color: AppColors.grey300,
-                                          width: 1,
                                         ),
-                                      ),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(10),
-                                        borderSide: BorderSide(
-                                          color: AppColors.grey300,
-                                          width: 1,
-                                        ),
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(10),
-                                        borderSide: BorderSide(
-                                          color: AppColors.primary,
-                                          width: 2,
-                                        ),
-                                      ),
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 10,
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(10),
+                                          borderSide: BorderSide(
+                                            color: AppColors.grey300,
+                                            width: 1,
                                           ),
-                                    ),
-                                    keyboardType: TextInputType.number,
-                                    validator: (value) {
-                                      if (value != null && value.isNotEmpty) {
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(10),
+                                          borderSide: BorderSide(
+                                            color: AppColors.primary,
+                                            width: 2,
+                                          ),
+                                        ),
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 10,
+                                            ),
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                      validator: (value) {
+                                        if (value == null || value.isEmpty) {
+                                          return 'Length is required';
+                                        }
                                         final length = double.tryParse(value);
                                         if (length == null) {
-                                          return 'Invalid';
+                                          return 'Invalid number';
                                         }
-                                      }
-                                      return null;
-                                    },
+                                        if (length <= 0) {
+                                          return 'Must be > 0';
+                                        }
+                                        return null;
+                                      },
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: TextFormField(
-                                    controller:
-                                        _variationControllers[index]['width'],
-                                    style: AppTextStyles.bodyMedium.copyWith(
-                                      color: AppColors.onSurface,
-                                    ),
-                                    decoration: InputDecoration(
-                                      labelText: 'Width (cm)',
-                                      labelStyle: AppTextStyles.labelMedium
-                                          .copyWith(
-                                            color: AppColors.onSurface
-                                                .withValues(alpha: 0.7),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller:
+                                          _variationControllers[index]['width'],
+                                      style: AppTextStyles.bodyMedium.copyWith(
+                                        color: AppColors.onSurface,
+                                      ),
+                                      decoration: InputDecoration(
+                                        labelText: 'Width (cm) *',
+                                        labelStyle: AppTextStyles.labelMedium
+                                            .copyWith(
+                                              color: AppColors.onSurface
+                                                  .withValues(alpha: 0.7),
+                                            ),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(10),
+                                          borderSide: BorderSide(
+                                            color: AppColors.grey300,
+                                            width: 1,
                                           ),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(10),
-                                        borderSide: BorderSide(
-                                          color: AppColors.grey300,
-                                          width: 1,
                                         ),
-                                      ),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(10),
-                                        borderSide: BorderSide(
-                                          color: AppColors.grey300,
-                                          width: 1,
-                                        ),
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(10),
-                                        borderSide: BorderSide(
-                                          color: AppColors.primary,
-                                          width: 2,
-                                        ),
-                                      ),
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 10,
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(10),
+                                          borderSide: BorderSide(
+                                            color: AppColors.grey300,
+                                            width: 1,
                                           ),
-                                    ),
-                                    keyboardType: TextInputType.number,
-                                    validator: (value) {
-                                      if (value != null && value.isNotEmpty) {
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(10),
+                                          borderSide: BorderSide(
+                                            color: AppColors.primary,
+                                            width: 2,
+                                          ),
+                                        ),
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 10,
+                                            ),
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                      validator: (value) {
+                                        if (value == null || value.isEmpty) {
+                                          return 'Width is required';
+                                        }
                                         final width = double.tryParse(value);
                                         if (width == null) {
-                                          return 'Invalid';
+                                          return 'Invalid number';
                                         }
-                                      }
-                                      return null;
-                                    },
+                                        if (width <= 0) {
+                                          return 'Must be > 0';
+                                        }
+                                        return null;
+                                      },
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: TextFormField(
-                                    controller:
-                                        _variationControllers[index]['height'],
-                                    style: AppTextStyles.bodyMedium.copyWith(
-                                      color: AppColors.onSurface,
-                                    ),
-                                    decoration: InputDecoration(
-                                      labelText: 'Height (cm)',
-                                      labelStyle: AppTextStyles.labelMedium
-                                          .copyWith(
-                                            color: AppColors.onSurface
-                                                .withValues(alpha: 0.7),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller:
+                                          _variationControllers[index]['height'],
+                                      style: AppTextStyles.bodyMedium.copyWith(
+                                        color: AppColors.onSurface,
+                                      ),
+                                      decoration: InputDecoration(
+                                        labelText: 'Height (cm) *',
+                                        labelStyle: AppTextStyles.labelMedium
+                                            .copyWith(
+                                              color: AppColors.onSurface
+                                                  .withValues(alpha: 0.7),
+                                            ),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(10),
+                                          borderSide: BorderSide(
+                                            color: AppColors.grey300,
+                                            width: 1,
                                           ),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(10),
-                                        borderSide: BorderSide(
-                                          color: AppColors.grey300,
-                                          width: 1,
                                         ),
-                                      ),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(10),
-                                        borderSide: BorderSide(
-                                          color: AppColors.grey300,
-                                          width: 1,
-                                        ),
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(10),
-                                        borderSide: BorderSide(
-                                          color: AppColors.primary,
-                                          width: 2,
-                                        ),
-                                      ),
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 10,
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(10),
+                                          borderSide: BorderSide(
+                                            color: AppColors.grey300,
+                                            width: 1,
                                           ),
-                                    ),
-                                    keyboardType: TextInputType.number,
-                                    validator: (value) {
-                                      if (value != null && value.isNotEmpty) {
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(10),
+                                          borderSide: BorderSide(
+                                            color: AppColors.primary,
+                                            width: 2,
+                                          ),
+                                        ),
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 10,
+                                            ),
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                      validator: (value) {
+                                        if (value == null || value.isEmpty) {
+                                          return 'Height is required';
+                                        }
                                         final height = double.tryParse(value);
                                         if (height == null) {
-                                          return 'Invalid';
+                                          return 'Invalid number';
                                         }
-                                      }
-                                      return null;
-                                    },
+                                        if (height <= 0) {
+                                          return 'Must be > 0';
+                                        }
+                                        return null;
+                                      },
+                                    ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+
+                  // Add Variation Button
+                  Container(
+                    margin: const EdgeInsets.symmetric(vertical: 8),
+                    child: OutlinedButton.icon(
+                      onPressed: _addVariation,
+                      icon: const Icon(Icons.add),
+                      label: Text(
+                        'Add Variation',
+                        style: AppTextStyles.labelLarge.copyWith(
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                    );
-                  },
-                ),
-
-                // Add Variation Button
-                Container(
-                  margin: const EdgeInsets.symmetric(vertical: 8),
-                  child: OutlinedButton.icon(
-                    onPressed: _addVariation,
-                    icon: const Icon(Icons.add),
-                    label: Text(
-                      'Add Variation',
-                      style: AppTextStyles.labelLarge.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.primary,
-                      side: BorderSide(color: AppColors.primary, width: 2),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 16,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        side: BorderSide(color: AppColors.primary, width: 2),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 16,
+                        ),
                       ),
                     ),
                   ),
-                ),
 
-                const SizedBox(height: 12),
+                  const SizedBox(height: 12),
 
-                // Button Row: Save as Draft and Add Product
-                Row(
-                  children: [
-                    // Save as Draft Button
-                    Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: AppColors.primary,
-                            width: 2,
-                          ),
-                        ),
-                        child: ElevatedButton(
-                          onPressed: _isLoading ? null : () => _submitForm(isDraft: true),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.transparent,
-                            foregroundColor: AppColors.primary,
-                            shadowColor: Colors.transparent,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
+                  // Button Row: Save as Draft and Add Product
+                  Row(
+                    children: [
+                      // Save as Draft Button
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: AppColors.primary,
+                              width: 2,
                             ),
-                            padding: const EdgeInsets.symmetric(vertical: 18),
                           ),
-                          child: _isLoading
-                              ? SizedBox(
-                                  height: 24,
-                                  width: 24,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      AppColors.primary,
+                          child: ElevatedButton(
+                            onPressed: _isLoading ? null : () => _submitForm(isDraft: true),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              foregroundColor: AppColors.primary,
+                              shadowColor: Colors.transparent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 18),
+                            ),
+                            child: _isLoading
+                                ? SizedBox(
+                                    height: 24,
+                                    width: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        AppColors.primary,
+                                      ),
+                                    ),
+                                  )
+                                : Text(
+                                    'Save as Draft',
+                                    style: AppTextStyles.labelLarge.copyWith(
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                )
-                              : Text(
-                                  'Save as Draft',
-                                  style: AppTextStyles.labelLarge.copyWith(
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    // Add Product Button
-                    Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(16),
-                          gradient: _isLoading ? null : AppColors.primaryGradient,
-                          color: _isLoading ? AppColors.grey300 : null,
-                        ),
-                        child: ElevatedButton(
-                          onPressed: _isLoading ? null : () => _submitForm(isDraft: false),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.transparent,
-                            foregroundColor: AppColors.onPrimary,
-                            shadowColor: Colors.transparent,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 18),
+                      const SizedBox(width: 12),
+                      // Add Product Button
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            gradient: _isLoading ? null : AppColors.primaryGradient,
+                            color: _isLoading ? AppColors.grey300 : null,
                           ),
-                          child: _isLoading
-                              ? SizedBox(
-                                  height: 24,
-                                  width: 24,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      AppColors.onPrimary,
+                          child: ElevatedButton(
+                            onPressed: _isLoading ? null : () => _submitForm(isDraft: false),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              foregroundColor: AppColors.onPrimary,
+                              shadowColor: Colors.transparent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 18),
+                            ),
+                            child: _isLoading
+                                ? SizedBox(
+                                    height: 24,
+                                    width: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        AppColors.onPrimary,
+                                      ),
+                                    ),
+                                  )
+                                : Text(
+                                    'Add Product',
+                                    style: AppTextStyles.labelLarge.copyWith(
+                                      color: AppColors.onPrimary,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                )
-                              : Text(
-                                  'Add Product',
-                                  style: AppTextStyles.labelLarge.copyWith(
-                                    color: AppColors.onPrimary,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-              ],
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              ),
             ),
           ),
         ),
       ),
+      )
     );
   }
 
   Widget _buildWebLayout() {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: Text(
-          'Add Product',
-          style: AppTextStyles.titleLarge.copyWith(
-            color: AppColors.onSurface,
-            fontWeight: FontWeight.w600,
+    return PopScope(
+      canPop: !_hasUnsavedChanges,
+      onPopInvokedWithResult: (bool didPop, result) async {
+        if (!didPop && _hasUnsavedChanges) {
+          final action = await _showUnsavedChangesDialog();
+          if (action == UnsavedChangesAction.discard && mounted) {
+            Navigator.of(context).pop();
+          }
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          title: Text(
+            'Add Product',
+            style: AppTextStyles.titleLarge.copyWith(
+              color: AppColors.onSurface,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          backgroundColor: AppColors.surface,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
+            onPressed: () async {
+              if (_hasUnsavedChanges) {
+                final action = await _showUnsavedChangesDialog();
+                if (action == UnsavedChangesAction.discard && mounted) {
+                  Navigator.of(context).pop();
+                }
+              } else {
+                Navigator.of(context).pop();
+              }
+            },
           ),
         ),
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
       body: SingleChildScrollView(
         child: Center(
           child: Container(
@@ -2027,51 +2614,103 @@ class _AddProductPageState extends State<AddProductPage> {
                   ),
                   const SizedBox(height: 40),
 
+                  // Warranty Section (full width)
+                  _buildWebWarrantySection(),
+
+                  const SizedBox(height: 40),
+
                   // Product Variations Section (full width)
                   _buildWebVariationsSection(),
 
                   const SizedBox(height: 40),
 
-                  // Submit Button
-                  Center(
-                    child: Container(
-                      width: 400,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        gradient: _isLoading ? null : AppColors.primaryGradient,
-                        color: _isLoading ? AppColors.grey300 : null,
-                      ),
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _submitForm,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.transparent,
-                          foregroundColor: AppColors.onPrimary,
-                          shadowColor: Colors.transparent,
-                          shape: RoundedRectangleBorder(
+                  // Button Row: Save as Draft and Add Product
+                  Row(
+                    children: [
+                      // Save as Draft Button  
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: AppColors.primary,
+                              width: 2,
+                            ),
                           ),
-                          padding: const EdgeInsets.symmetric(vertical: 20),
-                        ),
-                        child: _isLoading
-                            ? SizedBox(
-                                height: 28,
-                                width: 28,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 3,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    AppColors.onPrimary,
-                                  ),
-                                ),
-                              )
-                            : Text(
-                                'Add Product',
-                                style: AppTextStyles.titleMedium.copyWith(
-                                  color: AppColors.onPrimary,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                          child: ElevatedButton(
+                            onPressed: _isLoading ? null : () => _submitForm(isDraft: true),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              foregroundColor: AppColors.primary,
+                              shadowColor: Colors.transparent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
                               ),
+                              padding: const EdgeInsets.symmetric(vertical: 18),
+                            ),
+                            child: _isLoading
+                                ? SizedBox(
+                                    height: 24,
+                                    width: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        AppColors.primary,
+                                      ),
+                                    ),
+                                  )
+                                : Text(
+                                    'Save as Draft',
+                                    style: AppTextStyles.titleMedium.copyWith(
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 24),
+                      // Add Product Button
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            gradient: _isLoading ? null : AppColors.primaryGradient,
+                            color: _isLoading ? AppColors.grey300 : null,
+                          ),
+                          child: ElevatedButton(
+                            onPressed: _isLoading ? null : () => _submitForm(isDraft: false),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              foregroundColor: AppColors.onPrimary,
+                              shadowColor: Colors.transparent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 18),
+                            ),
+                            child: _isLoading
+                                ? SizedBox(
+                                    height: 28,
+                                    width: 28,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 3,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        AppColors.onPrimary,
+                                      ),
+                                    ),
+                                  )
+                                : Text(
+                                    'Add Product',
+                                    style: AppTextStyles.titleMedium.copyWith(
+                                      color: AppColors.onPrimary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 40),
                 ],
@@ -2080,6 +2719,7 @@ class _AddProductPageState extends State<AddProductPage> {
           ),
         ),
       ),
+      )
     );
   }
 
@@ -2228,7 +2868,10 @@ class _AddProductPageState extends State<AddProductPage> {
                 icon: Icons.shopping_bag_outlined,
                 validator: (value) {
                   if (value == null || value.isEmpty) {
-                    return 'Name is required';
+                    return 'Product Name is required';
+                  }
+                  if (value.length < 10) {
+                    return 'Product name must be at least 10 characters long';
                   }
                   return null;
                 },
@@ -2243,7 +2886,7 @@ class _AddProductPageState extends State<AddProductPage> {
                 maxLines: 4,
                 validator: (value) {
                   if (value == null || value.isEmpty) {
-                    return 'Description is required';
+                    return 'Product Description is required';
                   }
                   return null;
                 },
@@ -2315,6 +2958,7 @@ class _AddProductPageState extends State<AddProductPage> {
                         setState(() {
                           _selectedCategoryId = value;
                           _productForm.categoryId = value ?? '';
+                          _markAsChanged(); // Category selection counts as a change
                         });
                         if (value != null) {
                           _loadSubCategories(value);
@@ -2371,6 +3015,7 @@ class _AddProductPageState extends State<AddProductPage> {
                         setState(() {
                           _selectedSubCategoryId = value;
                           _productForm.subCategoryId = value;
+                          _markAsChanged(); // Subcategory selection counts as a change
                         });
                       },
                 validator: (_) => _productForm.validateSubCategory(),
@@ -2495,7 +3140,7 @@ class _AddProductPageState extends State<AddProductPage> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Add at least one variation with price, stock, and SKU',
+                    'Add at least one variation with price, stock, and SKU. Final prices include 12% VAT.',
                     style: AppTextStyles.bodyMedium.copyWith(
                       color: AppColors.onSurface.withValues(alpha: 0.7),
                     ),
@@ -2581,23 +3226,24 @@ class _AddProductPageState extends State<AddProductPage> {
                 flex: 2,
                 child: Column(
                   children: [
-                    // Variation Image
+                    // Variation Image - Larger container for better visual appeal
                     Container(
                       width: double.infinity,
-                      height: 150,
+                      height: 280, // Increased from 150 to 280
                       decoration: BoxDecoration(
                         color: _variations[index].imageFile != null
                             ? Colors.transparent
                             : AppColors.surface,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(16), // Increased border radius
                         border: Border.all(
                           color: AppColors.onSurface.withValues(alpha: 0.2),
+                          width: 2, // Slightly thicker border
                           style: BorderStyle.solid,
                         ),
                       ),
                       child: _variations[index].imageFile != null
                           ? ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(14),
                               child: Image.file(
                                 _variations[index].imageFile!,
                                 fit: BoxFit.cover,
@@ -2608,50 +3254,102 @@ class _AddProductPageState extends State<AddProductPage> {
                               children: [
                                 Icon(
                                   Icons.image_outlined,
-                                  size: 32,
+                                  size: 64, // Increased from 32 to 64
                                   color: AppColors.onSurface.withValues(
                                     alpha: 0.4,
                                   ),
                                 ),
-                                const SizedBox(height: 8),
+                                const SizedBox(height: 16), // Increased spacing
                                 Text(
                                   'Variation Image',
-                                  style: AppTextStyles.bodySmall.copyWith(
+                                  style: AppTextStyles.titleMedium.copyWith( // Changed from bodySmall to titleMedium
                                     color: AppColors.onSurface.withValues(
                                       alpha: 0.6,
+                                    ),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Optional',
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.onSurface.withValues(
+                                      alpha: 0.5,
                                     ),
                                   ),
                                 ),
                               ],
                             ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 20), // Increased spacing
+                    
+                    // Upload/Change Button - Enhanced styling
                     SizedBox(
                       width: double.infinity,
-                      child: OutlinedButton.icon(
+                      child: ElevatedButton.icon( // Changed from OutlinedButton to ElevatedButton
                         onPressed: () => _pickVariationImage(index),
                         icon: Icon(
                           _variations[index].imageFile != null
-                              ? Icons.edit
-                              : Icons.photo,
-                          size: 16,
+                              ? Icons.edit_outlined
+                              : Icons.add_photo_alternate_outlined,
+                          size: 20, // Increased icon size
                         ),
                         label: Text(
                           _variations[index].imageFile != null
-                              ? 'Change'
+                              ? 'Change Image'
                               : 'Add Image',
-                          style: AppTextStyles.labelMedium,
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.primary,
-                          side: BorderSide(color: AppColors.primary),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+                          style: AppTextStyles.labelLarge.copyWith( // Changed from labelMedium to labelLarge
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.onPrimary, // Explicitly set the color
                           ),
-                          padding: const EdgeInsets.symmetric(vertical: 8),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _variations[index].imageFile != null
+                              ? AppColors.secondary
+                              : AppColors.primary,
+                          foregroundColor: AppColors.onPrimary,
+                          elevation: 2,
+                          shadowColor: AppColors.primary.withValues(alpha: 0.3),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12), // Increased border radius
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 16), // Increased padding
                         ),
                       ),
                     ),
+                    
+                    // Optional: Remove image button when image is present
+                    if (_variations[index].imageFile != null) ...[
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _variations[index].imageFile = null;
+                            });
+                          },
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            size: 18,
+                          ),
+                          label: Text(
+                            'Remove Image',
+                            style: AppTextStyles.labelMedium.copyWith(
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.error,
+                            side: BorderSide(color: AppColors.error.withValues(alpha: 0.5)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -2662,45 +3360,169 @@ class _AddProductPageState extends State<AddProductPage> {
                 flex: 3,
                 child: Column(
                   children: [
-                    // First row - Name and Price
-                    Row(
+                    // First row - Variation Name (full width)
+                    _buildWebTextField(
+                      controller: controllers['name']!,
+                      label: 'Variation Name *',
+                      icon: Icons.label_outline,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Variation name is required';
+                        }
+                        if (value.length < 10) {
+                          return 'Variation name must be at least 10 characters long';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Second row - Price (full width with VAT calculation)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: _buildWebTextField(
-                            controller: controllers['name']!,
-                            label: 'Variation Name *',
-                            icon: Icons.label_outline,
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return 'Variation name is required';
-                              }
-                              return null;
-                            },
+                        Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.background,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.1)),
                           ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: _buildWebTextField(
+                          child: TextFormField(
                             controller: controllers['price']!,
-                            label: 'Price (₱) *',
-                            icon: Icons.money_rounded,
+                            style: AppTextStyles.bodyLarge.copyWith(color: AppColors.onSurface),
+                            decoration: InputDecoration(
+                              labelText: 'Base Price (excluding VAT) *',
+                              labelStyle: AppTextStyles.labelLarge.copyWith(
+                                color: AppColors.onSurface.withValues(alpha: 0.7),
+                              ),
+                              prefixIcon: Icon(Icons.money_rounded, color: AppColors.primary),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                              filled: true,
+                              fillColor: AppColors.background,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 16,
+                              ),
+                            ),
+                            keyboardType: TextInputType.number,
+                            onChanged: (value) {
+                              setState(() {}); // Trigger rebuild to update VAT calculation
+                            },
                             validator: (value) {
                               if (value == null || value.isEmpty) {
                                 return 'Price is required';
                               }
                               final price = double.tryParse(value);
-                              if (price == null || price <= 0) {
-                                return 'Enter a valid price';
+                              if (price == null) {
+                                return 'Please enter a valid number';
+                              }
+                              if (price < 1) {
+                                return 'Price must be at least ₱1';
                               }
                               return null;
                             },
                           ),
                         ),
+                        
+                        // VAT calculation display
+                        const SizedBox(height: 16),
+                        Builder(builder: (context) {
+                          final priceText = controllers['price']!.text;
+                          final basePrice = double.tryParse(priceText) ?? 0;
+                          final vatAmount = basePrice * 0.12;
+                          final totalPrice = basePrice + vatAmount;
+                          
+                          if (basePrice > 0) {
+                            return Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(
+                                color: AppColors.surface,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: AppColors.primary.withValues(alpha: 0.2),
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'VAT Calculation',
+                                    style: AppTextStyles.titleMedium.copyWith(
+                                      color: AppColors.onSurface,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'Base Price:',
+                                        style: AppTextStyles.bodyLarge.copyWith(
+                                          color: AppColors.onSurface.withValues(alpha: 0.7),
+                                        ),
+                                      ),
+                                      Text(
+                                        '₱${basePrice.toStringAsFixed(2)}',
+                                        style: AppTextStyles.bodyLarge.copyWith(
+                                          color: AppColors.onSurface,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'VAT (12%):',
+                                        style: AppTextStyles.bodyLarge.copyWith(
+                                          color: AppColors.onSurface.withValues(alpha: 0.7),
+                                        ),
+                                      ),
+                                      Text(
+                                        '₱${vatAmount.toStringAsFixed(2)}',
+                                        style: AppTextStyles.bodyLarge.copyWith(
+                                          color: AppColors.onSurface,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const Divider(height: 24),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'Final Price:',
+                                        style: AppTextStyles.titleMedium.copyWith(
+                                          color: AppColors.onSurface,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      Text(
+                                        '₱${totalPrice.toStringAsFixed(2)}',
+                                        style: AppTextStyles.titleMedium.copyWith(
+                                          color: Colors.green,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+                          return const SizedBox.shrink();
+                        }),
                       ],
                     ),
                     const SizedBox(height: 16),
 
-                    // Second row - Stock, SKU and Weight
+                    // Third row - Stock, SKU and Weight
                     Row(
                       children: [
                         Expanded(
@@ -2724,46 +3546,104 @@ class _AddProductPageState extends State<AddProductPage> {
                         Expanded(
                           child: _buildWebTextField(
                             controller: controllers['sku']!,
-                            label: 'SKU',
+                            label: 'SKU *',
                             icon: Icons.qr_code_outlined,
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Product SKU is required';
+                              }
+                              return null;
+                            },
                           ),
                         ),
                         const SizedBox(width: 16),
                         Expanded(
                           child: _buildWebTextField(
                             controller: controllers['weight']!,
-                            label: 'Weight (g)',
+                            label: 'Weight (g) *',
                             icon: Icons.scale_outlined,
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Weight is required';
+                              }
+                              final weight = double.tryParse(value);
+                              if (weight == null) {
+                                return 'Please enter a valid number';
+                              }
+                              if (weight <= 0) {
+                                return 'Weight must be greater than 0';
+                              }
+                              return null;
+                            },
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 16),
 
-                    // Third row - Dimensions only
+                    // Fourth row - Dimensions only
                     Row(
                       children: [
                         Expanded(
                           child: _buildWebTextField(
                             controller: controllers['length']!,
-                            label: 'Length (cm)',
+                            label: 'Length (cm) *',
                             icon: Icons.straighten,
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Length is required';
+                              }
+                              final length = double.tryParse(value);
+                              if (length == null) {
+                                return 'Invalid number';
+                              }
+                              if (length <= 0) {
+                                return 'Must be > 0';
+                              }
+                              return null;
+                            },
                           ),
                         ),
                         const SizedBox(width: 16),
                         Expanded(
                           child: _buildWebTextField(
                             controller: controllers['width']!,
-                            label: 'Width (cm)',
+                            label: 'Width (cm) *',
                             icon: Icons.straighten,
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Width is required';
+                              }
+                              final width = double.tryParse(value);
+                              if (width == null) {
+                                return 'Invalid number';
+                              }
+                              if (width <= 0) {
+                                return 'Must be > 0';
+                              }
+                              return null;
+                            },
                           ),
                         ),
                         const SizedBox(width: 16),
                         Expanded(
                           child: _buildWebTextField(
                             controller: controllers['height']!,
-                            label: 'Height (cm)',
+                            label: 'Height (cm) *',
                             icon: Icons.straighten,
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Height is required';
+                              }
+                              final height = double.tryParse(value);
+                              if (height == null) {
+                                return 'Invalid number';
+                              }
+                              if (height <= 0) {
+                                return 'Must be > 0';
+                              }
+                              return null;
+                            },
                           ),
                         ),
                       ],
@@ -2773,6 +3653,144 @@ class _AddProductPageState extends State<AddProductPage> {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWebWarrantySection() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 15,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.verified_user_outlined, color: AppColors.primary, size: 24),
+              const SizedBox(width: 12),
+              Text(
+                'Product Warranty',
+                style: AppTextStyles.titleLarge.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.onSurface,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // Warranty checkbox
+          Row(
+            children: [
+              Checkbox(
+                value: _productForm.hasWarranty,
+                onChanged: (value) {
+                  setState(() {
+                    _productForm.hasWarranty = value ?? false;
+                    if (!_productForm.hasWarranty) {
+                      _warrantyPolicyController.clear();
+                      _productForm.warrantyPolicy = '';
+                      _productForm.warrantyType = '';
+                      _productForm.warrantyPeriod = '';
+                    }
+                    _markAsChanged(); // Warranty checkbox change counts as a change
+                  });
+                },
+                activeColor: AppColors.primary,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'This product includes warranty',
+                style: AppTextStyles.bodyLarge.copyWith(
+                  color: AppColors.onSurface,
+                ),
+              ),
+            ],
+          ),
+
+          // Warranty fields (shown only if warranty is enabled)
+          if (_productForm.hasWarranty) ...[
+            const SizedBox(height: 24),
+            
+            // Warranty Type dropdown
+            _buildWebDropdown(
+              label: 'Warranty Type *',
+              icon: Icons.category_outlined,
+              value: _productForm.warrantyType.isEmpty ? null : _productForm.warrantyType,
+              items: _warrantyTypes.map((type) {
+                return DropdownMenuItem<String>(
+                  value: type,
+                  child: Text(type),
+                );
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  _productForm.warrantyType = value ?? '';
+                  _markAsChanged(); // Warranty type change counts as a change
+                });
+              },
+              validator: (value) {
+                if (_productForm.hasWarranty && (value == null || value.isEmpty)) {
+                  return 'Warranty type is required when warranty is enabled';
+                }
+                return null;
+              },
+            ),
+            
+            const SizedBox(height: 20),
+            
+            // Warranty Period dropdown
+            _buildWebDropdown(
+              label: 'Warranty Period *',
+              icon: Icons.schedule_outlined,
+              value: _productForm.warrantyPeriod.isEmpty ? null : _productForm.warrantyPeriod,
+              items: _warrantyPeriods.map((period) {
+                return DropdownMenuItem<String>(
+                  value: period,
+                  child: Text(period),
+                );
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  _productForm.warrantyPeriod = value ?? '';
+                  _markAsChanged(); // Warranty period change counts as a change
+                });
+              },
+              validator: (value) {
+                if (_productForm.hasWarranty && (value == null || value.isEmpty)) {
+                  return 'Warranty period is required when warranty is enabled';
+                }
+                return null;
+              },
+            ),
+            
+            const SizedBox(height: 20),
+            
+            // Warranty policy text field
+            _buildWebTextField(
+              controller: _warrantyPolicyController,
+              label: 'Warranty Policy *',
+              icon: Icons.policy_outlined,
+              maxLines: 4,
+              validator: (value) {
+                if (_productForm.hasWarranty && (value == null || value.isEmpty)) {
+                  return 'Warranty policy is required';
+                }
+                return null;
+              },
+            ),
+          ],
         ],
       ),
     );

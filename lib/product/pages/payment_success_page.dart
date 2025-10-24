@@ -259,7 +259,7 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage>
                                 ),
                               ),
                               Text(
-                                widget.sessionId!.substring(0, 12) + '...',
+                                '${widget.sessionId!.substring(0, 12)}...',
                                 style: AppTextStyles.bodyMedium.copyWith(
                                   fontWeight: FontWeight.w600,
                                   fontFamily: 'monospace',

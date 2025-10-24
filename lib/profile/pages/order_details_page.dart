@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import '../../product/models/order_model.dart' as order_model;
+import '../../product/pages/paymongo_webview_page.dart';
+import '../../utils/app_logger.dart';
 
 class OrderDetailsPage extends StatelessWidget {
   final order_model.Order order;
@@ -471,6 +475,8 @@ class OrderDetailsPage extends StatelessWidget {
             _buildInfoRow('Checkout Session ID', order.paymentInfo.checkoutSessionId!),
           if (order.paymentInfo.paymentIntentId != null)
             _buildInfoRow('Payment Intent ID', order.paymentInfo.paymentIntentId!),
+          if (order.paymentInfo.checkoutUrl != null && _canResumePayment())
+            _buildInfoRow('Payment URL', 'Available for payment resumption'),
         ],
       ),
     );
@@ -520,6 +526,23 @@ class OrderDetailsPage extends StatelessWidget {
   Widget _buildActionButtons(BuildContext context) {
     return Column(
       children: [
+        if (_canResumePayment())
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => _resumePayment(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.warning,
+                foregroundColor: AppColors.onPrimary,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text('Resume Payment'),
+            ),
+          ),
+        if (_canResumePayment()) const SizedBox(height: 12),
         if (_canReorder())
           SizedBox(
             width: double.infinity,
@@ -662,6 +685,11 @@ class OrderDetailsPage extends StatelessWidget {
         textColor = AppColors.error;
         icon = Icons.error;
         break;
+      case order_model.OrderStatus.expired:
+        backgroundColor = AppColors.grey400.withValues(alpha: 0.1);
+        textColor = AppColors.grey600;
+        icon = Icons.access_time;
+        break;
     }
 
     return Container(
@@ -711,13 +739,15 @@ class OrderDetailsPage extends StatelessWidget {
       case order_model.OrderStatus.shipped:
         return 'Order Shipped';
       case order_model.OrderStatus.delivered:
-        return 'Order Delivered';
+        return 'Order Completed';
       case order_model.OrderStatus.cancelled:
         return 'Order Cancelled';
       case order_model.OrderStatus.refunded:
         return 'Order Refunded';
       case order_model.OrderStatus.payment_failed:
         return 'Payment Failed';
+      case order_model.OrderStatus.expired:
+        return 'Payment Expired';
     }
   }
 
@@ -769,13 +799,25 @@ class OrderDetailsPage extends StatelessWidget {
         return AppColors.grey600;
       case order_model.OrderStatus.payment_failed:
         return AppColors.error;
+      case order_model.OrderStatus.expired:
+        return AppColors.grey600;
     }
   }
 
   bool _canReorder() {
     return order.status == order_model.OrderStatus.confirmed ||
            order.status == order_model.OrderStatus.delivered ||
-           order.status == order_model.OrderStatus.cancelled;
+           order.status == order_model.OrderStatus.expired;
+  }
+
+  bool _canResumePayment() {
+    // Can only resume payment if:
+    // 1. Order status is pending
+    // 2. Order is not expired
+    // 3. Order has a checkout URL
+    return order.status == order_model.OrderStatus.pending &&
+           order.paymentInfo.checkoutUrl != null &&
+           order.paymentInfo.checkoutUrl!.isNotEmpty;
   }
 
 
@@ -787,6 +829,104 @@ class OrderDetailsPage extends StatelessWidget {
         backgroundColor: AppColors.primary,
       ),
     );
+  }
+
+  void _resumePayment(BuildContext context) async {
+    if (!_canResumePayment()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Payment cannot be resumed for this order'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    final checkoutUrl = order.paymentInfo.checkoutUrl!;
+    AppLogger.d('🔄 Resuming payment for order ${order.orderId} with URL: $checkoutUrl');
+
+    try {
+      if (kIsWeb) {
+        // For web, open in a new tab
+        final uri = Uri.parse(checkoutUrl);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+          
+          // Show a dialog to inform the user
+          if (context.mounted) {
+            showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                backgroundColor: AppColors.surface,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                title: Row(
+                  children: [
+                    Icon(Icons.payment, color: AppColors.primary),
+                    const SizedBox(width: 8),
+                    Text('Payment Resumed'),
+                  ],
+                ),
+                content: Text(
+                  'Your payment page has been opened in a new tab. Please complete your payment and return to this page.',
+                  style: AppTextStyles.bodyMedium,
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text('OK', style: TextStyle(color: AppColors.primary)),
+                  ),
+                ],
+              ),
+            );
+          }
+        }
+      } else {
+        // For mobile, use WebView
+        if (context.mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => PaymongoWebViewPage(
+                checkoutUrl: checkoutUrl,
+                successUrl: 'https://dentpal-store.web.app/payment-success',
+                cancelUrl: 'https://dentpal-store.web.app/payment-failed',
+                onPaymentComplete: (isSuccess, orderId) {
+                  AppLogger.d('💳 Payment resumed completed. Success: $isSuccess, Order ID: $orderId');
+                  
+                  if (isSuccess) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Payment completed successfully!'),
+                        backgroundColor: AppColors.success,
+                      ),
+                    );
+                    // Navigate back to orders page
+                    Navigator.of(context).pop();
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Payment was cancelled or failed'),
+                        backgroundColor: AppColors.warning,
+                      ),
+                    );
+                  }
+                },
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      AppLogger.d('❌ Error resuming payment: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to resume payment. Please try again.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   void _contactSupport(BuildContext context) {

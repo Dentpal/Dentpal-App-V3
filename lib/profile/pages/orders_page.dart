@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import '../../product/models/order_model.dart' as order_model;
+import '../../product/pages/paymongo_webview_page.dart';
+import '../../utils/app_logger.dart';
 import '../services/order_service.dart';
 import 'order_details_page.dart';
 
@@ -28,11 +32,10 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
   final List<order_model.OrderStatus> filterOptions = [
     order_model.OrderStatus.pending,
     order_model.OrderStatus.confirmed,
+    order_model.OrderStatus.expired,
     order_model.OrderStatus.processing,
     order_model.OrderStatus.shipped,
     order_model.OrderStatus.delivered,
-    order_model.OrderStatus.cancelled,
-    order_model.OrderStatus.payment_failed,
   ];
 
   @override
@@ -478,7 +481,21 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                   ),
                 ),
                 const SizedBox(width: 12),
-                if (_canReorder(order.status))
+                if (_canResumePayment(order))
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => _resumePayment(order),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.warning,
+                        foregroundColor: AppColors.onPrimary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Resume Payment'),
+                    ),
+                  )
+                else if (_canReorder(order.status))
                   Expanded(
                     child: ElevatedButton(
                       onPressed: () => _reorderItems(order),
@@ -648,6 +665,11 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
         textColor = AppColors.error;
         icon = Icons.error;
         break;
+      case order_model.OrderStatus.expired:
+        backgroundColor = AppColors.grey400.withValues(alpha: 0.1);
+        textColor = AppColors.grey600;
+        icon = Icons.access_time;
+        break;
     }
 
     return Container(
@@ -684,13 +706,15 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
       case order_model.OrderStatus.shipped:
         return 'Shipped';
       case order_model.OrderStatus.delivered:
-        return 'Delivered';
+        return 'Completed';
       case order_model.OrderStatus.cancelled:
         return 'Cancelled';
       case order_model.OrderStatus.refunded:
         return 'Refunded';
       case order_model.OrderStatus.payment_failed:
         return 'Payment Failed';
+      case order_model.OrderStatus.expired:
+        return 'Expired Payment';
     }
   }
 
@@ -712,7 +736,17 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
   bool _canReorder(order_model.OrderStatus status) {
     return status == order_model.OrderStatus.confirmed || 
            status == order_model.OrderStatus.delivered || 
-           status == order_model.OrderStatus.cancelled;
+           status == order_model.OrderStatus.expired;
+  }
+
+  bool _canResumePayment(order_model.Order order) {
+    // Can only resume payment if:
+    // 1. Order status is pending
+    // 2. Order is not expired
+    // 3. Order has a checkout URL
+    return order.status == order_model.OrderStatus.pending &&
+           order.paymentInfo.checkoutUrl != null &&
+           order.paymentInfo.checkoutUrl!.isNotEmpty;
   }
 
   void _viewOrderDetails(order_model.Order order) {
@@ -731,5 +765,103 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
         backgroundColor: AppColors.primary,
       ),
     );
+  }
+
+  void _resumePayment(order_model.Order order) async {
+    if (!_canResumePayment(order)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Payment cannot be resumed for this order'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    final checkoutUrl = order.paymentInfo.checkoutUrl!;
+    AppLogger.d('🔄 Resuming payment for order ${order.orderId} with URL: $checkoutUrl');
+
+    try {
+      if (kIsWeb) {
+        // For web, open in a new tab
+        final uri = Uri.parse(checkoutUrl);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+          
+          // Show a dialog to inform the user
+          if (mounted) {
+            showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                backgroundColor: AppColors.surface,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                title: Row(
+                  children: [
+                    Icon(Icons.payment, color: AppColors.primary),
+                    const SizedBox(width: 8),
+                    Text('Payment Resumed'),
+                  ],
+                ),
+                content: Text(
+                  'Your payment page has been opened in a new tab. Please complete your payment and return to this page.',
+                  style: AppTextStyles.bodyMedium,
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text('OK', style: TextStyle(color: AppColors.primary)),
+                  ),
+                ],
+              ),
+            );
+          }
+        }
+      } else {
+        // For mobile, use WebView
+        if (mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => PaymongoWebViewPage(
+                checkoutUrl: checkoutUrl,
+                successUrl: 'https://dentpal-store.web.app/payment-success',
+                cancelUrl: 'https://dentpal-store.web.app/payment-failed',
+                onPaymentComplete: (isSuccess, orderId) {
+                  AppLogger.d('💳 Payment resumed completed. Success: $isSuccess, Order ID: $orderId');
+                  
+                  if (isSuccess) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Payment completed successfully!'),
+                        backgroundColor: AppColors.success,
+                      ),
+                    );
+                    // Refresh orders to show updated status
+                    _refreshOrders();
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Payment was cancelled or failed'),
+                        backgroundColor: AppColors.warning,
+                      ),
+                    );
+                  }
+                },
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      AppLogger.d('❌ Error resuming payment: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to resume payment. Please try again.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 }

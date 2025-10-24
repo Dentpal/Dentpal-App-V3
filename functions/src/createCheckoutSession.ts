@@ -332,11 +332,12 @@ export const createCheckoutSession = functions
 
         const checkoutSession = checkoutResponse.data.data;
 
-        // Update order with checkout session ID
+        // Update order with checkout session ID and URL
         await orderRef.update({
           checkoutSessionId: checkoutSession.id,
           paymentInfo: {
             checkoutSessionId: checkoutSession.id,
+            checkoutUrl: checkoutSession.attributes.checkout_url,
             method: 'card', // Will be updated when payment is completed
             status: 'pending',
             amount: totalAmount,
