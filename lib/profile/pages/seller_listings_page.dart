@@ -123,6 +123,8 @@ class _SellerListingsPageState extends State<SellerListingsPage>
               updatedAt: product.updatedAt,
               clickCounter: product.clickCounter,
               variations: variations,
+              hasWarranty: product.hasWarranty,
+              warrantyPolicy: product.warrantyPolicy,
             );
           }
           

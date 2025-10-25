@@ -12,7 +12,8 @@ enum OrderStatus {
   delivered,
   cancelled,
   refunded,
-  payment_failed
+  payment_failed,
+  expired
 }
 
 enum PaymentStatus {
@@ -391,6 +392,7 @@ class ShippingInfo {
 class PaymentInfo {
   final String? paymentIntentId; // Made optional since we'll use checkout sessions
   final String? checkoutSessionId; // Added for Paymongo checkout sessions
+  final String? checkoutUrl; // Added for PayMongo checkout URL
   final PaymentMethod method;
   final PaymentStatus status;
   final double amount;
@@ -401,6 +403,7 @@ class PaymentInfo {
   PaymentInfo({
     this.paymentIntentId,
     this.checkoutSessionId,
+    this.checkoutUrl,
     required this.method,
     required this.status,
     required this.amount,
@@ -451,6 +454,7 @@ class PaymentInfo {
       return PaymentInfo(
         paymentIntentId: map['paymentIntentId'],
         checkoutSessionId: map['checkoutSessionId'],
+        checkoutUrl: map['checkoutUrl'],
         method: method,
         status: status,
         amount: (map['amount'] ?? 0.0).toDouble(),
@@ -470,6 +474,7 @@ class PaymentInfo {
     return {
       'paymentIntentId': paymentIntentId,
       'checkoutSessionId': checkoutSessionId,
+      'checkoutUrl': checkoutUrl,
       'method': method.toString().split('.').last,
       'status': status.toString().split('.').last,
       'amount': amount,
@@ -554,21 +559,23 @@ extension OrderStatusExtension on OrderStatus {
   String get displayName {
     switch (this) {
       case OrderStatus.pending:
-        return 'Pending';
+        return 'Pending Payment';
       case OrderStatus.confirmed:
-        return 'Confirmed';
+        return 'Confirmed Payment';
       case OrderStatus.processing:
         return 'Processing';
       case OrderStatus.shipped:
         return 'Shipped';
       case OrderStatus.delivered:
-        return 'Delivered';
+        return 'Completed';
       case OrderStatus.cancelled:
         return 'Cancelled';
       case OrderStatus.refunded:
         return 'Refunded';
       case OrderStatus.payment_failed:
         return 'Payment Failed';
+      case OrderStatus.expired:
+        return 'Expired Payment';
     }
   }
 
@@ -583,13 +590,15 @@ extension OrderStatusExtension on OrderStatus {
       case OrderStatus.shipped:
         return 'Order has been shipped and is on its way';
       case OrderStatus.delivered:
-        return 'Order has been delivered successfully';
+        return 'Order has been completed successfully';
       case OrderStatus.cancelled:
         return 'Order has been cancelled';
       case OrderStatus.refunded:
         return 'Order has been refunded';
       case OrderStatus.payment_failed:
         return 'Payment failed for this order';
+      case OrderStatus.expired:
+        return 'Payment expired due to timeout';
     }
   }
 }

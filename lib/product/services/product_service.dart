@@ -93,6 +93,8 @@ class ProductService {
             isArchived: product.isArchived,
             clickCounter: product.clickCounter,
             variations: variations,
+            hasWarranty: product.hasWarranty,
+            warrantyPolicy: product.warrantyPolicy,
           );
         }
         
@@ -157,6 +159,8 @@ class ProductService {
           isArchived: product.isArchived,
           clickCounter: product.clickCounter,
           variations: variations,
+          hasWarranty: product.hasWarranty,
+          warrantyPolicy: product.warrantyPolicy,
         );
       }
       
@@ -324,6 +328,10 @@ class ProductService {
         'isDraft': isDraft,
         'isArchived': false, // New products are not archived by default
         'clickCounter': 0,
+        'hasWarranty': productForm.hasWarranty,
+        'warrantyType': productForm.warrantyType,
+        'warrantyPeriod': productForm.warrantyPeriod,
+        'warrantyPolicy': productForm.warrantyPolicy,
       });
       
       // Add variations as a sub-collection
@@ -334,7 +342,7 @@ class ProductService {
           'productId': productRef.id,
           'name': variationForm.name,
           'imageURL': variationForm.imageURL,
-          'price': variationForm.price,
+          'price': variationForm.priceWithVat, // Save the VAT-inclusive price
           'stock': variationForm.stock,
           'sku': variationForm.sku,
           'weight': variationForm.weight,
@@ -403,6 +411,10 @@ class ProductService {
         'categoryID': productForm.categoryId,
         'subCategoryID': productForm.subCategoryId,
         'updatedAt': Timestamp.fromDate(now),
+        'hasWarranty': productForm.hasWarranty,
+        'warrantyType': productForm.warrantyType,
+        'warrantyPeriod': productForm.warrantyPeriod,
+        'warrantyPolicy': productForm.warrantyPolicy,
       };
       
       // Add isDraft field if it's provided
@@ -443,7 +455,7 @@ class ProductService {
           await productRef.collection('Variation').doc(existingVariationId).update({
             'name': variationForm.name,
             'imageURL': variationForm.imageURL,
-            'price': variationForm.price,
+            'price': variationForm.priceWithVat, // Save the VAT-inclusive price
             'stock': variationForm.stock,
             'sku': variationForm.sku,
             'weight': variationForm.weight,
@@ -457,7 +469,7 @@ class ProductService {
             'productId': productId,
             'name': variationForm.name,
             'imageURL': variationForm.imageURL,
-            'price': variationForm.price,
+            'price': variationForm.priceWithVat, // Save the VAT-inclusive price
             'stock': variationForm.stock,
             'sku': variationForm.sku,
             'weight': variationForm.weight,
@@ -543,6 +555,8 @@ class ProductService {
               isArchived: product.isArchived,
               clickCounter: product.clickCounter,
               variations: variations,
+              hasWarranty: product.hasWarranty,
+              warrantyPolicy: product.warrantyPolicy,
             );
           }
           

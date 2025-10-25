@@ -933,7 +933,7 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
       }
       
       AppLogger.d('Starting phone number update for user: ${user.uid}');
-      AppLogger.d('User ${user.uid} verified access to both ${_currentPhoneNumber} and ${_formattedNewPhoneNumber}');
+      AppLogger.d('User ${user.uid} verified access to both $_currentPhoneNumber and $_formattedNewPhoneNumber');
 
       // Update Firebase Auth phone number using the new phone credential
       if (_newPhoneCredential != null) {
