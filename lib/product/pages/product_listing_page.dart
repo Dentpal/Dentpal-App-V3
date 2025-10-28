@@ -15,6 +15,7 @@ import '../../core/app_theme/app_text_styles.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/utils/navigation_utils.dart';
 import 'cart_page.dart';
+import 'product_search_page.dart';
 import '../../login_page.dart';
 import 'package:flutter/services.dart';
 
@@ -58,7 +59,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
   final ClickTrackingService _clickTrackingService = ClickTrackingService();
   bool _isLoading = false;
   bool _isLoadingMore = false;
-  String _selectedCategory = 'All';
+  List<String> _selectedCategories = [];
   List<String> _categories = ['All'];
   String? _errorMessage;
   List<Product> _products = [];
@@ -75,11 +76,9 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
   Map<String, String> _categoryNameToId = {};
   Map<String, String> _categoryIdToName = {};
   
-  // Subcategory state
-  List<SubCategory> _subcategories = [];
-  String? _selectedSubCategory;
-  bool _isLoadingSubcategories = false;
-  bool _isSubcategoriesExpanded = false;
+  // Subcategory state - now grouped by category
+  Map<String, List<SubCategory>> _subcategoriesByCategory = {};
+  List<String> _selectedSubCategories = [];
 
   // Override to keep this page alive when navigating away
   @override
@@ -268,38 +267,65 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     }
   }
   
-  // Handle category selection
+  // Handle category selection (now supports multiple selection)
   void _onCategorySelected(String category) {
-    if (_selectedCategory == category || !mounted) return;
+    if (!mounted) return;
     
-    // Track category click if it's not 'All'
-    if (category != 'All') {
+    if (category == 'All') {
+      // Clear all selections when 'All' is selected
+      setState(() {
+        _selectedCategories = [];
+        _selectedSubCategories = [];
+        _subcategoriesByCategory.clear();
+        // Reset pagination parameters
+        _products = [];
+        _lastDocument = null;
+        _hasMore = true;
+        _isLoading = false;
+        _isLoadingMore = false;
+      });
+    } else {
+      // Handle multiple category selection
       final categoryId = _categoryNameToId[category];
       if (categoryId != null) {
+        // Track category click
         _clickTrackingService.trackCategoryClick(categoryId);
+        
+        setState(() {
+          List<String> newSelectedCategories = List.from(_selectedCategories);
+          if (newSelectedCategories.contains(category)) {
+            // Remove category if already selected
+            newSelectedCategories.remove(category);
+            // Remove subcategories for this category
+            _subcategoriesByCategory.remove(categoryId);
+            // Remove any selected subcategories from this category
+            if (_subcategoriesByCategory.containsKey(categoryId)) {
+              final subcategoryIds = _subcategoriesByCategory[categoryId]!
+                  .map((s) => s.subCategoryId).toList();
+              _selectedSubCategories.removeWhere((id) => subcategoryIds.contains(id));
+            }
+          } else {
+            // Add category to selection
+            newSelectedCategories.add(category);
+          }
+          _selectedCategories = newSelectedCategories;
+          
+          // Reset pagination parameters for the new selection
+          _products = [];
+          _lastDocument = null;
+          _hasMore = true;
+          _isLoading = false;
+          _isLoadingMore = false;
+        });
+        
+        // Load subcategories for all selected categories
+        for (String selectedCategory in _selectedCategories) {
+          _loadSubcategories(selectedCategory);
+        }
       }
     }
     
-    setState(() {
-      _selectedCategory = category;
-      // Reset subcategory selection when switching categories
-      _selectedSubCategory = null;
-      _subcategories = [];
-      _isSubcategoriesExpanded = false;
-      // Reset pagination parameters for the new category
-      _products = [];
-      _lastDocument = null;
-      _hasMore = true;
-      _isLoading = false;
-      _isLoadingMore = false;
-    });
-    
-    // Load subcategories for the selected category if it's not 'All'
-    if (category != 'All') {
-      _loadSubcategories(category);
-    }
-    
-    // Load first page with the new category
+    // Load first page with the new selection
     _loadFirstPage();
   }
 
@@ -308,50 +334,60 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     if (!mounted) return;
     
     final categoryId = _categoryNameToId[categoryName];
-    if (categoryId == null) return;
+    if (categoryId == null) {
+      AppLogger.d('❌ No categoryId found for category: $categoryName');
+      return;
+    }
     
-    setState(() {
-      _isLoadingSubcategories = true;
-    });
+    // Skip if subcategories already loaded for this category
+    if (_subcategoriesByCategory.containsKey(categoryId)) {
+      AppLogger.d('ℹ️ Subcategories already loaded for category: $categoryName (ID: $categoryId)');
+      return;
+    }
     
     try {
+      AppLogger.d('🔍 Loading subcategories for category: $categoryName (ID: $categoryId)');
       final subcategories = await _categoryService.getSubCategories(categoryId);
+      
+      AppLogger.d('✅ Loaded ${subcategories.length} subcategories for $categoryName');
+      for (var sub in subcategories) {
+        AppLogger.d('  - ${sub.subCategoryName} (ID: ${sub.subCategoryId})');
+      }
       
       if (!mounted) return; // Check if widget is still mounted
       
       if (mounted) {
         setState(() {
-          _subcategories = subcategories;
-          _isLoadingSubcategories = false;
-          // Auto-expand if subcategories are found
-          _isSubcategoriesExpanded = subcategories.isNotEmpty;
+          _subcategoriesByCategory[categoryId] = subcategories;
         });
       }
     } catch (e) {
-      AppLogger.d('❌ Error loading subcategories: $e');
-      if (mounted) {
-        setState(() {
-          _subcategories = [];
-          _isLoadingSubcategories = false;
-          _isSubcategoriesExpanded = false;
-        });
-      }
+      AppLogger.d('❌ Error loading subcategories for $categoryName: $e');
     }
   }
 
-  // Handle subcategory selection
+  // Handle subcategory selection (now supports multiple selection)
   void _onSubCategorySelected(String subCategoryId, String subCategoryName) {
-    if (_selectedSubCategory == subCategoryId || !mounted) return;
+    if (!mounted) return;
     
-    // Track subcategory click (need categoryId)
-    final categoryId = _categoryNameToId[_selectedCategory];
-    if (categoryId != null) {
-      _clickTrackingService.trackSubCategoryClick(categoryId, subCategoryId);
-    }
+    AppLogger.d('🔍 Subcategory selected: $subCategoryName (ID: $subCategoryId)');
     
     setState(() {
-      _selectedSubCategory = subCategoryId;
-      // Reset pagination parameters for the new subcategory
+      List<String> newSelectedSubCategories = List.from(_selectedSubCategories);
+      if (newSelectedSubCategories.contains(subCategoryId)) {
+        // Remove subcategory if already selected
+        newSelectedSubCategories.remove(subCategoryId);
+        AppLogger.d('➖ Removed subcategory: $subCategoryName');
+      } else {
+        // Add subcategory to selection
+        newSelectedSubCategories.add(subCategoryId);
+        AppLogger.d('➕ Added subcategory: $subCategoryName');
+      }
+      _selectedSubCategories = newSelectedSubCategories;
+      
+      AppLogger.d('🔍 Current selected subcategories: $_selectedSubCategories');
+      
+      // Reset pagination parameters for the new selection
       _products = [];
       _lastDocument = null;
       _hasMore = true;
@@ -359,8 +395,138 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
       _isLoadingMore = false;
     });
     
-    // Load first page with the new subcategory
+    // Track subcategory click
+    // Find the category for this subcategory
+    for (final entry in _subcategoriesByCategory.entries) {
+      final categoryId = entry.key;
+      final subcategories = entry.value;
+      if (subcategories.any((s) => s.subCategoryId == subCategoryId)) {
+        _clickTrackingService.trackSubCategoryClick(categoryId, subCategoryId);
+        break;
+      }
+    }
+    
+    // Load first page with the new selection
     _loadFirstPage();
+  }
+
+  // Build grouped subcategories section similar to search page
+  List<Widget> _buildGroupedSubcategoriesSection() {
+    List<Widget> widgets = [];
+    
+    // Iterate through selected categories that have subcategories
+    for (String selectedCategory in _selectedCategories) {
+      final categoryId = _categoryNameToId[selectedCategory];
+      if (categoryId != null && _subcategoriesByCategory.containsKey(categoryId)) {
+        final subcategories = _subcategoriesByCategory[categoryId]!;
+        
+        if (subcategories.isNotEmpty) {
+          // Add category header
+          widgets.add(
+            Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                '$selectedCategory Subcategories',
+                style: AppTextStyles.labelMedium.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.secondary,
+                ),
+              ),
+            ),
+          );
+          
+          // Add subcategory chips for this category
+          widgets.add(
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: subcategories.map((subcategory) {
+                  final isSelected = _selectedSubCategories.contains(subcategory.subCategoryId);
+                  return GestureDetector(
+                    onTap: () => _onSubCategorySelected(
+                      subcategory.subCategoryId,
+                      subcategory.subCategoryName,
+                    ),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isSelected 
+                            ? AppColors.secondary 
+                            : Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isSelected 
+                              ? AppColors.secondary 
+                              : AppColors.onSurface.withValues(alpha: 0.2),
+                          width: 1,
+                        ),
+                        boxShadow: isSelected ? [
+                          BoxShadow(
+                            color: AppColors.secondary.withValues(alpha: 0.2),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ] : [],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            subcategory.subCategoryName,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: isSelected 
+                                  ? AppColors.onSecondary 
+                                  : AppColors.onSurface,
+                              fontWeight: isSelected 
+                                  ? FontWeight.bold 
+                                  : FontWeight.w500,
+                              fontSize: 11,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          FutureBuilder<int>(
+                            future: _getSubCategoryClickCount(subcategory.subCategoryId),
+                            builder: (context, snapshot) {
+                              final clickCount = snapshot.data ?? 0;
+                              if (clickCount == 0) return const SizedBox.shrink();
+                              
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: isSelected 
+                                      ? AppColors.onSecondary.withValues(alpha: 0.2)
+                                      : AppColors.primary.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  '$clickCount',
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: isSelected 
+                                        ? AppColors.onSecondary 
+                                        : AppColors.primary,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 9,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          );
+        }
+      }
+    }
+    
+    return widgets;
   }
   
   // Load the first page of products
@@ -374,7 +540,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     
     try {
       AppLogger.d('🔄 ProductListingPage: Loading first page of products...');
-      AppLogger.d('🔍 DEBUG: Selected category "$_selectedCategory" maps to ID: ${_categoryNameToId[_selectedCategory]}');
+      AppLogger.d('🔍 DEBUG: Selected categories: $_selectedCategories');
       
       // Load all products first, then filter on client side to avoid Firestore index issues
       final result = await _productService.getProductsPaginated(
@@ -435,6 +601,17 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
       }
       
       AppLogger.d('✅ Loaded ${newProducts.length} products (first page)');
+      
+      // Debug: Log some product subcategory information
+      if (newProducts.isNotEmpty) {
+        AppLogger.d('🔍 Sample products with subcategory info:');
+        for (int i = 0; i < 3 && i < newProducts.length; i++) {
+          final product = newProducts[i];
+          AppLogger.d('  - Product: ${product.name}');
+          AppLogger.d('    CategoryID: ${product.categoryId}');
+          AppLogger.d('    SubCategoryID: ${product.subCategoryId}');
+        }
+      }
     } catch (e) {
       AppLogger.d('❌ Error loading first page: $e');
       AppLogger.d('Stack trace: ${StackTrace.current}');
@@ -820,8 +997,10 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                       constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                       icon: const Icon(Icons.search, color: AppColors.onSurface),
                       onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Search not implemented yet')),
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => const ProductSearchPage(),
+                          ),
                         );
                       },
                     ),
@@ -1024,7 +1203,9 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                           itemCount: _categories.length,
                           itemBuilder: (context, index) {
                             final category = _categories[index];
-                            final isSelected = category == _selectedCategory;
+                            final isSelected = category == 'All' 
+                                ? _selectedCategories.isEmpty 
+                                : _selectedCategories.contains(category);
                             
                             return Padding(
                               padding: const EdgeInsets.only(right: 12),
@@ -1067,196 +1248,10 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                         ),
                       ),
                       
-                      // Subcategories section (expandable)
-                      if (_selectedCategory != 'All' && _subcategories.isNotEmpty) ...[
+                      // Subcategories section (grouped by category)
+                      if (_selectedCategories.isNotEmpty && _subcategoriesByCategory.isNotEmpty) ...[
                         const SizedBox(height: 16),
-                        GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _isSubcategoriesExpanded = !_isSubcategoriesExpanded;
-                            });
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: AppColors.secondary.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: AppColors.secondary.withValues(alpha: 0.2),
-                                width: 1,
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.secondary.withValues(alpha: 0.15),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Icon(
-                                    Icons.subdirectory_arrow_right,
-                                    color: AppColors.secondary,
-                                    size: 14,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'Subcategories (${_subcategories.length})',
-                                    style: AppTextStyles.bodyMedium.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.secondary,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ),
-                                if (_selectedSubCategory != null) ...[
-                                  GestureDetector(
-                                    onTap: () {
-                                      setState(() {
-                                        _selectedSubCategory = null;
-                                      });
-                                      _loadFirstPage();
-                                    },
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.error.withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Text(
-                                        'Clear',
-                                        style: AppTextStyles.bodySmall.copyWith(
-                                          color: AppColors.error,
-                                          fontWeight: FontWeight.w500,
-                                          fontSize: 10,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                ],
-                                AnimatedRotation(
-                                  turns: _isSubcategoriesExpanded ? 0.25 : 0,
-                                  duration: const Duration(milliseconds: 200),
-                                  child: Icon(
-                                    Icons.keyboard_arrow_right,
-                                    color: AppColors.secondary,
-                                    size: 18,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        
-                        // Expandable subcategories content
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeInOut,
-                          height: _isSubcategoriesExpanded ? null : 0,
-                          child: AnimatedOpacity(
-                            duration: const Duration(milliseconds: 200),
-                            opacity: _isSubcategoriesExpanded ? 1.0 : 0.0,
-                            child: Container(
-                              margin: const EdgeInsets.only(top: 12),
-                              child: _isLoadingSubcategories
-                                  ? const Center(
-                                      child: Padding(
-                                        padding: EdgeInsets.all(16.0),
-                                        child: SizedBox(
-                                          height: 20,
-                                          width: 20,
-                                          child: CircularProgressIndicator(strokeWidth: 2),
-                                        ),
-                                      ),
-                                    )
-                                  : Wrap(
-                                      spacing: 8,
-                                      runSpacing: 8,
-                                      children: _subcategories.map((subcategory) {
-                                        final isSelected = _selectedSubCategory == subcategory.subCategoryId;
-                                        
-                                        return GestureDetector(
-                                          onTap: () => _onSubCategorySelected(
-                                            subcategory.subCategoryId,
-                                            subcategory.subCategoryName,
-                                          ),
-                                          child: AnimatedContainer(
-                                            duration: const Duration(milliseconds: 200),
-                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                            decoration: BoxDecoration(
-                                              color: isSelected 
-                                                  ? AppColors.secondary 
-                                                  : Colors.white,
-                                              borderRadius: BorderRadius.circular(12),
-                                              border: Border.all(
-                                                color: isSelected 
-                                                    ? AppColors.secondary 
-                                                    : AppColors.onSurface.withValues(alpha: 0.2),
-                                                width: 1,
-                                              ),
-                                              boxShadow: isSelected ? [
-                                                BoxShadow(
-                                                  color: AppColors.secondary.withValues(alpha: 0.2),
-                                                  blurRadius: 4,
-                                                  offset: const Offset(0, 2),
-                                                ),
-                                              ] : [],
-                                            ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Text(
-                                                  subcategory.subCategoryName,
-                                                  style: AppTextStyles.bodySmall.copyWith(
-                                                    color: isSelected 
-                                                        ? AppColors.onSecondary 
-                                                        : AppColors.onSurface,
-                                                    fontWeight: isSelected 
-                                                        ? FontWeight.bold 
-                                                        : FontWeight.w500,
-                                                    fontSize: 11,
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 4),
-                                                FutureBuilder<int>(
-                                                  future: _getSubCategoryClickCount(subcategory.subCategoryId),
-                                                  builder: (context, snapshot) {
-                                                    final clickCount = snapshot.data ?? 0;
-                                                    if (clickCount == 0) return const SizedBox.shrink();
-                                                    
-                                                    return Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                                      decoration: BoxDecoration(
-                                                        color: isSelected 
-                                                            ? AppColors.onSecondary.withValues(alpha: 0.2)
-                                                            : AppColors.primary.withValues(alpha: 0.1),
-                                                        borderRadius: BorderRadius.circular(6),
-                                                      ),
-                                                      child: Text(
-                                                        '$clickCount',
-                                                        style: AppTextStyles.bodySmall.copyWith(
-                                                          color: isSelected 
-                                                              ? AppColors.onSecondary 
-                                                              : AppColors.primary,
-                                                          fontWeight: FontWeight.bold,
-                                                          fontSize: 9,
-                                                        ),
-                                                      ),
-                                                    );
-                                                  },
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        );
-                                      }).toList(),
-                                    ),
-                            ),
-                          ),
-                        ),
+                        ..._buildGroupedSubcategoriesSection(),
                       ],
                     ],
                   ),
@@ -1300,7 +1295,7 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: Text(
-                          '${_products.length} items',
+                          '${_getFilteredProductsCount()} items',
                           style: AppTextStyles.bodySmall.copyWith(
                             color: AppColors.primary,
                             fontWeight: FontWeight.w600,
@@ -1514,10 +1509,12 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
   // Build modern product grid with enhanced design
   Widget _buildModernProductGrid() {
     AppLogger.d('🔍 DEBUG: _buildModernProductGrid called');
-    AppLogger.d('🔍 Selected category: $_selectedCategory');
+    AppLogger.d('🔍 Selected categories: $_selectedCategories');
+    AppLogger.d('🔍 Selected subcategories: $_selectedSubCategories');
     AppLogger.d('🔍 Category name to ID mapping: $_categoryNameToId');
     AppLogger.d('🔍 Total products: ${_products.length}');
     
+    // Calculate filtered products first
     final filteredProducts = _products.where((product) {
       // Exclude draft products from product listing page
       if (product.isDraft == true) return false;
@@ -1528,19 +1525,45 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
       // Exclude archived products from product listing page
       if (product.isArchived == true) return false;
       
-      if (_selectedCategory == 'All') return true;
+      // If no categories selected, show all
+      if (_selectedCategories.isEmpty) return true;
       
-      // If a subcategory is selected, filter by subcategory
-      if (_selectedSubCategory != null) {
-        return product.subCategoryId == _selectedSubCategory;
+      // Get selected category IDs
+      final selectedCategoryIds = _selectedCategories
+          .map((categoryName) => _categoryNameToId[categoryName])
+          .where((id) => id != null)
+          .cast<String>()
+          .toList();
+      
+      // If subcategories are selected, filter by subcategory AND category
+      if (_selectedSubCategories.isNotEmpty) {
+        // Product must be in a selected category
+        final isInSelectedCategory = selectedCategoryIds.contains(product.categoryId);
+        
+        // Product matches if it either:
+        // 1. Has a subcategory that matches the selected subcategories, OR
+        // 2. Has no subcategory (empty/null subCategoryId) - show in all subcategory filters
+        final hasSubCategory = product.subCategoryId.isNotEmpty;
+        final isInSelectedSubCategory = _selectedSubCategories.contains(product.subCategoryId);
+        final shouldShowProduct = !hasSubCategory || isInSelectedSubCategory;
+        
+        if (_products.indexOf(product) < 3) { // Only log first 3 products to avoid spam
+          AppLogger.d('🔍 Product ${product.name}: categoryId=${product.categoryId}, subCategoryId=${product.subCategoryId}');
+          AppLogger.d('🔍 Is in selected category: $isInSelectedCategory, Has subcategory: $hasSubCategory, Is in selected subcategory: $isInSelectedSubCategory');
+          AppLogger.d('🔍 Should show product: $shouldShowProduct (category match: $isInSelectedCategory)');
+        }
+        
+        return isInSelectedCategory && shouldShowProduct;
       }
       
-      // Otherwise, filter by category
-      final selectedCategoryId = _categoryNameToId[_selectedCategory];
-      return product.categoryId == selectedCategoryId;
+      // Otherwise, filter by selected categories only
+      return selectedCategoryIds.contains(product.categoryId);
     }).toList();
     
-    AppLogger.d('🔍 Displaying ${filteredProducts.length} products for category: $_selectedCategory');
+    final categoryDisplay = _selectedCategories.isEmpty 
+        ? 'All' 
+        : _selectedCategories.join(', ');
+    AppLogger.d('🔍 Displaying ${filteredProducts.length} products for categories: $categoryDisplay');
 
     if (filteredProducts.isEmpty) {
       return SliverToBoxAdapter(
@@ -1562,7 +1585,9 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
               ),
               const SizedBox(height: 16),
               Text(
-                'No products in $_selectedCategory',
+                _selectedCategories.isEmpty 
+                    ? 'No products available'
+                    : 'No products in ${_selectedCategories.join(', ')}',
                 style: AppTextStyles.titleMedium.copyWith(
                   fontWeight: FontWeight.bold,
                   color: AppColors.onSurface,
@@ -1650,6 +1675,48 @@ class _ProductListingPageState extends State<ProductListingPage> with AutomaticK
     } else {
       return 0.75; // Mobile screens (same as original)
     }
+  }
+
+  // Helper method to get filtered products count
+  int _getFilteredProductsCount() {
+    return _products.where((product) {
+      // Exclude draft products from product listing page
+      if (product.isDraft == true) return false;
+      
+      // Exclude inactive products from product listing page
+      if (product.isActive == false) return false;
+      
+      // Exclude archived products from product listing page
+      if (product.isArchived == true) return false;
+      
+      // If no categories selected, show all
+      if (_selectedCategories.isEmpty) return true;
+      
+      // Get selected category IDs
+      final selectedCategoryIds = _selectedCategories
+          .map((categoryName) => _categoryNameToId[categoryName])
+          .where((id) => id != null)
+          .cast<String>()
+          .toList();
+      
+      // If subcategories are selected, filter by subcategory AND category
+      if (_selectedSubCategories.isNotEmpty) {
+        // Product must be in a selected category
+        final isInSelectedCategory = selectedCategoryIds.contains(product.categoryId);
+        
+        // Product matches if it either:
+        // 1. Has a subcategory that matches the selected subcategories, OR
+        // 2. Has no subcategory (empty/null subCategoryId) - show in all subcategory filters
+        final hasSubCategory = product.subCategoryId.isNotEmpty;
+        final isInSelectedSubCategory = _selectedSubCategories.contains(product.subCategoryId);
+        final shouldShowProduct = !hasSubCategory || isInSelectedSubCategory;
+        
+        return isInSelectedCategory && shouldShowProduct;
+      }
+      
+      // Otherwise, filter by selected categories only
+      return selectedCategoryIds.contains(product.categoryId);
+    }).length;
   }
 
   // Get subcategory click count from Firestore
