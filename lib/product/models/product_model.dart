@@ -18,7 +18,7 @@ class Product {
   final List<ProductVariation>? variations;
   final bool hasWarranty;
   final String? warrantyType;
-  final int? warrantyPeriod;
+  final String? warrantyPeriod;
   final String? warrantyPeriodUnit;
   final String? warrantyPolicy;
 
@@ -71,6 +71,22 @@ class Product {
       AppLogger.d('❌ Error parsing timestamps for product ${doc.id}: $e');
     }
     
+    // Handle nullable string fields defensively
+    String? warrantyType;
+    String? warrantyPeriod;
+    String? warrantyPeriodUnit;
+    String? warrantyPolicy;
+    
+    try {
+      // Convert non-null values to strings safely
+      warrantyType = data['warrantyType']?.toString();
+      warrantyPeriod = data['warrantyPeriod']?.toString();
+      warrantyPeriodUnit = data['warrantyPeriodUnit']?.toString();
+      warrantyPolicy = data['warrantyPolicy']?.toString();
+    } catch (e) {
+      AppLogger.d('❌ Error parsing warranty fields for product ${doc.id}: $e');
+    }
+    
     return Product(
       productId: doc.id,
       name: data['name'] ?? '',
@@ -87,10 +103,10 @@ class Product {
       clickCounter: data['clickCounter'] ?? 0,
       variations: null, // Variations will be fetched separately
       hasWarranty: data['hasWarranty'] ?? false,
-      warrantyType: data['warrantyType'],
-      warrantyPeriod: data['warrantyPeriod'],
-      warrantyPeriodUnit: data['warrantyPeriodUnit'],
-      warrantyPolicy: data['warrantyPolicy'],
+      warrantyType: warrantyType,
+      warrantyPeriod: warrantyPeriod,
+      warrantyPeriodUnit: warrantyPeriodUnit,
+      warrantyPolicy: warrantyPolicy,
     );
   }
 

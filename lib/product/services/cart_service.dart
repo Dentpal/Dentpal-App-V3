@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/cart_model.dart';
 import '../models/product_model.dart';
+import 'jrs_shipping_service.dart';
 import 'package:dentpal/utils/app_logger.dart';
 
 class CartService {
@@ -84,7 +85,7 @@ class CartService {
           item.productImage = product.imageURL;
           item.sellerId = product.sellerId; // Add seller info
           
-          // Fetch seller name
+          // Fetch seller name and address
           try {
             DocumentSnapshot sellerDoc = await _firestore
                 .collection('Seller')
@@ -93,13 +94,27 @@ class CartService {
             if (sellerDoc.exists) {
               final sellerData = sellerDoc.data() as Map<String, dynamic>;
               item.sellerName = sellerData['shopName'] ?? 'Unknown Seller';
+              
+              // Get seller's shipping address
+              final addressData = sellerData['address'] as Map<String, dynamic>?;
+              if (addressData != null) {
+                final city = addressData['city'] as String?;
+                final state = addressData['state'] as String?;
+                item.sellerAddress = JRSShippingService.formatAddressForJRS(city, state);
+              } else {
+                // Try alternative address field
+                final shippingAddress = sellerData['shippingAddress'] as String?;
+                if (shippingAddress != null && shippingAddress.isNotEmpty) {
+                  item.sellerAddress = JRSShippingService.formatShippingAddressForJRS(shippingAddress);
+                }
+              }
             }
           } catch (e) {
             AppLogger.d('Error fetching seller info: $e');
             item.sellerName = 'Unknown Seller';
           }
           
-          // If there's a variation, get its details
+          // If there's a variation, get its details including shipping info
           if (item.variationId != null) {
             DocumentSnapshot variationDoc = await _firestore
                 .collection('Product')
@@ -112,12 +127,24 @@ class CartService {
               ProductVariation variation = ProductVariation.fromFirestore(variationDoc);
               item.productPrice = variation.price;
               item.availableStock = variation.stock;
+              
+              // Set shipping information from variation
+              item.weight = variation.weight; // Weight in grams
+              
+              // Get dimensions from variation
+              if (variation.dimensions != null) {
+                final dimensions = variation.dimensions!;
+                item.length = (dimensions['length'] as num?)?.toDouble();
+                item.width = (dimensions['width'] as num?)?.toDouble();
+                item.height = (dimensions['height'] as num?)?.toDouble();
+              }
+              
               if (variation.imageURL != null && variation.imageURL!.isNotEmpty) {
                 item.productImage = variation.imageURL;
               }
             }
           } else {
-            // If no variation, try to get the first variation's price
+            // If no variation, try to get the first variation's details
             QuerySnapshot variationsSnapshot = await _firestore
                 .collection('Product')
                 .doc(item.productId)
@@ -129,6 +156,17 @@ class CartService {
               ProductVariation variation = ProductVariation.fromFirestore(variationsSnapshot.docs.first);
               item.productPrice = variation.price;
               item.availableStock = variation.stock;
+              
+              // Set shipping information from variation
+              item.weight = variation.weight; // Weight in grams
+              
+              // Get dimensions from variation
+              if (variation.dimensions != null) {
+                final dimensions = variation.dimensions!;
+                item.length = (dimensions['length'] as num?)?.toDouble();
+                item.width = (dimensions['width'] as num?)?.toDouble();
+                item.height = (dimensions['height'] as num?)?.toDouble();
+              }
             }
           }
         }
@@ -188,42 +226,95 @@ class CartService {
     }
   }
   
-  // Calculate shipping cost for a seller based on items
+  // Calculate shipping cost for a seller based on items using JRS Express API
   Future<double> _calculateShippingCost(String sellerId, List<CartItem> items) async {
     try {
-      // Fetch seller's shipping settings
-      DocumentSnapshot sellerDoc = await _firestore
-          .collection('Seller')
-          .doc(sellerId)
-          .get();
+      AppLogger.d('🚚 Calculating shipping cost for seller: $sellerId');
       
-      if (!sellerDoc.exists) {
-        return 50.0; // Default shipping cost
+      // For selected items only (if any are selected)
+      final selectedItems = items.where((item) => item.isSelected).toList();
+      final itemsToCalculate = selectedItems.isNotEmpty ? selectedItems : items;
+      
+      if (itemsToCalculate.isEmpty) {
+        AppLogger.d('ℹ️ No items to calculate shipping for');
+        return 0.0;
       }
+
+      // Get seller's shipping address
+      String sellerAddress = 'Makati, Metro Manila'; // Default fallback
       
-      final sellerData = sellerDoc.data() as Map<String, dynamic>;
-      final shippingSettings = sellerData['shippingSettings'] as Map<String, dynamic>?;
-      
-      if (shippingSettings == null) {
-        return 50.0; // Default shipping cost
+      try {
+        DocumentSnapshot sellerDoc = await _firestore
+            .collection('Seller')
+            .doc(sellerId)
+            .get();
+        
+        if (sellerDoc.exists) {
+          final sellerData = sellerDoc.data() as Map<String, dynamic>;
+          
+          // Try to get address from seller profile
+          final addressData = sellerData['address'] as Map<String, dynamic>?;
+          if (addressData != null) {
+            final city = addressData['city'] as String?;
+            final state = addressData['state'] as String?;
+            if (city != null && city.isNotEmpty) {
+              sellerAddress = JRSShippingService.formatAddressForJRS(city, state);
+            }
+          }
+          
+          // Alternative: check if seller has a direct shipping address field
+          final shippingAddress = sellerData['shippingAddress'] as String?;
+          if (shippingAddress != null && shippingAddress.isNotEmpty) {
+            sellerAddress = JRSShippingService.formatShippingAddressForJRS(shippingAddress);
+          }
+        }
+      } catch (e) {
+        AppLogger.d('⚠️ Error fetching seller address, using default: $e');
       }
+
+      // Since we don't have recipient address in this context, we'll use a default
+      // for estimate purposes. The actual calculation with real recipient address
+      // will happen during checkout.
+      const defaultRecipientAddress = 'Quezon City, Metro Manila';
+
+      AppLogger.d('📍 Seller address: $sellerAddress');
+      AppLogger.d('📍 Recipient address (default): $defaultRecipientAddress');
+      print('🛒 [CART] About to call JRS: $sellerAddress → $defaultRecipientAddress');
+
+      // Calculate shipping using JRS API
+      final result = await JRSShippingService.calculateShippingCost(
+        sellerAddress: sellerAddress,
+        recipientAddress: defaultRecipientAddress,
+        cartItems: itemsToCalculate,
+        express: true,
+        insurance: true,
+        valuation: true,
+      );
+
+      AppLogger.d('💰 JRS shipping result: $result');
+      print('🛒 [CART] JRS result: ${result.success} - ₱${result.shippingCost}');
+
+      if (result.success) {
+        AppLogger.d('✅ JRS shipping cost: ₱${result.shippingCost}');
+        return result.shippingCost;
+      } else {
+        AppLogger.d('⚠️ JRS calculation failed, using fallback: ${result.message}');
+        return result.shippingCost; // Still return the fallback cost from JRS
+      }
+
+    } catch (e) {
+      AppLogger.d('❌ Error calculating JRS shipping cost: $e');
       
-      // Calculate total value of items for shipping calculation
+      // Fallback to simple logic based on total value
       double totalValue = items.fold(0.0, (sum, item) => sum + item.totalPrice);
       
-      // Get shipping cost based on weight or value
-      double baseCost = (shippingSettings['baseCost'] ?? 50.0).toDouble();
-      double freeShippingThreshold = (shippingSettings['freeShippingThreshold'] ?? 100.0).toDouble();
-      
-      // Free shipping if order value exceeds threshold
-      if (totalValue >= freeShippingThreshold) {
+      // Free shipping if order value exceeds ₱1000
+      if (totalValue >= 1000.0) {
         return 0.0;
       }
       
-      return baseCost;
-    } catch (e) {
-      AppLogger.d('Error calculating shipping cost: $e');
-      return 50.0; // Default shipping cost
+      // Default shipping cost
+      return 50.0;
     }
   }
   
@@ -305,7 +396,7 @@ class CartService {
         cartItem.productImage = product.imageURL;
         cartItem.sellerId = product.sellerId;
         
-        // Fetch seller name
+        // Fetch seller name and address
         try {
           DocumentSnapshot sellerDoc = await _firestore
               .collection('Seller')
@@ -314,13 +405,27 @@ class CartService {
           if (sellerDoc.exists) {
             final sellerData = sellerDoc.data() as Map<String, dynamic>;
             cartItem.sellerName = sellerData['shopName'] ?? 'Unknown Seller';
+            
+            // Get seller's shipping address
+            final addressData = sellerData['address'] as Map<String, dynamic>?;
+            if (addressData != null) {
+              final city = addressData['city'] as String?;
+              final state = addressData['state'] as String?;
+              cartItem.sellerAddress = JRSShippingService.formatAddressForJRS(city, state);
+            } else {
+              // Try alternative address field
+              final shippingAddress = sellerData['shippingAddress'] as String?;
+              if (shippingAddress != null && shippingAddress.isNotEmpty) {
+                cartItem.sellerAddress = JRSShippingService.formatShippingAddressForJRS(shippingAddress);
+              }
+            }
           }
         } catch (e) {
           AppLogger.d('Error fetching seller info: $e');
           cartItem.sellerName = 'Unknown Seller';
         }
         
-        // If there's a variation, get its details
+        // If there's a variation, get its details including shipping info
         if (cartItem.variationId != null) {
           DocumentSnapshot variationDoc = await _firestore
               .collection('Product')
@@ -333,12 +438,24 @@ class CartService {
             ProductVariation variation = ProductVariation.fromFirestore(variationDoc);
             cartItem.productPrice = variation.price;
             cartItem.availableStock = variation.stock;
+            
+            // Set shipping information from variation
+            cartItem.weight = variation.weight; // Weight in grams
+            
+            // Get dimensions from variation
+            if (variation.dimensions != null) {
+              final dimensions = variation.dimensions!;
+              cartItem.length = (dimensions['length'] as num?)?.toDouble();
+              cartItem.width = (dimensions['width'] as num?)?.toDouble();
+              cartItem.height = (dimensions['height'] as num?)?.toDouble();
+            }
+            
             if (variation.imageURL != null && variation.imageURL!.isNotEmpty) {
               cartItem.productImage = variation.imageURL;
             }
           }
         } else {
-          // If no variation, try to get the first variation's price
+          // If no variation, try to get the first variation's details
           QuerySnapshot variationsSnapshot = await _firestore
               .collection('Product')
               .doc(cartItem.productId)
@@ -350,6 +467,17 @@ class CartService {
             ProductVariation variation = ProductVariation.fromFirestore(variationsSnapshot.docs.first);
             cartItem.productPrice = variation.price;
             cartItem.availableStock = variation.stock;
+            
+            // Set shipping information from variation
+            cartItem.weight = variation.weight; // Weight in grams
+            
+            // Get dimensions from variation
+            if (variation.dimensions != null) {
+              final dimensions = variation.dimensions!;
+              cartItem.length = (dimensions['length'] as num?)?.toDouble();
+              cartItem.width = (dimensions['width'] as num?)?.toDouble();
+              cartItem.height = (dimensions['height'] as num?)?.toDouble();
+            }
           }
         }
       }
@@ -379,5 +507,95 @@ class CartService {
   Future<CartSummary> getCartSummary() async {
     final sellerGroups = await getCartItemsGroupedBySeller();
     return CartSummary(sellerGroups: sellerGroups);
+  }
+  
+  // Calculate shipping cost with actual recipient address (for checkout)
+  Future<double> calculateShippingCostWithAddress({
+    required String sellerId,
+    required List<CartItem> items,
+    required String recipientAddress,
+  }) async {
+    try {
+      AppLogger.d('🚚 Calculating shipping cost with recipient address');
+      AppLogger.d('   Seller: $sellerId');
+      AppLogger.d('   Recipient: $recipientAddress');
+      AppLogger.d('   Items: ${items.length}');
+
+      if (items.isEmpty) {
+        return 0.0;
+      }
+
+      // Get seller's shipping address
+      String sellerAddress = 'Makati, Metro Manila'; // Default fallback
+      
+      try {
+        DocumentSnapshot sellerDoc = await _firestore
+            .collection('Seller')
+            .doc(sellerId)
+            .get();
+        
+        if (sellerDoc.exists) {
+          final sellerData = sellerDoc.data() as Map<String, dynamic>;
+          
+          // Try to get address from seller profile
+          final addressData = sellerData['address'] as Map<String, dynamic>?;
+          if (addressData != null) {
+            final city = addressData['city'] as String?;
+            final state = addressData['state'] as String?;
+            if (city != null && city.isNotEmpty) {
+              sellerAddress = JRSShippingService.formatAddressForJRS(city, state);
+            }
+          }
+          
+          // Alternative: check if seller has a direct shipping address field
+          final shippingAddress = sellerData['shippingAddress'] as String?;
+          if (shippingAddress != null && shippingAddress.isNotEmpty) {
+            sellerAddress = JRSShippingService.formatShippingAddressForJRS(shippingAddress);
+          }
+        }
+      } catch (e) {
+        AppLogger.d('⚠️ Error fetching seller address, using default: $e');
+      }
+
+      // Format recipient address for JRS
+      final formattedRecipientAddress = JRSShippingService.formatShippingAddressForJRS(recipientAddress);
+
+      AppLogger.d('📍 Seller address: $sellerAddress');
+      AppLogger.d('📍 Recipient address: $formattedRecipientAddress');
+
+      // Calculate shipping using JRS API
+      final result = await JRSShippingService.calculateShippingCost(
+        sellerAddress: sellerAddress,
+        recipientAddress: formattedRecipientAddress,
+        cartItems: items,
+        express: true,
+        insurance: true,
+        valuation: true,
+      );
+
+      AppLogger.d('💰 JRS shipping result: $result');
+
+      if (result.success) {
+        AppLogger.d('✅ JRS shipping cost: ₱${result.shippingCost}');
+        return result.shippingCost;
+      } else {
+        AppLogger.d('⚠️ JRS calculation failed, using fallback: ${result.message}');
+        return result.shippingCost; // Still return the fallback cost from JRS
+      }
+
+    } catch (e) {
+      AppLogger.d('❌ Error calculating JRS shipping cost with address: $e');
+      
+      // Fallback to simple logic
+      double totalValue = items.fold(0.0, (sum, item) => sum + item.totalPrice);
+      
+      // Free shipping if order value exceeds ₱1000
+      if (totalValue >= 1000.0) {
+        return 0.0;
+      }
+      
+      // Default shipping cost
+      return 50.0;
+    }
   }
 }

@@ -7,6 +7,7 @@ import '../models/order_model.dart';
 import '../models/paymongo_model.dart';
 import '../models/cart_model.dart';
 import '../../profile/models/shipping_address.dart';
+import 'cart_service.dart';
 
 class CheckoutService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -207,26 +208,62 @@ class CheckoutService {
     }
   }
 
-  // Calculate shipping cost (placeholder implementation)
+  // Calculate shipping cost using JRS Express for checkout
   Future<double> calculateShippingCost({
     required List<CartItem> items,
     required ShippingAddress address,
   }) async {
     try {
-      // Simple shipping calculation - in a real app, this might involve:
-      // - Distance calculation
-      // - Weight/size calculation
-      // - Carrier API integration
-      // - Different rates for different sellers
-      // For now, return a fixed rate per seller
-      final sellers = items.map((item) => item.sellerId).toSet();
-      const shippingCostPerSeller = 50.0;
+      AppLogger.d('🚚 Calculating shipping cost for checkout');
+      AppLogger.d('   Items: ${items.length}');
+      AppLogger.d('   Address: ${address.city}, ${address.state}');
       
-      return sellers.length * shippingCostPerSeller;
+      // Group items by seller to calculate shipping per seller
+      Map<String, List<CartItem>> sellerItemsMap = {};
+      
+      for (var item in items) {
+        final sellerId = item.sellerId ?? 'unknown';
+        if (!sellerItemsMap.containsKey(sellerId)) {
+          sellerItemsMap[sellerId] = [];
+        }
+        sellerItemsMap[sellerId]!.add(item);
+      }
+      
+      double totalShippingCost = 0.0;
+      
+      // Calculate shipping for each seller separately
+      for (var entry in sellerItemsMap.entries) {
+        final sellerId = entry.key;
+        final sellerItems = entry.value;
+        
+        try {
+          // Create CartService instance to use the new JRS shipping calculation
+          final cartService = CartService();
+          final recipientAddress = '${address.city}, ${address.state}';
+          
+          final shippingCost = await cartService.calculateShippingCostWithAddress(
+            sellerId: sellerId,
+            items: sellerItems,
+            recipientAddress: recipientAddress,
+          );
+          
+          totalShippingCost += shippingCost;
+          
+          AppLogger.d('💰 Seller $sellerId shipping cost: ₱$shippingCost');
+          
+        } catch (e) {
+          AppLogger.d('❌ Error calculating shipping for seller $sellerId: $e');
+          // Fallback to simple calculation for this seller
+          totalShippingCost += 50.0;
+        }
+      }
+      
+      AppLogger.d('🚛 Total shipping cost: ₱$totalShippingCost');
+      return totalShippingCost;
 
     } catch (e) {
       AppLogger.d('❌ Error calculating shipping cost: $e');
-      return 50.0; // Default shipping cost
+      return 50.0; // Default shipping cost per seller
     }
   }
 
