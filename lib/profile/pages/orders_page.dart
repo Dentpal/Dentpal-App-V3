@@ -779,7 +779,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     }
 
     final checkoutUrl = order.paymentInfo.checkoutUrl!;
-    AppLogger.d('🔄 Resuming payment for order ${order.orderId} with URL: $checkoutUrl');
+    AppLogger.d('Resuming payment for order ${order.orderId} with URL: $checkoutUrl');
 
     try {
       if (kIsWeb) {
@@ -827,7 +827,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                 successUrl: 'https://dentpal-store.web.app/payment-success',
                 cancelUrl: 'https://dentpal-store.web.app/payment-failed',
                 onPaymentComplete: (isSuccess, orderId) {
-                  AppLogger.d('💳 Payment resumed completed. Success: $isSuccess, Order ID: $orderId');
+                  AppLogger.d('Payment resumed completed. Success: $isSuccess, Order ID: $orderId');
                   
                   if (isSuccess) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -853,7 +853,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
         }
       }
     } catch (e) {
-      AppLogger.d('❌ Error resuming payment: $e');
+      AppLogger.d('Error resuming payment: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

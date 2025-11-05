@@ -106,7 +106,7 @@ class SellerGroup {
     required this.sellerId,
     required this.sellerName,
     required this.items,
-    this.shippingCost = 0.0,
+    this.shippingCost = 0.0, // Always 0.0 as shipping is calculated in checkout
     this.isSelected = true,
   });
 
@@ -118,9 +118,6 @@ class SellerGroup {
   // Calculate total for all items
   double get totalItemsPrice => items
       .fold(0.0, (total, item) => total + item.totalPrice);
-
-  // Get total including shipping for selected items
-  double get totalWithShipping => hasSelectedItems ? selectedItemsTotal + shippingCost : 0.0;
 
   // Check if any items are selected
   bool get hasSelectedItems => items.any((item) => item.isSelected);
@@ -173,12 +170,11 @@ class CartSummary {
       .fold(0.0, (total, group) => total + group.selectedItemsTotal);
 
   // Calculate total shipping cost for sellers with selected items
-  double get totalShippingCost => sellerGroups
-      .where((group) => group.hasSelectedItems)
-      .fold(0.0, (total, group) => total + group.shippingCost);
+  // Note: Shipping calculation is handled in checkout page, so this returns 0.0
+  double get totalShippingCost => 0.0;
 
-  // Calculate grand total including shipping
-  double get grandTotal => selectedItemsTotal + totalShippingCost;
+  // Calculate grand total (without shipping, as shipping is calculated in checkout)
+  double get grandTotal => selectedItemsTotal;
 
   // Get total number of selected items
   int get selectedItemsCount => sellerGroups

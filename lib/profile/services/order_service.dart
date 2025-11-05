@@ -17,7 +17,7 @@ class OrderService {
     }
 
     try {
-      AppLogger.d('📋 Fetching user orders via Firestore');
+      AppLogger.d('Fetching user orders via Firestore');
       
       // Query without orderBy to avoid composite index requirement
       final querySnapshot = await _firestore
@@ -32,10 +32,10 @@ class OrderService {
       // Sort in memory by createdAt (descending - newest first)
       orders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-      AppLogger.d('✅ Fetched ${orders.length} orders from Firestore');
+      AppLogger.d('Fetched ${orders.length} orders from Firestore');
       return orders;
     } catch (e) {
-      AppLogger.d('❌ Error fetching user orders: $e');
+      AppLogger.d('Error fetching user orders: $e');
       throw Exception('Failed to fetch orders: $e');
     }
   }
@@ -48,7 +48,7 @@ class OrderService {
     }
 
     try {
-      AppLogger.d('� Calculating order statistics from Firestore');
+      AppLogger.d(' Calculating order statistics from Firestore');
       
       final querySnapshot = await _firestore
           .collection('Order')
@@ -82,10 +82,10 @@ class OrderService {
           order.status == order_model.OrderStatus.expired).length,
       };
 
-      AppLogger.d('✅ Calculated order statistics: $statistics');
+      AppLogger.d('Calculated order statistics: $statistics');
       return statistics;
     } catch (e) {
-      AppLogger.d('❌ Error calculating order statistics: $e');
+      AppLogger.d('Error calculating order statistics: $e');
       // Return default statistics on error
       return {
         'totalOrders': 0,
@@ -105,7 +105,7 @@ class OrderService {
       throw Exception('User not authenticated');
     }
 
-    AppLogger.d('📡 Starting real-time orders stream for user: ${user.uid}');
+    AppLogger.d('Starting real-time orders stream for user: ${user.uid}');
 
     return _firestore
         .collection('Order')
@@ -119,7 +119,7 @@ class OrderService {
           // Sort in memory by createdAt (descending - newest first)
           orders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
           
-          AppLogger.d('📡 Stream update: ${orders.length} orders');
+          AppLogger.d('Stream update: ${orders.length} orders');
           return orders;
         });
   }
@@ -132,7 +132,7 @@ class OrderService {
     }
 
     try {
-      AppLogger.d('🔍 Searching orders with query: $query');
+      AppLogger.d('Searching orders with query: $query');
       
       // Get all user orders first, then filter locally
       // This is more efficient for small datasets and avoids complex Firestore queries
@@ -159,10 +159,10 @@ class OrderService {
           item.productName.toLowerCase().contains(searchQuery));
       }).toList();
 
-      AppLogger.d('✅ Found ${filteredOrders.length} orders matching query: $query');
+      AppLogger.d('Found ${filteredOrders.length} orders matching query: $query');
       return filteredOrders;
     } catch (e) {
-      AppLogger.d('❌ Error searching orders: $e');
+      AppLogger.d('Error searching orders: $e');
       throw Exception('Failed to search orders: $e');
     }
   }
@@ -179,7 +179,7 @@ class OrderService {
     }
 
     try {
-      AppLogger.d('📝 Updating order $orderId status to: ${status.toString().split('.').last}');
+      AppLogger.d('Updating order $orderId status to: ${status.toString().split('.').last}');
       
       final idToken = await user.getIdToken();
       final statusString = status.toString().split('.').last;
@@ -207,9 +207,9 @@ class OrderService {
         throw Exception(responseData['error'] ?? 'Failed to update order status');
       }
 
-      AppLogger.d('✅ Order status updated successfully');
+      AppLogger.d('Order status updated successfully');
     } catch (e) {
-      AppLogger.d('❌ Error updating order status: $e');
+      AppLogger.d('Error updating order status: $e');
       throw Exception('Failed to update order status: $e');
     }
   }
@@ -222,7 +222,7 @@ class OrderService {
     }
 
     try {
-      AppLogger.d('❌ Cancelling order: $orderId');
+      AppLogger.d('Cancelling order: $orderId');
       
       final idToken = await user.getIdToken();
 
@@ -248,9 +248,9 @@ class OrderService {
         throw Exception(responseData['error'] ?? 'Failed to cancel order');
       }
 
-      AppLogger.d('✅ Order cancelled successfully');
+      AppLogger.d('Order cancelled successfully');
     } catch (e) {
-      AppLogger.d('❌ Error cancelling order: $e');
+      AppLogger.d('Error cancelling order: $e');
       throw Exception('Failed to cancel order: $e');
     }
   }
@@ -263,7 +263,7 @@ class OrderService {
     }
 
     try {
-      AppLogger.d('📋 Fetching orders by status: ${status.toString().split('.').last}');
+      AppLogger.d('Fetching orders by status: ${status.toString().split('.').last}');
       
       final statusString = status.toString().split('.').last;
       final querySnapshot = await _firestore
@@ -279,10 +279,10 @@ class OrderService {
       // Sort in memory by createdAt (descending - newest first)
       orders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-      AppLogger.d('✅ Fetched ${orders.length} orders with status: $statusString');
+      AppLogger.d('Fetched ${orders.length} orders with status: $statusString');
       return orders;
     } catch (e) {
-      AppLogger.d('❌ Error fetching orders by status: $e');
+      AppLogger.d('Error fetching orders by status: $e');
       throw Exception('Failed to fetch orders by status: $e');
     }
   }
@@ -295,7 +295,7 @@ class OrderService {
     }
 
     try {
-      AppLogger.d('🔍 Verifying payment status for order: $orderId');
+      AppLogger.d('Verifying payment status for order: $orderId');
 
       final idToken = await user.getIdToken();
 
@@ -324,13 +324,13 @@ class OrderService {
       final paymentStatus = data['paymentStatus'] as String;
       final updatedStatus = data['status'] as String;
 
-      AppLogger.d('✅ Payment verification complete - Status: $paymentStatus, Order Status: $updatedStatus');
+      AppLogger.d('Payment verification complete - Status: $paymentStatus, Order Status: $updatedStatus');
       
       // Return true if payment was confirmed and order was updated
       return paymentStatus == 'paid' && updatedStatus == 'confirmed';
 
     } catch (e) {
-      AppLogger.d('❌ Error verifying payment status: $e');
+      AppLogger.d('Error verifying payment status: $e');
       rethrow;
     }
   }

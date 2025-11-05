@@ -153,7 +153,7 @@ class ImageUploadService {
     required String path,
   }) async {
     try {
-      AppLogger.d('📤 Uploading image to: $path');
+      AppLogger.d('Uploading image to: $path');
       
       final ref = _storage.ref().child(path);
       final uploadTask = ref.putData(
@@ -169,10 +169,10 @@ class ImageUploadService {
       final snapshot = await uploadTask;
       final downloadUrl = await snapshot.ref.getDownloadURL();
       
-      AppLogger.d('✅ Image uploaded successfully: $downloadUrl');
+      AppLogger.d('Image uploaded successfully: $downloadUrl');
       return downloadUrl;
     } catch (e) {
-      AppLogger.d('❌ Error uploading image: $e');
+      AppLogger.d('Error uploading image: $e');
       return null;
     }
   }
@@ -199,7 +199,7 @@ class ImageUploadService {
 
       return downloadUrl;
     } catch (e) {
-      AppLogger.d('❌ Error in complete image flow: $e');
+      AppLogger.d('Error in complete image flow: $e');
       return null;
     }
   }

@@ -67,25 +67,25 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
     });
 
     try {
-      AppLogger.d('🔍 StorePage: Starting to load store data for sellerId: ${widget.sellerId}');
+      AppLogger.d('StorePage: Starting to load store data for sellerId: ${widget.sellerId}');
       
       // Load store/seller data
       if (widget.sellerData != null) {
         _storeData = widget.sellerData!;
-        AppLogger.d('✅ StorePage: Using provided seller data: ${_storeData['shopName']}');
+        AppLogger.d('StorePage: Using provided seller data: ${_storeData['shopName']}');
       } else {
-        AppLogger.d('🔍 StorePage: Fetching seller data from Firestore...');
+        AppLogger.d('StorePage: Fetching seller data from Firestore...');
         _storeData = await _getSellerData(widget.sellerId);
-        AppLogger.d('✅ StorePage: Fetched seller data: ${_storeData['shopName']}');
+        AppLogger.d('StorePage: Fetched seller data: ${_storeData['shopName']}');
       }
 
       // Load products when Products tab is initially selected
-      AppLogger.d('🔍 StorePage: Loading seller products...');
+      AppLogger.d('StorePage: Loading seller products...');
       await _loadSellerProducts();
       
     } catch (e) {
-      AppLogger.d('❌ StorePage: Error loading store data: $e');
-      AppLogger.d('❌ StorePage: Stack trace: ${StackTrace.current}');
+      AppLogger.d('StorePage: Error loading store data: $e');
+      AppLogger.d('StorePage: Stack trace: ${StackTrace.current}');
     } finally {
       setState(() {
         _isLoading = false;
@@ -112,7 +112,7 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
         };
       }
     } catch (e) {
-      AppLogger.d('❌ Error fetching seller data: $e');
+      AppLogger.d('Error fetching seller data: $e');
     }
 
     return {
@@ -131,19 +131,19 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
     });
 
     try {
-      AppLogger.d('🔍 StorePage: Starting to load products for seller: ${widget.sellerId}');
+      AppLogger.d('StorePage: Starting to load products for seller: ${widget.sellerId}');
       _allSellerProducts = await _productService.getProductsBySeller(widget.sellerId);
-      AppLogger.d('✅ StorePage: Loaded ${_allSellerProducts.length} products for seller ${widget.sellerId}');
+      AppLogger.d('StorePage: Loaded ${_allSellerProducts.length} products for seller ${widget.sellerId}');
       
       for (int i = 0; i < _allSellerProducts.length && i < 3; i++) {
         final product = _allSellerProducts[i];
-        AppLogger.d('📦 Product $i: ${product.name} (ID: ${product.productId})');
+        AppLogger.d('Product $i: ${product.name} (ID: ${product.productId})');
       }
       
       _applyProductFilter();
     } catch (e) {
-      AppLogger.d('❌ StorePage: Error loading seller products: $e');
-      AppLogger.d('❌ StorePage: Stack trace: ${StackTrace.current}');
+      AppLogger.d('StorePage: Error loading seller products: $e');
+      AppLogger.d('StorePage: Stack trace: ${StackTrace.current}');
     } finally {
       setState(() {
         _isLoadingProducts = false;
@@ -192,8 +192,8 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
     });
 
     try {
-      AppLogger.d('🔍 StorePage: Starting to load categories for seller: ${widget.sellerId}');
-      AppLogger.d('🔍 StorePage: Total seller products: ${_allSellerProducts.length}');
+      AppLogger.d('StorePage: Starting to load categories for seller: ${widget.sellerId}');
+      AppLogger.d('StorePage: Total seller products: ${_allSellerProducts.length}');
       
       // Get unique category IDs from seller's products
       final categoryIds = _allSellerProducts
@@ -209,8 +209,8 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
           .toSet()
           .toList();
 
-      AppLogger.d('🔍 StorePage: Found ${categoryIds.length} unique category IDs: $categoryIds');
-      AppLogger.d('🔍 StorePage: Found ${subCategoryIds.length} unique subcategory IDs: $subCategoryIds');
+      AppLogger.d('StorePage: Found ${categoryIds.length} unique category IDs: $categoryIds');
+      AppLogger.d('StorePage: Found ${subCategoryIds.length} unique subcategory IDs: $subCategoryIds');
 
       // Load categories
       _sellerCategories = [];
@@ -219,12 +219,12 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
           final category = await _categoryService.getCategoryById(categoryId);
           if (category != null) {
             _sellerCategories.add(category);
-            AppLogger.d('✅ StorePage: Loaded category: ${category.categoryName}');
+            AppLogger.d('StorePage: Loaded category: ${category.categoryName}');
           } else {
-            AppLogger.d('⚠️ StorePage: Category not found for ID: $categoryId');
+            AppLogger.d('StorePage: Category not found for ID: $categoryId');
           }
         } catch (e) {
-          AppLogger.d('❌ StorePage: Error loading category $categoryId: $e');
+          AppLogger.d('StorePage: Error loading category $categoryId: $e');
         }
       }
 
@@ -233,17 +233,17 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
       if (subCategoryIds.isNotEmpty) {
         try {
           _sellerSubCategories = await _categoryService.getSubCategoriesByIds(subCategoryIds);
-          AppLogger.d('✅ StorePage: Loaded ${_sellerSubCategories.length} subcategories');
+          AppLogger.d('StorePage: Loaded ${_sellerSubCategories.length} subcategories');
         } catch (e) {
-          AppLogger.d('❌ StorePage: Error loading subcategories: $e');
+          AppLogger.d('StorePage: Error loading subcategories: $e');
         }
       }
 
-      AppLogger.d('✅ StorePage: Final results - Categories: ${_sellerCategories.length}, Subcategories: ${_sellerSubCategories.length}');
+      AppLogger.d('StorePage: Final results - Categories: ${_sellerCategories.length}, Subcategories: ${_sellerSubCategories.length}');
 
     } catch (e) {
-      AppLogger.d('❌ StorePage: Error loading seller categories: $e');
-      AppLogger.d('❌ StorePage: Stack trace: ${StackTrace.current}');
+      AppLogger.d('StorePage: Error loading seller categories: $e');
+      AppLogger.d('StorePage: Stack trace: ${StackTrace.current}');
     } finally {
       setState(() {
         _isLoadingCategories = false;

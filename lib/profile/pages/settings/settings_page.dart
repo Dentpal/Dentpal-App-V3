@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:dentpal/utils/app_logger.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/app_theme/app_colors.dart';
@@ -40,7 +41,7 @@ class _SettingsPageState extends State<SettingsPage> {
         }
       }
     } catch (e) {
-      debugPrint('Error loading user data: $e');
+      AppLogger.d('Error loading user data: $e');
     }
 
     return _userCache;

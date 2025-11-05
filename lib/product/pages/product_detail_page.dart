@@ -153,7 +153,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   
   Future<Product?> _loadProduct() async {
     try {
-      AppLogger.d('📄 ProductDetailPage: Loading product ${widget.productId}...');
+      AppLogger.d('ProductDetailPage: Loading product ${widget.productId}...');
       final product = await _productService.getProductById(widget.productId);
       
       if (product != null) {
@@ -169,12 +169,12 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           _quantityController.text = _quantity.toString();
         }
         
-        AppLogger.d('✅ ProductDetailPage: Loaded product ${product.name}');
+        AppLogger.d('ProductDetailPage: Loaded product ${product.name}');
       }
       
       return product;
     } catch (e) {
-      AppLogger.d('❌ Error loading product: $e');
+      AppLogger.d('Error loading product: $e');
       return null;
     }
   }
@@ -191,7 +191,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       _categoryNames[categoryId] = categoryName;
       return categoryName;
     } catch (e) {
-      AppLogger.d('❌ Error fetching category name for $categoryId: $e');
+      AppLogger.d('Error fetching category name for $categoryId: $e');
       _categoryNames[categoryId] = 'Unknown Category';
       return 'Unknown Category';
     }
@@ -233,7 +233,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         return defaultData;
       }
     } catch (e) {
-      AppLogger.d('❌ Error fetching seller data for $sellerId: $e');
+      AppLogger.d('Error fetching seller data for $sellerId: $e');
       final defaultData = {
         'shopName': 'DentPal Store',
         'address': 'Store location not available',
@@ -267,13 +267,13 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         oldProduct.imageURL != newProduct.imageURL ||
         oldProduct.categoryId != newProduct.categoryId ||
         oldProduct.lowestPrice != newProduct.lowestPrice) {
-      AppLogger.d('🔍 Product data changed: Basic properties differ');
+      AppLogger.d('Product data changed: Basic properties differ');
       return true;
     }
     
     // Compare variations
     if (oldProduct.variations?.length != newProduct.variations?.length) {
-      AppLogger.d('🔍 Product data changed: Variation count differs');
+      AppLogger.d('Product data changed: Variation count differs');
       return true;
     }
     
@@ -287,7 +287,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
             oldVar.price != newVar.price ||
             oldVar.stock != newVar.stock ||
             oldVar.imageURL != newVar.imageURL) {
-          AppLogger.d('🔍 Product data changed: Variation ${oldVar.name} has differences');
+          AppLogger.d('Product data changed: Variation ${oldVar.name} has differences');
           return true;
         }
       }
@@ -298,24 +298,24 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
 
   // Handle pull-to-refresh with cache-first approach and change detection
   Future<void> _handleRefresh() async {
-    AppLogger.d('🔄 ProductDetailPage: Pull-to-refresh triggered (cache-first approach)');
+    AppLogger.d('ProductDetailPage: Pull-to-refresh triggered (cache-first approach)');
     
     try {
       // Keep current data as backup
       final currentProduct = _cachedProduct;
       final currentTimestamp = _cacheTimestamp;
       
-      AppLogger.d('📋 Current cache: ${currentProduct?.name ?? 'No cached product'}');
+      AppLogger.d('Current cache: ${currentProduct?.name ?? 'No cached product'}');
       
       // Fetch fresh data from Firebase
-      AppLogger.d('🌐 Fetching fresh product data from Firebase...');
+      AppLogger.d('Fetching fresh product data from Firebase...');
       final freshProduct = await _productService.getProductById(widget.productId);
       
       // Compare data for changes
       final hasChanges = _hasProductChanged(currentProduct, freshProduct);
       
       if (hasChanges || currentTimestamp == null || _isCacheExpired()) {
-        AppLogger.d('🔄 Changes detected or cache expired - updating data');
+        AppLogger.d('Changes detected or cache expired - updating data');
         
         // Update with fresh data
         setState(() {
@@ -348,18 +348,18 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           }
         });
         
-        AppLogger.d('✅ Product data updated: ${freshProduct?.name ?? 'Product removed'}');
+        AppLogger.d('Product data updated: ${freshProduct?.name ?? 'Product removed'}');
       } else {
         // No changes detected, just refresh timestamp
         setState(() {
           _cacheTimestamp = DateTime.now();
         });
         
-        AppLogger.d('ℹ️ No changes detected - cache timestamp refreshed');
+        AppLogger.d('No changes detected - cache timestamp refreshed');
       }
       
     } catch (e) {
-      AppLogger.d('❌ Refresh error: $e');
+      AppLogger.d('Refresh error: $e');
       AppLogger.d('Stack trace: ${StackTrace.current}');
       
       // Show error but keep existing data
@@ -373,7 +373,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       }
     }
     
-    AppLogger.d('✅ ProductDetailPage: Pull-to-refresh completed');
+    AppLogger.d('ProductDetailPage: Pull-to-refresh completed');
   }
 
   void _addToCart(Product product) async {

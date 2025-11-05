@@ -113,26 +113,6 @@ class SellerGroupWidget extends StatelessWidget {
                         ],
                       ),
                     ),
-                    if (sellerGroup.shippingCost == 0) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.success.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          'FREE SHIPPING',
-                          style: AppTextStyles.labelSmall.copyWith(
-                            color: AppColors.success,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -151,28 +131,6 @@ class SellerGroupWidget extends StatelessWidget {
               ],
             ),
           ),
-
-          // Shipping cost display
-          if (sellerGroup.shippingCost > 0)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  'Shipping',
-                  style: AppTextStyles.labelSmall.copyWith(
-                    color: AppColors.onSurface.withValues(alpha: 0.6),
-                  ),
-                ),
-                Text(
-                  '₱${sellerGroup.shippingCost.toStringAsFixed(2)}',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primary,
-                    fontFamily: 'Roboto', // Use Roboto for peso sign
-                  ),
-                ),
-              ],
-            ),
         ],
       ),
     );
@@ -447,28 +405,6 @@ class SellerGroupWidget extends StatelessWidget {
             ],
           ),
 
-          if (sellerGroup.hasSelectedItems && sellerGroup.shippingCost > 0) ...[
-            const SizedBox(height: 4),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Shipping',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.onSurface.withValues(alpha: 0.8),
-                  ),
-                ),
-                Text(
-                  '₱${sellerGroup.shippingCost.toStringAsFixed(2)}',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    fontWeight: FontWeight.w600,
-                    fontFamily: 'Roboto', // Use Roboto for peso sign
-                  ),
-                ),
-              ],
-            ),
-          ],
-
           if (sellerGroup.hasSelectedItems) ...[
             const SizedBox(height: 8),
             const Divider(height: 1, color: AppColors.grey200),
@@ -483,7 +419,7 @@ class SellerGroupWidget extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '₱${sellerGroup.totalWithShipping.toStringAsFixed(2)}',
+                  '₱${sellerGroup.selectedItemsTotal.toStringAsFixed(2)}',
                   style: AppTextStyles.titleSmall.copyWith(
                     color: AppColors.primary,
                     fontWeight: FontWeight.w700,

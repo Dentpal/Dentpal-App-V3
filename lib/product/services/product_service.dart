@@ -8,6 +8,24 @@ class ProductService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
+  // Helper method to get variations for a single product
+  Future<List<ProductVariation>> _getProductVariations(String productId) async {
+    try {
+      QuerySnapshot variationsSnapshot = await _firestore
+          .collection('Product')
+          .doc(productId)
+          .collection('Variation')
+          .get();
+      
+      return variationsSnapshot.docs
+          .map((doc) => ProductVariation.fromFirestore(doc))
+          .toList();
+    } catch (e) {
+      AppLogger.d('Error fetching variations for product $productId: $e');
+      return [];
+    }
+  }
+
   // Get all products (legacy method - kept for backward compatibility)
   Future<List<Product>> getProducts() async {
     try {
@@ -28,19 +46,30 @@ class ProductService {
     int limit = 15,
     DocumentSnapshot? lastDocument,
     String? categoryId,
+    String? subCategoryId,
+    bool includeInactive = false,
+    bool includeDrafts = false,
+    bool includeArchived = false,
   }) async {
     try {
       AppLogger.d('Fetching paginated products from Firestore...');
       
-      // Start building the query
-      Query query = _firestore
-          .collection('Product')
-          .orderBy('createdAt', descending: true);
+      // Start building the query - Use fewer WHERE clauses to avoid complex indexes
+      Query query = _firestore.collection('Product');
       
-      // Add category filter if specified
-      if (categoryId != null && categoryId != 'All') {
-        query = query.where('categoryId', isEqualTo: categoryId);
+      // Only add essential filters to minimize index requirements
+      // Filter for active products only (this is the most important filter)
+      if (!includeInactive) {
+        query = query.where('isActive', isEqualTo: true);
       }
+      
+      // Add category filter if specified (single additional WHERE clause)
+      if (categoryId != null && categoryId != 'All' && categoryId.isNotEmpty) {
+        query = query.where('categoryID', isEqualTo: categoryId);
+      }
+      
+      // Order by creation date (most recent first)
+      query = query.orderBy('createdAt', descending: true);
       
       // Add pagination parameters
       query = query.limit(limit);
@@ -63,21 +92,52 @@ class ProductService {
           querySnapshot.docs.isNotEmpty ? querySnapshot.docs.last : null;
 
       List<Product> pageProducts = [];
-      for (var doc in querySnapshot.docs) {
-        Product product = Product.fromFirestore(doc);
+      
+      // Convert documents to products first
+      List<Product> initialProducts = querySnapshot.docs
+          .map((doc) => Product.fromFirestore(doc))
+          .toList();
+      
+      // Apply client-side filtering for draft and archived status to avoid complex indexes
+      List<Product> filteredProducts = initialProducts.where((product) {
+        // Filter drafts on client side
+        if (!includeDrafts && product.isDraft) return false;
         
-        // Get variations for each product
-        QuerySnapshot variationsSnapshot = await _firestore
-            .collection('Product')
-            .doc(product.productId)
-            .collection('Variation')
-            .get();
+        // Filter archived on client side  
+        if (!includeArchived && product.isArchived) return false;
         
-        if (variationsSnapshot.docs.isNotEmpty) {
-          List<ProductVariation> variations = variationsSnapshot.docs
-              .map((doc) => ProductVariation.fromFirestore(doc))
-              .toList();
-          
+        // Filter subcategory on client side if specified
+        if (subCategoryId != null && subCategoryId.isNotEmpty) {
+          if (product.subCategoryId != subCategoryId) return false;
+        }
+        
+        return true;
+      }).toList();
+      
+      if (filteredProducts.isEmpty) {
+        AppLogger.d('No products found after client-side filtering');
+        return {
+          'products': pageProducts,
+          'lastDocument': lastVisibleDocument,
+          'hasMore': hasMore
+        };
+      }
+      
+      // Batch fetch all variations in parallel to avoid N+1 queries
+      AppLogger.d('Fetching variations for ${filteredProducts.length} products in parallel...');
+      
+      List<Future<List<ProductVariation>>> variationFutures = filteredProducts
+          .map((product) => _getProductVariations(product.productId))
+          .toList();
+      
+      List<List<ProductVariation>> allVariations = await Future.wait(variationFutures);
+      
+      // Combine products with their variations
+      for (int i = 0; i < filteredProducts.length; i++) {
+        Product product = filteredProducts[i];
+        List<ProductVariation> variations = allVariations[i];
+        
+        if (variations.isNotEmpty) {
           product = Product(
             productId: product.productId,
             name: product.name,
@@ -176,10 +236,10 @@ class ProductService {
     try {
       User? currentUser = _auth.currentUser;
       final userUID = currentUser?.uid;
-      AppLogger.d('🔍 CheckSellerStatus: Current user UID: $userUID');
+      AppLogger.d('CheckSellerStatus: Current user UID: $userUID');
       
       if (currentUser == null || userUID == null) {
-        AppLogger.d('❌ CheckSellerStatus: User is not logged in');
+        AppLogger.d('CheckSellerStatus: User is not logged in');
         return {
           'isSeller': false,
           'message': 'User is not logged in',
@@ -193,11 +253,11 @@ class ProductService {
           .doc(userUID)
           .get();
 
-      AppLogger.d('🔍 CheckSellerStatus: Looking for User doc with UID: $userUID');
-      AppLogger.d('🔍 CheckSellerStatus: User doc exists: ${userDoc.exists}');
+      AppLogger.d('CheckSellerStatus: Looking for User doc with UID: $userUID');
+      AppLogger.d('CheckSellerStatus: User doc exists: ${userDoc.exists}');
       
       if (!userDoc.exists) {
-        AppLogger.d('❌ CheckSellerStatus: User profile not found for UID: $userUID');
+        AppLogger.d('CheckSellerStatus: User profile not found for UID: $userUID');
         return {
           'isSeller': false,
           'message': 'User profile not found',
@@ -207,12 +267,12 @@ class ProductService {
 
       // Check the role field to see if the user is a seller
       Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
-      AppLogger.d('🔍 CheckSellerStatus: User data keys: ${userData.keys.toList()}');
-      AppLogger.d('🔍 CheckSellerStatus: User role: ${userData['role']}');
-      AppLogger.d('🔍 CheckSellerStatus: User UID from doc: ${userDoc.id}');
+      AppLogger.d('CheckSellerStatus: User data keys: ${userData.keys.toList()}');
+      AppLogger.d('CheckSellerStatus: User role: ${userData['role']}');
+      AppLogger.d('CheckSellerStatus: User UID from doc: ${userDoc.id}');
       
       if (userData['role'] != 'seller') {
-        AppLogger.d('❌ CheckSellerStatus: User role is not seller - role is: ${userData['role']}');
+        AppLogger.d('CheckSellerStatus: User role is not seller - role is: ${userData['role']}');
         return {
           'isSeller': false,
           'message': 'User is not registered as a seller',
@@ -226,12 +286,12 @@ class ProductService {
           .doc(userUID)
           .get();
 
-      AppLogger.d('🔍 CheckSellerStatus: Looking for Seller doc with UID: $userUID');
-      AppLogger.d('🔍 CheckSellerStatus: Seller doc exists: ${sellerDoc.exists}');
-      AppLogger.d('🔍 CheckSellerStatus: Seller doc ID: ${sellerDoc.id}');
+      AppLogger.d('CheckSellerStatus: Looking for Seller doc with UID: $userUID');
+      AppLogger.d('CheckSellerStatus: Seller doc exists: ${sellerDoc.exists}');
+      AppLogger.d('CheckSellerStatus: Seller doc ID: ${sellerDoc.id}');
       
       if (!sellerDoc.exists) {
-        AppLogger.d('❌ CheckSellerStatus: Seller profile not found for UID: $userUID');
+        AppLogger.d('CheckSellerStatus: Seller profile not found for UID: $userUID');
         return {
           'isSeller': false,
           'message': 'Seller profile not setup completely',
@@ -240,13 +300,13 @@ class ProductService {
       }
 
       Map<String, dynamic> sellerData = sellerDoc.data() as Map<String, dynamic>;
-      AppLogger.d('🔍 CheckSellerStatus: Seller data keys: ${sellerData.keys.toList()}');
-      AppLogger.d('🔍 CheckSellerStatus: Seller isActive: ${sellerData['isActive']}');
-      AppLogger.d('🔍 CheckSellerStatus: Seller isActive type: ${sellerData['isActive'].runtimeType}');
+      AppLogger.d('CheckSellerStatus: Seller data keys: ${sellerData.keys.toList()}');
+      AppLogger.d('CheckSellerStatus: Seller isActive: ${sellerData['isActive']}');
+      AppLogger.d('CheckSellerStatus: Seller isActive type: ${sellerData['isActive'].runtimeType}');
       
       // Verify UIDs match between User and Seller collections
       if (userDoc.id != sellerDoc.id) {
-        AppLogger.d('❌ CheckSellerStatus: UID mismatch - User: ${userDoc.id}, Seller: ${sellerDoc.id}');
+        AppLogger.d('CheckSellerStatus: UID mismatch - User: ${userDoc.id}, Seller: ${sellerDoc.id}');
         return {
           'isSeller': false,
           'message': 'UID mismatch between User and Seller collections',
@@ -262,10 +322,10 @@ class ProductService {
         isActive = sellerData['isActive'].toString().toLowerCase() == 'true';
       }
       
-      AppLogger.d('🔍 CheckSellerStatus: Parsed isActive value: $isActive');
+      AppLogger.d('CheckSellerStatus: Parsed isActive value: $isActive');
       
       if (!isActive) {
-        AppLogger.d('❌ CheckSellerStatus: Seller account is not active - isActive: ${sellerData['isActive']}');
+        AppLogger.d('CheckSellerStatus: Seller account is not active - isActive: ${sellerData['isActive']}');
         return {
           'isSeller': false,
           'message': 'Seller account is not active',
@@ -273,16 +333,16 @@ class ProductService {
         };
       }
 
-      AppLogger.d('✅ CheckSellerStatus: User is verified seller with matching UIDs');
-      AppLogger.d('✅ CheckSellerStatus: User UID: $userUID, Seller UID: ${sellerDoc.id}');
+      AppLogger.d('CheckSellerStatus: User is verified seller with matching UIDs');
+      AppLogger.d('CheckSellerStatus: User UID: $userUID, Seller UID: ${sellerDoc.id}');
       return {
         'isSeller': true,
         'message': 'User is a verified seller',
         'sellerId': userUID
       };
     } catch (e) {
-      AppLogger.d('❌ CheckSellerStatus Error: $e');
-      AppLogger.d('❌ CheckSellerStatus Stack trace: ${StackTrace.current}');
+      AppLogger.d('CheckSellerStatus Error: $e');
+      AppLogger.d('CheckSellerStatus Stack trace: ${StackTrace.current}');
       return {
         'isSeller': false,
         'message': 'Error: $e',
@@ -502,7 +562,7 @@ class ProductService {
   // Get all products for a specific seller
   Future<List<Product>> getProductsBySeller(String sellerId) async {
     try {
-      AppLogger.d('🔍 ProductService: Fetching products for seller: $sellerId');
+      AppLogger.d('ProductService: Fetching products for seller: $sellerId');
       
       // Use simple query to avoid index requirements
       QuerySnapshot querySnapshot = await _firestore
@@ -510,19 +570,19 @@ class ProductService {
           .where('sellerId', isEqualTo: sellerId)
           .get();
       
-      AppLogger.d('✅ ProductService: Simple query successful with ${querySnapshot.docs.length} documents');
+      AppLogger.d('ProductService: Simple query successful with ${querySnapshot.docs.length} documents');
       
-      AppLogger.d('🔍 ProductService: Query returned ${querySnapshot.docs.length} documents');
+      AppLogger.d('ProductService: Query returned ${querySnapshot.docs.length} documents');
       
       List<Product> products = [];
       for (var doc in querySnapshot.docs) {
         try {
-          AppLogger.d('🔍 ProductService: Processing document ${doc.id}');
+          AppLogger.d('ProductService: Processing document ${doc.id}');
           Product product = Product.fromFirestore(doc);
           
           // Filter by isActive manually since we're using simple query
           if (!product.isActive) {
-            AppLogger.d('⚠️ ProductService: Skipping inactive product ${product.name}');
+            AppLogger.d('ProductService: Skipping inactive product ${product.name}');
             continue;
           }
           
@@ -533,7 +593,7 @@ class ProductService {
               .collection('Variation')
               .get();
           
-          AppLogger.d('🔍 ProductService: Found ${variationsSnapshot.docs.length} variations for ${product.name}');
+          AppLogger.d('ProductService: Found ${variationsSnapshot.docs.length} variations for ${product.name}');
           
           if (variationsSnapshot.docs.isNotEmpty) {
             List<ProductVariation> variations = variationsSnapshot.docs
@@ -561,17 +621,17 @@ class ProductService {
           }
           
           products.add(product);
-          AppLogger.d('✅ ProductService: Added product ${product.name} to results');
+          AppLogger.d('ProductService: Added product ${product.name} to results');
         } catch (productError) {
-          AppLogger.d('❌ ProductService: Error processing product document ${doc.id}: $productError');
+          AppLogger.d('ProductService: Error processing product document ${doc.id}: $productError');
         }
       }
       
-      AppLogger.d('✅ ProductService: Final result - Fetched ${products.length} active products for seller $sellerId');
+      AppLogger.d('ProductService: Final result - Fetched ${products.length} active products for seller $sellerId');
       return products;
     } catch (e) {
-      AppLogger.d('❌ ProductService: Error fetching products for seller $sellerId: $e');
-      AppLogger.d('❌ ProductService: Stack trace: ${StackTrace.current}');
+      AppLogger.d('ProductService: Error fetching products for seller $sellerId: $e');
+      AppLogger.d('ProductService: Stack trace: ${StackTrace.current}');
       return [];
     }
   }

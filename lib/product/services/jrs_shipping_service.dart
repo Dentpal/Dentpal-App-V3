@@ -9,17 +9,22 @@ class JRSShippingService {
   static const String _region = 'asia-southeast1';
   static FirebaseFunctions? _functions;
 
-  // Get Firebase Functions instance with web compatibility
+  // Get Firebase Functions instance with proper platform configuration
   static FirebaseFunctions get functions {
     if (_functions == null) {
       _functions = FirebaseFunctions.instanceFor(region: _region);
       
-      // Configure for web compatibility
+      // Configure for platform compatibility
       if (kIsWeb) {
-        // Use the emulator URL for web or configure CORS properly
-        // This helps avoid dart2js Int64 issues
-        print('🌐 [JRS] Configuring for web compatibility');
+        print('[JRS] Configuring Firebase Functions for web');
+        // For web, functions should work out of the box
+      } else {
+        print('[JRS] Configuring Firebase Functions for mobile');
+        // For mobile, ensure proper configuration
+        // Check if we need to use emulator or specific settings
       }
+      
+      print('[JRS] Firebase Functions instance created for region: $_region');
     }
     return _functions!;
   }
@@ -41,15 +46,15 @@ class JRSShippingService {
     bool valuation = true,
   }) async {
     try {
-      AppLogger.d('🚚 Calculating JRS shipping cost');
+      AppLogger.d('Calculating JRS shipping cost');
       AppLogger.d('   From: $sellerAddress');
       AppLogger.d('   To: $recipientAddress');
       AppLogger.d('   Items: ${cartItems.length}');
       
       // Add console logs for production debugging
-      print('🚚 [JRS] Starting calculation: $sellerAddress → $recipientAddress (${cartItems.length} items)');
-      if (kDebugMode) print('🔧 [JRS] Debug mode detected');
-      if (!kDebugMode) print('🏭 [JRS] Production mode detected');
+      print('[JRS] Starting calculation: $sellerAddress → $recipientAddress (${cartItems.length} items)');
+      if (kDebugMode) print('[JRS] Debug mode detected');
+      if (!kDebugMode) print('[JRS] Production mode detected');
 
       // Prepare the cart items data for the Firebase function
       final cartItemsData = cartItems.map((item) => item.toJRSShippingItem()).toList();
@@ -64,43 +69,108 @@ class JRSShippingService {
         'valuation': valuation,
       };
 
-      AppLogger.d('🔧 JRS request data: $requestData');
+      AppLogger.d('JRS request data: $requestData');
 
-      // Call the Firebase function with web compatibility
-      print('🔥 [JRS] About to call Firebase function: calculateJRSShipping');
+      // Call the Firebase function with platform-specific implementation
+      print('[JRS] About to call Firebase function: calculateJRSShipping');
       
       late final dynamic result;
       
       if (kIsWeb) {
         // Use HTTP directly for web to avoid dart2js Int64 issues
-        print('🌐 [JRS] Using HTTP call for web compatibility');
-        final httpResult = await _callFirebaseFunctionViaHTTP(requestData);
-        result = _MockCallableResult(httpResult);
+        print('[JRS] Using HTTP call for web compatibility');
+        try {
+          final httpResult = await _callFirebaseFunctionViaHTTP(requestData);
+          result = _MockCallableResult(httpResult);
+        } catch (e) {
+          print('[JRS] Web HTTP call failed: $e');
+          // Fallback to cloud_functions for web if HTTP fails
+          print('[JRS] Falling back to cloud_functions for web');
+          final callable = functions.httpsCallable('calculateJRSShipping');
+          result = await callable.call(requestData).timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw Exception('Firebase function call timed out');
+            },
+          );
+        }
       } else {
         // Use cloud_functions package for mobile
-        final callable = functions.httpsCallable('calculateJRSShipping');
-        result = await callable.call(requestData).timeout(
-          const Duration(seconds: 30),
-          onTimeout: () {
-            throw Exception('Firebase function call timed out');
-          },
-        );
+        print('[JRS] Using cloud_functions package for mobile');
+        try {
+          final callable = functions.httpsCallable('calculateJRSShipping');
+          
+          // Add debug info about Firebase setup
+          print('[JRS] Firebase Functions region: $_region');
+          print('[JRS] Calling function with data keys: ${requestData.keys.toList()}');
+          
+          result = await callable.call(requestData).timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw Exception('Firebase function call timed out after 30 seconds');
+            },
+          );
+          print('[JRS] Mobile cloud_functions call succeeded');
+        } catch (e) {
+          print('[JRS] Mobile cloud_functions call failed: $e');
+          
+          // Check if it's an authentication or permission issue
+          if (e.toString().contains('UNAUTHENTICATED') || e.toString().contains('PERMISSION_DENIED')) {
+            print('[JRS] Authentication/permission issue detected on mobile');
+            AppLogger.d('JRS mobile auth issue: $e');
+          } else if (e.toString().contains('UNAVAILABLE') || e.toString().contains('NETWORK')) {
+            print('[JRS] Network issue detected on mobile');
+            AppLogger.d('JRS mobile network issue: $e');
+          } else {
+            print('[JRS] Unknown mobile error: $e');
+            AppLogger.d('JRS mobile unknown error: $e');
+          }
+          
+          // For mobile, we can also try the HTTP fallback if cloud_functions fails
+          print('[JRS] Trying HTTP fallback for mobile');
+          try {
+            final httpResult = await _callFirebaseFunctionViaHTTP(requestData);
+            result = _MockCallableResult(httpResult);
+            print('[JRS] Mobile HTTP fallback succeeded');
+          } catch (httpError) {
+            print('[JRS] Mobile HTTP fallback also failed: $httpError');
+            rethrow; // Re-throw the original error
+          }
+        }
       }
       
-      print('🔥 [JRS] Firebase function call completed');
+      print('[JRS] Firebase function call completed');
 
-      AppLogger.d('📦 JRS function response: ${result.data}');
-      print('📦 [JRS] Response received: ${result.data}');
+      AppLogger.d('JRS function response: ${result.data}');
+      print('[JRS] Response received: ${result.data}');
 
-      // Parse the response
-      final data = result.data as Map<String, dynamic>;
+      // Parse the response with safe type conversion for mobile compatibility
+      final rawData = result.data;
+      Map<String, dynamic> data;
+      
+      if (rawData is Map<String, dynamic>) {
+        data = rawData;
+      } else if (rawData is Map) {
+        // Convert Map<Object?, Object?> to Map<String, dynamic> for mobile compatibility
+        data = Map<String, dynamic>.from(rawData.map((key, value) => MapEntry(key.toString(), value)));
+      } else {
+        throw Exception('Unexpected response type: ${rawData.runtimeType}');
+      }
       
       if (data['success'] == true) {
-        final responseData = data['data'] as Map<String, dynamic>?;
+        final responseDataRaw = data['data'];
+        Map<String, dynamic>? responseData;
+        
+        if (responseDataRaw is Map<String, dynamic>) {
+          responseData = responseDataRaw;
+        } else if (responseDataRaw is Map) {
+          responseData = Map<String, dynamic>.from(responseDataRaw.map((key, value) => MapEntry(key.toString(), value)));
+        }
+        
         final shippingCost = (responseData?['shippingCost'] as num?)?.toDouble() ?? 50.0;
         
-        AppLogger.d('✅ JRS shipping cost calculated: ₱$shippingCost');
-        print('✅ [JRS] SUCCESS: ₱$shippingCost');
+        AppLogger.d('JRS shipping cost calculated: ₱$shippingCost');
+        print('[JRS] SUCCESS: ₱$shippingCost');
         
         return JRSShippingResult(
           success: true,
@@ -109,21 +179,31 @@ class JRSShippingService {
         );
       } else {
         final error = data['error'] as String? ?? 'Unknown error';
-        final fallbackCost = (data['data']?['shippingCost'] as num?)?.toDouble() ?? 50.0;
+        final fallbackDataRaw = data['data'];
+        Map<String, dynamic>? fallbackData;
         
-        AppLogger.d('⚠️ JRS API error, using fallback: $error');
+        if (fallbackDataRaw is Map<String, dynamic>) {
+          fallbackData = fallbackDataRaw;
+        } else if (fallbackDataRaw is Map) {
+          fallbackData = Map<String, dynamic>.from(fallbackDataRaw.map((key, value) => MapEntry(key.toString(), value)));
+        }
+        
+        final fallbackCost = (fallbackData?['shippingCost'] as num?)?.toDouble() ?? 50.0;
+        
+        AppLogger.d('JRS API error, using fallback: $error');
+        print('[JRS] API ERROR: $error (using fallback: ₱$fallbackCost)');
         
         return JRSShippingResult(
           success: false,
           shippingCost: fallbackCost,
-          message: 'Using fallback shipping cost: $error',
+          message: 'JRS API issue, using fallback shipping cost',
           error: error,
         );
       }
 
     } catch (e) {
-      AppLogger.d('❌ Error calculating JRS shipping: $e');
-      print('❌ [JRS] ERROR: $e');
+      AppLogger.d('Error calculating JRS shipping: $e');
+      print('[JRS] ERROR: $e');
       
       // Return fallback shipping cost to prevent checkout from breaking
       return JRSShippingResult(
@@ -138,13 +218,46 @@ class JRSShippingService {
   /// Test JRS API connection
   static Future<JRSConnectionTestResult> testConnection() async {
     try {
-      AppLogger.d('🔍 Testing JRS API connection');
+      AppLogger.d('Testing JRS API connection');
+      print('[JRS] Starting connection test...');
 
-      final callable = functions.httpsCallable('testJRSConnection');
-      final result = await callable.call();
+      // Use the same platform-specific approach as the main function
+      late final dynamic result;
+      
+      if (kIsWeb) {
+        print('[JRS] Testing connection via web');
+        try {
+          final callable = functions.httpsCallable('testJRSConnection');
+          result = await callable.call().timeout(
+            const Duration(seconds: 15),
+            onTimeout: () {
+              throw Exception('Connection test timed out');
+            },
+          );
+        } catch (e) {
+          print('[JRS] Web connection test failed: $e');
+          rethrow;
+        }
+      } else {
+        print('[JRS] Testing connection via mobile');
+        try {
+          final callable = functions.httpsCallable('testJRSConnection');
+          result = await callable.call().timeout(
+            const Duration(seconds: 15),
+            onTimeout: () {
+              throw Exception('Connection test timed out');
+            },
+          );
+          print('[JRS] Mobile connection test succeeded');
+        } catch (e) {
+          print('[JRS] Mobile connection test failed: $e');
+          rethrow;
+        }
+      }
 
       final data = result.data as Map<String, dynamic>;
       
+      print('[JRS] Connection test completed successfully');
       return JRSConnectionTestResult(
         success: data['success'] == true,
         message: data['message'] as String? ?? 'Unknown result',
@@ -152,7 +265,8 @@ class JRSShippingService {
       );
 
     } catch (e) {
-      AppLogger.d('❌ Error testing JRS connection: $e');
+      AppLogger.d('Error testing JRS connection: $e');
+      print('[JRS] Connection test failed with error: $e');
       
       return JRSConnectionTestResult(
         success: false,
@@ -161,29 +275,97 @@ class JRSShippingService {
     }
   }
 
-  /// Call Firebase function directly via HTTP for web compatibility
+  /// Call Firebase function directly via HTTP for cross-platform compatibility
   static Future<dynamic> _callFirebaseFunctionViaHTTP(Map<String, dynamic> data) async {
     try {
       final url = 'https://asia-southeast1-dentpal-161e5.cloudfunctions.net/calculateJRSShipping';
+      
+      print('[JRS] Making HTTP call to: $url');
       
       final response = await http.post(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          // Add CORS headers for better compatibility
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
         },
         body: json.encode({'data': data}),
       ).timeout(const Duration(seconds: 30));
 
+      print('[JRS] HTTP response status: ${response.statusCode}');
+
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
+        print('[JRS] HTTP response data: $responseData');
         return responseData['result'] ?? responseData;
       } else {
+        print('[JRS] HTTP error: ${response.statusCode} - ${response.body}');
         throw Exception('HTTP ${response.statusCode}: ${response.body}');
       }
     } catch (e) {
-      print('❌ [JRS] HTTP call failed: $e');
+      print('[JRS] HTTP call failed: $e');
       rethrow;
     }
+  }
+
+  /// Test Firebase Functions connectivity specifically for debugging mobile issues
+  static Future<Map<String, dynamic>> testFirebaseFunctionsConnectivity() async {
+    final result = <String, dynamic>{
+      'platform': kIsWeb ? 'web' : 'mobile',
+      'region': _region,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+
+    try {
+      print('[JRS] Testing Firebase Functions connectivity...');
+      
+      // Test basic callable creation
+      final callable = functions.httpsCallable('calculateJRSShipping');
+      result['callable_creation'] = 'success';
+      
+      // Test simple call with minimal data
+      final testData = {
+        'sellerAddress': 'Makati, Metro Manila',
+        'recipientAddress': 'Quezon City, Metro Manila',
+        'cartItems': [
+          {
+            'productId': 'test',
+            'quantity': 1,
+            'price': 100.0,
+          }
+        ],
+      };
+      
+      print('[JRS] Making test call...');
+      final response = await callable.call(testData).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          throw Exception('Test call timed out');
+        },
+      );
+      
+      result['test_call'] = 'success';
+      result['response_type'] = response.runtimeType.toString();
+      result['has_data'] = response.data != null;
+      
+      if (response.data != null) {
+        final data = response.data as Map<String, dynamic>;
+        result['response_keys'] = data.keys.toList();
+        result['response_success'] = data['success'];
+      }
+      
+      print('[JRS] Firebase Functions connectivity test passed');
+      
+    } catch (e) {
+      print('[JRS] Firebase Functions connectivity test failed: $e');
+      result['error'] = e.toString();
+      result['error_type'] = e.runtimeType.toString();
+    }
+    
+    return result;
   }
 
   /// Format address to JRS-compatible format (City, Province)
@@ -251,7 +433,7 @@ class JRSShippingService {
       }
       
     } catch (e) {
-      AppLogger.d('❌ Error parsing address for JRS: $e');
+      AppLogger.d('Error parsing address for JRS: $e');
     }
     
     // Final fallback

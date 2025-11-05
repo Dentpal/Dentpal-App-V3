@@ -245,13 +245,22 @@ async function callJRSAPI(request: JRSShippingRequest): Promise<any> {
         
         // Extract shipping cost from response
         // The actual response structure may vary, adjust as needed
-        const shippingCost = extractShippingCost(response.data);
+        const extractedResult = extractShippingCost(response.data);
         
-        return {
-          shippingCost,
-          totalAmount: shippingCost,
-          rateResponse: response.data
-        };
+        if (extractedResult.success) {
+          return {
+            shippingCost: extractedResult.cost,
+            totalAmount: extractedResult.cost,
+            rateResponse: response.data
+          };
+        } else {
+          // Log the detailed failure reason and throw an error
+          logger.error('Failed to extract shipping cost from JRS response', {
+            response: response.data,
+            reason: extractedResult.reason
+          });
+          throw new Error(`Failed to extract shipping cost: ${extractedResult.reason}`);
+        }
       } else {
         throw new Error(`JRS API returned status ${response.status}: ${response.statusText}`);
       }
@@ -283,7 +292,7 @@ async function callJRSAPI(request: JRSShippingRequest): Promise<any> {
  * Extract shipping cost from JRS API response
  * Based on actual JRS API response structure
  */
-function extractShippingCost(responseData: any): number {
+function extractShippingCost(responseData: any): { success: boolean; cost: number; reason?: string } {
   try {
     logger.info('Extracting shipping cost from JRS response', { 
       responseType: typeof responseData,
@@ -291,18 +300,16 @@ function extractShippingCost(responseData: any): number {
       fullResponse: responseData 
     });
     
-    // Primary: Check for TotalShippingRate at root level (in centavos)
+    // Primary: Check for TotalShippingRate at root level (in pesos)
     if (responseData.TotalShippingRate && typeof responseData.TotalShippingRate === 'number') {
-      const costInPesos = responseData.TotalShippingRate / 100;
-      logger.info(`✅ Extracted TotalShippingRate: ${responseData.TotalShippingRate} centavos = ₱${costInPesos}`);
-      return costInPesos;
+      logger.info(`✅ Extracted TotalShippingRate: ₱${responseData.TotalShippingRate}`);
+      return { success: true, cost: responseData.TotalShippingRate };
     }
 
-    // Secondary: Check BaseRate at root level (in centavos)
+    // Secondary: Check BaseRate at root level (in pesos)
     if (responseData.BaseRate && typeof responseData.BaseRate === 'number') {
-      const costInPesos = responseData.BaseRate / 100;
-      logger.info(`✅ Extracted BaseRate: ${responseData.BaseRate} centavos = ₱${costInPesos}`);
-      return costInPesos;
+      logger.info(`✅ Extracted BaseRate: ₱${responseData.BaseRate}`);
+      return { success: true, cost: responseData.BaseRate };
     }
 
     // Tertiary: Check other possible fields in descending order of preference
@@ -310,19 +317,19 @@ function extractShippingCost(responseData: any): number {
     // Direct rate field (in pesos)
     if (responseData.rate && typeof responseData.rate === 'number') {
       logger.info(`✅ Extracted direct rate: ₱${responseData.rate}`);
-      return responseData.rate;
+      return { success: true, cost: responseData.rate };
     }
 
     // Total amount field (in pesos)
     if (responseData.totalAmount && typeof responseData.totalAmount === 'number') {
       logger.info(`✅ Extracted totalAmount: ₱${responseData.totalAmount}`);
-      return responseData.totalAmount;
+      return { success: true, cost: responseData.totalAmount };
     }
 
     // Shipping cost field (in pesos)
     if (responseData.shippingCost && typeof responseData.shippingCost === 'number') {
       logger.info(`✅ Extracted shippingCost: ₱${responseData.shippingCost}`);
-      return responseData.shippingCost;
+      return { success: true, cost: responseData.shippingCost };
     }
 
     // Nested in rateResponse object
@@ -330,15 +337,13 @@ function extractShippingCost(responseData: any): number {
       logger.info('Checking nested rateResponse object', { rateResponse: responseData.rateResponse });
       
       if (responseData.rateResponse.TotalShippingRate && typeof responseData.rateResponse.TotalShippingRate === 'number') {
-        const costInPesos = responseData.rateResponse.TotalShippingRate / 100;
-        logger.info(`✅ Extracted nested rateResponse.TotalShippingRate: ${responseData.rateResponse.TotalShippingRate} centavos = ₱${costInPesos}`);
-        return costInPesos;
+        logger.info(`✅ Extracted nested rateResponse.TotalShippingRate: ₱${responseData.rateResponse.TotalShippingRate}`);
+        return { success: true, cost: responseData.rateResponse.TotalShippingRate };
       }
       
       if (responseData.rateResponse.BaseRate && typeof responseData.rateResponse.BaseRate === 'number') {
-        const costInPesos = responseData.rateResponse.BaseRate / 100;
-        logger.info(`✅ Extracted nested rateResponse.BaseRate: ${responseData.rateResponse.BaseRate} centavos = ₱${costInPesos}`);
-        return costInPesos;
+        logger.info(`✅ Extracted nested rateResponse.BaseRate: ₱${responseData.rateResponse.BaseRate}`);
+        return { success: true, cost: responseData.rateResponse.BaseRate };
       }
     }
 
@@ -347,14 +352,13 @@ function extractShippingCost(responseData: any): number {
       logger.info('Checking nested data object', { data: responseData.data });
       
       if (responseData.data.TotalShippingRate && typeof responseData.data.TotalShippingRate === 'number') {
-        const costInPesos = responseData.data.TotalShippingRate / 100;
-        logger.info(`✅ Extracted data.TotalShippingRate: ${responseData.data.TotalShippingRate} centavos = ₱${costInPesos}`);
-        return costInPesos;
+        logger.info(`✅ Extracted data.TotalShippingRate: ₱${responseData.data.TotalShippingRate}`);
+        return { success: true, cost: responseData.data.TotalShippingRate };
       }
       
       if (responseData.data.rate && typeof responseData.data.rate === 'number') {
         logger.info(`✅ Extracted data.rate: ₱${responseData.data.rate}`);
-        return responseData.data.rate;
+        return { success: true, cost: responseData.data.rate };
       }
     }
 
@@ -364,30 +368,38 @@ function extractShippingCost(responseData: any): number {
       logger.info('Checking first rate in array', { firstRate });
       
       if (firstRate.TotalShippingRate && typeof firstRate.TotalShippingRate === 'number') {
-        const costInPesos = firstRate.TotalShippingRate / 100;
-        logger.info(`✅ Extracted array rates[0].TotalShippingRate: ${firstRate.TotalShippingRate} centavos = ₱${costInPesos}`);
-        return costInPesos;
+        logger.info(`✅ Extracted array rates[0].TotalShippingRate: ₱${firstRate.TotalShippingRate}`);
+        return { success: true, cost: firstRate.TotalShippingRate };
       }
       
       if (firstRate.rate && typeof firstRate.rate === 'number') {
         logger.info(`✅ Extracted array rates[0].rate: ₱${firstRate.rate}`);
-        return firstRate.rate;
+        return { success: true, cost: firstRate.rate };
       }
     }
 
     // If we get here, log the full structure for debugging
-    logger.warn('❌ Could not extract shipping cost from JRS response, using fallback. Full response structure:', {
-      response: JSON.stringify(responseData, null, 2)
+    const responseStructure = JSON.stringify(responseData, null, 2);
+    logger.warn('❌ Could not extract shipping cost from JRS response. Full response structure:', {
+      response: responseStructure
     });
     
-    return 50.0; // Fallback cost
+    return { 
+      success: false, 
+      cost: 50.0, 
+      reason: `No valid shipping cost found in response. Response keys: ${Object.keys(responseData || {}).join(', ')}` 
+    };
 
   } catch (error) {
     logger.error('❌ Error extracting shipping cost', { 
       error: error instanceof Error ? error.message : String(error),
       responseData 
     });
-    return 50.0; // Fallback cost
+    return { 
+      success: false, 
+      cost: 50.0, 
+      reason: `Error parsing response: ${error instanceof Error ? error.message : String(error)}` 
+    };
   }
 }
 

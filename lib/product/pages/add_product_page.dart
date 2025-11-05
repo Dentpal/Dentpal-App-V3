@@ -176,7 +176,7 @@ class _AddProductPageState extends State<AddProductPage> {
 
     try {
       final categories = await _categoryService.getCategories();
-      AppLogger.d('✅ Loaded ${categories.length} categories');
+      AppLogger.d('Loaded ${categories.length} categories');
 
       for (var cat in categories) {
         AppLogger.d(
@@ -189,7 +189,7 @@ class _AddProductPageState extends State<AddProductPage> {
         _isCategoriesLoading = false;
       });
     } catch (e) {
-      AppLogger.d('❌ Error loading categories: $e');
+      AppLogger.d('Error loading categories: $e');
       setState(() {
         _isCategoriesLoading = false;
         _errorMessage = 'Failed to load categories: $e';
@@ -198,11 +198,11 @@ class _AddProductPageState extends State<AddProductPage> {
   }
 
   void _loadSubCategories(String categoryId) async {
-    AppLogger.d('🔍 Loading subcategories for categoryId: $categoryId');
+    AppLogger.d('Loading subcategories for categoryId: $categoryId');
 
     try {
       final subCategories = await _categoryService.getSubCategories(categoryId);
-      AppLogger.d('✅ Received ${subCategories.length} subcategories');
+      AppLogger.d('Received ${subCategories.length} subcategories');
 
       for (var subCat in subCategories) {
         AppLogger.d(
@@ -216,7 +216,7 @@ class _AddProductPageState extends State<AddProductPage> {
         _productForm.subCategoryId = null;
       });
     } catch (e) {
-      AppLogger.d('❌ Error loading subcategories: $e');
+      AppLogger.d('Error loading subcategories: $e');
       setState(() {
         _errorMessage = 'Failed to load subcategories: $e';
         _subCategories = [];
@@ -1113,7 +1113,7 @@ class _AddProductPageState extends State<AddProductPage> {
                       onChanged: _isCategoriesLoading
                           ? null
                           : (value) {
-                              AppLogger.d('🔍 Category selected: $value');
+                              AppLogger.d('Category selected: $value');
                               setState(() {
                                 _selectedCategoryId = value;
                                 _productForm.categoryId = value ?? '';
@@ -2954,7 +2954,7 @@ class _AddProductPageState extends State<AddProductPage> {
                 onChanged: _isCategoriesLoading
                     ? null
                     : (String? value) {
-                        AppLogger.d('🔍 Category selected: $value');
+                        AppLogger.d('Category selected: $value');
                         setState(() {
                           _selectedCategoryId = value;
                           _productForm.categoryId = value ?? '';
