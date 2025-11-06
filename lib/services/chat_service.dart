@@ -241,9 +241,9 @@ class ChatService {
         'user2ShopName': user2ShopName,
       });
 
-      AppLogger.d('✅ Updated chat room $chatRoomId with correct user data');
+      AppLogger.d('Updated chat room $chatRoomId with correct user data');
     } catch (e) {
-      AppLogger.d('❌ Error updating chat room user data: $e');
+      AppLogger.d('Error updating chat room user data: $e');
     }
   }
 
@@ -340,7 +340,7 @@ class ChatService {
 
       return chatRoomId;
     } catch (e) {
-      AppLogger.d('❌ Error creating chat room: $e');
+      AppLogger.d('Error creating chat room: $e');
       throw Exception('Failed to create chat room: $e');
     }
   }
@@ -405,9 +405,9 @@ class ChatService {
         'lastActivity': DateTime.now().millisecondsSinceEpoch,
       });
 
-      AppLogger.d('✅ Message sent successfully');
+      AppLogger.d('Message sent successfully');
     } catch (e) {
-      AppLogger.d('❌ Error sending message: $e');
+      AppLogger.d('Error sending message: $e');
       throw Exception('Failed to send message: $e');
     }
   }
@@ -496,7 +496,7 @@ class ChatService {
         }
       }
     } catch (e) {
-      AppLogger.d('❌ Error marking messages as read: $e');
+      AppLogger.d('Error marking messages as read: $e');
     }
   }
 
@@ -504,9 +504,9 @@ class ChatService {
   Future<void> deleteChatRoom(String chatRoomId) async {
     try {
       await _database.ref('chatRooms/$chatRoomId').remove();
-      AppLogger.d('✅ Chat room deleted successfully');
+      AppLogger.d('Chat room deleted successfully');
     } catch (e) {
-      AppLogger.d('❌ Error deleting chat room: $e');
+      AppLogger.d('Error deleting chat room: $e');
       throw Exception('Failed to delete chat room: $e');
     }
   }

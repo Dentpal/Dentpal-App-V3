@@ -16,6 +16,13 @@ class CartItem {
   // Seller information
   String? sellerId;
   String? sellerName;
+  String? sellerAddress; // Seller's shipping address (city, province)
+  
+  // Shipping information for JRS calculation
+  double? weight; // Weight in grams
+  double? length; // Length in cm
+  double? width; // Width in cm
+  double? height; // Height in cm
   
   // Selection state for multi-seller checkout
   bool isSelected;
@@ -32,6 +39,11 @@ class CartItem {
     this.variationId,
     this.sellerId,
     this.sellerName,
+    this.sellerAddress,
+    this.weight,
+    this.length,
+    this.width,
+    this.height,
     this.isSelected = true, // Default to selected
   });
 
@@ -60,9 +72,25 @@ class CartItem {
 
   double get totalPrice => (productPrice ?? 0) * quantity;
   
+  // Get total weight for all quantity
+  double get totalWeight => (weight ?? 100.0) * quantity; // Default 100g per item if not specified
+  
   // Helper method to toggle selection
   void toggleSelection() {
     isSelected = !isSelected;
+  }
+  
+  // Convert to JRS shipping item format
+  Map<String, dynamic> toJRSShippingItem() {
+    return {
+      'productId': productId,
+      'quantity': quantity,
+      'price': productPrice ?? 0.0,
+      'weight': weight ?? 100.0, // Default 100g
+      'length': length ?? 10.0, // Default 10cm
+      'width': width ?? 10.0, // Default 10cm
+      'height': height ?? 5.0, // Default 5cm
+    };
   }
 }
 
@@ -78,7 +106,7 @@ class SellerGroup {
     required this.sellerId,
     required this.sellerName,
     required this.items,
-    this.shippingCost = 0.0,
+    this.shippingCost = 0.0, // Always 0.0 as shipping is calculated in checkout
     this.isSelected = true,
   });
 
@@ -90,9 +118,6 @@ class SellerGroup {
   // Calculate total for all items
   double get totalItemsPrice => items
       .fold(0.0, (total, item) => total + item.totalPrice);
-
-  // Get total including shipping for selected items
-  double get totalWithShipping => hasSelectedItems ? selectedItemsTotal + shippingCost : 0.0;
 
   // Check if any items are selected
   bool get hasSelectedItems => items.any((item) => item.isSelected);
@@ -116,6 +141,22 @@ class SellerGroup {
   void updateGroupSelection() {
     isSelected = allItemsSelected;
   }
+  
+  // Get seller's shipping address (city, province format)
+  String? get sellerShippingAddress {
+    if (items.isNotEmpty && items.first.sellerAddress != null) {
+      return items.first.sellerAddress;
+    }
+    return null; // Will fall back to default address in Firebase function
+  }
+  
+  // Convert selected items to JRS shipping format
+  List<Map<String, dynamic>> getSelectedItemsForShipping() {
+    return items
+        .where((item) => item.isSelected)
+        .map((item) => item.toJRSShippingItem())
+        .toList();
+  }
 }
 
 // Class to manage cart totals and shipping
@@ -129,12 +170,11 @@ class CartSummary {
       .fold(0.0, (total, group) => total + group.selectedItemsTotal);
 
   // Calculate total shipping cost for sellers with selected items
-  double get totalShippingCost => sellerGroups
-      .where((group) => group.hasSelectedItems)
-      .fold(0.0, (total, group) => total + group.shippingCost);
+  // Note: Shipping calculation is handled in checkout page, so this returns 0.0
+  double get totalShippingCost => 0.0;
 
-  // Calculate grand total including shipping
-  double get grandTotal => selectedItemsTotal + totalShippingCost;
+  // Calculate grand total (without shipping, as shipping is calculated in checkout)
+  double get grandTotal => selectedItemsTotal;
 
   // Get total number of selected items
   int get selectedItemsCount => sellerGroups

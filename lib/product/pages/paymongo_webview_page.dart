@@ -40,7 +40,7 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageStarted: (String url) {
-            AppLogger.d('🌐 WebView page started loading: $url');
+            AppLogger.d('WebView page started loading: $url');
             setState(() {
               _isLoading = true;
               _currentUrl = url;
@@ -48,7 +48,7 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
             _checkUrlForCompletion(url);
           },
           onPageFinished: (String url) {
-            AppLogger.d('🌐 WebView page finished loading: $url');
+            AppLogger.d('WebView page finished loading: $url');
             setState(() {
               _isLoading = false;
               _currentUrl = url;
@@ -56,12 +56,12 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
             _checkUrlForCompletion(url);
           },
           onNavigationRequest: (NavigationRequest request) {
-            AppLogger.d('🌐 WebView navigation request: ${request.url}');
+            AppLogger.d('WebView navigation request: ${request.url}');
             _checkUrlForCompletion(request.url);
             return NavigationDecision.navigate;
           },
           onWebResourceError: (WebResourceError error) {
-            AppLogger.d('❌ WebView error: ${error.description}');
+            AppLogger.d('WebView error: ${error.description}');
           },
         ),
       )
@@ -72,46 +72,46 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
     // Prevent multiple callbacks
     if (_hasCalledCallback) return;
 
-    AppLogger.d('🔍 Checking URL for completion: $url');
+    AppLogger.d('Checking URL for completion: $url');
 
     // Check for new success URL pattern (payment-success)
     if (url.contains('payment-success') || url.contains('payment_success')) {
-      AppLogger.d('✅ Payment success detected from payment-success URL');
+      AppLogger.d('Payment success detected from payment-success URL');
       _handlePaymentSuccess(url);
       return;
     }
 
     // Check for new failure URL pattern (payment-failed)
     if (url.contains('payment-failed') || url.contains('payment_failed')) {
-      AppLogger.d('❌ Payment failure detected from payment-failed URL');
+      AppLogger.d('Payment failure detected from payment-failed URL');
       _handlePaymentFailure(url);
       return;
     }
 
     // Check for success URL pattern (legacy)
     if (widget.successUrl != null && url.contains(widget.successUrl!)) {
-      AppLogger.d('✅ Payment success detected');
+      AppLogger.d('Payment success detected');
       _handlePaymentSuccess(url);
       return;
     }
 
     // Check for cancel URL pattern (legacy)
     if (widget.cancelUrl != null && url.contains(widget.cancelUrl!)) {
-      AppLogger.d('❌ Payment cancelled detected');
+      AppLogger.d('Payment cancelled detected');
       _handlePaymentFailure(url);
       return;
     }
 
     // Check for common PayMongo success patterns
     if (url.contains('success') || url.contains('payment_intent_id') || url.contains('session_id')) {
-      AppLogger.d('✅ Payment success detected by pattern matching');
+      AppLogger.d('Payment success detected by pattern matching');
       _handlePaymentSuccess(url);
       return;
     }
 
     // Check for common PayMongo cancel/error patterns
     if (url.contains('cancel') || url.contains('error') || url.contains('failed')) {
-      AppLogger.d('❌ Payment failure detected by pattern matching');
+      AppLogger.d('Payment failure detected by pattern matching');
       _handlePaymentFailure(url);
       return;
     }
@@ -131,7 +131,7 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
     sessionId = uri.queryParameters['session_id'] ?? 
                 uri.queryParameters['payment_intent_id'];
 
-    AppLogger.d('✅ Payment completed successfully. Order ID: $orderId, Session ID: $sessionId');
+    AppLogger.d('Payment completed successfully. Order ID: $orderId, Session ID: $sessionId');
     
     // Close WebView and notify parent directly - no popup
     if (mounted) {
@@ -156,7 +156,7 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
                    uri.queryParameters['message'] ?? 
                    'Payment was cancelled or failed';
 
-    AppLogger.d('❌ Payment failed. Order ID: $orderId, Session ID: $sessionId, Error: $errorMessage');
+    AppLogger.d('Payment failed. Order ID: $orderId, Session ID: $sessionId, Error: $errorMessage');
     
     // Close WebView and notify parent directly - no popup
     if (mounted) {

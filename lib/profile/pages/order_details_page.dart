@@ -843,7 +843,7 @@ class OrderDetailsPage extends StatelessWidget {
     }
 
     final checkoutUrl = order.paymentInfo.checkoutUrl!;
-    AppLogger.d('🔄 Resuming payment for order ${order.orderId} with URL: $checkoutUrl');
+    AppLogger.d('Resuming payment for order ${order.orderId} with URL: $checkoutUrl');
 
     try {
       if (kIsWeb) {
@@ -891,7 +891,7 @@ class OrderDetailsPage extends StatelessWidget {
                 successUrl: 'https://dentpal-store.web.app/payment-success',
                 cancelUrl: 'https://dentpal-store.web.app/payment-failed',
                 onPaymentComplete: (isSuccess, orderId) {
-                  AppLogger.d('💳 Payment resumed completed. Success: $isSuccess, Order ID: $orderId');
+                  AppLogger.d('Payment resumed completed. Success: $isSuccess, Order ID: $orderId');
                   
                   if (isSuccess) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -917,7 +917,7 @@ class OrderDetailsPage extends StatelessWidget {
         }
       }
     } catch (e) {
-      AppLogger.d('❌ Error resuming payment: $e');
+      AppLogger.d('Error resuming payment: $e');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

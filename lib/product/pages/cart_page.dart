@@ -159,6 +159,8 @@ class _CartPageState extends State<CartPage>
   }
 
   Future<List<SellerGroup>> _loadSellerGroups() async {
+    final stopwatch = Stopwatch()..start();
+    
     // Check if we have valid cached data
     if (_cachedSellerGroups != null && _lastCacheTime != null) {
       final cacheAge = DateTime.now().difference(_lastCacheTime!);
@@ -178,13 +180,16 @@ class _CartPageState extends State<CartPage>
       return _cachedSellerGroups!;
     }
 
-    AppLogger.d("🟡 Loading seller groups from API");
+    AppLogger.d("🟡 Loading seller groups from API (optimized version)");
     setState(() {
       _isLoading = true;
     });
 
     try {
       final sellerGroups = await _cartService.getCartItemsGroupedBySeller();
+      
+      stopwatch.stop();
+      AppLogger.d("⚡ Cart loaded in ${stopwatch.elapsedMilliseconds}ms");
 
       // Cache the seller groups with current timestamp
       _cachedSellerGroups = sellerGroups;
@@ -196,10 +201,13 @@ class _CartPageState extends State<CartPage>
       });
       return sellerGroups;
     } catch (e) {
+      stopwatch.stop();
+      AppLogger.d("❌ Cart loading failed after ${stopwatch.elapsedMilliseconds}ms: $e");
+      
       setState(() {
         _isLoading = false;
       });
-      AppLogger.d('❌ Error loading seller groups: $e');
+      AppLogger.d('Error loading seller groups: $e');
       return [];
     }
   }
@@ -1056,22 +1064,6 @@ class _CartPageState extends State<CartPage>
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-
-                  // Shipping
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Shipping', style: AppTextStyles.bodyMedium),
-                      Text(
-                        '₱${_cartSummary!.totalShippingCost.toStringAsFixed(2)}',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          fontWeight: FontWeight.w600,
-                          fontFamily: 'Roboto',
-                        ),
-                      ),
-                    ],
-                  ),
                   const SizedBox(height: 16),
 
                   // Divider
@@ -1092,7 +1084,7 @@ class _CartPageState extends State<CartPage>
                         ),
                       ),
                       Text(
-                        '₱${_cartSummary!.grandTotal.toStringAsFixed(2)}',
+                        '₱${_cartSummary!.selectedItemsTotal.toStringAsFixed(2)}',
                         style: AppTextStyles.titleMedium.copyWith(
                           fontWeight: FontWeight.w700,
                           color: AppColors.primary,
@@ -1494,52 +1486,7 @@ class _CartPageState extends State<CartPage>
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          Text('Shipping', style: AppTextStyles.bodyMedium),
-                          if (summary.totalShippingCost == 0) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.success.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                'FREE',
-                                style: AppTextStyles.labelSmall.copyWith(
-                                  color: AppColors.success,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      Text(
-                        summary.totalShippingCost == 0
-                            ? 'Free'
-                            : '₱${summary.totalShippingCost.toStringAsFixed(2)}',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: summary.totalShippingCost == 0
-                              ? AppColors.success
-                              : AppColors.onSurface,
-                          fontFamily: summary.totalShippingCost == 0
-                              ? null
-                              : 'Roboto', // Use Roboto for peso sign
-                        ),
-                      ),
-                    ],
-                  ),
-
+                  
                   if (summary.sellersWithSelectedItems.length > 1) ...[
                     const SizedBox(height: 8),
                     Container(
@@ -1582,7 +1529,7 @@ class _CartPageState extends State<CartPage>
                         ),
                       ),
                       Text(
-                        '₱${summary.grandTotal.toStringAsFixed(2)}',
+                        '₱${summary.selectedItemsTotal.toStringAsFixed(2)}',
                         style: AppTextStyles.titleLarge.copyWith(
                           color: AppColors.primary,
                           fontWeight: FontWeight.w700,

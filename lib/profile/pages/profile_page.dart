@@ -9,6 +9,7 @@ import 'orders_page.dart';
 import 'seller_listings_page.dart';
 import 'chats_page.dart';
 import 'settings/settings_page.dart';
+import 'package:dentpal/utils/app_logger.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -57,7 +58,7 @@ class _ProfilePageState extends State<ProfilePage> {
         }
       }
     } catch (e) {
-      debugPrint('Error loading user data: $e');
+      AppLogger.d('Error loading user data: $e');
     }
 
     return {

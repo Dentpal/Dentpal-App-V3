@@ -82,8 +82,8 @@ class ProductSearchService {
     int limit = _defaultPageSize,
   }) async {
     try {
-      AppLogger.d('🔍 ProductSearchService: Starting search with query: "$searchQuery"');
-      AppLogger.d('🔍 ProductSearchService: Filters - categories: ${filters?.categoryIds}, subCategories: ${filters?.subCategoryIds}');
+      AppLogger.d('ProductSearchService: Starting search with query: "$searchQuery"');
+      AppLogger.d('ProductSearchService: Filters - categories: ${filters?.categoryIds}, subCategories: ${filters?.subCategoryIds}');
       
       // If we have a search query, use text-based search
       if (searchQuery != null && searchQuery.trim().isNotEmpty) {
@@ -120,43 +120,43 @@ class ProductSearchService {
     int limit = _defaultPageSize,
   }) async {
     try {
-      AppLogger.d('🔍 ProductSearchService: Performing text search for: "$searchQuery"');
+      AppLogger.d('ProductSearchService: Performing text search for: "$searchQuery"');
       
       // Convert search query to lowercase for case-insensitive search
       String lowerQuery = searchQuery.toLowerCase();
       
       // Create search terms for better matching
       List<String> searchTerms = lowerQuery.split(' ').where((term) => term.isNotEmpty).toList();
-      AppLogger.d('🔍 ProductSearchService: Search terms: $searchTerms');
+      AppLogger.d('ProductSearchService: Search terms: $searchTerms');
       
       // Use the simplest possible query to avoid any index requirements
       Query baseQuery = _firestore
           .collection('Product');
       
       // No where clauses, no orderBy - just get documents and filter everything client-side
-      AppLogger.d('🔍 ProductSearchService: Using simplest query (no filters, no ordering)');
+      AppLogger.d('ProductSearchService: Using simplest query (no filters, no ordering)');
       
       // Apply pagination if we have a lastDocument
       if (lastDocument != null) {
         baseQuery = baseQuery.startAfterDocument(lastDocument);
-        AppLogger.d('🔍 ProductSearchService: Pagination applied with lastDocument');
+        AppLogger.d('ProductSearchService: Pagination applied with lastDocument');
       }
       
       // Fetch more documents than needed for client-side filtering
       int fetchLimit = limit * 10; // Fetch 10x to account for filtering
       baseQuery = baseQuery.limit(fetchLimit);
       
-      AppLogger.d('🔍 ProductSearchService: Executing simple query with limit: $fetchLimit');
+      AppLogger.d('ProductSearchService: Executing simple query with limit: $fetchLimit');
       
       QuerySnapshot querySnapshot = await baseQuery.get();
-      AppLogger.d('🔍 ProductSearchService: Fetched ${querySnapshot.docs.length} documents for filtering');
+      AppLogger.d('ProductSearchService: Fetched ${querySnapshot.docs.length} documents for filtering');
       
       // Debug: Log first few products to see what we're getting
       if (querySnapshot.docs.isNotEmpty) {
         for (int i = 0; i < querySnapshot.docs.length && i < 3; i++) {
           var doc = querySnapshot.docs[i];
           Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-          AppLogger.d('🔍 ProductSearchService: Sample product ${i + 1}: name="${data['name']}", description="${data['description']}"');
+          AppLogger.d('ProductSearchService: Sample product ${i + 1}: name="${data['name']}", description="${data['description']}"');
         }
       }
       
@@ -169,7 +169,7 @@ class ProductSearchService {
         bool isDraft = data['isDraft'] ?? false;
         bool isArchived = data['isArchived'] ?? false;
         if (!isActive || isDraft || isArchived) {
-          AppLogger.d('🔍 ProductSearchService: Filtering out inactive/draft/archived product: ${data['name']}');
+          AppLogger.d('ProductSearchService: Filtering out inactive/draft/archived product: ${data['name']}');
           return false;
         }
         
@@ -177,14 +177,14 @@ class ProductSearchService {
         String name = (data['name'] ?? '').toString().toLowerCase();
         String description = (data['description'] ?? '').toString().toLowerCase();
         
-        AppLogger.d('🔍 ProductSearchService: Checking product: "$name" against terms: $searchTerms');
+        AppLogger.d('ProductSearchService: Checking product: "$name" against terms: $searchTerms');
         
         bool textMatches = searchTerms.any((term) => 
           name.contains(term) || description.contains(term)
         );
         
         if (!textMatches) {
-          AppLogger.d('🔍 ProductSearchService: No text match for: "$name"');
+          AppLogger.d('ProductSearchService: No text match for: "$name"');
           return false;
         }
         
@@ -192,7 +192,7 @@ class ProductSearchService {
         if (filters?.categoryIds.isNotEmpty == true) {
           String productCategoryId = data['categoryID'] ?? '';
           if (!filters!.categoryIds.contains(productCategoryId)) {
-            AppLogger.d('🔍 ProductSearchService: Category filter mismatch for: "$name"');
+            AppLogger.d('ProductSearchService: Category filter mismatch for: "$name"');
             return false;
           }
         }
@@ -201,7 +201,7 @@ class ProductSearchService {
         if (filters?.subCategoryIds.isNotEmpty == true) {
           String productSubCategoryId = data['subCategoryID'] ?? '';
           if (!filters!.subCategoryIds.contains(productSubCategoryId)) {
-            AppLogger.d('🔍 ProductSearchService: Subcategory filter mismatch for: "$name"');
+            AppLogger.d('ProductSearchService: Subcategory filter mismatch for: "$name"');
             return false;
           }
         }
@@ -210,19 +210,19 @@ class ProductSearchService {
         if (filters?.hasWarranty != null) {
           bool productHasWarranty = data['hasWarranty'] ?? false;
           if (productHasWarranty != filters!.hasWarranty) {
-            AppLogger.d('🔍 ProductSearchService: Warranty filter mismatch for: "$name"');
+            AppLogger.d('ProductSearchService: Warranty filter mismatch for: "$name"');
             return false;
           }
         }
         
-        AppLogger.d('✅ ProductSearchService: All filters passed for product: "$name"');
+        AppLogger.d('ProductSearchService: All filters passed for product: "$name"');
         return true;
       }).toList();
       
       // Take only the requested limit
       List<DocumentSnapshot> limitedDocs = matchingDocs.take(limit).toList();
       
-      AppLogger.d('🔍 ProductSearchService: Found ${limitedDocs.length} matching products after client-side filtering');
+      AppLogger.d('ProductSearchService: Found ${limitedDocs.length} matching products after client-side filtering');
       
       // Convert to Product objects with variations
       List<Product> products = [];
@@ -233,9 +233,9 @@ class ProductSearchService {
           // Apply price filtering if specified (client-side)
           if (_matchesPriceFilter(product, filters)) {
             products.add(product);
-            AppLogger.d('✅ ProductSearchService: Added product: ${product.name}');
+            AppLogger.d('ProductSearchService: Added product: ${product.name}');
           } else {
-            AppLogger.d('⚠️ ProductSearchService: Product ${product.name} filtered out by price');
+            AppLogger.d('ProductSearchService: Product ${product.name} filtered out by price');
           }
         } catch (e) {
           AppLogger.w('⚠️ ProductSearchService: Error building product ${doc.id}: $e');
@@ -245,14 +245,14 @@ class ProductSearchService {
       // Apply client-side sorting
       if (filters?.sortBy != null) {
         products = sortProducts(products, filters!.sortBy);
-        AppLogger.d('🔍 ProductSearchService: Applied client-side sorting: ${filters.sortBy}');
+        AppLogger.d('ProductSearchService: Applied client-side sorting: ${filters.sortBy}');
       }
       
       // Determine if there are more results
       bool hasMore = matchingDocs.length > limit;
       DocumentSnapshot? lastDoc = limitedDocs.isNotEmpty ? limitedDocs.last : null;
       
-      AppLogger.d('✅ ProductSearchService: Returning ${products.length} products, hasMore: $hasMore');
+      AppLogger.d('ProductSearchService: Returning ${products.length} products, hasMore: $hasMore');
       
       return SearchResult(
         products: products,
@@ -277,14 +277,14 @@ class ProductSearchService {
     int limit = _defaultPageSize,
   }) async {
     try {
-      AppLogger.d('🔍 ProductSearchService: Performing filtered browse');
+      AppLogger.d('ProductSearchService: Performing filtered browse');
       
       // Use the simplest possible query to avoid any index requirements
       Query query = _firestore
           .collection('Product');
       
       // No where clauses, no orderBy - just get documents and filter everything client-side
-      AppLogger.d('🔍 ProductSearchService: Using simplest query (no filters, no ordering)');
+      AppLogger.d('ProductSearchService: Using simplest query (no filters, no ordering)');
       
       // Apply pagination if we have a lastDocument
       if (lastDocument != null) {
@@ -295,7 +295,7 @@ class ProductSearchService {
       query = query.limit(limit * 10);
       
       QuerySnapshot querySnapshot = await query.get();
-      AppLogger.d('🔍 ProductSearchService: Fetched ${querySnapshot.docs.length} documents');
+      AppLogger.d('ProductSearchService: Fetched ${querySnapshot.docs.length} documents');
       
       // Filter results client-side
       List<DocumentSnapshot> filteredDocs = querySnapshot.docs.where((doc) {
@@ -349,13 +349,13 @@ class ProductSearchService {
       // Apply client-side sorting
       if (filters?.sortBy != null) {
         products = sortProducts(products, filters!.sortBy);
-        AppLogger.d('🔍 ProductSearchService: Applied client-side sorting: ${filters.sortBy}');
+        AppLogger.d('ProductSearchService: Applied client-side sorting: ${filters.sortBy}');
       }
       
       bool hasMore = filteredDocs.length > limit;
       DocumentSnapshot? lastDoc = limitedDocs.isNotEmpty ? limitedDocs.last : null;
       
-      AppLogger.d('✅ ProductSearchService: Returning ${products.length} products, hasMore: $hasMore');
+      AppLogger.d('ProductSearchService: Returning ${products.length} products, hasMore: $hasMore');
       
       return SearchResult(
         products: products,

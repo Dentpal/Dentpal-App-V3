@@ -43,18 +43,18 @@ class PaymongoCheckoutSession {
   });
 
   factory PaymongoCheckoutSession.fromJson(Map<String, dynamic> json) {
-    AppLogger.d('🐛 PaymongoCheckoutSession.fromJson - Raw JSON: $json');
+    AppLogger.d('PaymongoCheckoutSession.fromJson - Raw JSON: $json');
     
     try {
       final id = json['id'] ?? '';
       final type = json['type'] ?? '';
-      AppLogger.d('🐛 PaymongoCheckoutSession.fromJson - id: $id, type: $type');
+      AppLogger.d('PaymongoCheckoutSession.fromJson - id: $id, type: $type');
       
-      AppLogger.d('🐛 PaymongoCheckoutSession.fromJson - About to parse attributes...');
+      AppLogger.d('PaymongoCheckoutSession.fromJson - About to parse attributes...');
       final attributes = PaymongoCheckoutSessionAttributes.fromJson(
         json['attributes'] as Map<String, dynamic>,
       );
-      AppLogger.d('🐛 PaymongoCheckoutSession.fromJson - Successfully parsed attributes');
+      AppLogger.d('PaymongoCheckoutSession.fromJson - Successfully parsed attributes');
       
       return PaymongoCheckoutSession(
         id: id,
@@ -62,9 +62,9 @@ class PaymongoCheckoutSession {
         attributes: attributes,
       );
     } catch (e, stackTrace) {
-      AppLogger.d('🐛 ❌ PaymongoCheckoutSession.fromJson - Error occurred: $e');
-      AppLogger.d('🐛 ❌ PaymongoCheckoutSession.fromJson - Stack trace: $stackTrace');
-      AppLogger.d('🐛 ❌ PaymongoCheckoutSession.fromJson - Input JSON: $json');
+      AppLogger.d('PaymongoCheckoutSession.fromJson - Error occurred: $e');
+      AppLogger.d('PaymongoCheckoutSession.fromJson - Stack trace: $stackTrace');
+      AppLogger.d('PaymongoCheckoutSession.fromJson - Input JSON: $json');
       rethrow;
     }
   }
@@ -108,19 +108,19 @@ class PaymongoCheckoutSessionAttributes {
   });
 
   factory PaymongoCheckoutSessionAttributes.fromJson(Map<String, dynamic> json) {
-    AppLogger.d('🐛 PaymongoCheckoutSessionAttributes.fromJson - Raw JSON: $json');
+    AppLogger.d('PaymongoCheckoutSessionAttributes.fromJson - Raw JSON: $json');
     
     try {
       // Parse basic string fields
       final checkoutUrl = json['checkout_url'] ?? '';
       final referenceNumber = json['reference_number'] ?? '';
       final status = json['status'] ?? '';
-      AppLogger.d('🐛 PaymongoCheckoutSessionAttributes.fromJson - Basic fields parsed');
+      AppLogger.d('PaymongoCheckoutSessionAttributes.fromJson - Basic fields parsed');
       
       // Parse expires_at
       DateTime? expiresAt;
       final expiresAtValue = json['expires_at'];
-      AppLogger.d('🐛 PaymongoCheckoutSessionAttributes.fromJson - expires_at: $expiresAtValue (type: ${expiresAtValue.runtimeType})');
+      AppLogger.d('PaymongoCheckoutSessionAttributes.fromJson - expires_at: $expiresAtValue (type: ${expiresAtValue.runtimeType})');
       if (expiresAtValue != null) {
         if (expiresAtValue is int) {
           expiresAt = DateTime.fromMillisecondsSinceEpoch(expiresAtValue * 1000);
@@ -131,33 +131,33 @@ class PaymongoCheckoutSessionAttributes {
       
       // Parse metadata
       final metadata = json['metadata'];
-      AppLogger.d('🐛 PaymongoCheckoutSessionAttributes.fromJson - metadata: $metadata');
+      AppLogger.d('PaymongoCheckoutSessionAttributes.fromJson - metadata: $metadata');
       
       // Parse billing
       PaymongoCheckoutBilling? billing;
       final billingData = json['billing'];
-      AppLogger.d('🐛 PaymongoCheckoutSessionAttributes.fromJson - billing data: $billingData');
+      AppLogger.d('PaymongoCheckoutSessionAttributes.fromJson - billing data: $billingData');
       if (billingData != null) {
         billing = PaymongoCheckoutBilling.fromJson(billingData as Map<String, dynamic>);
       }
       
       // Parse line_items
       final lineItemsData = json['line_items'] as List<dynamic>?;
-      AppLogger.d('🐛 PaymongoCheckoutSessionAttributes.fromJson - line_items: $lineItemsData');
+      AppLogger.d('PaymongoCheckoutSessionAttributes.fromJson - line_items: $lineItemsData');
       final lineItems = lineItemsData?.map((item) => PaymongoLineItem.fromJson(item as Map<String, dynamic>)).toList() ?? [];
       
       // Parse payment_method_types
       final paymentMethodTypes = List<String>.from(json['payment_method_types'] ?? []);
-      AppLogger.d('🐛 PaymongoCheckoutSessionAttributes.fromJson - payment_method_types: $paymentMethodTypes');
+      AppLogger.d('PaymongoCheckoutSessionAttributes.fromJson - payment_method_types: $paymentMethodTypes');
       
       // Parse URLs
       final successUrl = json['success_url'];
       final cancelUrl = json['cancel_url'];
-      AppLogger.d('🐛 PaymongoCheckoutSessionAttributes.fromJson - URLs parsed');
+      AppLogger.d('PaymongoCheckoutSessionAttributes.fromJson - URLs parsed');
       
       // Parse created_at
       final createdAtValue = json['created_at'];
-      AppLogger.d('🐛 PaymongoCheckoutSessionAttributes.fromJson - created_at: $createdAtValue (type: ${createdAtValue.runtimeType})');
+      AppLogger.d('PaymongoCheckoutSessionAttributes.fromJson - created_at: $createdAtValue (type: ${createdAtValue.runtimeType})');
       DateTime createdAt;
       if (createdAtValue is int) {
         createdAt = DateTime.fromMillisecondsSinceEpoch(createdAtValue * 1000);
@@ -169,7 +169,7 @@ class PaymongoCheckoutSessionAttributes {
       
       // Parse updated_at
       final updatedAtValue = json['updated_at'];
-      AppLogger.d('🐛 PaymongoCheckoutSessionAttributes.fromJson - updated_at: $updatedAtValue (type: ${updatedAtValue.runtimeType})');
+      AppLogger.d('PaymongoCheckoutSessionAttributes.fromJson - updated_at: $updatedAtValue (type: ${updatedAtValue.runtimeType})');
       DateTime updatedAt;
       if (updatedAtValue is int) {
         updatedAt = DateTime.fromMillisecondsSinceEpoch(updatedAtValue * 1000);
@@ -179,7 +179,7 @@ class PaymongoCheckoutSessionAttributes {
         throw Exception('Invalid updated_at format: $updatedAtValue');
       }
       
-      AppLogger.d('🐛 PaymongoCheckoutSessionAttributes.fromJson - All fields parsed successfully');
+      AppLogger.d('PaymongoCheckoutSessionAttributes.fromJson - All fields parsed successfully');
       
       return PaymongoCheckoutSessionAttributes(
         checkoutUrl: checkoutUrl,
@@ -196,9 +196,9 @@ class PaymongoCheckoutSessionAttributes {
         updatedAt: updatedAt,
       );
     } catch (e, stackTrace) {
-      AppLogger.d('🐛 ❌ PaymongoCheckoutSessionAttributes.fromJson - Error occurred: $e');
-      AppLogger.d('🐛 ❌ PaymongoCheckoutSessionAttributes.fromJson - Stack trace: $stackTrace');
-      AppLogger.d('🐛 ❌ PaymongoCheckoutSessionAttributes.fromJson - Input JSON: $json');
+      AppLogger.d('PaymongoCheckoutSessionAttributes.fromJson - Error occurred: $e');
+      AppLogger.d('PaymongoCheckoutSessionAttributes.fromJson - Stack trace: $stackTrace');
+      AppLogger.d('PaymongoCheckoutSessionAttributes.fromJson - Input JSON: $json');
       rethrow;
     }
   }
@@ -716,45 +716,45 @@ class CreateOrderResponse {
   });
 
   factory CreateOrderResponse.fromJson(Map<String, dynamic> json) {
-    AppLogger.d('🐛 CreateOrderResponse.fromJson - Raw JSON: $json');
+    AppLogger.d('CreateOrderResponse.fromJson - Raw JSON: $json');
     
     try {
       // Parse order_id
       final orderId = json['order_id'] ?? '';
-      AppLogger.d('🐛 CreateOrderResponse.fromJson - orderId: $orderId');
+      AppLogger.d('CreateOrderResponse.fromJson - orderId: $orderId');
       
       // Parse payment_intent
       PaymongoPaymentIntent? paymentIntent;
       final paymentIntentData = json['payment_intent'];
-      AppLogger.d('🐛 CreateOrderResponse.fromJson - payment_intent data: $paymentIntentData (type: ${paymentIntentData.runtimeType})');
+      AppLogger.d('CreateOrderResponse.fromJson - payment_intent data: $paymentIntentData (type: ${paymentIntentData.runtimeType})');
       
       if (paymentIntentData != null) {
-        AppLogger.d('🐛 CreateOrderResponse.fromJson - About to parse PaymongoPaymentIntent...');
+        AppLogger.d('CreateOrderResponse.fromJson - About to parse PaymongoPaymentIntent...');
         paymentIntent = PaymongoPaymentIntent.fromJson(paymentIntentData as Map<String, dynamic>);
-        AppLogger.d('🐛 CreateOrderResponse.fromJson - Successfully parsed PaymongoPaymentIntent');
+        AppLogger.d('CreateOrderResponse.fromJson - Successfully parsed PaymongoPaymentIntent');
       }
       
       // Parse checkout_session
       PaymongoCheckoutSession? checkoutSession;
       final checkoutSessionData = json['checkout_session'];
-      AppLogger.d('🐛 CreateOrderResponse.fromJson - checkout_session data: $checkoutSessionData (type: ${checkoutSessionData.runtimeType})');
+      AppLogger.d('CreateOrderResponse.fromJson - checkout_session data: $checkoutSessionData (type: ${checkoutSessionData.runtimeType})');
       
       if (checkoutSessionData != null) {
-        AppLogger.d('🐛 CreateOrderResponse.fromJson - About to parse PaymongoCheckoutSession...');
+        AppLogger.d('CreateOrderResponse.fromJson - About to parse PaymongoCheckoutSession...');
         checkoutSession = PaymongoCheckoutSession.fromJson(checkoutSessionData as Map<String, dynamic>);
-        AppLogger.d('🐛 CreateOrderResponse.fromJson - Successfully parsed PaymongoCheckoutSession');
+        AppLogger.d('CreateOrderResponse.fromJson - Successfully parsed PaymongoCheckoutSession');
       }
       
       // Parse total_amount
       final totalAmountValue = json['total_amount'];
-      AppLogger.d('🐛 CreateOrderResponse.fromJson - total_amount: $totalAmountValue (type: ${totalAmountValue.runtimeType})');
+      AppLogger.d('CreateOrderResponse.fromJson - total_amount: $totalAmountValue (type: ${totalAmountValue.runtimeType})');
       final totalAmount = (totalAmountValue ?? 0.0).toDouble();
       
       // Parse currency
       final currency = json['currency'] ?? 'PHP';
-      AppLogger.d('🐛 CreateOrderResponse.fromJson - currency: $currency');
+      AppLogger.d('CreateOrderResponse.fromJson - currency: $currency');
       
-      AppLogger.d('🐛 CreateOrderResponse.fromJson - Creating CreateOrderResponse object...');
+      AppLogger.d('CreateOrderResponse.fromJson - Creating CreateOrderResponse object...');
       return CreateOrderResponse(
         orderId: orderId,
         paymentIntent: paymentIntent,
@@ -763,9 +763,9 @@ class CreateOrderResponse {
         currency: currency,
       );
     } catch (e, stackTrace) {
-      AppLogger.d('🐛 ❌ CreateOrderResponse.fromJson - Error occurred: $e');
-      AppLogger.d('🐛 ❌ CreateOrderResponse.fromJson - Stack trace: $stackTrace');
-      AppLogger.d('🐛 ❌ CreateOrderResponse.fromJson - Input JSON: $json');
+      AppLogger.d('CreateOrderResponse.fromJson - Error occurred: $e');
+      AppLogger.d('CreateOrderResponse.fromJson - Stack trace: $stackTrace');
+      AppLogger.d('CreateOrderResponse.fromJson - Input JSON: $json');
       rethrow;
     }
   }

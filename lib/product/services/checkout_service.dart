@@ -7,6 +7,7 @@ import '../models/order_model.dart';
 import '../models/paymongo_model.dart';
 import '../models/cart_model.dart';
 import '../../profile/models/shipping_address.dart';
+import 'cart_service.dart';
 
 class CheckoutService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -31,7 +32,7 @@ class CheckoutService {
     String? cancelUrl,
   }) async {
     try {
-      AppLogger.d('🛒 Creating order with checkout session for ${cartItemIds.length} items');
+      AppLogger.d('Creating order with checkout session for ${cartItemIds.length} items');
 
       // Get Firebase Auth token for authentication
       final user = _auth.currentUser;
@@ -64,24 +65,24 @@ class CheckoutService {
         throw Exception('Failed to create checkout session: ${response.body}');
       }
 
-      AppLogger.d('🐛 RAW Response body: ${response.body}');
+      AppLogger.d('RAW Response body: ${response.body}');
       
       final responseData = json.decode(response.body) as Map<String, dynamic>;
-      AppLogger.d('🐛 Parsed response data: $responseData');
+      AppLogger.d('Parsed response data: $responseData');
       
       if (responseData['success'] != true) {
         throw Exception(responseData['error'] ?? 'Failed to create checkout session');
       }
 
-      AppLogger.d('🐛 About to parse CreateOrderResponse from: ${responseData['data']}');
+      AppLogger.d('About to parse CreateOrderResponse from: ${responseData['data']}');
       final orderResponse = CreateOrderResponse.fromJson(responseData['data'] as Map<String, dynamic>);
-      AppLogger.d('🐛 Successfully parsed CreateOrderResponse: ${orderResponse.toString()}');
+      AppLogger.d('Successfully parsed CreateOrderResponse: ${orderResponse.toString()}');
       
-      AppLogger.d('✅ Order created successfully with checkout session: ${orderResponse.checkoutSession?.id}');
+      AppLogger.d('Order created successfully with checkout session: ${orderResponse.checkoutSession?.id}');
       return orderResponse;
 
     } catch (e) {
-      AppLogger.d('❌ Error creating order with checkout session: $e');
+      AppLogger.d('Error creating order with checkout session: $e');
       rethrow;
     }
   }
@@ -94,7 +95,7 @@ class CheckoutService {
     List<String> paymentMethodAllowed = const ['card', 'gcash', 'grab_pay', 'paymaya'],
   }) async {
     try {
-      AppLogger.d('🛒 Creating order with payment intent for ${cartItemIds.length} items');
+      AppLogger.d('Creating order with payment intent for ${cartItemIds.length} items');
 
       // Get Firebase Auth token for authentication
       final user = _auth.currentUser;
@@ -133,11 +134,11 @@ class CheckoutService {
 
       final orderResponse = CreateOrderResponse.fromJson(responseData['data'] as Map<String, dynamic>);
       
-      AppLogger.d('✅ Order created successfully with payment intent: ${orderResponse.paymentIntent?.id ?? "N/A"}');
+      AppLogger.d('Order created successfully with payment intent: ${orderResponse.paymentIntent?.id ?? "N/A"}');
       return orderResponse;
 
     } catch (e) {
-      AppLogger.d('❌ Error creating order with payment intent: $e');
+      AppLogger.d('Error creating order with payment intent: $e');
       rethrow;
     }
   }
@@ -149,7 +150,7 @@ class CheckoutService {
     Map<String, dynamic>? paymentDetails,
   }) async {
     try {
-      AppLogger.d('💳 Processing payment with method: $paymentMethod');
+      AppLogger.d('Processing payment with method: $paymentMethod');
 
       // Note: In a real implementation, this would integrate with Paymongo's client SDK
       // For now, we'll simulate the payment process
@@ -169,7 +170,7 @@ class CheckoutService {
       );
 
     } catch (e) {
-      AppLogger.d('❌ Error processing payment: $e');
+      AppLogger.d('Error processing payment: $e');
       return PaymentResult.failure(
         errorMessage: e.toString(),
         additionalData: {'payment_method': paymentMethod},
@@ -180,13 +181,13 @@ class CheckoutService {
   // Get order by ID using Firestore directly (for checkout verification purposes only)
   Future<Order?> getOrder(String orderId) async {
     try {
-      AppLogger.d('📦 Fetching order: $orderId');
+      AppLogger.d('Fetching order: $orderId');
 
       final userId = _getCurrentUserId();
       final orderDoc = await _firestore.collection('Order').doc(orderId).get();
       
       if (!orderDoc.exists) {
-        AppLogger.d('❌ Order not found: $orderId');
+        AppLogger.d('Order not found: $orderId');
         return null;
       }
 
@@ -202,31 +203,67 @@ class CheckoutService {
       return Order.fromFirestore(orderDoc);
 
     } catch (e) {
-      AppLogger.d('❌ Error fetching order: $e');
+      AppLogger.d('Error fetching order: $e');
       return null;
     }
   }
 
-  // Calculate shipping cost (placeholder implementation)
+  // Calculate shipping cost using JRS Express for checkout
   Future<double> calculateShippingCost({
     required List<CartItem> items,
     required ShippingAddress address,
   }) async {
     try {
-      // Simple shipping calculation - in a real app, this might involve:
-      // - Distance calculation
-      // - Weight/size calculation
-      // - Carrier API integration
-      // - Different rates for different sellers
-      // For now, return a fixed rate per seller
-      final sellers = items.map((item) => item.sellerId).toSet();
-      const shippingCostPerSeller = 50.0;
+      AppLogger.d('Calculating shipping cost for checkout');
+      AppLogger.d('   Items: ${items.length}');
+      AppLogger.d('   Address: ${address.city}, ${address.state}');
       
-      return sellers.length * shippingCostPerSeller;
+      // Group items by seller to calculate shipping per seller
+      Map<String, List<CartItem>> sellerItemsMap = {};
+      
+      for (var item in items) {
+        final sellerId = item.sellerId ?? 'unknown';
+        if (!sellerItemsMap.containsKey(sellerId)) {
+          sellerItemsMap[sellerId] = [];
+        }
+        sellerItemsMap[sellerId]!.add(item);
+      }
+      
+      double totalShippingCost = 0.0;
+      
+      // Calculate shipping for each seller separately
+      for (var entry in sellerItemsMap.entries) {
+        final sellerId = entry.key;
+        final sellerItems = entry.value;
+        
+        try {
+          // Create CartService instance to use the new JRS shipping calculation
+          final cartService = CartService();
+          final recipientAddress = '${address.city}, ${address.state}';
+          
+          final shippingCost = await cartService.calculateShippingCostWithAddress(
+            sellerId: sellerId,
+            items: sellerItems,
+            recipientAddress: recipientAddress,
+          );
+          
+          totalShippingCost += shippingCost;
+          
+          AppLogger.d('Seller $sellerId shipping cost: ₱$shippingCost');
+          
+        } catch (e) {
+          AppLogger.d('Error calculating shipping for seller $sellerId: $e');
+          // Fallback to simple calculation for this seller
+          totalShippingCost += 50.0;
+        }
+      }
+      
+      AppLogger.d('Total shipping cost: ₱$totalShippingCost');
+      return totalShippingCost;
 
     } catch (e) {
-      AppLogger.d('❌ Error calculating shipping cost: $e');
-      return 50.0; // Default shipping cost
+      AppLogger.d('Error calculating shipping cost: $e');
+      return 50.0; // Default shipping cost per seller
     }
   }
 
@@ -282,7 +319,7 @@ class CheckoutService {
       return true;
 
     } catch (e) {
-      AppLogger.d('❌ Checkout validation failed: $e');
+      AppLogger.d('Checkout validation failed: $e');
       rethrow;
     }
   }
@@ -304,7 +341,7 @@ class CheckoutService {
       ];
 
     } catch (e) {
-      AppLogger.d('❌ Error getting payment methods: $e');
+      AppLogger.d('Error getting payment methods: $e');
       return [PaymentMethod.card]; // Fallback to card only
     }
   }
@@ -312,7 +349,7 @@ class CheckoutService {
   // Verify payment status with Paymongo and update order if needed
   Future<bool> verifyPaymentStatus(String orderId) async {
     try {
-      AppLogger.d('🔍 Verifying payment status for order: $orderId');
+      AppLogger.d('Verifying payment status for order: $orderId');
 
       final user = _auth.currentUser;
       if (user == null) {
@@ -346,13 +383,13 @@ class CheckoutService {
       final paymentStatus = data['paymentStatus'] as String;
       final updatedStatus = data['status'] as String;
 
-      AppLogger.d('✅ Payment verification complete - Status: $paymentStatus, Order Status: $updatedStatus');
+      AppLogger.d('Payment verification complete - Status: $paymentStatus, Order Status: $updatedStatus');
       
       // Return true if payment was confirmed and order was updated
       return paymentStatus == 'paid' && updatedStatus == 'confirmed';
 
     } catch (e) {
-      AppLogger.d('❌ Error verifying payment status: $e');
+      AppLogger.d('Error verifying payment status: $e');
       rethrow;
     }
   }
@@ -360,7 +397,7 @@ class CheckoutService {
   // Cancel order (if payment is still pending)
   Future<bool> cancelOrder(String orderId) async {
     try {
-      AppLogger.d('❌ Cancelling order: $orderId');
+      AppLogger.d('Cancelling order: $orderId');
 
       // Check if order exists and belongs to current user
       final order = await getOrder(orderId);
@@ -391,11 +428,11 @@ class CheckoutService {
         ]),
       });
 
-      AppLogger.d('✅ Order cancelled successfully');
+      AppLogger.d('Order cancelled successfully');
       return true;
 
     } catch (e) {
-      AppLogger.d('❌ Error cancelling order: $e');
+      AppLogger.d('Error cancelling order: $e');
       rethrow;
     }
   }
