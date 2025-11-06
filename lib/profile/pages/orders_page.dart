@@ -466,9 +466,11 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
             
             // Action Buttons
             Row(
+              mainAxisAlignment: kIsWeb ? MainAxisAlignment.end : MainAxisAlignment.start,
               children: [
-                Expanded(
-                  child: OutlinedButton(
+                if (kIsWeb) ...[
+                  // Web layout - buttons take only necessary space
+                  OutlinedButton(
                     onPressed: () => _viewOrderDetails(order),
                     style: OutlinedButton.styleFrom(
                       side: BorderSide(color: AppColors.primary),
@@ -479,11 +481,9 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                     ),
                     child: const Text('View Details'),
                   ),
-                ),
-                const SizedBox(width: 12),
-                if (_canResumePayment(order))
-                  Expanded(
-                    child: ElevatedButton(
+                  const SizedBox(width: 12),
+                  if (_canResumePayment(order))
+                    ElevatedButton(
                       onPressed: () => _resumePayment(order),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.warning,
@@ -493,11 +493,9 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                         ),
                       ),
                       child: const Text('Resume Payment'),
-                    ),
-                  )
-                else if (_canReorder(order.status))
-                  Expanded(
-                    child: ElevatedButton(
+                    )
+                  else if (_canReorder(order.status))
+                    ElevatedButton(
                       onPressed: () => _reorderItems(order),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
@@ -508,7 +506,51 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                       ),
                       child: const Text('Reorder'),
                     ),
+                ] else ...[
+                  // Mobile layout - buttons expanded
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => _viewOrderDetails(order),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: AppColors.primary),
+                        foregroundColor: AppColors.primary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('View Details'),
+                    ),
                   ),
+                  const SizedBox(width: 12),
+                  if (_canResumePayment(order))
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => _resumePayment(order),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.warning,
+                          foregroundColor: AppColors.onPrimary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text('Resume Payment'),
+                      ),
+                    )
+                  else if (_canReorder(order.status))
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => _reorderItems(order),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: AppColors.onPrimary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text('Reorder'),
+                      ),
+                    ),
+                ],
               ],
             ),
           ],
@@ -626,8 +668,8 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
 
     switch (status) {
       case order_model.OrderStatus.pending:
-        backgroundColor = AppColors.warning.withValues(alpha: 0.1);
-        textColor = AppColors.warning;
+        backgroundColor = AppColors.grey500.withValues(alpha: 0.1);
+        textColor = AppColors.grey500;
         icon = Icons.pending;
         break;
       case order_model.OrderStatus.confirmed:
@@ -666,8 +708,8 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
         icon = Icons.error;
         break;
       case order_model.OrderStatus.expired:
-        backgroundColor = AppColors.grey400.withValues(alpha: 0.1);
-        textColor = AppColors.grey600;
+        backgroundColor = AppColors.warning.withValues(alpha: 0.1);
+        textColor = AppColors.warning;
         icon = Icons.access_time;
         break;
     }
@@ -734,8 +776,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
   }
 
   bool _canReorder(order_model.OrderStatus status) {
-    return status == order_model.OrderStatus.confirmed || 
-           status == order_model.OrderStatus.delivered || 
+    return status == order_model.OrderStatus.delivered || 
            status == order_model.OrderStatus.expired;
   }
 
