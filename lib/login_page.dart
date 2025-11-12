@@ -42,7 +42,7 @@ class _LoginPageState extends State<LoginPage> {
     final credentials = await CredentialManager.loadCredentials();
     final savedEmail = credentials['email'];
     final savedPassword = credentials['password'];
-    
+
     if (savedEmail != null && savedPassword != null) {
       setState(() {
         _emailController.text = savedEmail;
@@ -55,7 +55,10 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _saveCredentials() async {
     if (_rememberMe) {
       // Save credentials when remember me is checked
-      await CredentialManager.saveCredentials(_emailController.text.trim(), _passwordController.text);
+      await CredentialManager.saveCredentials(
+        _emailController.text.trim(),
+        _passwordController.text,
+      );
     } else {
       // Clear saved credentials when remember me is unchecked
       await CredentialManager.clearCredentials();
@@ -148,7 +151,8 @@ class _LoginPageState extends State<LoginPage> {
         // Try to extract the email from the found UserLookup document
         String? userEmail;
         try {
-          final userLookupData = userLookupQuery.docs.first.data() as Map<String, dynamic>;
+          final userLookupData =
+              userLookupQuery.docs.first.data() as Map<String, dynamic>;
           userEmail = userLookupData['email'] as String?;
         } catch (e) {
           // Handle case where email field doesn't exist or isn't a string
@@ -247,17 +251,15 @@ class _LoginPageState extends State<LoginPage> {
             MaterialPageRoute(builder: (context) => const HomePage()),
           );
         } else {
-            // If uid is null, force sign out and ask user to try again
-            await FirebaseAuth.instance.signOut();
-            ScaffoldMessenger.of(context).showSnackBar(
+          // If uid is null, force sign out and ask user to try again
+          await FirebaseAuth.instance.signOut();
+          ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text(
-              'Something went wrong! Please log in again.',
-              ),
+              content: Text('Something went wrong! Please log in again.'),
               duration: Duration(seconds: 3),
               backgroundColor: Colors.orange,
             ),
-            );
+          );
         }
       }
     } on FirebaseAuthException catch (e) {
@@ -309,436 +311,864 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWebView = screenWidth > 900;
+
     return Scaffold(
-      // Set background color to match the form's color for a seamless look
       backgroundColor: AppColors.surface,
       body: Stack(
         children: [
-          // Background gradient covering full screen
           Container(
-            decoration: const BoxDecoration(gradient: AppGradients.teal),
+            decoration: BoxDecoration(
+              color: isWebView
+                  ? const Color(0xFFF5F5F5)
+                  : null, // dirty white on web
+              gradient: isWebView
+                  ? null
+                  : AppGradients.teal, // keep gradient on mobile
+            ),
             height: MediaQuery.of(context).size.height,
           ),
-          // Content with SafeArea
           SafeArea(
-            // Don't apply bottom padding to allow content to extend fully
             bottom: false,
-            child: Column(
-              children: [
-              // Top section with logo and powered by text
-              Expanded(
-                flex: 3,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // Logo with shadow - clickable button
-                    Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () {
-                          // Navigate to home page when logo is clicked
-                          // Use pushAndRemoveUntil to clear the entire navigation stack
-                          Navigator.of(context).pushAndRemoveUntil(
-                            MaterialPageRoute(builder: (context) => const HomePage()),
-                            (route) => false, // Remove all previous routes
-                          );
-                        },
-                        borderRadius: BorderRadius.circular(20),
-                        splashColor: Colors.white.withValues(alpha: 0.2),
-                        highlightColor: Colors.white.withValues(alpha: 0.1),
-                        hoverColor: Colors.white.withValues(alpha: 0.1),
-                        child: Container(
-                          width: 220,
-                          height: 160,
-                          padding: const EdgeInsets.all(8),
-                          child: Stack(
-                            children: [
-                              // Shadow
-                              ImageFiltered(
-                                imageFilter: ui.ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-                                child: ColorFiltered(
-                                  colorFilter: ColorFilter.mode(
-                                  Colors.white.withValues(alpha: 0.4),
-                                    BlendMode.srcATop,
-                                  ),
-                                  child: Image.asset(
-                                    'lib/assets/icons/dentpal_vertical.png',
-                                    width: 220,
-                                    height: 160,
-                                    fit: BoxFit.cover,
-                                  ),
-                                ),
-                              ),
-                              // Actual image on top
-                              Image.asset(
-                                'lib/assets/icons/dentpal_vertical.png',
-                                width: 220,
-                                height: 160,
-                                fit: BoxFit.cover,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-
-                  ],
-                ),
-              ),
-              // Bottom section with login form
-              Expanded(
-                flex: 7,
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Container(
-                  width: double.infinity,
-                  constraints: const BoxConstraints(
-                      maxWidth: 500, // Maximum width for web/tablet
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(30),
-                      topRight: Radius.circular(30),
-                      bottomLeft: Radius.zero,
-                      bottomRight: Radius.zero,
-                    ),
-                  ),
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.only(
-                      left: 30.0,
-                      right: 30.0,
-                      top: 30.0,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+            child: isWebView
+                ? Center(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const SizedBox(height: 10),
-                        // Error message
-                        if (_errorMessage != null) ...[
-                          Container(
-                            padding: context.paddingAll16,
-                            decoration: BoxDecoration(
-                              color: AppColors.error.withValues(alpha: .1),
-                              borderRadius: context.borderRadius8,
-                              border: Border.all(
-                                color: AppColors.error.withValues(alpha: .3),
+                        Expanded(
+                          flex: 5,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 60),
+                            child: Center(
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(24),
+                                onTap: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          const HomePage(),
+                                    ),
+                                  );
+                                },
+                                child: Image.asset(
+                                  'lib/assets/icons/dentpal_vertical.png',
+                                  width: 560,
+                                  height: 420,
+                                  fit: BoxFit.contain,
+                                ),
                               ),
-                            ),
-                            child: Text(
-                              _errorMessage!,
-                              style: context.textTheme.bodyMedium?.copyWith(
-                                color: AppColors.error,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                        ],
-                        // Email or Phone Number field
-                        Text(
-                          'Email or Phone Number',
-                          style: context.textTheme.labelLarge?.copyWith(
-                            color: AppColors.onSurface,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        TextField(
-                          controller: _emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          style: AppTextStyles.inputText,
-                          decoration: InputDecoration(
-                            hintText: 'example@domain.com',
-                            hintStyle: AppTextStyles.inputHint,
-                            filled: true,
-                            fillColor: AppColors.surfaceVariant,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(15),
-                              borderSide: BorderSide.none,
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(15),
-                              borderSide: BorderSide.none,
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(15),
-                              borderSide: const BorderSide(
-                                color: AppColors.primary,
-                                width: 2,
-                              ),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 18,
                             ),
                           ),
                         ),
-                        if (_emailError != null) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            _emailError!,
-                            style: context.textTheme.bodySmall?.copyWith(
-                              color: AppColors.error,
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 10),
-                        // Password field
-                        Text(
-                          'Password',
-                          style: context.textTheme.labelLarge?.copyWith(
-                            color: AppColors.onSurface,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: _passwordController,
-                          obscureText: _obscurePassword,
-                          style: AppTextStyles.inputText,
-                          decoration: InputDecoration(
-                            hintText: '●●●●●●●●',
-                            hintStyle: AppTextStyles.inputHint,
-                            filled: true,
-                            fillColor: AppColors.surfaceVariant,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(15),
-                              borderSide: BorderSide.none,
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(15),
-                              borderSide: BorderSide.none,
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(15),
-                              borderSide: const BorderSide(
-                                color: AppColors.primary,
-                                width: 2,
-                              ),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 18,
-                            ),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                _obscurePassword
-                                    ? Icons.visibility_off
-                                    : Icons.visibility,
-                                color: AppColors.grey400,
-                              ),
-                              onPressed: () {
-                                setState(() {
-                                  _obscurePassword = !_obscurePassword;
-                                });
-                              },
-                            ),
-                          ),
-                        ),
-                        if (_passwordError != null) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            _passwordError!,
-                            style: context.textTheme.bodySmall?.copyWith(
-                              color: AppColors.error,
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 10),
-                        // Remember Me checkbox
-                        Row(
-                          children: [
-                            Checkbox(
-                              value: _rememberMe,
-                              onChanged: (value) {
-                                setState(() {
-                                  _rememberMe = value ?? false;
-                                });
-                              },
-                            ),
-                            const Text('Remember me?'),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        // Log In button
-                        ElevatedButton(
-                          onPressed: _isLoading ? null : _login,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: AppColors.onPrimary,
-                            padding: const EdgeInsets.symmetric(vertical: 18),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(15),
-                            ),
-                            elevation: 0,
-                          ),
-                          child: _isLoading
-                              ? SizedBox(
-                                  height: 24,
-                                  width: 24,
-                                  child: CircularProgressIndicator(
-                                    color: AppColors.onPrimary,
-                                    strokeWidth: 2.5,
+                        const SizedBox(width: 20),
+                        Expanded(
+                          flex: 5,
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 480),
+                              child: Card(
+                                elevation: 14,
+                                shadowColor: Colors.black.withOpacity(0.12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(28),
+                                ),
+                                clipBehavior: Clip.antiAlias,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [
+                                        AppColors.surface,
+                                        AppColors.surface.withOpacity(0.98),
+                                      ],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
                                   ),
-                                )
-                              : Text(
-                                  'Log In',
-                                  style: AppTextStyles.buttonLarge.copyWith(
-                                    color: AppColors.onPrimary,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 42,
+                                    vertical: 40,
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      // Error banner
+                                      if (_errorMessage != null) ...[
+                                        _webErrorBanner(
+                                          _errorMessage!,
+                                          onClose: () {
+                                            setState(
+                                              () => _errorMessage = null,
+                                            );
+                                          },
+                                        ),
+                                        const SizedBox(height: 20),
+                                      ],
+                                      // Email
+                                      Text(
+                                        'Email or Phone Number',
+                                        style: AppTextStyles.bodyMedium
+                                            .copyWith(
+                                              fontWeight: FontWeight.w600,
+                                              color: AppColors.onSurface
+                                                  .withOpacity(0.85),
+                                            ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      _webTextField(
+                                        controller: _emailController,
+                                        hint: 'example@domain.com',
+                                        keyboardType:
+                                            TextInputType.emailAddress,
+                                      ),
+                                      if (_emailError != null) ...[
+                                        const SizedBox(height: 6),
+                                        _fieldError(_emailError!),
+                                      ],
+                                      const SizedBox(height: 20),
+                                      // Password
+                                      Text(
+                                        'Password',
+                                        style: AppTextStyles.bodyMedium
+                                            .copyWith(
+                                              fontWeight: FontWeight.w600,
+                                              color: AppColors.onSurface
+                                                  .withOpacity(0.85),
+                                            ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      _webTextField(
+                                        controller: _passwordController,
+                                        hint: '••••••••',
+                                        obscure: _obscurePassword,
+                                        suffix: IconButton(
+                                          icon: Icon(
+                                            _obscurePassword
+                                                ? Icons.visibility_off
+                                                : Icons.visibility,
+                                            color: AppColors.grey400,
+                                          ),
+                                          onPressed: () {
+                                            setState(
+                                              () => _obscurePassword =
+                                                  !_obscurePassword,
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                      if (_passwordError != null) ...[
+                                        const SizedBox(height: 6),
+                                        _fieldError(_passwordError!),
+                                      ],
+                                      const SizedBox(height: 18),
+                                      // Remember + Forgot
+                                      Row(
+                                        children: [
+                                          Checkbox(
+                                            value: _rememberMe,
+                                            onChanged: (v) => setState(
+                                              () => _rememberMe = v ?? false,
+                                            ),
+                                            materialTapTargetSize:
+                                                MaterialTapTargetSize
+                                                    .shrinkWrap,
+                                          ),
+                                          const Text('Remember me'),
+                                          const Spacer(),
+                                          TextButton(
+                                            onPressed: () {
+                                              Navigator.of(context).push(
+                                                MaterialPageRoute(
+                                                  builder: (_) =>
+                                                      const ForgotPasswordPage(),
+                                                ),
+                                              );
+                                            },
+                                            style: TextButton.styleFrom(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                    vertical: 8,
+                                                  ),
+                                            ),
+                                            child: Text(
+                                              'Forgot password?',
+                                              style: AppTextStyles.bodySmall
+                                                  .copyWith(
+                                                    color: AppColors.accent,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 22),
+                                      // Login button
+                                      SizedBox(
+                                        height: 54,
+                                        child: ElevatedButton(
+                                          onPressed: _isLoading ? null : _login,
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: AppColors.primary,
+                                            foregroundColor:
+                                                AppColors.onPrimary,
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(16),
+                                            ),
+                                            textStyle: AppTextStyles.buttonLarge
+                                                .copyWith(fontSize: 18),
+                                            elevation: 4,
+                                            shadowColor: AppColors.primary
+                                                .withOpacity(0.35),
+                                          ),
+                                          child: _isLoading
+                                              ? const SizedBox(
+                                                  height: 26,
+                                                  width: 26,
+                                                  child: CircularProgressIndicator(
+                                                    strokeWidth: 2.5,
+                                                    valueColor:
+                                                        AlwaysStoppedAnimation<
+                                                          Color
+                                                        >(AppColors.onPrimary),
+                                                  ),
+                                                )
+                                              : const Text('Log In'),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 18),
+                                      // Divider
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Container(
+                                              height: 1,
+                                              color: AppColors.onSurface
+                                                  .withOpacity(0.1),
+                                            ),
+                                          ),
+                                          Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                            ),
+                                            child: Text(
+                                              'or',
+                                              style: AppTextStyles.bodySmall
+                                                  .copyWith(
+                                                    color: AppColors.onSurface
+                                                        .withOpacity(0.55),
+                                                  ),
+                                            ),
+                                          ),
+                                          Expanded(
+                                            child: Container(
+                                              height: 1,
+                                              color: AppColors.onSurface
+                                                  .withOpacity(0.1),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 18),
+                                      // Social buttons (placeholders)
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: OutlinedButton.icon(
+                                              onPressed: () {
+                                                ScaffoldMessenger.of(
+                                                  context,
+                                                ).showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text(
+                                                      'Google Sign In - Coming Soon!',
+                                                    ),
+                                                  ),
+                                                );
+                                              },
+                                              icon: Image.asset(
+                                                'lib/assets/icons/google-logo.png',
+                                                width: 18,
+                                                height: 18,
+                                              ),
+                                              label: const Text('Google'),
+                                              style: OutlinedButton.styleFrom(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      vertical: 14,
+                                                    ),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 14),
+                                          Expanded(
+                                            child: OutlinedButton.icon(
+                                              onPressed: () {
+                                                ScaffoldMessenger.of(
+                                                  context,
+                                                ).showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text(
+                                                      'Facebook Sign In - Coming Soon!',
+                                                    ),
+                                                  ),
+                                                );
+                                              },
+                                              icon: Image.asset(
+                                                'lib/assets/icons/facebook-logo.png',
+                                                width: 18,
+                                                height: 18,
+                                              ),
+                                              label: const Text('Facebook'),
+                                              style: OutlinedButton.styleFrom(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      vertical: 14,
+                                                    ),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 26),
+                                      // Sign up link
+                                      Center(
+                                        child: TextButton(
+                                          onPressed: () {
+                                            Navigator.of(context).push(
+                                              MaterialPageRoute(
+                                                builder: (_) =>
+                                                    const SignupFlow(),
+                                              ),
+                                            );
+                                          },
+                                          child: RichText(
+                                            text: TextSpan(
+                                              style: AppTextStyles.bodyMedium
+                                                  .copyWith(
+                                                    color: AppColors.onSurface
+                                                        .withOpacity(0.7),
+                                                  ),
+                                              children: const [
+                                                TextSpan(
+                                                  text:
+                                                      "Don't have an account? ",
+                                                ),
+                                                TextSpan(
+                                                  text: 'Create one',
+                                                  style: TextStyle(
+                                                    color: AppColors.accent,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                        ),
-                        const SizedBox(height: 8),
-                        // Forgot password link
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: () {
-                              Navigator.of(context).push(
-                                PageRouteBuilder(
-                                  transitionDuration: const Duration(milliseconds: 500),
-                                  pageBuilder: (context, animation, secondaryAnimation) => const ForgotPasswordPage(),
-                                  transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                                    final begin = Offset(0.0, 1.0); // Starts from bottom
-                                    final end = Offset.zero; // Ends at original position
-                                    final curve = Curves.ease;
-
-                                    final tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
-                                    final offsetAnimation = animation.drive(tween);
-
-                                    return SlideTransition(
-                                      position: offsetAnimation,
-                                      child: child,
-                                    );
-                                  },
-                                ),
-                              );
-                            },
-                            child: Text(
-                              'Forgot password?',
-                              style: context.textTheme.bodyMedium?.copyWith(
-                                color: AppColors.accent,
                               ),
                             ),
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        // Sign in with text
-                        Center(
-                          child: Text(
-                            'Sign in with',
-                            style: context.textTheme.bodyMedium?.copyWith(
-                              color: AppColors.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        // Social media buttons
-                        Row(
+                      ],
+                    ),
+                  )
+                : Column(
+                    children: [
+                      // Top section with logo and powered by text
+                      Expanded(
+                        flex: 3,
+                        child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            // Google button
-                            GestureDetector(
-                              onTap: () {
-                                // TODO: Implement Google Sign In
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Google Sign In - Coming Soon!',
+                            Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: () {
+                                  Navigator.of(context).pushAndRemoveUntil(
+                                    MaterialPageRoute(
+                                      builder: (context) => const HomePage(),
                                     ),
-                                    duration: Duration(seconds: 2),
+                                    (route) => false,
+                                  );
+                                },
+                                borderRadius: BorderRadius.circular(20),
+                                splashColor: Colors.white.withOpacity(0.2),
+                                highlightColor: Colors.white.withOpacity(0.1),
+                                hoverColor: Colors.white.withOpacity(0.1),
+                                child: Container(
+                                  width: 220,
+                                  height: 160,
+                                  padding: const EdgeInsets.all(8),
+                                  child: Stack(
+                                    children: [
+                                      ImageFiltered(
+                                        imageFilter: ui.ImageFilter.blur(
+                                          sigmaX: 4,
+                                          sigmaY: 4,
+                                        ),
+                                        child: ColorFiltered(
+                                          colorFilter: ColorFilter.mode(
+                                            Colors.white.withOpacity(0.4),
+                                            BlendMode.srcATop,
+                                          ),
+                                          child: Image.asset(
+                                            'lib/assets/icons/dentpal_vertical.png',
+                                            width: 220,
+                                            height: 160,
+                                            fit: BoxFit.cover,
+                                          ),
+                                        ),
+                                      ),
+                                      Image.asset(
+                                        'lib/assets/icons/dentpal_vertical.png',
+                                        width: 220,
+                                        height: 160,
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ],
                                   ),
-                                );
-                              },
-                              child: Container(
-                                width: 32,
-                                height: 32,
-                                decoration: BoxDecoration(
-                                  boxShadow: AppShadows.light,
-                                ),
-                                child: Image.asset(
-                                  'lib/assets/icons/google-logo.png',
-                                  fit: BoxFit.contain,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 30),
-                            // Facebook button
-                            GestureDetector(
-                              onTap: () {
-                                // TODO: Implement Facebook Sign In
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Facebook Sign In - Coming Soon!',
-                                    ),
-                                    duration: Duration(seconds: 2),
-                                  ),
-                                );
-                              },
-                              child: Container(
-                                width: 34,
-                                height: 34,
-                                decoration: BoxDecoration(
-                                  boxShadow: AppShadows.light,
-                                ),
-                                child: Image.asset(
-                                  'lib/assets/icons/facebook-logo.png',
-                                  fit: BoxFit.contain,
                                 ),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
-                        // Sign up link
-                        Center(
-                          child: TextButton(
-                            onPressed: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (context) => const SignupFlow(),
-                                ),
-                              );
-                            },
-                            child: RichText(
-                              textAlign: TextAlign.center,
-                              text: TextSpan(
-                                style: context.textTheme.bodyMedium,
+                      ),
+                      // Bottom section with login form
+                      Expanded(
+                        flex: 7,
+                        child: Align(
+                          alignment: Alignment.bottomCenter,
+                          child: Container(
+                            width: double.infinity,
+                            constraints: const BoxConstraints(maxWidth: 500),
+                            decoration: const BoxDecoration(
+                              color: AppColors.surface,
+                              borderRadius: BorderRadius.only(
+                                topLeft: Radius.circular(30),
+                                topRight: Radius.circular(30),
+                              ),
+                            ),
+                            child: SingleChildScrollView(
+                              padding: const EdgeInsets.only(
+                                left: 30.0,
+                                right: 30.0,
+                                top: 30.0,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  TextSpan(
-                                    text: "Don't have an account? ",
-                                    style: TextStyle(
-                                      color: AppColors.onSurfaceVariant,
-                                      fontWeight: FontWeight.normal,
+                                  const SizedBox(height: 10),
+                                  if (_errorMessage != null) ...[
+                                    Container(
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.error.withOpacity(.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: AppColors.error.withOpacity(
+                                            .3,
+                                          ),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        _errorMessage!,
+                                        style: TextStyle(
+                                          color: AppColors.error,
+                                          fontSize: 14,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                  ],
+                                  Text(
+                                    'Email or Phone Number',
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      color: AppColors.onSurface,
+                                      fontWeight: FontWeight.w500,
                                     ),
                                   ),
-                                  TextSpan(
-                                    text: 'Sign up',
-                                    style: TextStyle(
-                                      color: AppColors.accent,
-                                      fontWeight: FontWeight.w600,
+                                  const SizedBox(height: 4),
+                                  TextField(
+                                    controller: _emailController,
+                                    keyboardType: TextInputType.emailAddress,
+                                    decoration: InputDecoration(
+                                      hintText: 'example@domain.com',
+                                      filled: true,
+                                      fillColor: AppColors.surfaceVariant,
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(15),
+                                        borderSide: BorderSide.none,
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(15),
+                                        borderSide: BorderSide.none,
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(15),
+                                        borderSide: const BorderSide(
+                                          color: AppColors.primary,
+                                          width: 2,
+                                        ),
+                                      ),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                            horizontal: 20,
+                                            vertical: 18,
+                                          ),
                                     ),
+                                  ),
+                                  if (_emailError != null) ...[
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      _emailError!,
+                                      style: TextStyle(
+                                        color: AppColors.error,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    'Password',
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      color: AppColors.onSurface,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  TextField(
+                                    controller: _passwordController,
+                                    obscureText: _obscurePassword,
+                                    decoration: InputDecoration(
+                                      hintText: '●●●●●●●●',
+                                      filled: true,
+                                      fillColor: AppColors.surfaceVariant,
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(15),
+                                        borderSide: BorderSide.none,
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(15),
+                                        borderSide: BorderSide.none,
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(15),
+                                        borderSide: const BorderSide(
+                                          color: AppColors.primary,
+                                          width: 2,
+                                        ),
+                                      ),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                            horizontal: 20,
+                                            vertical: 18,
+                                          ),
+                                      suffixIcon: IconButton(
+                                        icon: Icon(
+                                          _obscurePassword
+                                              ? Icons.visibility_off
+                                              : Icons.visibility,
+                                          color: AppColors.grey400,
+                                        ),
+                                        onPressed: () {
+                                          setState(() {
+                                            _obscurePassword =
+                                                !_obscurePassword;
+                                          });
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                  if (_passwordError != null) ...[
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      _passwordError!,
+                                      style: TextStyle(
+                                        color: AppColors.error,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    children: [
+                                      Checkbox(
+                                        value: _rememberMe,
+                                        onChanged: (value) {
+                                          setState(() {
+                                            _rememberMe = value ?? false;
+                                          });
+                                        },
+                                      ),
+                                      const Text('Remember me?'),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 14),
+                                  ElevatedButton(
+                                    onPressed: _isLoading ? null : _login,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.primary,
+                                      foregroundColor: AppColors.onPrimary,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 18,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(15),
+                                      ),
+                                      elevation: 0,
+                                    ),
+                                    child: _isLoading
+                                        ? const SizedBox(
+                                            height: 24,
+                                            width: 24,
+                                            child: CircularProgressIndicator(
+                                              color: AppColors.onPrimary,
+                                              strokeWidth: 2.5,
+                                            ),
+                                          )
+                                        : Text(
+                                            'Log In',
+                                            style: AppTextStyles.buttonLarge
+                                                .copyWith(
+                                                  color: AppColors.onPrimary,
+                                                ),
+                                          ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: TextButton(
+                                      onPressed: () {
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (context) =>
+                                                const ForgotPasswordPage(),
+                                          ),
+                                        );
+                                      },
+                                      child: Text(
+                                        'Forgot password?',
+                                        style: AppTextStyles.bodyMedium
+                                            .copyWith(color: AppColors.accent),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Center(
+                                    child: Text(
+                                      'Sign in with',
+                                      style: AppTextStyles.bodyMedium.copyWith(
+                                        color: AppColors.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      GestureDetector(
+                                        onTap: () {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'Google Sign In - Coming Soon!',
+                                              ),
+                                              duration: Duration(seconds: 2),
+                                            ),
+                                          );
+                                        },
+                                        child: Container(
+                                          width: 32,
+                                          height: 32,
+                                          child: Image.asset(
+                                            'lib/assets/icons/google-logo.png',
+                                            fit: BoxFit.contain,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 30),
+                                      GestureDetector(
+                                        onTap: () {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'Facebook Sign In - Coming Soon!',
+                                              ),
+                                              duration: Duration(seconds: 2),
+                                            ),
+                                          );
+                                        },
+                                        child: Container(
+                                          width: 34,
+                                          height: 34,
+                                          child: Image.asset(
+                                            'lib/assets/icons/facebook-logo.png',
+                                            fit: BoxFit.contain,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Center(
+                                    child: TextButton(
+                                      onPressed: () {
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (context) =>
+                                                const SignupFlow(),
+                                          ),
+                                        );
+                                      },
+                                      child: RichText(
+                                        textAlign: TextAlign.center,
+                                        text: TextSpan(
+                                          style: AppTextStyles.bodyMedium,
+                                          children: const [
+                                            TextSpan(
+                                              text: "Don't have an account? ",
+                                              style: TextStyle(
+                                                color:
+                                                    AppColors.onSurfaceVariant,
+                                                fontWeight: FontWeight.normal,
+                                              ),
+                                            ),
+                                            TextSpan(
+                                              text: 'Sign up',
+                                              style: TextStyle(
+                                                color: AppColors.accent,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  SizedBox(
+                                    height:
+                                        MediaQuery.of(context).padding.bottom >
+                                            0
+                                        ? 40
+                                        : 20,
                                   ),
                                 ],
                               ),
                             ),
                           ),
                         ),
-                        // Add extra space at the bottom to account for home indicator
-                        SizedBox(height: MediaQuery.of(context).padding.bottom > 0 ? 40 : 20),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ),
-                ),
-              ),
-            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Helper widgets for web UI
+Widget _webErrorBanner(String message, {required VoidCallback onClose}) {
+  return AnimatedContainer(
+    duration: const Duration(milliseconds: 250),
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: AppColors.error.withOpacity(0.08),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: AppColors.error.withOpacity(0.25)),
+    ),
+    child: Row(
+      children: [
+        Icon(
+          Icons.error_outline,
+          color: AppColors.error.withOpacity(0.9),
+          size: 20,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            message,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.error.withOpacity(0.95),
+              fontWeight: FontWeight.w600,
+              height: 1.25,
+            ),
           ),
         ),
+        IconButton(
+          icon: Icon(
+            Icons.close,
+            size: 18,
+            color: AppColors.error.withOpacity(0.8),
+          ),
+          padding: EdgeInsets.zero,
+          onPressed: onClose,
+        ),
       ],
-    )
+    ),
   );
-  }
+}
+
+Widget _fieldError(String message) {
+  return Text(
+    message,
+    style: AppTextStyles.bodySmall.copyWith(
+      color: AppColors.error,
+      fontWeight: FontWeight.w600,
+    ),
+  );
+}
+
+Widget _webTextField({
+  required TextEditingController controller,
+  required String hint,
+  bool obscure = false,
+  TextInputType? keyboardType,
+  Widget? suffix,
+}) {
+  return TextField(
+    controller: controller,
+    obscureText: obscure,
+    keyboardType: keyboardType,
+    decoration: InputDecoration(
+      hintText: hint,
+      filled: true,
+      fillColor: AppColors.surfaceVariant,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: AppColors.primary, width: 2),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
+      suffixIcon: suffix,
+    ),
+  );
 }

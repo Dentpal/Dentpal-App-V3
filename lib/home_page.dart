@@ -17,43 +17,49 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
-  
+
   List<Widget> get _pages {
     final user = FirebaseAuth.instance.currentUser;
-    
+
     return [
       const ProductListingPage(),
-      user != null 
-        ? CartPage(onBackPressed: () => _onItemTapped(0)) // Go back to Products tab
-        : const _LoginRequiredPage(message: 'Please login to view your cart'),
-      user != null 
-        ? const ProfilePage()
-        : const _LoginRequiredPage(message: 'Please login to view your profile'),
+      user != null
+          ? CartPage(
+              onBackPressed: () => _onItemTapped(0),
+            ) // Go back to Products tab
+          : const _LoginRequiredPage(message: 'Please login to view your cart'),
+      user != null
+          ? const ProfilePage()
+          : const _LoginRequiredPage(
+              message: 'Please login to view your profile',
+            ),
     ];
   }
-  
+
   void _onItemTapped(int index) {
     // Check if user is authenticated when trying to access Cart or Profile
     final user = FirebaseAuth.instance.currentUser;
-    
+
     if (user == null && (index == 1 || index == 2)) {
       // User is not authenticated and trying to access Cart or Profile
       _showLoginRequiredDialog();
       return;
     }
-    
+
     setState(() {
       _selectedIndex = index;
     });
   }
-  
+
   void _showLoginRequiredDialog() {
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           title: Row(
             children: [
               Container(
@@ -62,11 +68,7 @@ class _HomePageState extends State<HomePage> {
                   color: AppColors.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(
-                  Icons.login,
-                  color: AppColors.primary,
-                  size: 24,
-                ),
+                child: Icon(Icons.login, color: AppColors.primary, size: 24),
               ),
               const SizedBox(width: 12),
               Text(
@@ -110,99 +112,113 @@ class _HomePageState extends State<HomePage> {
       },
     );
   }
-  
+
   Future<bool> _showExitConfirmation() async {
     return await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.warning.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: AppColors.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.exit_to_app,
+                    color: AppColors.warning,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Exit App',
+                  style: AppTextStyles.titleMedium.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+            content: Text(
+              'Are you sure you want to exit the app?',
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.onSurface.withValues(alpha: 0.8),
               ),
-              child: Icon(
-                Icons.exit_to_app,
-                color: AppColors.warning,
-                size: 24,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.onSurface.withValues(alpha: 0.6),
+                ),
+                child: Text('Cancel', style: AppTextStyles.buttonMedium),
               ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              'Exit App',
-              style: AppTextStyles.titleMedium.copyWith(
-                fontWeight: FontWeight.w700,
+              ElevatedButton(
+                onPressed: () {
+                  SystemNavigator.pop(); // Sends to background or closes app
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.warning,
+                  foregroundColor: AppColors.onPrimary,
+                  elevation: 0,
+                ),
+                child: Text('Exit', style: AppTextStyles.buttonMedium),
               ),
-            ),
-          ],
-        ),
-        content: Text(
-          'Are you sure you want to exit the app?',
-          style: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.onSurface.withValues(alpha: 0.8),
+            ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.onSurface.withValues(alpha: 0.6),
-            ),
-            child: Text('Cancel', style: AppTextStyles.buttonMedium),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              SystemNavigator.pop(); // Sends to background or closes app
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.warning,
-              foregroundColor: AppColors.onPrimary,
-              elevation: 0,
-            ),
-            child: Text('Exit', style: AppTextStyles.buttonMedium),
-          ),
-        ],
-      ),
-    ) ?? false;
+        ) ??
+        false;
   }
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWebView = screenWidth > 900;
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
-        
         final shouldExit = await _showExitConfirmation();
         if (shouldExit && context.mounted) {
           Navigator.of(context).pop();
         }
       },
       child: Scaffold(
-        body: _pages[_selectedIndex],
-        bottomNavigationBar: BottomNavigationBar(
-          items: const <BottomNavigationBarItem>[
-            BottomNavigationBarItem(
-              icon: Icon(Icons.store),
-              label: 'Products',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.shopping_cart),
-              label: 'Cart',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person),
-              label: 'Profile',
-            ),
-          ],
-          currentIndex: _selectedIndex,
-          selectedItemColor: Theme.of(context).primaryColor,
-          onTap: _onItemTapped,
-        ),
+        body: isWebView
+            ? Column(
+                children: [
+                  // Navigation bar removed; now handled in ProductListingPage sliver
+                  Expanded(child: _pages[_selectedIndex]),
+                ],
+              )
+            : Scaffold(
+                body: _pages[_selectedIndex],
+                bottomNavigationBar: BottomNavigationBar(
+                  items: const <BottomNavigationBarItem>[
+                    BottomNavigationBarItem(
+                      icon: Icon(Icons.store),
+                      label: 'Products',
+                    ),
+                    BottomNavigationBarItem(
+                      icon: Icon(Icons.shopping_cart),
+                      label: 'Cart',
+                    ),
+                    BottomNavigationBarItem(
+                      icon: Icon(Icons.person),
+                      label: 'Profile',
+                    ),
+                  ],
+                  currentIndex: _selectedIndex,
+                  selectedItemColor: Theme.of(context).primaryColor,
+                  onTap: _onItemTapped,
+                ),
+              ),
       ),
     );
   }
@@ -210,7 +226,7 @@ class _HomePageState extends State<HomePage> {
 
 class _LoginRequiredPage extends StatelessWidget {
   final String message;
-  
+
   const _LoginRequiredPage({required this.message});
 
   @override
@@ -229,11 +245,7 @@ class _LoginRequiredPage extends StatelessWidget {
                   color: AppColors.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(50),
                 ),
-                child: Icon(
-                  Icons.login,
-                  size: 64,
-                  color: AppColors.primary,
-                ),
+                child: Icon(Icons.login, size: 64, color: AppColors.primary),
               ),
               const SizedBox(height: 24),
               Text(
@@ -262,7 +274,10 @@ class _LoginRequiredPage extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: AppColors.onPrimary,
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 16,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
