@@ -107,11 +107,6 @@ class Order {
       AppLogger.d('Order.fromFirestore - Status value: ${data['status']} (type: ${data['status'].runtimeType})');
       String statusString = (data['status']?.toString() ?? 'pending').replaceAll('-', '_');
       
-      // Handle specific case for to-hand-over -> to_handover
-      if (statusString == 'to_hand_over') {
-        statusString = 'to_handover';
-      }
-      
       final status = OrderStatus.values.firstWhere(
         (e) => e.toString().split('.').last == statusString,
         orElse: () => OrderStatus.pending,
@@ -536,9 +531,9 @@ class OrderStatusUpdate {
       AppLogger.d('OrderStatusUpdate.fromMap - status value: $statusValue (type: ${statusValue.runtimeType})');
       String statusString = (statusValue?.toString() ?? 'pending').replaceAll('-', '_');
       
-      // Handle specific case for to-hand-over -> to_handover
+      // Handle specific case for to_hand_over -> to_ship (normalize to existing enum value)
       if (statusString == 'to_hand_over') {
-        statusString = 'to_handover';
+        statusString = 'to_ship';
       }
       
       final status = OrderStatus.values.firstWhere(
