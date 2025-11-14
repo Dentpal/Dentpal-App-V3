@@ -693,8 +693,7 @@ export const createCheckoutSession = onRequest(
           },
         };
 
-        // Use secret key if available, otherwise fall back to public key
-        const paymongoKey = PAYMONGO_SECRET_KEY || PAYMONGO_PUBLIC_KEY;
+        const paymongoKey = PAYMONGO_SECRET_KEY;
         
         if (!paymongoKey) {
           console.warn('No Paymongo API key configured - checkout session will fail');
