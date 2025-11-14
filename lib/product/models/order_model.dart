@@ -7,8 +7,8 @@ import 'package:dentpal/utils/app_logger.dart';
 enum OrderStatus {
   pending,
   confirmed,
-  processing,
-  shipped,
+  to_ship,
+  shipping,
   delivered,
   cancelled,
   refunded,
@@ -105,8 +105,15 @@ class Order {
       // Parse status
       AppLogger.d('Order.fromFirestore - Parsing status...');
       AppLogger.d('Order.fromFirestore - Status value: ${data['status']} (type: ${data['status'].runtimeType})');
+      String statusString = (data['status']?.toString() ?? 'pending').replaceAll('-', '_');
+      
+      // Handle specific case for to-hand-over -> to_handover
+      if (statusString == 'to_hand_over') {
+        statusString = 'to_handover';
+      }
+      
       final status = OrderStatus.values.firstWhere(
-        (e) => e.toString().split('.').last == (data['status']?.toString() ?? 'pending'),
+        (e) => e.toString().split('.').last == statusString,
         orElse: () => OrderStatus.pending,
       );
       
@@ -332,6 +339,7 @@ class ShippingInfo {
   final String country;
   final String phoneNumber;
   final String? notes;
+  final String? trackingId; // JRS tracking ID
 
   ShippingInfo({
     required this.addressId,
@@ -344,6 +352,7 @@ class ShippingInfo {
     required this.country,
     required this.phoneNumber,
     this.notes,
+    this.trackingId,
   });
 
   factory ShippingInfo.fromMap(Map<String, dynamic> map) {
@@ -358,6 +367,7 @@ class ShippingInfo {
       country: map['country'] ?? '',
       phoneNumber: map['phoneNumber'] ?? '',
       notes: map['notes'],
+      trackingId: map['trackingId'],
     );
   }
 
@@ -373,6 +383,7 @@ class ShippingInfo {
       'country': country,
       'phoneNumber': phoneNumber,
       'notes': notes,
+      'trackingId': trackingId,
     };
   }
 
@@ -523,8 +534,15 @@ class OrderStatusUpdate {
       // Parse status enum
       final statusValue = map['status'];
       AppLogger.d('OrderStatusUpdate.fromMap - status value: $statusValue (type: ${statusValue.runtimeType})');
+      String statusString = (statusValue?.toString() ?? 'pending').replaceAll('-', '_');
+      
+      // Handle specific case for to-hand-over -> to_handover
+      if (statusString == 'to_hand_over') {
+        statusString = 'to_handover';
+      }
+      
       final status = OrderStatus.values.firstWhere(
-        (e) => e.toString().split('.').last == (statusValue?.toString() ?? 'pending'),
+        (e) => e.toString().split('.').last == statusString,
         orElse: () => OrderStatus.pending,
       );
 
@@ -561,11 +579,11 @@ extension OrderStatusExtension on OrderStatus {
       case OrderStatus.pending:
         return 'Pending Payment';
       case OrderStatus.confirmed:
-        return 'Confirmed Payment';
-      case OrderStatus.processing:
-        return 'Processing';
-      case OrderStatus.shipped:
-        return 'Shipped';
+        return 'Payment Confirmed';
+      case OrderStatus.to_ship:
+        return 'Ready to Ship';
+      case OrderStatus.shipping:
+        return 'Shipping';
       case OrderStatus.delivered:
         return 'Completed';
       case OrderStatus.cancelled:
@@ -585,10 +603,10 @@ extension OrderStatusExtension on OrderStatus {
         return 'Order has been placed and is awaiting confirmation';
       case OrderStatus.confirmed:
         return 'Payment confirmed, order is being processed';
-      case OrderStatus.processing:
+      case OrderStatus.to_ship:
         return 'Order is being prepared for shipment';
-      case OrderStatus.shipped:
-        return 'Order has been shipped and is on its way';
+      case OrderStatus.shipping:
+        return 'Order has been shipping and is on its way';
       case OrderStatus.delivered:
         return 'Order has been completed successfully';
       case OrderStatus.cancelled:

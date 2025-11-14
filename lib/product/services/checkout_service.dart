@@ -53,7 +53,7 @@ class CheckoutService {
 
       // Call Firebase Function via HTTP
       final response = await http.post(
-        Uri.parse('https://us-central1-dentpal-161e5.cloudfunctions.net/createCheckoutSession'),
+        Uri.parse('https://asia-southeast1-dentpal-161e5.cloudfunctions.net/createCheckoutSession'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $idToken',

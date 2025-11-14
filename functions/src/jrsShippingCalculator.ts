@@ -1,5 +1,7 @@
 import { onCall, HttpsError, CallableRequest } from 'firebase-functions/v2/https';
 import * as logger from 'firebase-functions/logger';
+import { getAuth } from 'firebase-admin/auth';
+import { DecodedIdToken } from 'firebase-admin/lib/auth/token-verifier';
 import axios from 'axios';
 
 interface ShipmentItem {
@@ -57,9 +59,8 @@ interface CalculateShippingRequest {
   valuation?: boolean;
 }
 
-// JRS API Configuration
-const JRS_API_URL = 'https://jrs-express.azure-api.net/qa-online-shipping-getrate/ShippingRequestFunction';
-const JRS_API_KEY = 'ab2a8be01b614cd1ad17dccb617a7652';
+// JRS API Configuration - using Firebase secrets
+// These will be accessed via process.env when using the secrets configuration
 
 // Default shipping address if seller address is not available
 const DEFAULT_SHIPPER_ADDRESS = 'Makati, Metro Manila';
@@ -72,6 +73,28 @@ const DEFAULT_DIMENSIONS = {
   weight: 100 // in grams
 };
 
+const verifyAuthToken = async (authorizationHeader: string | undefined): Promise<DecodedIdToken> => {
+  if (!authorizationHeader) {
+    throw new Error("Missing Authorization header");
+  }
+
+  const token = authorizationHeader.startsWith("Bearer ") 
+    ? authorizationHeader.substring(7) 
+    : authorizationHeader;
+
+  if (!token) {
+    throw new Error("Invalid Authorization header format");
+  }
+
+  try {
+    const decodedToken = await getAuth().verifyIdToken(token);
+    return decodedToken;
+  } catch (error) {
+    logger.error("Token verification failed", { error });
+    throw new Error("Invalid or expired authentication token");
+  }
+};
+
 /**
  * Calculates shipping cost using JRS Express API
  */
@@ -79,15 +102,21 @@ export const calculateJRSShipping = onCall(
   { 
     region: 'asia-southeast1', // Philippines region
     cors: true,
-    enforceAppCheck: false // Set to true in production for security
+    enforceAppCheck: false, // Disable AppCheck for shipping calculations to allow frontend calls
+    secrets: ['JRS_API_KEY', 'JRS_SHIPPING_API_URL']
   },
   async (request: CallableRequest<CalculateShippingRequest>): Promise<JRSShippingResponse> => {
     try {
       logger.info('JRS Shipping calculation started', { 
         sellerAddress: request.data.sellerAddress,
         recipientAddress: request.data.recipientAddress,
-        itemCount: request.data.cartItems.length
+        itemCount: request.data.cartItems.length,
+        userId: request.auth?.uid
       });
+
+      // Verify authentication
+      const authHeader = request.rawRequest.headers.authorization;
+      await verifyAuthToken(authHeader);
 
       // Validate request data
       if (!request.data.sellerAddress || !request.data.recipientAddress || !request.data.cartItems || request.data.cartItems.length === 0) {
@@ -128,7 +157,7 @@ export const calculateJRSShipping = onCall(
       };
 
       logger.info('Calling JRS API', { 
-        url: JRS_API_URL,
+        url: process.env.JRS_SHIPPING_API_URL || "https://jrs-express.azure-api.net/qa-online-shipping-getrate/ShippingRequestFunction",
         request: jrsRequest
       });
 
@@ -226,11 +255,13 @@ async function callJRSAPI(request: JRSShippingRequest): Promise<any> {
     try {
       logger.info(`JRS API attempt ${attempt}/${maxRetries}`);
 
-      const response = await axios.post(JRS_API_URL, request, {
+      const response = await axios.post(
+        process.env.JRS_SHIPPING_API_URL || "https://jrs-express.azure-api.net/qa-online-shipping-getrate/ShippingRequestFunction", 
+        request, {
         headers: {
           'Content-Type': 'application/json',
           'Cache-Control': 'no-cache',
-          'Ocp-Apim-Subscription-Key': JRS_API_KEY
+          'Ocp-Apim-Subscription-Key': process.env.JRS_API_KEY
         },
         timeout: 30000 // 30 seconds timeout
       });
@@ -402,54 +433,3 @@ function extractShippingCost(responseData: any): { success: boolean; cost: numbe
     };
   }
 }
-
-/**
- * Health check function for JRS API
- */
-export const testJRSConnection = onCall(
-  { 
-    region: 'asia-southeast1',
-    cors: true,
-    enforceAppCheck: false
-  },
-  async (): Promise<{ success: boolean; message: string; data?: any }> => {
-    try {
-      logger.info('Testing JRS API connection');
-
-      const testRequest: JRSShippingRequest = {
-        requestType: 'getrate',
-        apiShippingRequest: {
-          express: true,
-          insurance: true,
-          valuation: true,
-          codAmountToCollect: 0,
-          shipperAddressLine1: 'Makati, Metro Manila',
-          recipientAddressLine1: 'Quezon City, Metro Manila',
-          shipmentItems: [{
-            declaredValue: 100,
-            length: 10,
-            width: 10,
-            height: 5,
-            weight: 100
-          }]
-        }
-      };
-
-      const response = await callJRSAPI(testRequest);
-
-      return {
-        success: true,
-        message: 'JRS API connection successful',
-        data: response
-      };
-
-    } catch (error: any) {
-      logger.error('JRS API connection test failed', error);
-      
-      return {
-        success: false,
-        message: `JRS API connection failed: ${error.message}`
-      };
-    }
-  }
-);
