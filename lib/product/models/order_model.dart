@@ -601,7 +601,7 @@ extension OrderStatusExtension on OrderStatus {
       case OrderStatus.to_ship:
         return 'Order is being prepared for shipment';
       case OrderStatus.shipping:
-        return 'Order has been shipping and is on its way';
+        return 'Order has been shipped and is on its way';
       case OrderStatus.delivered:
         return 'Order has been completed successfully';
       case OrderStatus.cancelled:
