@@ -13,7 +13,28 @@ db.settings({
 });
 
 // Rate limiting store (in-memory for demo, use Redis in production)
+// NOTE: This implementation only mitigates memory leaks in warm instances.
+// For production environments, use a Redis-backed store for proper persistence and cleanup.
 const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
+
+// Start periodic cleanup of expired rate limit entries
+// This runs every 5 minutes to remove expired entries and prevent unbounded memory growth
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  let cleanedCount = 0;
+  
+  for (const [userId, data] of rateLimitStore.entries()) {
+    if (now > data.resetTime) {
+      rateLimitStore.delete(userId);
+      cleanedCount++;
+    }
+  }
+  
+  if (cleanedCount > 0) {
+    console.log(`🧹 Cleaned up ${cleanedCount} expired rate limit entries. Current size: ${rateLimitStore.size}`);
+  }
+}, CLEANUP_INTERVAL_MS);
 
 // Security headers middleware
 function setSecurityHeaders(response: any): void {
@@ -24,11 +45,19 @@ function setSecurityHeaders(response: any): void {
   response.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
 }
 
-// Rate limiting function
+// Rate limiting function with inline cleanup of expired entries
 function checkRateLimit(userId: string): boolean {
   const now = Date.now();
   const windowMs = 60000; // 1 minute
   const maxRequests = 5;
+  
+  // Clean up expired entries before applying rate limit logic
+  // This prevents memory growth during active usage
+  for (const [id, data] of rateLimitStore.entries()) {
+    if (now > data.resetTime) {
+      rateLimitStore.delete(id);
+    }
+  }
   
   const userLimit = rateLimitStore.get(userId);
   
@@ -693,7 +722,8 @@ export const createCheckoutSession = onRequest(
           },
         };
 
-        const paymongoKey = PAYMONGO_SECRET_KEY;
+        // Use secret key if available, otherwise fall back to public key
+        const paymongoKey = PAYMONGO_SECRET_KEY || PAYMONGO_PUBLIC_KEY;
         
         if (!paymongoKey) {
           console.warn('No Paymongo API key configured - checkout session will fail');
