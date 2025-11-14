@@ -294,14 +294,11 @@ async function calculateJRSShippingCost(
   jrsApiKey?: string,
   jrsApiUrl?: string
 ): Promise<number> {
-  const DEFAULT_SHIPPING_COST = 50;
+  if (!jrsApiKey || !jrsApiUrl) {
+    throw new Error('JRS API configuration missing - API key and URL are required');
+  }
 
   try {
-    if (!jrsApiKey || !jrsApiUrl) {
-      console.warn('JRS API configuration missing, using default shipping cost');
-      return DEFAULT_SHIPPING_COST;
-    }
-
     // Format addresses
     const shipperAddress = sellerAddress.includes(',') ? sellerAddress : `${sellerAddress}, Metro Manila`;
     const recipientFormattedAddress = recipientAddress.includes(',') ? recipientAddress : `${recipientAddress}, Metro Manila`;
@@ -312,10 +309,10 @@ async function calculateJRSShippingCost(
       for (let i = 0; i < item.quantity; i++) {
         shipmentItems.push({
           declaredValue: item.price,
-          length: 10, // Default dimensions in cm
-          width: 10,
-          height: 5,
-          weight: 100 // Default weight in grams
+          length: item.length,
+          width: item.width,
+          height: item.height,
+          weight: item.weight
         });
       }
     }
@@ -356,12 +353,10 @@ async function calculateJRSShippingCost(
         console.log(`✅ JRS shipping cost calculated: ₱${shippingCost}`);
         return shippingCost;
       } else {
-        console.warn('JRS API returned invalid shipping cost, using default');
-        return DEFAULT_SHIPPING_COST;
+        throw new Error(`JRS API returned invalid shipping cost: ${shippingCost}`);
       }
     } else {
-      console.warn(`JRS API returned status ${response.status}, using default shipping cost`);
-      return DEFAULT_SHIPPING_COST;
+      throw new Error(`JRS API returned status ${response.status}: ${response.statusText}`);
     }
 
   } catch (error: any) {
@@ -370,7 +365,7 @@ async function calculateJRSShippingCost(
       status: error.response?.status,
       data: error.response?.data
     });
-    return DEFAULT_SHIPPING_COST;
+    throw new Error(`JRS shipping calculation failed: ${error.message}`);
   }
 }
 
@@ -427,7 +422,7 @@ function extractShippingCostFromJRS(responseData: any): number {
 
 export const createCheckoutSession = onRequest(
   {
-    secrets: ['PAYMONGO_SECRET_KEY', 'PAYMONGO_PUBLIC_KEY', 'JRS_API_KEY', 'JRS_SHIPPING_API_URL'],
+    secrets: ['PAYMONGO_SECRET_KEY', 'PAYMONGO_PUBLIC_KEY', 'JRS_API_KEY', 'JRS_GETRATE_API_URL'],
     memory: '512MiB',
     timeoutSeconds: 240,
     region: 'asia-southeast1'
@@ -443,7 +438,7 @@ export const createCheckoutSession = onRequest(
         const PAYMONGO_SECRET_KEY = process.env.PAYMONGO_SECRET_KEY;
         const PAYMONGO_PUBLIC_KEY = process.env.PAYMONGO_PUBLIC_KEY;
         const JRS_API_KEY_SECRET = process.env.JRS_API_KEY;
-        const JRS_API_URL_SECRET = process.env.JRS_SHIPPING_API_URL;
+        const JRS_GETRATE_API_URL = process.env.JRS_GETRATE_API_URL;
 
         // Verify user authentication
         userId = await verifyAuth(request);
@@ -567,6 +562,11 @@ export const createCheckoutSession = onRequest(
             sellerId: product?.sellerId,
             sellerName: sellerData?.displayName || 'Unknown Seller',
             total: variationPrice * cartItem.quantity,
+            // Add physical dimensions
+            length: product?.dimensions?.length,
+            width: product?.dimensions?.width,
+            height: product?.dimensions?.height,
+            weight: product?.dimensions?.weight,
           };
         });
 
@@ -575,45 +575,67 @@ export const createCheckoutSession = onRequest(
         // Calculate totals
         const subtotal = orderItems.reduce((sum, item) => sum + item.total, 0);
         
-        // Calculate shipping cost using JRS API
-        let shippingCost = 50; // Default fallback
-        try {
-          // Get seller address for shipping calculation
-          const sellerAddresses = await Promise.all(
-            [...new Set(orderItems.map(item => item.sellerId))].map(async (sellerId) => {
-              const sellerDoc = await db.collection('User').doc(sellerId).get();
-              const sellerData = sellerDoc.data();
-              return sellerData?.address || 'Makati, Metro Manila'; // Default fallback
-            })
-          );
+        // Calculate shipping cost using JRS API - compute per seller and sum costs
+        // No fallbacks for multi-seller products - must use JRS calculated costs
+        let shippingCost = 0;
+        
+        // Group order items by seller
+        const itemsBySeller = orderItems.reduce((groups, item) => {
+          const sellerId = item.sellerId;
+          if (!groups[sellerId]) {
+            groups[sellerId] = [];
+          }
+          groups[sellerId].push(item);
+          return groups;
+        }, {} as Record<string, typeof orderItems>);
+        
+        const recipientAddress = `${shippingAddress?.city || 'Manila'}, ${shippingAddress?.state || 'Metro Manila'}`;
+        
+        console.log('Calculating shipping cost per seller using JRS API:', {
+          sellerCount: Object.keys(itemsBySeller).length,
+          recipientAddress,
+          totalItems: orderItems.length
+        });
+        
+        // Calculate shipping cost for each seller in parallel
+        const sellerShippingPromises = Object.entries(itemsBySeller).map(async ([sellerId, sellerItems]) => {
+          // Get seller address
+          const sellerDoc = await db.collection('User').doc(sellerId).get();
+          const sellerData = sellerDoc.data();
+          const sellerAddress = sellerData?.address || 'Makati, Metro Manila';
           
-          // For simplicity, use the first seller's address
-          // In production, you might need to handle multiple sellers differently
-          const sellerAddress = sellerAddresses[0];
-          const recipientAddress = `${shippingAddress?.city || 'Manila'}, ${shippingAddress?.state || 'Metro Manila'}`;
+          console.log(`Calculating shipping for seller ${sellerId}:`, {
+            sellerAddress,
+            itemCount: sellerItems.length
+          });
           
-          console.log('Calculating shipping cost using JRS API:', {
+          // Calculate shipping cost for this seller's items - no fallback, must succeed
+          const sellerShippingCost = await calculateJRSShippingCost(
             sellerAddress,
             recipientAddress,
-            itemCount: orderItems.length
-          });
-          
-          // Call the JRS shipping calculator
-          shippingCost = await calculateJRSShippingCost(
-            sellerAddress, 
-            recipientAddress, 
-            orderItems,
+            sellerItems,
             JRS_API_KEY_SECRET,
-            JRS_API_URL_SECRET || "https://jrs-express.azure-api.net/qa-online-shipping-getrate/ShippingRequestFunction"
+            JRS_GETRATE_API_URL
           );
           
-          console.log(`✅ Final shipping cost determined: ₱${shippingCost}`);
+          // Validate that we got a valid shipping cost
+          if (!sellerShippingCost || sellerShippingCost <= 0) {
+            throw new Error(`JRS API returned invalid shipping cost (${sellerShippingCost}) for seller ${sellerId}`);
+          }
           
-        } catch (shippingError) {
-          console.error('Failed to calculate JRS shipping cost, using default:', { 
-            error: shippingError instanceof Error ? shippingError.message : String(shippingError)
-          });
-          // Keep default shipping cost of 50
+          console.log(`✅ Seller ${sellerId} shipping cost: ₱${sellerShippingCost}`);
+          return sellerShippingCost;
+        });
+        
+        // Wait for all seller shipping calculations and sum them
+        const sellerShippingCosts = await Promise.all(sellerShippingPromises);
+        shippingCost = sellerShippingCosts.reduce((total, cost) => total + cost, 0);
+        
+        console.log(`✅ Total shipping cost for all sellers: ₱${shippingCost}`);
+        
+        // Validate final shipping cost
+        if (!shippingCost || shippingCost <= 0) {
+          throw new Error(`Invalid total shipping cost calculated: ₱${shippingCost}`);
         }
         
         const totalAmount = subtotal + shippingCost;
