@@ -3,7 +3,7 @@ import * as logger from 'firebase-functions/logger';
 import { getAuth } from 'firebase-admin/auth';
 import { DecodedIdToken } from 'firebase-admin/lib/auth/token-verifier';
 import * as admin from 'firebase-admin';
-import axios from 'axios';
+import { calculateJRSShippingCost, extractShippingCostFromJRS } from './utils/jrsShippingHelper';
 
 // Initialize Firebase Admin if not already initialized
 if (!admin.apps.length) {
@@ -11,41 +11,16 @@ if (!admin.apps.length) {
 }
 const db = admin.firestore();
 
-interface ShipmentItem {
-  declaredValue: number;
-  length: number;
-  width: number;
-  height: number;
-  weight: number;
-}
-
-interface JRSShippingRequest {
-  requestType: 'getrate';
-  apiShippingRequest: {
-    express: boolean;
-    insurance: boolean;
-    valuation: boolean;
-    codAmountToCollect: number;
-    shipperAddressLine1: string;
-    recipientAddressLine1: string;
-    shipmentItems: ShipmentItem[];
-  };
-}
+// JRS shipping interfaces are now defined in ./utils/jrsShippingHelper
 
 interface JRSShippingResponse {
   success: boolean;
-  data?: {
-    rateResponse?: {
-      rate?: number;
-      currency?: string;
-      transitTime?: string;
-    };
-    totalAmount?: number;
+  data: {
     shippingCost?: number;
+    totalAmount?: number;
     sellerBreakdown?: SellerShippingCalculation[];
   };
   error?: string;
-  message?: string;
 }
 
 interface CartItemData {
@@ -102,157 +77,14 @@ const verifyAuthToken = async (authorizationHeader: string | undefined): Promise
 };
 
 // Helper function to call JRS shipping API (similar to createCheckoutSession.ts)
-async function calculateJRSShippingCost(
-  sellerAddress: string,
-  recipientAddress: string,
-  orderItems: CartItemData[],
-  jrsApiKey?: string,
-  jrsApiUrl?: string
-): Promise<number> {
-  if (!jrsApiKey || !jrsApiUrl) {
-    throw new Error('JRS API configuration missing - API key and URL are required');
-  }
-
-  try {
-    // Format addresses
-    const shipperAddress = sellerAddress.includes(',') ? sellerAddress : `${sellerAddress}, Metro Manila`;
-    const recipientFormattedAddress = recipientAddress.includes(',') ? recipientAddress : `${recipientAddress}, Metro Manila`;
-
-    // Convert order items to shipment items
-    const shipmentItems = [];
-    for (const item of orderItems) {
-      // Skip items that don't have required dimensions
-      if (!item.length || !item.width || !item.height || !item.weight) {
-        logger.warn('Skipping item with missing dimensions:', {
-          productId: item.productId,
-          dimensions: {
-            length: item.length,
-            width: item.width,
-            height: item.height,
-            weight: item.weight
-          }
-        });
-        continue;
-      }
-
-      for (let i = 0; i < item.quantity; i++) {
-        shipmentItems.push({
-          declaredValue: item.price,
-          length: item.length,
-          width: item.width,
-          height: item.height,
-          weight: item.weight
-        });
-      }
-    }
-
-    // If no items have dimensions, throw an error
-    if (shipmentItems.length === 0) {
-      throw new Error('No items have the required dimensions for shipping calculation');
-    }
-
-    const jrsRequest: JRSShippingRequest = {
-      requestType: 'getrate',
-      apiShippingRequest: {
-        express: true,
-        insurance: true,
-        valuation: true,
-        codAmountToCollect: 0,
-        shipperAddressLine1: shipperAddress,
-        recipientAddressLine1: recipientFormattedAddress,
-        shipmentItems
-      }
-    };
-
-    logger.info('Calling JRS API for shipping calculation:', {
-      shipperAddress,
-      recipientAddress: recipientFormattedAddress,
-      itemCount: shipmentItems.length
-    });
-
-    const response = await axios.post(jrsApiUrl, jrsRequest, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache',
-        'Ocp-Apim-Subscription-Key': jrsApiKey
-      },
-      timeout: 15000 // 15 seconds timeout
-    });
-
-    if (response.status === 200 && response.data) {
-      // Extract shipping cost from JRS response
-      const shippingCost = extractShippingCostFromJRS(response.data);
-      
-      if (shippingCost > 0) {
-        logger.info(`✅ JRS shipping cost calculated: ₱${shippingCost}`);
-        return shippingCost;
-      } else {
-        throw new Error(`JRS API returned invalid shipping cost: ${shippingCost}`);
-      }
-    } else {
-      throw new Error(`JRS API returned status ${response.status}: ${response.statusText}`);
-    }
-
-  } catch (error: any) {
-    logger.error('Failed to calculate JRS shipping cost:', {
-      error: error.message,
-      status: error.response?.status,
-      data: error.response?.data
-    });
-    throw new Error(`JRS shipping calculation failed: ${error.message}`);
-  }
-}
-
-// Helper function to extract shipping cost from JRS API response (same as createCheckoutSession.ts)
-function extractShippingCostFromJRS(responseData: any): number {
-  try {
-    // Check various possible fields for shipping cost
-    if (responseData.TotalShippingRate && typeof responseData.TotalShippingRate === 'number') {
-      return responseData.TotalShippingRate;
-    }
-    
-    if (responseData.BaseRate && typeof responseData.BaseRate === 'number') {
-      return responseData.BaseRate;
-    }
-    
-    if (responseData.rate && typeof responseData.rate === 'number') {
-      return responseData.rate;
-    }
-    
-    if (responseData.totalAmount && typeof responseData.totalAmount === 'number') {
-      return responseData.totalAmount;
-    }
-    
-    if (responseData.shippingCost && typeof responseData.shippingCost === 'number') {
-      return responseData.shippingCost;
-    }
-    
-    // Check nested objects
-    if (responseData.rateResponse) {
-      if (responseData.rateResponse.TotalShippingRate && typeof responseData.rateResponse.TotalShippingRate === 'number') {
-        return responseData.rateResponse.TotalShippingRate;
-      }
-      if (responseData.rateResponse.BaseRate && typeof responseData.rateResponse.BaseRate === 'number') {
-        return responseData.rateResponse.BaseRate;
-      }
-    }
-    
-    if (responseData.data && responseData.data.rate && typeof responseData.data.rate === 'number') {
-      return responseData.data.rate;
-    }
-    
-    logger.warn('Could not extract shipping cost from JRS response:', responseData);
-    return 0;
-    
-  } catch (error) {
-    logger.error('Error extracting shipping cost from JRS response:', error);
-    return 0;
-  }
-}
+// JRS shipping functions are now imported from ./utils/jrsShippingHelper
 
 // Handle old interface for backward compatibility
-async function handleOldInterface(request: CallableRequest<CalculateShippingRequest>): Promise<JRSShippingResponse> {
+async function handleOldInterface(request: CallableRequest<CalculateShippingRequest>, authHeader: string | undefined): Promise<JRSShippingResponse> {
   try {
+    // Verify authentication
+    await verifyAuthToken(authHeader);
+    
     const { sellerAddress, cartItems, recipientAddress } = request.data;
     
     if (!sellerAddress || !cartItems || cartItems.length === 0) {
@@ -328,13 +160,15 @@ export const calculateJRSShipping = onCall(
         userId: request.auth?.uid
       });
 
+      // Get auth header for both interfaces
+      const authHeader = request.rawRequest.headers.authorization;
+
       // Handle old interface (backward compatibility)
       if (isOldInterface) {
-        return await handleOldInterface(request);
+        return await handleOldInterface(request, authHeader);
       }
 
       // Verify authentication for new interface
-      const authHeader = request.rawRequest.headers.authorization;
       const decodedToken = await verifyAuthToken(authHeader);
       const userId = decodedToken.uid;
 
