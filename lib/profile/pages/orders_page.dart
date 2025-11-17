@@ -32,10 +32,10 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
   final List<order_model.OrderStatus> filterOptions = [
     order_model.OrderStatus.pending,
     order_model.OrderStatus.confirmed,
-    order_model.OrderStatus.expired,
-    order_model.OrderStatus.processing,
-    order_model.OrderStatus.shipped,
+    order_model.OrderStatus.to_ship,
+    order_model.OrderStatus.shipping,
     order_model.OrderStatus.delivered,
+    order_model.OrderStatus.expired,
   ];
 
   @override
@@ -93,7 +93,14 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     
     // Apply status filter
     if (selectedFilter != null) {
-      result = result.where((order) => order.status == selectedFilter).toList();
+      if (selectedFilter == order_model.OrderStatus.to_ship) {
+        // Include to_pack, to_arrangement, to_handover in processing filter
+        result = result.where((order) => 
+          order.status == order_model.OrderStatus.to_ship
+        ).toList();
+      } else {
+        result = result.where((order) => order.status == selectedFilter).toList();
+      }
     }
     
     // Apply search filter
@@ -209,7 +216,15 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
               tabs: [
                 Tab(text: 'All (${orders.length})'),
                 ...filterOptions.map((status) {
-                  final count = orders.where((order) => order.status == status).length;
+                  int count;
+                  if (status == order_model.OrderStatus.to_ship) {
+                    // Count processing, to_ship together
+                    count = orders.where((order) =>
+                      order.status == order_model.OrderStatus.to_ship
+                    ).length;
+                  } else {
+                    count = orders.where((order) => order.status == status).length;
+                  }
                   return Tab(text: '${_formatStatus(status)} ($count)');
                 }),
               ],
@@ -677,12 +692,12 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
         textColor = AppColors.success;
         icon = Icons.check_circle_outline;
         break;
-      case order_model.OrderStatus.processing:
+      case order_model.OrderStatus.to_ship:
         backgroundColor = AppColors.info.withValues(alpha: 0.1);
         textColor = AppColors.info;
         icon = Icons.autorenew;
         break;
-      case order_model.OrderStatus.shipped:
+      case order_model.OrderStatus.shipping:
         backgroundColor = AppColors.primary.withValues(alpha: 0.1);
         textColor = AppColors.primary;
         icon = Icons.local_shipping;
@@ -743,10 +758,10 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
         return 'Pending Payment';
       case order_model.OrderStatus.confirmed:
         return 'Confirmed Payment';
-      case order_model.OrderStatus.processing:
+      case order_model.OrderStatus.to_ship:
         return 'Processing';
-      case order_model.OrderStatus.shipped:
-        return 'Shipped';
+      case order_model.OrderStatus.shipping:
+        return 'Shipping';
       case order_model.OrderStatus.delivered:
         return 'Completed';
       case order_model.OrderStatus.cancelled:

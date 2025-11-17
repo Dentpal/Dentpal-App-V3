@@ -8,4 +8,7 @@ export { createCheckoutSession } from './createCheckoutSession';
 export { handlePaymongoWebhook, expirePendingOrders } from './paymongoWebhookHandler';
 
 // Export the JRS shipping calculator functions
-export { calculateJRSShipping, testJRSConnection } from './jrsShippingCalculator';
+export { calculateJRSShipping } from './jrsShippingCalculator';
+
+// Export the JRS tracking function
+export { trackJRSShipping } from './trackJRSShipping';

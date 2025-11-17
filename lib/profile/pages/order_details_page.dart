@@ -6,9 +6,10 @@ import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import '../../product/models/order_model.dart' as order_model;
 import '../../product/pages/paymongo_webview_page.dart';
+import '../../product/services/jrs_tracking_service.dart';
 import '../../utils/app_logger.dart';
 
-class OrderDetailsPage extends StatelessWidget {
+class OrderDetailsPage extends StatefulWidget {
   final order_model.Order order;
 
   const OrderDetailsPage({
@@ -17,7 +18,121 @@ class OrderDetailsPage extends StatelessWidget {
   });
 
   @override
+  State<OrderDetailsPage> createState() => _OrderDetailsPageState();
+}
+
+class _OrderDetailsPageState extends State<OrderDetailsPage> {
+  JRSTrackingResult? _trackingResult;
+  bool _isLoadingTracking = false;
+  String? _trackingError;
+
+  @override
+  void initState() {
+    super.initState();
+    
+    final trackingId = _getTrackingId();
+    // Debug logging for tracking ID
+    AppLogger.d('Order tracking ID from shippingInfo: ${widget.order.shippingInfo.trackingId}');
+    AppLogger.d('Order tracking ID extracted: $trackingId');
+    AppLogger.d('Order status: ${widget.order.status}');
+    
+    // Auto-load tracking if tracking ID is available
+    if (trackingId != null) {
+      AppLogger.d('Tracking ID available, loading tracking...');
+      _loadTracking();
+    } else {
+      AppLogger.d('No tracking ID available for this order');
+    }
+  }
+
+  /// Extract tracking ID from either shippingInfo or status history
+  String? _getTrackingId() {
+    // First check if trackingId is directly available in shippingInfo
+    if (widget.order.shippingInfo.trackingId != null && 
+        widget.order.shippingInfo.trackingId!.isNotEmpty) {
+      AppLogger.d('Found tracking ID in shippingInfo.trackingId: ${widget.order.shippingInfo.trackingId}');
+      return widget.order.shippingInfo.trackingId;
+    }
+    
+    // Check if it's available in JRS response data (if shippingInfo has a Map structure)
+    try {
+      final shippingInfoData = widget.order.toMap()['shippingInfo'] as Map<String, dynamic>?;
+      if (shippingInfoData != null) {
+        // Check direct trackingId field
+        final directTrackingId = shippingInfoData['trackingId'] as String?;
+        if (directTrackingId != null && directTrackingId.isNotEmpty) {
+          AppLogger.d('Found tracking ID in shippingInfo data: $directTrackingId');
+          return directTrackingId;
+        }
+        
+        // Check JRS response structure
+        final jrsData = shippingInfoData['jrs'] as Map<String, dynamic>?;
+        if (jrsData != null) {
+          final response = jrsData['response'] as Map<String, dynamic>?;
+          if (response != null) {
+            final shippingDto = response['ShippingRequestEntityDto'] as Map<String, dynamic>?;
+            if (shippingDto != null) {
+              final trackingId = shippingDto['TrackingId'] as String?;
+              if (trackingId != null && trackingId.isNotEmpty) {
+                AppLogger.d('Found tracking ID in JRS response: $trackingId');
+                return trackingId;
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      AppLogger.d('Error extracting tracking ID from shipping info: $e');
+    }
+    
+    // If not found in shipping info, try to extract from status history notes
+    for (final status in widget.order.statusHistory.reversed) {
+      if (status.note != null && status.note!.contains('Tracking:')) {
+        final match = RegExp(r'Tracking:\s*(\d+)').firstMatch(status.note!);
+        if (match != null) {
+          AppLogger.d('Found tracking ID in status history: ${match.group(1)}');
+          return match.group(1);
+        }
+      }
+    }
+    
+    AppLogger.d('No tracking ID found');
+    return null;
+  }
+
+  Future<void> _loadTracking() async {
+    final trackingId = _getTrackingId();
+    if (trackingId == null) return;
+    
+    setState(() {
+      _isLoadingTracking = true;
+      _trackingError = null;
+    });
+
+    try {
+      final result = await JRSTrackingService.trackPackage(trackingId);
+      setState(() {
+        _trackingResult = result;
+        _isLoadingTracking = false;
+        if (!result.success) {
+          _trackingError = result.error ?? 'Failed to load tracking information';
+        }
+      });
+    } catch (e) {
+      setState(() {
+        _isLoadingTracking = false;
+        _trackingError = e.toString();
+      });
+      AppLogger.d('Error loading tracking: $e');
+    }
+  }
+
+  // Debug method to test tracking service
+  @override
   Widget build(BuildContext context) {
+    // Debug logging
+    AppLogger.d('Building OrderDetailsPage - Tracking ID: ${widget.order.shippingInfo.trackingId}');
+    
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -43,6 +158,12 @@ class OrderDetailsPage extends StatelessWidget {
             // Order Header Card
             _buildOrderHeaderCard(),
             const SizedBox(height: 16),
+
+            // JRS Tracking Section (if tracking ID available)
+            if (_getTrackingId() != null) ...[
+              _buildTrackingSection(),
+              const SizedBox(height: 16),
+            ],
 
             // Status Timeline
             _buildStatusTimeline(),
@@ -96,21 +217,21 @@ class OrderDetailsPage extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Order #${order.orderId.substring(0, 8).toUpperCase()}',
+                    'Order #${widget.order.orderId.substring(0, 8).toUpperCase()}',
                     style: AppTextStyles.titleLarge.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Placed on ${_formatDate(order.createdAt)}',
+                    'Placed on ${_formatDate(widget.order.createdAt)}',
                     style: AppTextStyles.bodyMedium.copyWith(
                       color: AppColors.onSurface.withValues(alpha: 0.6),
                     ),
                   ),
                 ],
               ),
-              _buildStatusChip(order.status),
+              _buildStatusChip(widget.order.status),
             ],
           ),
           const SizedBox(height: 16),
@@ -123,14 +244,14 @@ class OrderDetailsPage extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                '${order.items.length} item${order.items.length > 1 ? 's' : ''}',
+                '${widget.order.items.length} item${widget.order.items.length > 1 ? 's' : ''}',
                 style: AppTextStyles.bodyMedium.copyWith(
                   fontWeight: FontWeight.w500,
                 ),
               ),
               const Spacer(),
               Text(
-                '₱${order.summary.total.toStringAsFixed(2)}',
+                '₱${widget.order.summary.total.toStringAsFixed(2)}',
                 style: AppTextStyles.titleLarge.copyWith(
                   fontWeight: FontWeight.w700,
                   color: AppColors.primary,
@@ -139,6 +260,221 @@ class OrderDetailsPage extends StatelessWidget {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTrackingSection() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.onSurface.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.local_shipping_outlined,
+                color: AppColors.primary,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Package Tracking',
+                style: AppTextStyles.titleMedium.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              if (!_isLoadingTracking)
+                IconButton(
+                  icon: Icon(Icons.refresh, color: AppColors.primary),
+                  onPressed: _loadTracking,
+                  tooltip: 'Refresh tracking',
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (_isLoadingTracking)
+            Center(
+              child: Column(
+                children: [
+                  CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Loading tracking information...',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.onSurface.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else if (_trackingError != null)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.error.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.error_outline, color: AppColors.error),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Unable to load tracking',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.error,
+                          ),
+                        ),
+                        Text(
+                          _trackingError!,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.error,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else if (_trackingResult != null)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildInfoRow('Tracking ID', _getTrackingId() ?? 'N/A'),
+                _buildInfoRow('Status', _trackingResult!.status),
+                if (_trackingResult!.location != null)
+                  _buildInfoRow('Current Location', _trackingResult!.location!),
+                if (_trackingResult!.timestamp != null)
+                  _buildInfoRow('Last Update', _formatTrackingDateTime(_trackingResult!.timestamp!)),
+                
+                if (_trackingResult!.events.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    'Tracking History',
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: _trackingResult!.events.length,
+                    separatorBuilder: (context, index) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final event = _trackingResult!.events[index];
+                      final isLast = index == _trackingResult!.events.length - 1;
+                      
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Column(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              if (!isLast)
+                                Container(
+                                  width: 2,
+                                  height: 30,
+                                  color: AppColors.onSurface.withValues(alpha: 0.2),
+                                  margin: const EdgeInsets.only(top: 4),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  event.status,
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                Text(
+                                  event.location,
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.onSurface.withValues(alpha: 0.7),
+                                  ),
+                                ),
+                                if (event.description != null) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    event.description!,
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      color: AppColors.onSurface.withValues(alpha: 0.6),
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                ],
+                                Text(
+                                  _formatTrackingDateTime(event.timestamp),
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.onSurface.withValues(alpha: 0.5),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ],
+            )
+          else
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: AppColors.warning),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Tracking information will be available once your package is shipping.',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.warning,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -171,11 +507,11 @@ class OrderDetailsPage extends StatelessWidget {
           ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: order.statusHistory.length,
+            itemCount: widget.order.statusHistory.length,
             separatorBuilder: (context, index) => const SizedBox(height: 16),
             itemBuilder: (context, index) {
-              final statusUpdate = order.statusHistory[index];
-              final isLast = index == order.statusHistory.length - 1;
+              final statusUpdate = widget.order.statusHistory[index];
+              final isLast = index == widget.order.statusHistory.length - 1;
               
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -205,20 +541,11 @@ class OrderDetailsPage extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _formatStatusTitle(statusUpdate.status),
+                          statusUpdate.note ?? _formatStatusTitle(statusUpdate.status),
                           style: AppTextStyles.bodyMedium.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        if (statusUpdate.note != null) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            statusUpdate.note!,
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.onSurface.withValues(alpha: 0.6),
-                            ),
-                          ),
-                        ],
                         const SizedBox(height: 4),
                         Text(
                           _formatDateTime(statusUpdate.timestamp),
@@ -256,7 +583,7 @@ class OrderDetailsPage extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Items (${order.items.length})',
+            'Items (${widget.order.items.length})',
             style: AppTextStyles.titleMedium.copyWith(
               fontWeight: FontWeight.w700,
             ),
@@ -265,10 +592,10 @@ class OrderDetailsPage extends StatelessWidget {
           ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: order.items.length,
+            itemCount: widget.order.items.length,
             separatorBuilder: (context, index) => const Divider(height: 24),
             itemBuilder: (context, index) {
-              final item = order.items[index];
+              final item = widget.order.items[index];
               return _buildOrderItem(item);
             },
           ),
@@ -415,17 +742,17 @@ class OrderDetailsPage extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          _buildInfoRow('Name', order.shippingInfo.fullName),
-          _buildInfoRow('Phone', order.shippingInfo.phoneNumber),
+          _buildInfoRow('Name', widget.order.shippingInfo.fullName),
+          _buildInfoRow('Phone', widget.order.shippingInfo.phoneNumber),
           _buildInfoRow(
             'Address',
-            '${order.shippingInfo.addressLine1}'
-            '${order.shippingInfo.addressLine2 != null ? '\n${order.shippingInfo.addressLine2}' : ''}'
-            '\n${order.shippingInfo.city}, ${order.shippingInfo.state} ${order.shippingInfo.postalCode}'
-            '\n${order.shippingInfo.country}',
+            '${widget.order.shippingInfo.addressLine1}'
+            '${widget.order.shippingInfo.addressLine2 != null ? '\n${widget.order.shippingInfo.addressLine2}' : ''}'
+            '\n${widget.order.shippingInfo.city}, ${widget.order.shippingInfo.state} ${widget.order.shippingInfo.postalCode}'
+            '\n${widget.order.shippingInfo.country}',
           ),
-          if (order.shippingInfo.notes != null)
-            _buildInfoRow('Notes', order.shippingInfo.notes!),
+          if (widget.order.shippingInfo.notes != null)
+            _buildInfoRow('Notes', widget.order.shippingInfo.notes!),
         ],
       ),
     );
@@ -465,17 +792,17 @@ class OrderDetailsPage extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          _buildInfoRow('Payment Method', _formatPaymentMethod(order.paymentInfo.method)),
-          _buildInfoRow('Payment Status', _formatPaymentStatus(order.paymentInfo.status)),
-          _buildInfoRow('Amount', '₱${order.paymentInfo.amount.toStringAsFixed(2)}'),
-          _buildInfoRow('Currency', order.paymentInfo.currency),
-          if (order.paymentInfo.paidAt != null)
-            _buildInfoRow('Paid At', _formatDateTime(order.paymentInfo.paidAt!)),
-          if (order.paymentInfo.checkoutSessionId != null)
-            _buildInfoRow('Checkout Session ID', order.paymentInfo.checkoutSessionId!),
-          if (order.paymentInfo.paymentIntentId != null)
-            _buildInfoRow('Payment Intent ID', order.paymentInfo.paymentIntentId!),
-          if (order.paymentInfo.checkoutUrl != null && _canResumePayment())
+          _buildInfoRow('Payment Method', _formatPaymentMethod(widget.order.paymentInfo.method)),
+          _buildInfoRow('Payment Status', _formatPaymentStatus(widget.order.paymentInfo.status)),
+          _buildInfoRow('Amount', '₱${widget.order.paymentInfo.amount.toStringAsFixed(2)}'),
+          _buildInfoRow('Currency', widget.order.paymentInfo.currency),
+          if (widget.order.paymentInfo.paidAt != null)
+            _buildInfoRow('Paid At', _formatDateTime(widget.order.paymentInfo.paidAt!)),
+          if (widget.order.paymentInfo.checkoutSessionId != null)
+            _buildInfoRow('Checkout Session ID', widget.order.paymentInfo.checkoutSessionId!),
+          if (widget.order.paymentInfo.paymentIntentId != null)
+            _buildInfoRow('Payment Intent ID', widget.order.paymentInfo.paymentIntentId!),
+          if (widget.order.paymentInfo.checkoutUrl != null && _canResumePayment())
             _buildInfoRow('Payment URL', 'Available for payment resumption'),
         ],
       ),
@@ -506,16 +833,16 @@ class OrderDetailsPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          _buildSummaryRow('Subtotal', '₱${order.summary.subtotal.toStringAsFixed(2)}'),
-          _buildSummaryRow('Shipping', '₱${order.summary.shippingCost.toStringAsFixed(2)}'),
-          if (order.summary.taxAmount > 0)
-            _buildSummaryRow('Tax', '₱${order.summary.taxAmount.toStringAsFixed(2)}'),
-          if (order.summary.discountAmount > 0)
-            _buildSummaryRow('Discount', '-₱${order.summary.discountAmount.toStringAsFixed(2)}'),
+          _buildSummaryRow('Subtotal', '₱${widget.order.summary.subtotal.toStringAsFixed(2)}'),
+          _buildSummaryRow('Shipping', '₱${widget.order.summary.shippingCost.toStringAsFixed(2)}'),
+          if (widget.order.summary.taxAmount > 0)
+            _buildSummaryRow('Tax', '₱${widget.order.summary.taxAmount.toStringAsFixed(2)}'),
+          if (widget.order.summary.discountAmount > 0)
+            _buildSummaryRow('Discount', '-₱${widget.order.summary.discountAmount.toStringAsFixed(2)}'),
           const Divider(height: 24),
           _buildSummaryRow(
             'Total',
-            '₱${order.summary.total.toStringAsFixed(2)}',
+            '₱${widget.order.summary.total.toStringAsFixed(2)}',
             isTotal: true,
           ),
         ],
@@ -655,12 +982,12 @@ class OrderDetailsPage extends StatelessWidget {
         textColor = AppColors.success;
         icon = Icons.check_circle_outline;
         break;
-      case order_model.OrderStatus.processing:
+      case order_model.OrderStatus.to_ship:
         backgroundColor = AppColors.info.withValues(alpha: 0.1);
         textColor = AppColors.info;
         icon = Icons.autorenew;
         break;
-      case order_model.OrderStatus.shipped:
+      case order_model.OrderStatus.shipping:
         backgroundColor = AppColors.primary.withValues(alpha: 0.1);
         textColor = AppColors.primary;
         icon = Icons.local_shipping;
@@ -724,30 +1051,78 @@ class OrderDetailsPage extends StatelessWidget {
     return DateFormat('MMM dd, yyyy • hh:mm a').format(date);
   }
 
+  String _formatTrackingDateTime(String dateTimeString) {
+    try {
+      final dateTime = DateTime.parse(dateTimeString);
+      return DateFormat('MMM dd, yyyy • hh:mm a').format(dateTime);
+    } catch (e) {
+      return dateTimeString; // Return original string if parsing fails
+    }
+  }
+
   String _formatStatus(order_model.OrderStatus status) {
     return status.displayName;
   }
 
   String _formatStatusTitle(order_model.OrderStatus status) {
-    switch (status) {
-      case order_model.OrderStatus.pending:
+    // Get the raw status string to handle additional fulfillment stages
+    final statusString = status.toString().split('.').last;
+    
+    // Handle fulfillment stage statuses that might not be in the enum
+    switch (statusString) {
+      case 'pending':
         return 'Order Placed';
-      case order_model.OrderStatus.confirmed:
+      case 'confirmed':
         return 'Payment Confirmed';
-      case order_model.OrderStatus.processing:
+      case 'processing':
         return 'Order Processing';
-      case order_model.OrderStatus.shipped:
-        return 'Order Shipped';
-      case order_model.OrderStatus.delivered:
+      case 'to_ship':
+        return 'Ready to Ship';
+      case 'to_pack':
+      case 'to-pack':
+        return 'Packing Stage';
+      case 'to_arrangement':
+      case 'to-arrangement':
+        return 'Arrangement Stage';
+      case 'to_handover':
+      case 'to-handover':
+      case 'to_hand_over':
+      case 'to-hand-over':
+        return 'Hand Over Stage';
+      case 'shipping':
+        return 'Order shipping';
+      case 'delivered':
         return 'Order Completed';
-      case order_model.OrderStatus.cancelled:
+      case 'cancelled':
         return 'Order Cancelled';
-      case order_model.OrderStatus.refunded:
+      case 'refunded':
         return 'Order Refunded';
-      case order_model.OrderStatus.payment_failed:
+      case 'payment_failed':
         return 'Payment Failed';
-      case order_model.OrderStatus.expired:
+      case 'expired':
         return 'Payment Expired';
+      default:
+        // Fallback to enum-based formatting for any other cases
+        switch (status) {
+          case order_model.OrderStatus.pending:
+            return 'Order Placed';
+          case order_model.OrderStatus.confirmed:
+            return 'Payment Confirmed';
+          case order_model.OrderStatus.to_ship:
+            return 'Order Processing';
+          case order_model.OrderStatus.shipping:
+            return 'Order shipping';
+          case order_model.OrderStatus.delivered:
+            return 'Order Completed';
+          case order_model.OrderStatus.cancelled:
+            return 'Order Cancelled';
+          case order_model.OrderStatus.refunded:
+            return 'Order Refunded';
+          case order_model.OrderStatus.payment_failed:
+            return 'Payment Failed';
+          case order_model.OrderStatus.expired:
+            return 'Payment Expired';
+        }
     }
   }
 
@@ -787,9 +1162,9 @@ class OrderDetailsPage extends StatelessWidget {
         return AppColors.warning;
       case order_model.OrderStatus.confirmed:
         return AppColors.success;
-      case order_model.OrderStatus.processing:
+      case order_model.OrderStatus.to_ship:
         return AppColors.info;
-      case order_model.OrderStatus.shipped:
+      case order_model.OrderStatus.shipping:
         return AppColors.primary;
       case order_model.OrderStatus.delivered:
         return AppColors.success;
@@ -805,9 +1180,9 @@ class OrderDetailsPage extends StatelessWidget {
   }
 
   bool _canReorder() {
-    return order.status == order_model.OrderStatus.confirmed ||
-           order.status == order_model.OrderStatus.delivered ||
-           order.status == order_model.OrderStatus.expired;
+    return widget.order.status == order_model.OrderStatus.confirmed ||
+           widget.order.status == order_model.OrderStatus.delivered ||
+           widget.order.status == order_model.OrderStatus.expired;
   }
 
   bool _canResumePayment() {
@@ -815,9 +1190,9 @@ class OrderDetailsPage extends StatelessWidget {
     // 1. Order status is pending
     // 2. Order is not expired
     // 3. Order has a checkout URL
-    return order.status == order_model.OrderStatus.pending &&
-           order.paymentInfo.checkoutUrl != null &&
-           order.paymentInfo.checkoutUrl!.isNotEmpty;
+    return widget.order.status == order_model.OrderStatus.pending &&
+           widget.order.paymentInfo.checkoutUrl != null &&
+           widget.order.paymentInfo.checkoutUrl!.isNotEmpty;
   }
 
 
@@ -842,8 +1217,8 @@ class OrderDetailsPage extends StatelessWidget {
       return;
     }
 
-    final checkoutUrl = order.paymentInfo.checkoutUrl!;
-    AppLogger.d('Resuming payment for order ${order.orderId} with URL: $checkoutUrl');
+    final checkoutUrl = widget.order.paymentInfo.checkoutUrl!;
+    AppLogger.d('Resuming payment for order ${widget.order.orderId} with URL: $checkoutUrl');
 
     try {
       if (kIsWeb) {

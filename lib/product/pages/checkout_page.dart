@@ -177,6 +177,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     
     setState(() {
       _isCalculatingShipping = true;
+      _calculatedShippingCost = null; // Reset previous calculation
     });
 
     try {
@@ -198,9 +199,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
       AppLogger.d('Error calculating shipping cost: $e');
       
       setState(() {
-        _calculatedShippingCost = 50.0; // Fallback shipping cost
+        _calculatedShippingCost = null; // Don't show any specific amount
         _isCalculatingShipping = false;
       });
+      
+      // Optionally show a toast or message that shipping will be calculated at checkout
+      // This is better than showing a potentially incorrect fallback amount
     }
   }
 
@@ -210,8 +214,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
     final shipping = _calculatedShippingCost ?? 0.0;
     return subtotal + shipping;
   }
+  
+  /// Check if total is estimated (shipping not yet calculated)
+  bool _isTotalEstimated() {
+    return _calculatedShippingCost == null && !_isCalculatingShipping;
+  }
 
-  /// Build shipping row with loading state
+    /// Build shipping row with loading state
   Widget _buildShippingRow() {
     if (_isCalculatingShipping) {
       return Row(
@@ -221,8 +230,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
           Row(
             children: [
               SizedBox(
-                width: 12,
-                height: 12,
+                width: 16,
+                height: 16,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
                   valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
@@ -237,6 +246,24 @@ class _CheckoutPageState extends State<CheckoutPage> {
     }
 
     final shippingCost = _calculatedShippingCost ?? 0.0;
+    
+    // Show that final shipping cost will be calculated at checkout if calculation failed
+    if (_calculatedShippingCost == null) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text('Shipping', style: AppTextStyles.bodyMedium),
+          Text(
+            'Calculated at checkout',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.primary,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ],
+      );
+    }
+    
     return _buildSummaryRow('Shipping', shippingCost);
   }
 
@@ -779,11 +806,25 @@ class _CheckoutPageState extends State<CheckoutPage> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          label,
-          style: isTotal
-              ? AppTextStyles.titleMedium.copyWith(fontWeight: FontWeight.w700)
-              : AppTextStyles.bodyMedium,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: isTotal
+                  ? AppTextStyles.titleMedium.copyWith(fontWeight: FontWeight.w700)
+                  : AppTextStyles.bodyMedium,
+            ),
+            // Show estimation note for total when shipping is not calculated
+            if (isTotal && _isTotalEstimated())
+              Text(
+                '(excluding shipping)',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.onSurface.withValues(alpha: 0.6),
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+          ],
         ),
         Text(
           amount == 0 && label == 'Shipping'

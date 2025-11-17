@@ -2,6 +2,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:convert';
 import '../models/cart_model.dart';
 
@@ -215,66 +216,6 @@ class JRSShippingService {
     }
   }
 
-  /// Test JRS API connection
-  static Future<JRSConnectionTestResult> testConnection() async {
-    try {
-      AppLogger.d('Testing JRS API connection');
-      print('[JRS] Starting connection test...');
-
-      // Use the same platform-specific approach as the main function
-      late final dynamic result;
-      
-      if (kIsWeb) {
-        print('[JRS] Testing connection via web');
-        try {
-          final callable = functions.httpsCallable('testJRSConnection');
-          result = await callable.call().timeout(
-            const Duration(seconds: 15),
-            onTimeout: () {
-              throw Exception('Connection test timed out');
-            },
-          );
-        } catch (e) {
-          print('[JRS] Web connection test failed: $e');
-          rethrow;
-        }
-      } else {
-        print('[JRS] Testing connection via mobile');
-        try {
-          final callable = functions.httpsCallable('testJRSConnection');
-          result = await callable.call().timeout(
-            const Duration(seconds: 15),
-            onTimeout: () {
-              throw Exception('Connection test timed out');
-            },
-          );
-          print('[JRS] Mobile connection test succeeded');
-        } catch (e) {
-          print('[JRS] Mobile connection test failed: $e');
-          rethrow;
-        }
-      }
-
-      final data = result.data as Map<String, dynamic>;
-      
-      print('[JRS] Connection test completed successfully');
-      return JRSConnectionTestResult(
-        success: data['success'] == true,
-        message: data['message'] as String? ?? 'Unknown result',
-        data: data['data'],
-      );
-
-    } catch (e) {
-      AppLogger.d('Error testing JRS connection: $e');
-      print('[JRS] Connection test failed with error: $e');
-      
-      return JRSConnectionTestResult(
-        success: false,
-        message: 'Connection test failed: $e',
-      );
-    }
-  }
-
   /// Call Firebase function directly via HTTP for cross-platform compatibility
   static Future<dynamic> _callFirebaseFunctionViaHTTP(Map<String, dynamic> data) async {
     try {
@@ -282,16 +223,38 @@ class JRSShippingService {
       
       print('[JRS] Making HTTP call to: $url');
       
+      // Get Firebase Auth token
+      String? authToken;
+      try {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          authToken = await user.getIdToken();
+          print('[JRS] Got auth token for HTTP call');
+        } else {
+          print('[JRS] No authenticated user found');
+        }
+      } catch (e) {
+        print('[JRS] Error getting auth token: $e');
+      }
+      
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        // Add CORS headers for better compatibility
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      };
+      
+      // Add auth token if available
+      if (authToken != null) {
+        headers['Authorization'] = 'Bearer $authToken';
+        print('[JRS] Added Authorization header to HTTP request');
+      }
+      
       final response = await http.post(
         Uri.parse(url),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          // Add CORS headers for better compatibility
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
-        },
+        headers: headers,
         body: json.encode({'data': data}),
       ).timeout(const Duration(seconds: 30));
 
@@ -458,24 +421,6 @@ class JRSShippingResult {
   @override
   String toString() {
     return 'JRSShippingResult(success: $success, cost: ₱$shippingCost, message: $message${error != null ? ', error: $error' : ''})';
-  }
-}
-
-/// Result class for JRS connection test
-class JRSConnectionTestResult {
-  final bool success;
-  final String message;
-  final Map<String, dynamic>? data;
-
-  JRSConnectionTestResult({
-    required this.success,
-    required this.message,
-    this.data,
-  });
-
-  @override
-  String toString() {
-    return 'JRSConnectionTestResult(success: $success, message: $message)';
   }
 }
 
