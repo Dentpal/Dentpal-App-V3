@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb; // Added for web detection
 import '../../../core/app_theme/app_colors.dart';
 import '../../../core/app_theme/app_text_styles.dart';
 import '../../../utils/app_logger.dart';
@@ -416,6 +417,13 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
 
   @override
   Widget build(BuildContext context) {
+    final content = SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: _isCurrentPasswordVerified
+          ? _buildNewPasswordForm()
+          : _buildCurrentPasswordForm(),
+    );
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -439,11 +447,23 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
           ],
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: _isCurrentPasswordVerified 
-            ? _buildNewPasswordForm()
-            : _buildCurrentPasswordForm(),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWideWeb = kIsWeb && constraints.maxWidth > 800; // BREAKPOINT
+          if (isWideWeb) {
+            return Align(
+              alignment: Alignment.topCenter, // top-centered
+              child: Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 640), // MAX_WIDTH
+                  child: Material(color: Colors.transparent, child: content),
+                ),
+              ),
+            );
+          }
+          return content; // mobile & narrow web full width
+        },
       ),
     );
   }

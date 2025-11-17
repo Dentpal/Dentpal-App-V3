@@ -1898,16 +1898,11 @@ class _ProductListingPageState extends State<ProductListingPage>
           .cast<String>()
           .toList();
 
-      // If subcategories are selected, filter by subcategory AND category
       if (_selectedSubCategories.isNotEmpty) {
-        // Product must be in a selected category
         final isInSelectedCategory = selectedCategoryIds.contains(
           product.categoryId,
         );
 
-        // Product matches if it either:
-        // 1. Has a subcategory that matches the selected subcategories, OR
-        // 2. Has no subcategory (empty/null subCategoryId) - show in all subcategory filters
         final hasSubCategory = product.subCategoryId.isNotEmpty;
         final isInSelectedSubCategory = _selectedSubCategories.contains(
           product.subCategoryId,
@@ -2048,7 +2043,6 @@ class _ProductListingPageState extends State<ProductListingPage>
     }
   }
 
-  // Helper method to get filtered products count
   int _getFilteredProductsCount() {
     return _products.where((product) {
       // Exclude draft products from product listing page
@@ -2077,9 +2071,7 @@ class _ProductListingPageState extends State<ProductListingPage>
           product.categoryId,
         );
 
-        // Product matches if it either:
-        // 1. Has a subcategory that matches the selected subcategories, OR
-        // 2. Has no subcategory (empty/null subCategoryId) - show in all subcategory filters
+ 
         final hasSubCategory = product.subCategoryId.isNotEmpty;
         final isInSelectedSubCategory = _selectedSubCategories.contains(
           product.subCategoryId,

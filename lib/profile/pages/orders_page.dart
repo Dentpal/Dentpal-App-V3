@@ -25,7 +25,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
   TabController? _tabController;
   final TextEditingController _searchController = TextEditingController();
   String searchQuery = '';
-  
+
   // Add stream subscription for real-time updates
   late Stream<List<order_model.Order>> _ordersStream;
 
@@ -41,7 +41,10 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: filterOptions.length + 1, vsync: this);
+    _tabController = TabController(
+      length: filterOptions.length + 1,
+      vsync: this,
+    );
     _initializeOrdersStream();
   }
 
@@ -60,7 +63,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
       });
 
       _ordersStream = OrderService.getUserOrdersStream();
-      
+
       _ordersStream.listen(
         (fetchedOrders) {
           if (mounted) {
@@ -90,22 +93,27 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
 
   void _applyFilter() {
     List<order_model.Order> result = orders;
-    
+
     // Apply status filter
     if (selectedFilter != null) {
       result = result.where((order) => order.status == selectedFilter).toList();
     }
-    
+
     // Apply search filter
     if (searchQuery.isNotEmpty) {
       result = result.where((order) {
-        final orderIdMatch = order.orderId.toLowerCase().contains(searchQuery.toLowerCase());
-        final itemsMatch = order.items.any((item) => 
-          item.productName.toLowerCase().contains(searchQuery.toLowerCase()));
+        final orderIdMatch = order.orderId.toLowerCase().contains(
+          searchQuery.toLowerCase(),
+        );
+        final itemsMatch = order.items.any(
+          (item) => item.productName.toLowerCase().contains(
+            searchQuery.toLowerCase(),
+          ),
+        );
         return orderIdMatch || itemsMatch;
       }).toList();
     }
-    
+
     filteredOrders = result;
   }
 
@@ -153,93 +161,144 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
           ],
         ),
       ),
-      body: Column(
-        children: [
-          // Search bar
-          Container(
-            color: AppColors.surface,
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                TextField(
-                  controller: _searchController,
-                  onChanged: _onSearchChanged,
-                  decoration: InputDecoration(
-                    hintText: 'Search orders...',
-                    hintStyle: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.onSurface.withValues(alpha: 0.5),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWideWeb = kIsWeb && constraints.maxWidth > 800; // breakpoint
+
+          final pageContent = Column(
+            children: [
+              // Search bar
+              Container(
+                color: AppColors.surface,
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    TextField(
+                      controller: _searchController,
+                      onChanged: _onSearchChanged,
+                      decoration: InputDecoration(
+                        hintText: 'Search orders...',
+                        hintStyle: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.onSurface.withValues(alpha: 0.5),
+                        ),
+                        prefixIcon: Icon(
+                          Icons.search,
+                          color: AppColors.onSurface.withValues(alpha: 0.5),
+                        ),
+                        suffixIcon: searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: Icon(
+                                  Icons.clear,
+                                  color: AppColors.onSurface.withValues(
+                                    alpha: 0.5,
+                                  ),
+                                ),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  _onSearchChanged('');
+                                },
+                              )
+                            : null,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                            color: AppColors.onSurface.withValues(alpha: 0.2),
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                            color: AppColors.primary,
+                            width: 2,
+                          ),
+                        ),
+                        filled: true,
+                        fillColor: AppColors.background,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                      ),
                     ),
-                    prefixIcon: Icon(Icons.search, color: AppColors.onSurface.withValues(alpha: 0.5)),
-                    suffixIcon: searchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: Icon(Icons.clear, color: AppColors.onSurface.withValues(alpha: 0.5)),
-                            onPressed: () {
-                              _searchController.clear();
-                              _onSearchChanged('');
-                            },
-                          )
-                        : null,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: AppColors.onSurface.withValues(alpha: 0.2)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: AppColors.primary, width: 2),
-                    ),
-                    filled: true,
-                    fillColor: AppColors.background,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-          // Filter tabs
-          Container(
-            color: AppColors.surface,
-            child: TabBar(
-              controller: _tabController,
-              isScrollable: true,
-              labelColor: AppColors.primary,
-              unselectedLabelColor: AppColors.onSurface.withValues(alpha: 0.6),
-              indicatorColor: AppColors.primary,
-              labelStyle: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w600),
-              unselectedLabelStyle: AppTextStyles.bodyMedium,
-              tabs: [
-                Tab(text: 'All (${orders.length})'),
-                ...filterOptions.map((status) {
-                  final count = orders.where((order) => order.status == status).length;
-                  return Tab(text: '${_formatStatus(status)} ($count)');
-                }),
-              ],
-              onTap: (index) {
-                if (index == 0) {
-                  _onFilterChanged(null);
-                } else {
-                  _onFilterChanged(filterOptions[index - 1]);
-                }
-              },
-            ),
-          ),
-          // Orders content
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _refreshOrders,
-              color: AppColors.primary,
-              child: _buildBody(),
-            ),
-          ),
-        ],
+              ),
+              // Filter tabs
+              Container(
+                color: AppColors.surface,
+                child: TabBar(
+                  controller: _tabController,
+                  isScrollable: !isWideWeb, // wide web: fixed tabs
+                  labelColor: AppColors.primary,
+                  unselectedLabelColor: AppColors.onSurface.withValues(
+                    alpha: 0.6,
+                  ),
+                  indicatorColor: AppColors.primary,
+                  labelStyle: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                  unselectedLabelStyle: AppTextStyles.bodyMedium,
+                  labelPadding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                  ), // added to give more space when fixed
+                  tabs: [
+                    Tab(text: 'All (${orders.length})'),
+                    ...filterOptions.map((status) {
+                      final count = orders
+                          .where((order) => order.status == status)
+                          .length;
+                      // Shorten labels for wide web to avoid clipping
+                      final baseLabel = _formatStatus(status);
+                      final shortLabel = isWideWeb
+                          ? _shortenStatus(baseLabel)
+                          : baseLabel;
+                      return Tab(text: '$shortLabel ($count)');
+                    }),
+                  ],
+                  onTap: (index) {
+                    if (index == 0) {
+                      _onFilterChanged(null);
+                    } else {
+                      _onFilterChanged(filterOptions[index - 1]);
+                    }
+                  },
+                ),
+              ),
+              // Orders content
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: _refreshOrders,
+                  color: AppColors.primary,
+                  child: _buildBody(),
+                ),
+              ),
+            ],
+          );
+
+          if (isWideWeb) {
+            return Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: 840,
+                ), // increased width to prevent tab text truncation
+                child: Material(color: Colors.transparent, child: pageContent),
+              ),
+            );
+          }
+
+          // Mobile & narrow web: full-width fit
+          return Align(
+            alignment: Alignment.topCenter,
+            child: SizedBox(width: constraints.maxWidth, child: pageContent),
+          );
+        },
       ),
     );
   }
 
   Widget _buildBody() {
     if (isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     if (error != null) {
@@ -247,11 +306,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.error_outline,
-              size: 64,
-              color: AppColors.error,
-            ),
+            Icon(Icons.error_outline, size: 64, color: AppColors.error),
             const SizedBox(height: 16),
             Text(
               'Error',
@@ -403,9 +458,9 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                 _buildStatusChip(order.status),
               ],
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // Order Items Preview
             Text(
               'Items (${order.items.length})',
@@ -414,7 +469,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
               ),
             ),
             const SizedBox(height: 8),
-            
+
             // Show first few items
             ListView.separated(
               shrinkWrap: true,
@@ -426,7 +481,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                 return _buildOrderItemPreview(item);
               },
             ),
-            
+
             if (order.items.length > 3)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
@@ -438,9 +493,9 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                   ),
                 ),
               ),
-            
+
             const SizedBox(height: 16),
-            
+
             // Order Summary
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -456,17 +511,19 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                   style: AppTextStyles.titleMedium.copyWith(
                     fontWeight: FontWeight.w700,
                     color: AppColors.primary,
-                    fontFamily: 'Roboto'
+                    fontFamily: 'Roboto',
                   ),
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // Action Buttons
             Row(
-              mainAxisAlignment: kIsWeb ? MainAxisAlignment.end : MainAxisAlignment.start,
+              mainAxisAlignment: kIsWeb
+                  ? MainAxisAlignment.end
+                  : MainAxisAlignment.start,
               children: [
                 if (kIsWeb) ...[
                   // Web layout - buttons take only necessary space
@@ -591,7 +648,9 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                           height: 20,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              AppColors.primary,
+                            ),
                           ),
                         ),
                       );
@@ -605,7 +664,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                 ),
         ),
         const SizedBox(width: 12),
-        
+
         // Product Info
         Expanded(
           child: Column(
@@ -647,14 +706,14 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
             ],
           ),
         ),
-        
+
         // Item Price
         Text(
           '₱${item.price.toStringAsFixed(2)}',
           style: AppTextStyles.bodyMedium.copyWith(
             fontWeight: FontWeight.w600,
             color: AppColors.primary,
-            fontFamily: 'Roboto'
+            fontFamily: 'Roboto',
           ),
         ),
       ],
@@ -776,8 +835,8 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
   }
 
   bool _canReorder(order_model.OrderStatus status) {
-    return status == order_model.OrderStatus.delivered || 
-           status == order_model.OrderStatus.expired;
+    return status == order_model.OrderStatus.delivered ||
+        status == order_model.OrderStatus.expired;
   }
 
   bool _canResumePayment(order_model.Order order) {
@@ -786,15 +845,13 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     // 2. Order is not expired
     // 3. Order has a checkout URL
     return order.status == order_model.OrderStatus.pending &&
-           order.paymentInfo.checkoutUrl != null &&
-           order.paymentInfo.checkoutUrl!.isNotEmpty;
+        order.paymentInfo.checkoutUrl != null &&
+        order.paymentInfo.checkoutUrl!.isNotEmpty;
   }
 
   void _viewOrderDetails(order_model.Order order) {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => OrderDetailsPage(order: order),
-      ),
+      MaterialPageRoute(builder: (context) => OrderDetailsPage(order: order)),
     );
   }
 
@@ -820,7 +877,9 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     }
 
     final checkoutUrl = order.paymentInfo.checkoutUrl!;
-    AppLogger.d('Resuming payment for order ${order.orderId} with URL: $checkoutUrl');
+    AppLogger.d(
+      'Resuming payment for order ${order.orderId} with URL: $checkoutUrl',
+    );
 
     try {
       if (kIsWeb) {
@@ -828,14 +887,16 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
         final uri = Uri.parse(checkoutUrl);
         if (await canLaunchUrl(uri)) {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
-          
+
           // Show a dialog to inform the user
           if (mounted) {
             showDialog(
               context: context,
               builder: (context) => AlertDialog(
                 backgroundColor: AppColors.surface,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
                 title: Row(
                   children: [
                     Icon(Icons.payment, color: AppColors.primary),
@@ -850,7 +911,10 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    child: Text('OK', style: TextStyle(color: AppColors.primary)),
+                    child: Text(
+                      'OK',
+                      style: TextStyle(color: AppColors.primary),
+                    ),
                   ),
                 ],
               ),
@@ -868,8 +932,10 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                 successUrl: 'https://dentpal-store.web.app/payment-success',
                 cancelUrl: 'https://dentpal-store.web.app/payment-failed',
                 onPaymentComplete: (isSuccess, orderId) {
-                  AppLogger.d('Payment resumed completed. Success: $isSuccess, Order ID: $orderId');
-                  
+                  AppLogger.d(
+                    'Payment resumed completed. Success: $isSuccess, Order ID: $orderId',
+                  );
+
                   if (isSuccess) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
@@ -903,6 +969,32 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
           ),
         );
       }
+    }
+  }
+
+  String _shortenStatus(String status) {
+    // Shorten status text for wide web view to prevent truncation
+    switch (status) {
+      case 'Pending Payment':
+        return 'Pending';
+      case 'Confirmed Payment':
+        return 'Confirmed';
+      case 'Processing':
+        return 'In Progress';
+      case 'Shipped':
+        return 'On the Way';
+      case 'Completed':
+        return 'Delivered';
+      case 'Cancelled':
+        return 'Cancelled';
+      case 'Refunded':
+        return 'Refunded';
+      case 'Payment Failed':
+        return 'Failed';
+      case 'Expired Payment':
+        return 'Expired';
+      default:
+        return status;
     }
   }
 }

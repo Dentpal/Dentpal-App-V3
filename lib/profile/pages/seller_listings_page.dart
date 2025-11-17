@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb; // Added for web detection
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import '../../product/models/product_model.dart';
@@ -22,49 +23,49 @@ class _SellerListingsPageState extends State<SellerListingsPage>
   final List<Product> _outOfStockProducts = [];
   final List<Product> _draftProducts = [];
   final List<Product> _archivedProducts = [];
-  
+
   bool _isLoading = true;
   String? _errorMessage;
-  
+
   late TabController _tabController;
-  
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 5, vsync: this); // Updated to 5 tabs
     _loadSellerProducts();
   }
-  
+
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
   }
-  
+
   Future<void> _loadSellerProducts() async {
     if (!mounted) return;
-    
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
-    
+
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
         throw Exception('User not logged in');
       }
-      
+
       AppLogger.d('Loading products for seller: ${user.uid}');
-      
+
       // Get all products by this seller (including inactive ones)
       final allProducts = await _getAllProductsBySeller(user.uid);
-      
+
       AppLogger.d('Loaded ${allProducts.length} products for seller');
-      
+
       // Categorize products
       _categorizeProducts(allProducts);
-      
+
       if (mounted) {
         setState(() {
           _allProducts = allProducts;
@@ -81,7 +82,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
       }
     }
   }
-  
+
   Future<List<Product>> _getAllProductsBySeller(String sellerId) async {
     try {
       // Get ALL products by seller (not just active ones)
@@ -90,24 +91,24 @@ class _SellerListingsPageState extends State<SellerListingsPage>
           .collection('Product')
           .where('sellerId', isEqualTo: sellerId)
           .get();
-      
+
       List<Product> products = [];
       for (var doc in querySnapshot.docs) {
         try {
           Product product = Product.fromFirestore(doc);
-          
+
           // Get variations for each product
           QuerySnapshot variationsSnapshot = await FirebaseFirestore.instance
               .collection('Product')
               .doc(product.productId)
               .collection('Variation')
               .get();
-          
+
           if (variationsSnapshot.docs.isNotEmpty) {
             List<ProductVariation> variations = variationsSnapshot.docs
                 .map((doc) => ProductVariation.fromFirestore(doc))
                 .toList();
-            
+
             product = Product(
               productId: product.productId,
               name: product.name,
@@ -127,30 +128,30 @@ class _SellerListingsPageState extends State<SellerListingsPage>
               warrantyPolicy: product.warrantyPolicy,
             );
           }
-          
+
           products.add(product);
         } catch (e) {
           AppLogger.d('Error processing product document: $e');
         }
       }
-      
+
       // Sort products by createdAt on the client side (newest first)
       products.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      
+
       return products;
     } catch (e) {
       AppLogger.d('Error fetching seller products: $e');
       rethrow;
     }
   }
-  
+
   void _categorizeProducts(List<Product> products) {
     _activeProducts.clear();
     _inactiveProducts.clear();
     _outOfStockProducts.clear();
     _draftProducts.clear();
     _archivedProducts.clear();
-    
+
     for (Product product in products) {
       if (product.isArchived == true) {
         _archivedProducts.add(product);
@@ -164,31 +165,33 @@ class _SellerListingsPageState extends State<SellerListingsPage>
         _activeProducts.add(product);
       }
     }
-    
-    AppLogger.d('Products categorized - Active: ${_activeProducts.length}, Inactive: ${_inactiveProducts.length}, Out of Stock: ${_outOfStockProducts.length}, Drafts: ${_draftProducts.length}, Archived: ${_archivedProducts.length}');
+
+    AppLogger.d(
+      'Products categorized - Active: ${_activeProducts.length}, Inactive: ${_inactiveProducts.length}, Out of Stock: ${_outOfStockProducts.length}, Drafts: ${_draftProducts.length}, Archived: ${_archivedProducts.length}',
+    );
   }
-  
+
   bool _isProductOutOfStock(Product product) {
     if (product.variations == null || product.variations!.isEmpty) return true;
-    
+
     // Check if all variations have 0 stock
     return product.variations!.every((variation) => variation.stock <= 0);
   }
-  
+
   Future<void> _handleRefresh() async {
     await _loadSellerProducts();
   }
-  
+
   void _navigateToAddProduct() {
     Navigator.pushNamed(context, '/add-product').then((_) {
       // Refresh the list when returning from add product
       _loadSellerProducts();
     });
   }
-  
+
   void _navigateToEditProduct(Product product) {
     Navigator.pushNamed(
-      context, 
+      context,
       '/edit-product',
       arguments: {'productId': product.productId},
     ).then((_) {
@@ -196,7 +199,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
       _loadSellerProducts();
     });
   }
-  
+
   void _showProductOptions(Product product) {
     showModalBottomSheet(
       context: context,
@@ -256,7 +259,9 @@ class _SellerListingsPageState extends State<SellerListingsPage>
               ),
             ] else ...[
               _buildBottomSheetOption(
-                icon: product.isActive ? Icons.visibility_off : Icons.visibility,
+                icon: product.isActive
+                    ? Icons.visibility_off
+                    : Icons.visibility,
                 title: product.isActive ? 'Deactivate' : 'Activate',
                 onTap: () {
                   Navigator.pop(context);
@@ -278,7 +283,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
       ),
     );
   }
-  
+
   Widget _buildBottomSheetOption({
     required IconData icon,
     required String title,
@@ -314,29 +319,31 @@ class _SellerListingsPageState extends State<SellerListingsPage>
       ),
     );
   }
-  
+
   Future<void> _toggleProductStatus(Product product) async {
     try {
       final newStatus = !product.isActive;
-      
+
       await FirebaseFirestore.instance
           .collection('Product')
           .doc(product.productId)
           .update({
-        'isActive': newStatus,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      
+            'isActive': newStatus,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              newStatus ? 'Product activated successfully' : 'Product deactivated successfully',
+              newStatus
+                  ? 'Product activated successfully'
+                  : 'Product deactivated successfully',
             ),
             backgroundColor: AppColors.success,
           ),
         );
-        
+
         // Refresh the list
         _loadSellerProducts();
       }
@@ -352,18 +359,18 @@ class _SellerListingsPageState extends State<SellerListingsPage>
       }
     }
   }
-  
+
   Future<void> _publishDraft(Product product) async {
     try {
       await FirebaseFirestore.instance
           .collection('Product')
           .doc(product.productId)
           .update({
-        'isDraft': false,
-        'isActive': true,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      
+            'isDraft': false,
+            'isActive': true,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -371,7 +378,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
             backgroundColor: AppColors.success,
           ),
         );
-        
+
         // Refresh the list
         _loadSellerProducts();
       }
@@ -387,18 +394,18 @@ class _SellerListingsPageState extends State<SellerListingsPage>
       }
     }
   }
-  
+
   Future<void> _archiveProduct(Product product) async {
     try {
       await FirebaseFirestore.instance
           .collection('Product')
           .doc(product.productId)
           .update({
-        'isArchived': true,
-        'isActive': false,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      
+            'isArchived': true,
+            'isActive': false,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -406,7 +413,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
             backgroundColor: AppColors.success,
           ),
         );
-        
+
         // Refresh the list
         _loadSellerProducts();
       }
@@ -422,18 +429,18 @@ class _SellerListingsPageState extends State<SellerListingsPage>
       }
     }
   }
-  
+
   Future<void> _unarchiveProduct(Product product) async {
     try {
       await FirebaseFirestore.instance
           .collection('Product')
           .doc(product.productId)
           .update({
-        'isArchived': false,
-        'isActive': true,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      
+            'isArchived': false,
+            'isActive': true,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -441,7 +448,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
             backgroundColor: AppColors.success,
           ),
         );
-        
+
         // Refresh the list
         _loadSellerProducts();
       }
@@ -457,7 +464,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
       }
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -477,32 +484,67 @@ class _SellerListingsPageState extends State<SellerListingsPage>
             ),
           ],
         ),
-        bottom: _isLoading ? null : TabBar(
-          controller: _tabController,
-          labelColor: AppColors.primary,
-          unselectedLabelColor: AppColors.onSurface.withValues(alpha: 0.6),
-          indicatorColor: AppColors.primary,
-          isScrollable: true, // Make tabs scrollable to fit all 5
-          tabs: [
-            Tab(
-              text: 'Active (${_activeProducts.length})',
-            ),
-            Tab(
-              text: 'Inactive (${_inactiveProducts.length})',
-            ),
-            Tab(
-              text: 'Out of Stock (${_outOfStockProducts.length})',
-            ),
-            Tab(
-              text: 'Drafts (${_draftProducts.length})',
-            ),
-            Tab(
-              text: 'Archived (${_archivedProducts.length})',
-            ),
-          ],
-        ),
+        bottom: _isLoading
+            ? null
+            : PreferredSize(
+                preferredSize: const Size.fromHeight(kToolbarHeight),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isWideWeb =
+                        kIsWeb &&
+                        MediaQuery.of(context).size.width > 800; // BREAKPOINT
+                    final tabs = TabBar(
+                      controller: _tabController,
+                      labelColor: AppColors.primary,
+                      unselectedLabelColor: AppColors.onSurface.withValues(
+                        alpha: 0.6,
+                      ),
+                      indicatorColor: AppColors.primary,
+                      isScrollable: true,
+                      tabs: [
+                        Tab(text: 'Active (${_activeProducts.length})'),
+                        Tab(text: 'Inactive (${_inactiveProducts.length})'),
+                        Tab(
+                          text: 'Out of Stock (${_outOfStockProducts.length})',
+                        ),
+                        Tab(text: 'Drafts (${_draftProducts.length})'),
+                        Tab(text: 'Archived (${_archivedProducts.length})'),
+                      ],
+                    );
+                    if (isWideWeb) {
+                      return Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            maxWidth: 1000,
+                          ), // MAX_WIDTH match body
+                          child: tabs,
+                        ),
+                      );
+                    }
+                    return tabs; // mobile & narrow web full width
+                  },
+                ),
+              ),
       ),
-      body: _buildBody(),
+      // Responsive wrapper added
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWideWeb = kIsWeb && constraints.maxWidth > 800; // BREAKPOINT
+          final content = _buildBody();
+          if (isWideWeb) {
+            return Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1000), // MAX_WIDTH
+                child: Material(color: Colors.transparent, child: content),
+              ),
+            );
+          }
+          return Align(
+            alignment: Alignment.topCenter,
+            child: SizedBox(width: constraints.maxWidth, child: content),
+          );
+        },
+      ),
       floatingActionButton: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
@@ -525,20 +567,20 @@ class _SellerListingsPageState extends State<SellerListingsPage>
       ),
     );
   }
-  
+
   Widget _buildBody() {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-    
+
     if (_errorMessage != null) {
       return _buildErrorState();
     }
-    
+
     if (_allProducts.isEmpty) {
       return _buildEmptyState();
     }
-    
+
     return RefreshIndicator(
       onRefresh: _handleRefresh,
       color: AppColors.primary,
@@ -555,12 +597,12 @@ class _SellerListingsPageState extends State<SellerListingsPage>
       ),
     );
   }
-  
+
   Widget _buildProductList(List<Product> products, String category) {
     if (products.isEmpty) {
       return _buildEmptyTabState(category);
     }
-    
+
     return GridView.builder(
       padding: const EdgeInsets.all(16),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -582,18 +624,19 @@ class _SellerListingsPageState extends State<SellerListingsPage>
       },
     );
   }
-  
+
   Widget _buildEmptyTabState(String category) {
     String message;
     IconData icon;
-    
+
     switch (category) {
       case 'active':
         message = 'No active products\nAdd a new product to get started';
         icon = Icons.add_business;
         break;
       case 'inactive':
-        message = 'No inactive products\nAll your products are currently active';
+        message =
+            'No inactive products\nAll your products are currently active';
         icon = Icons.visibility_off;
         break;
       case 'out of stock':
@@ -601,18 +644,20 @@ class _SellerListingsPageState extends State<SellerListingsPage>
         icon = Icons.inventory_2;
         break;
       case 'drafts':
-        message = 'No draft products\nSave products as drafts to work on them later';
+        message =
+            'No draft products\nSave products as drafts to work on them later';
         icon = Icons.drafts;
         break;
       case 'archived':
-        message = 'No archived products\nArchive products you want to keep but not display';
+        message =
+            'No archived products\nArchive products you want to keep but not display';
         icon = Icons.archive;
         break;
       default:
         message = 'No products found';
         icon = Icons.search_off;
     }
-    
+
     return Center(
       child: Container(
         padding: const EdgeInsets.all(32),
@@ -625,11 +670,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
                 color: AppColors.primary.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(
-                icon,
-                size: 64,
-                color: AppColors.primary,
-              ),
+              child: Icon(icon, size: 64, color: AppColors.primary),
             ),
             const SizedBox(height: 24),
             Text(
@@ -660,7 +701,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
       ),
     );
   }
-  
+
   Widget _buildErrorState() {
     return Center(
       child: Container(
@@ -715,7 +756,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
       ),
     );
   }
-  
+
   Widget _buildEmptyState() {
     return Center(
       child: Container(
@@ -770,10 +811,10 @@ class _SellerListingsPageState extends State<SellerListingsPage>
       ),
     );
   }
-  
+
   int _getResponsiveCrossAxisCount(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    
+
     if (screenWidth >= 1200) {
       return 6;
     } else if (screenWidth >= 900) {

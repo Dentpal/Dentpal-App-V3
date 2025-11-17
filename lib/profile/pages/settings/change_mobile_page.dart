@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb; // Added for web detection
 import '../../../core/app_theme/app_colors.dart';
 import '../../../core/app_theme/app_text_styles.dart';
 import '../../../utils/app_logger.dart';
@@ -112,6 +113,20 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
 
   @override
   Widget build(BuildContext context) {
+    final content = _isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildStepIndicator(),
+                const SizedBox(height: 32),
+                _buildStepContent(),
+              ],
+            ),
+          );
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -135,19 +150,24 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
           ],
         ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildStepIndicator(),
-                  const SizedBox(height: 32),
-                  _buildStepContent(),
-                ],
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWideWeb = kIsWeb && constraints.maxWidth > 800; // BREAKPOINT
+          if (isWideWeb) {
+            return Align(
+              alignment: Alignment.topCenter, // top-centered vertically
+              child: Padding(
+                padding: const EdgeInsets.only(top: 16), // slight top spacing
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 640), // MAX_WIDTH
+                  child: Material(color: Colors.transparent, child: content),
+                ),
               ),
-            ),
+            );
+          }
+          return content; // mobile & narrow web full width
+        },
+      ),
     );
   }
 
