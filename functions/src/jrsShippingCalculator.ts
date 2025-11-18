@@ -212,51 +212,68 @@ export const calculateJRSShipping = onCall(
 
       const cartItems = await Promise.all(cartPromises);
 
-      // Get product details and group by seller
-      const cartItemsWithDetails = await Promise.all(
-        cartItems.map(async (cartItem: any) => {
-          const productDoc = await db.collection('Product').doc(cartItem.productId).get();
-          
-          if (!productDoc.exists) {
-            throw new HttpsError('not-found', `Product ${cartItem.productId} not found`);
-          }
-
-          const product = productDoc.data();
-          
-          let variationPrice = 0;
-          
-          if (cartItem.variationId) {
-            const variationDoc = await db
-              .collection('Product')
-              .doc(cartItem.productId)
-              .collection('Variation')
-              .doc(cartItem.variationId)
-              .get();
+        // Get product details and group by seller
+        const cartItemsWithDetails = await Promise.all(
+          cartItems.map(async (cartItem: any) => {
+            const productDoc = await db.collection('Product').doc(cartItem.productId).get();
             
-            if (variationDoc.exists) {
-              const variationData = variationDoc.data();
-              variationPrice = variationData?.price || 0;
+            if (!productDoc.exists) {
+              throw new HttpsError('not-found', `Product ${cartItem.productId} not found`);
+            }
+
+            const product = productDoc.data();
+            
+            let variationPrice = 0;
+            let dimensions = {
+              length: product?.dimensions?.length,
+              width: product?.dimensions?.width,
+              height: product?.dimensions?.height,
+              weight: product?.dimensions?.weight
+            };
+            
+            if (cartItem.variationId) {
+              const variationDoc = await db
+                .collection('Product')
+                .doc(cartItem.productId)
+                .collection('Variation')
+                .doc(cartItem.variationId)
+                .get();
+              
+              if (variationDoc.exists) {
+                const variationData = variationDoc.data();
+                variationPrice = variationData?.price || 0;
+                
+                // Get dimensions from variation if available, fallback to product dimensions
+                if (variationData?.dimensions) {
+                  dimensions = {
+                    length: variationData.dimensions.length || dimensions.length,
+                    width: variationData.dimensions.width || dimensions.width,
+                    height: variationData.dimensions.height || dimensions.height,
+                    weight: variationData.weight || dimensions.weight
+                  };
+                } else if (variationData?.weight) {
+                  // Some variations might only have weight
+                  dimensions.weight = variationData.weight;
+                }
+              } else {
+                variationPrice = product?.price || 0;
+              }
             } else {
               variationPrice = product?.price || 0;
             }
-          } else {
-            variationPrice = product?.price || 0;
-          }
 
-          return {
-            productId: cartItem.productId,
-            quantity: cartItem.quantity,
-            price: variationPrice,
-            sellerId: product?.sellerId,
-            length: product?.dimensions?.length,
-            width: product?.dimensions?.width,
-            height: product?.dimensions?.height,
-            weight: product?.dimensions?.weight,
-          };
-        })
-      );
-
-      // Group items by seller
+            return {
+              productId: cartItem.productId,
+              quantity: cartItem.quantity,
+              price: variationPrice,
+              sellerId: product?.sellerId,
+              length: dimensions.length,
+              width: dimensions.width,
+              height: dimensions.height,
+              weight: dimensions.weight,
+            };
+          })
+        );      // Group items by seller
       const itemsBySeller = cartItemsWithDetails.reduce((groups, item) => {
         const sellerId = item.sellerId;
         if (!groups[sellerId]) {

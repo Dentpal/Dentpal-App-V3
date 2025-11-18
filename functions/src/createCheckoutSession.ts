@@ -379,6 +379,12 @@ export const createCheckoutSession = onRequest(
           
           let variationPrice = 0;
           let variationName = '';
+          let dimensions = {
+            length: product?.dimensions?.length,
+            width: product?.dimensions?.width, 
+            height: product?.dimensions?.height,
+            weight: product?.dimensions?.weight
+          };
           
           if (cartItem.variationId) {
             const variationDoc = await db
@@ -392,6 +398,19 @@ export const createCheckoutSession = onRequest(
               const variationData = variationDoc.data();
               variationPrice = variationData?.price || 0;
               variationName = variationData?.name || '';
+              
+              // Get dimensions from variation if available, fallback to product dimensions
+              if (variationData?.dimensions) {
+                dimensions = {
+                  length: variationData.dimensions.length || dimensions.length,
+                  width: variationData.dimensions.width || dimensions.width,
+                  height: variationData.dimensions.height || dimensions.height,
+                  weight: variationData.weight || dimensions.weight
+                };
+              } else if (variationData?.weight) {
+                // Some variations might only have weight
+                dimensions.weight = variationData.weight;
+              }
             } else {
               console.error(`❌ Variation ${cartItem.variationId} not found for product ${cartItem.productId}`);
               // Fallback to base product price instead of throwing error
@@ -416,11 +435,11 @@ export const createCheckoutSession = onRequest(
             sellerId: product?.sellerId,
             sellerName: sellerData?.displayName || 'Unknown Seller',
             total: variationPrice * cartItem.quantity,
-            // Add physical dimensions
-            length: product?.dimensions?.length,
-            width: product?.dimensions?.width,
-            height: product?.dimensions?.height,
-            weight: product?.dimensions?.weight,
+            // Add physical dimensions from variation or product
+            length: dimensions.length,
+            width: dimensions.width,
+            height: dimensions.height,
+            weight: dimensions.weight,
           };
         });
 
