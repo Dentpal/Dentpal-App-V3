@@ -1904,7 +1904,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                           // Inquire button
                           Container(
                             decoration: BoxDecoration(
-                              color: AppColors.secondary,
+                              color: AppColors.accent,
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Material(

@@ -9,7 +9,12 @@ import '../../../core/app_theme/app_colors.dart';
 import '../../../core/app_theme/app_text_styles.dart';
 import '../../../utils/app_logger.dart';
 
-enum VerificationStep { enterNewPhone, verifyCurrentPhone, verifyNewPhone, completed }
+enum VerificationStep {
+  enterNewPhone,
+  verifyCurrentPhone,
+  verifyNewPhone,
+  completed,
+}
 
 class ChangeMobilePage extends StatefulWidget {
   const ChangeMobilePage({super.key});
@@ -20,10 +25,22 @@ class ChangeMobilePage extends StatefulWidget {
 
 class _ChangeMobilePageState extends State<ChangeMobilePage> {
   final TextEditingController _newPhoneController = TextEditingController();
-  final List<TextEditingController> _currentOtpControllers = List.generate(6, (index) => TextEditingController());
-  final List<TextEditingController> _newOtpControllers = List.generate(6, (index) => TextEditingController());
-  final List<FocusNode> _currentOtpFocusNodes = List.generate(6, (index) => FocusNode());
-  final List<FocusNode> _newOtpFocusNodes = List.generate(6, (index) => FocusNode());
+  final List<TextEditingController> _currentOtpControllers = List.generate(
+    6,
+    (index) => TextEditingController(),
+  );
+  final List<TextEditingController> _newOtpControllers = List.generate(
+    6,
+    (index) => TextEditingController(),
+  );
+  final List<FocusNode> _currentOtpFocusNodes = List.generate(
+    6,
+    (index) => FocusNode(),
+  );
+  final List<FocusNode> _newOtpFocusNodes = List.generate(
+    6,
+    (index) => FocusNode(),
+  );
 
   String? _currentPhoneNumber;
   String? _currentVerificationId;
@@ -32,12 +49,12 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
   int? _newResendToken;
   PhoneAuthCredential? _currentPhoneCredential;
   PhoneAuthCredential? _newPhoneCredential;
-  
+
   bool _isLoading = false;
   bool _isCurrentPhoneVerified = false;
   bool _isNewPhoneVerified = false;
   bool _isUpdatingPhone = false;
-  
+
   VerificationStep _currentStep = VerificationStep.enterNewPhone;
 
   @override
@@ -76,7 +93,7 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
             .collection('User')
             .doc(user.uid)
             .get();
-        
+
         if (userDoc.exists) {
           final userData = userDoc.data();
           _currentPhoneNumber = userData?['contactNumber'];
@@ -284,11 +301,7 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Icons.phone_android,
-            size: 48,
-            color: AppColors.primary,
-          ),
+          Icon(Icons.phone_android, size: 48, color: AppColors.primary),
           const SizedBox(height: 16),
           Text(
             'Current Phone Number',
@@ -366,10 +379,7 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
                 ),
                 elevation: 0,
               ),
-              child: Text(
-                'Continue',
-                style: AppTextStyles.buttonLarge,
-              ),
+              child: Text('Continue', style: AppTextStyles.buttonLarge),
             ),
           ),
         ],
@@ -393,11 +403,7 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
       ),
       child: Column(
         children: [
-          Icon(
-            Icons.verified_user,
-            size: 48,
-            color: AppColors.primary,
-          ),
+          Icon(Icons.verified_user, size: 48, color: AppColors.primary),
           const SizedBox(height: 16),
           Text(
             'Verify Current Number',
@@ -409,9 +415,7 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
           Text(
             'We sent a verification code to your current number:\n $_displayPhoneNumber',
             textAlign: TextAlign.center,
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.grey600,
-            ),
+            style: AppTextStyles.bodyMedium.copyWith(color: AppColors.grey600),
           ),
           const SizedBox(height: 24),
           _buildOtpInput(_currentOtpControllers, _currentOtpFocusNodes),
@@ -451,10 +455,7 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
                             strokeWidth: 2.5,
                           ),
                         )
-                      : Text(
-                          'Verify',
-                          style: AppTextStyles.buttonMedium,
-                        ),
+                      : Text('Verify', style: AppTextStyles.buttonMedium),
                 ),
               ),
             ],
@@ -480,11 +481,7 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
       ),
       child: Column(
         children: [
-          Icon(
-            Icons.smartphone,
-            size: 48,
-            color: AppColors.success,
-          ),
+          Icon(Icons.smartphone, size: 48, color: AppColors.success),
           const SizedBox(height: 16),
           Text(
             'Verify New Number',
@@ -494,13 +491,11 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
           ),
           const SizedBox(height: 8),
           Text(
-            _isUpdatingPhone 
+            _isUpdatingPhone
                 ? 'Updating your phone number...'
                 : 'We sent a verification code to your new number:\n${_newPhoneController.text.trim()}',
             textAlign: TextAlign.center,
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.grey600,
-            ),
+            style: AppTextStyles.bodyMedium.copyWith(color: AppColors.grey600),
           ),
           const SizedBox(height: 24),
           _buildOtpInput(_newOtpControllers, _newOtpFocusNodes),
@@ -509,7 +504,9 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
             children: [
               Expanded(
                 child: TextButton(
-                  onPressed: (_isLoading || _isUpdatingPhone) ? null : () => _resendNewOtp(),
+                  onPressed: (_isLoading || _isUpdatingPhone)
+                      ? null
+                      : () => _resendNewOtp(),
                   child: Text(
                     'Resend Code',
                     style: AppTextStyles.buttonMedium.copyWith(
@@ -521,7 +518,9 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
               const SizedBox(width: 16),
               Expanded(
                 child: ElevatedButton(
-                  onPressed: (_isLoading || _isUpdatingPhone) ? null : _verifyNewOtp,
+                  onPressed: (_isLoading || _isUpdatingPhone)
+                      ? null
+                      : _verifyNewOtp,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.success,
                     foregroundColor: AppColors.onPrimary,
@@ -540,10 +539,7 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
                             strokeWidth: 2.5,
                           ),
                         )
-                      : Text(
-                          'Verify',
-                          style: AppTextStyles.buttonMedium,
-                        ),
+                      : Text('Verify', style: AppTextStyles.buttonMedium),
                 ),
               ),
             ],
@@ -576,11 +572,7 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
               color: AppColors.success.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              Icons.check_circle,
-              size: 48,
-              color: AppColors.success,
-            ),
+            child: Icon(Icons.check_circle, size: 48, color: AppColors.success),
           ),
           const SizedBox(height: 24),
           Text(
@@ -593,9 +585,7 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
           Text(
             'Your phone number has been successfully updated to:\n${_newPhoneController.text.trim()}',
             textAlign: TextAlign.center,
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.grey600,
-            ),
+            style: AppTextStyles.bodyMedium.copyWith(color: AppColors.grey600),
           ),
           const SizedBox(height: 32),
           SizedBox(
@@ -611,10 +601,7 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
                 ),
                 elevation: 0,
               ),
-              child: Text(
-                'Done',
-                style: AppTextStyles.buttonLarge,
-              ),
+              child: Text('Done', style: AppTextStyles.buttonLarge),
             ),
           ),
         ],
@@ -622,7 +609,10 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
     );
   }
 
-  Widget _buildOtpInput(List<TextEditingController> controllers, List<FocusNode> focusNodes) {
+  Widget _buildOtpInput(
+    List<TextEditingController> controllers,
+    List<FocusNode> focusNodes,
+  ) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: List.generate(6, (index) {
@@ -664,7 +654,7 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
 
   void _validateAndProceed() async {
     final phoneNumber = _newPhoneController.text.trim();
-    
+
     if (phoneNumber.isEmpty) {
       _showMessage(false, 'Please enter a new phone number');
       return;
@@ -688,7 +678,10 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
     }
 
     if (_formattedNewPhoneNumber == _currentPhoneNumber) {
-      _showMessage(false, 'New phone number must be different from current number');
+      _showMessage(
+        false,
+        'New phone number must be different from current number',
+      );
       return;
     }
 
@@ -725,7 +718,7 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
 
       // Combine results and exclude current user
       final conflictingUsers = <Map<String, dynamic>>[];
-      
+
       // Process UserLookup results
       for (var doc in userLookupQuery.docs) {
         if (doc.id != currentUser.uid) {
@@ -733,7 +726,7 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
               .collection('User')
               .doc(doc.id)
               .get();
-          
+
           if (userData.exists) {
             conflictingUsers.add({
               'userId': doc.id,
@@ -746,7 +739,7 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
 
       // Process User results (for users without UserLookup)
       for (var doc in userQuery.docs) {
-        if (doc.id != currentUser.uid && 
+        if (doc.id != currentUser.uid &&
             !conflictingUsers.any((user) => user['userId'] == doc.id)) {
           conflictingUsers.add({
             'userId': doc.id,
@@ -761,7 +754,10 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
       });
 
       if (conflictingUsers.isNotEmpty) {
-        _showMessage(false, 'This number is already linked to another account. Please use a different number.');
+        _showMessage(
+          false,
+          'This number is already linked to another account. Please use a different number.',
+        );
       } else {
         _sendCurrentPhoneVerification();
       }
@@ -799,7 +795,10 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
           setState(() {
             _isLoading = false;
           });
-          _showMessage(false, 'Failed to send verification to current number: ${e.message}');
+          _showMessage(
+            false,
+            'Failed to send verification to current number: ${e.message}',
+          );
         },
         codeSent: (String verificationId, int? resendToken) {
           setState(() {
@@ -842,21 +841,25 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
 
       // Store the credential without signing in (we'll validate it works during the update)
       _currentPhoneCredential = credential;
-      
+
       setState(() {
         _isCurrentPhoneVerified = true;
         _isLoading = false;
       });
-      
-      AppLogger.d('Current phone OTP accepted, proceeding to new phone verification');
+
+      AppLogger.d(
+        'Current phone OTP accepted, proceeding to new phone verification',
+      );
       _sendNewPhoneVerification();
-        
     } catch (e) {
       setState(() {
         _isLoading = false;
       });
       AppLogger.d('Current phone verification failed: $e');
-      _showMessage(false, 'Invalid verification code for current number. Please try again.');
+      _showMessage(
+        false,
+        'Invalid verification code for current number. Please try again.',
+      );
     }
   }
 
@@ -880,7 +883,10 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
           setState(() {
             _isLoading = false;
           });
-          _showMessage(false, 'Failed to send verification to new number: ${e.message}');
+          _showMessage(
+            false,
+            'Failed to send verification to new number: ${e.message}',
+          );
         },
         codeSent: (String verificationId, int? resendToken) {
           setState(() {
@@ -921,9 +927,9 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
         smsCode: otp,
       );
 
-      // Store the credential without signing in 
+      // Store the credential without signing in
       _newPhoneCredential = credential;
-      
+
       setState(() {
         _isNewPhoneVerified = true;
         _isLoading = false;
@@ -931,13 +937,15 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
 
       AppLogger.d('New phone OTP verified successfully');
       await _updatePhoneNumber();
-        
     } catch (e) {
       setState(() {
         _isLoading = false;
       });
       AppLogger.d('New phone verification failed: $e');
-      _showMessage(false, 'Invalid verification code for new number. Please try again.');
+      _showMessage(
+        false,
+        'Invalid verification code for new number. Please try again.',
+      );
     }
   }
 
@@ -951,9 +959,11 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
       if (user == null) {
         throw Exception('User not authenticated');
       }
-      
+
       AppLogger.d('Starting phone number update for user: ${user.uid}');
-      AppLogger.d('User ${user.uid} verified access to both $_currentPhoneNumber and $_formattedNewPhoneNumber');
+      AppLogger.d(
+        'User ${user.uid} verified access to both $_currentPhoneNumber and $_formattedNewPhoneNumber',
+      );
 
       // Update Firebase Auth phone number using the new phone credential
       if (_newPhoneCredential != null) {
@@ -964,15 +974,22 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
           // If Firebase Auth update fails, we'll continue with Firestore updates only
           // The phone verification already confirmed the user has access to the new number
           AppLogger.d('Firebase Auth phone update failed: $e');
-          AppLogger.d('Continuing with Firestore-only update since phone verification was successful');
+          AppLogger.d(
+            'Continuing with Firestore-only update since phone verification was successful',
+          );
         }
       } else {
-        AppLogger.d('New phone credential not available, updating Firestore only');
+        AppLogger.d(
+          'New phone credential not available, updating Firestore only',
+        );
       }
 
       // Get user data first to retrieve email and createdAt
-      final userDoc = await FirebaseFirestore.instance.collection('User').doc(user.uid).get();
-      
+      final userDoc = await FirebaseFirestore.instance
+          .collection('User')
+          .doc(user.uid)
+          .get();
+
       if (!userDoc.exists) {
         throw Exception('User document not found');
       }
@@ -988,23 +1005,32 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
       });
 
       // Check if UserLookup exists, if not create it
-      final userLookupDoc = await FirebaseFirestore.instance.collection('UserLookup').doc(user.uid).get();
-      
+      final userLookupDoc = await FirebaseFirestore.instance
+          .collection('UserLookup')
+          .doc(user.uid)
+          .get();
+
       if (userLookupDoc.exists) {
         // Update existing UserLookup document
-        await FirebaseFirestore.instance.collection('UserLookup').doc(user.uid).update({
-          'contactNumber': _formattedNewPhoneNumber,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
+        await FirebaseFirestore.instance
+            .collection('UserLookup')
+            .doc(user.uid)
+            .update({
+              'contactNumber': _formattedNewPhoneNumber,
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
         AppLogger.d('UserLookup document updated');
       } else {
         // Create new UserLookup document
-        await FirebaseFirestore.instance.collection('UserLookup').doc(user.uid).set({
-          'contactNumber': _formattedNewPhoneNumber,
-          'email': userEmail,
-          'createdAt': userCreatedAt,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
+        await FirebaseFirestore.instance
+            .collection('UserLookup')
+            .doc(user.uid)
+            .set({
+              'contactNumber': _formattedNewPhoneNumber,
+              'email': userEmail,
+              'createdAt': userCreatedAt,
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
         AppLogger.d('UserLookup document created');
       }
 
@@ -1014,7 +1040,7 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
         _currentStep = VerificationStep.completed;
         _isUpdatingPhone = false;
       });
-      
+
       AppLogger.d('Phone number update completed successfully');
     } catch (e) {
       setState(() {
@@ -1127,9 +1153,7 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
         content: Text(message),
         backgroundColor: isSuccess ? AppColors.success : AppColors.error,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }
