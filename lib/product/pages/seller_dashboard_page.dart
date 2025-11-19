@@ -50,17 +50,21 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
   final List<Product> _archivedProducts = [];
   
   bool _isLoading = true;
+  bool _isLoadingMore = false;
   String? _errorMessage;
   String _userFirstName = 'Seller';
 
-  // Tab controllers for main navigation (My Listings, Profile)
-  late TabController _mainTabController;
-  // Tab controller for product categories within My Listings
+  // Pagination state
+  DocumentSnapshot? _lastDocument;
+  bool _hasMore = true;
+  final int _pageSize = 20; // Load 20 products at a time
+  final ScrollController _scrollController = ScrollController();
+
+  // Tab controller for product categories within My Listings only
   late TabController _productTabController;
   
-  // Page controller for main navigation
-  late PageController _pageController;
-  int _selectedIndex = 0;
+  // Current page state - true for My Listings, false for Profile
+  bool _showingMyListings = true;
 
   // Override to keep this page alive when navigating away
   @override
@@ -70,10 +74,11 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
   void initState() {
     super.initState();
     
-    // Initialize tab controllers
-    _mainTabController = TabController(length: 2, vsync: this); // My Listings, Profile
+    // Initialize tab controller for product categories only
     _productTabController = TabController(length: 5, vsync: this); // Product categories
-    _pageController = PageController();
+    
+    // Add scroll listener for pagination
+    _scrollController.addListener(_scrollListener);
     
     // Load data
     _loadUserName();
@@ -85,9 +90,9 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
 
   @override
   void dispose() {
-    _mainTabController.dispose();
+    _scrollController.removeListener(_scrollListener);
+    _scrollController.dispose();
     _productTabController.dispose();
-    _pageController.dispose();
     
     AppLogger.d("🔴 SellerDashboardPage dispose called");
     super.dispose();
@@ -119,6 +124,10 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      // Reset pagination state
+      _allProducts.clear();
+      _lastDocument = null;
+      _hasMore = true;
     });
     
     try {
@@ -127,22 +136,11 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
         throw Exception('User not logged in');
       }
       
-      AppLogger.d('Loading products for seller: ${user.uid}');
+      AppLogger.d('Loading first page of products for seller: ${user.uid}');
       
-      // Get all products by this seller (including inactive ones)
-      final allProducts = await _getAllProductsBySeller(user.uid);
+      // Load first page with pagination
+      await _loadSellerProductsPage(user.uid, isFirstPage: true);
       
-      AppLogger.d('Loaded ${allProducts.length} products for seller');
-      
-      // Categorize products
-      _categorizeProducts(allProducts);
-      
-      if (mounted) {
-        setState(() {
-          _allProducts = allProducts;
-          _isLoading = false;
-        });
-      }
     } catch (e) {
       AppLogger.d('Error loading seller products: $e');
       if (mounted) {
@@ -153,21 +151,34 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
       }
     }
   }
-  
-  Future<List<Product>> _getAllProductsBySeller(String sellerId) async {
+
+  Future<void> _loadSellerProductsPage(String sellerId, {bool isFirstPage = false}) async {
     try {
-      // Get ALL products by seller (not just active ones)
-      QuerySnapshot querySnapshot = await FirebaseFirestore.instance
+      AppLogger.d('Loading ${isFirstPage ? 'first' : 'next'} page of seller products');
+      
+      Query query = FirebaseFirestore.instance
           .collection('Product')
           .where('sellerId', isEqualTo: sellerId)
-          .get();
+          .orderBy('createdAt', descending: true) // Uses composite index
+          .limit(_pageSize);
       
-      List<Product> products = [];
+      // Add pagination cursor if not first page
+      if (!isFirstPage && _lastDocument != null) {
+        query = query.startAfterDocument(_lastDocument!);
+      }
+      
+      QuerySnapshot querySnapshot = await query.get();
+      
+      AppLogger.d('Query completed, processing ${querySnapshot.docs.length} documents');
+      
+      List<Product> pageProducts = [];
+      
+      // Process products from this page
       for (var doc in querySnapshot.docs) {
         try {
           Product product = Product.fromFirestore(doc);
           
-          // Get variations for each product
+          // Get variations for this product
           QuerySnapshot variationsSnapshot = await FirebaseFirestore.instance
               .collection('Product')
               .doc(product.productId)
@@ -199,21 +210,85 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
             );
           }
           
-          products.add(product);
+          pageProducts.add(product);
         } catch (e) {
           AppLogger.d('Error processing product document: $e');
         }
       }
       
-      // Sort products by createdAt on the client side (newest first)
-      products.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      if (mounted) {
+        setState(() {
+          if (isFirstPage) {
+            _allProducts = pageProducts;
+          } else {
+            _allProducts.addAll(pageProducts);
+          }
+          
+          // Update pagination state
+          _lastDocument = querySnapshot.docs.isNotEmpty ? querySnapshot.docs.last : null;
+          _hasMore = querySnapshot.docs.length == _pageSize;
+          
+          if (isFirstPage) {
+            _isLoading = false;
+          } else {
+            _isLoadingMore = false;
+          }
+          
+          // Categorize all products
+          _categorizeProducts(_allProducts);
+        });
+      }
       
-      return products;
+      AppLogger.d('Successfully loaded ${pageProducts.length} products (page total: ${_allProducts.length})');
+      
     } catch (e) {
-      AppLogger.d('Error fetching seller products: $e');
+      AppLogger.d('Error loading seller products page: $e');
+      if (mounted) {
+        setState(() {
+          if (isFirstPage) {
+            _isLoading = false;
+          } else {
+            _isLoadingMore = false;
+          }
+          _errorMessage = e.toString();
+        });
+      }
       rethrow;
     }
   }
+
+  // Scroll listener for detecting when user reaches bottom
+  void _scrollListener() {
+    if (!mounted) return;
+    
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 200 &&
+        !_isLoading &&
+        !_isLoadingMore &&
+        _hasMore) {
+      _loadMoreProducts();
+    }
+  }
+
+  Future<void> _loadMoreProducts() async {
+    if (_isLoadingMore || !_hasMore || _lastDocument == null || !mounted) return;
+    
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    
+    if (mounted) {
+      setState(() {
+        _isLoadingMore = true;
+      });
+    }
+    
+    try {
+      await _loadSellerProductsPage(user.uid, isFirstPage: false);
+    } catch (e) {
+      AppLogger.d('Error loading more products: $e');
+    }
+  }
+
   
   void _categorizeProducts(List<Product> products) {
     _activeProducts.clear();
@@ -349,21 +424,15 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         
-        // If we're on Profile tab and standalone, go back to My Listings first
-        if (_selectedIndex == 1) {
+        // If we're on Profile page and standalone, go back to My Listings first
+        if (!_showingMyListings && mounted) {
           setState(() {
-            _selectedIndex = 0;
+            _showingMyListings = true;
           });
-          _pageController.animateToPage(
-            0,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
-          );
-          _mainTabController.animateTo(0);
           return;
         }
         
-        // If we're on My Listings tab or not standalone, show exit confirmation
+        // If we're on My Listings or not standalone, show exit confirmation
         final shouldExit = await _showExitConfirmation();
         if (shouldExit && context.mounted) {
           Navigator.of(context).pop();
@@ -374,164 +443,332 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
   }
 
   Widget _buildScaffold() {
+    final isWideScreen = MediaQuery.of(context).size.width >= 900;
+    
     return Scaffold(
       backgroundColor: AppColors.background,
       body: CustomScrollView(
         slivers: [
-          // Simple header similar to product listing page
-          SliverAppBar(
-            expandedHeight: 60,
-            floating: false,
-            pinned: true,
-            elevation: 0,
-            backgroundColor: AppColors.surface,
-            automaticallyImplyLeading: widget.isStandalone,
-            leading: widget.isStandalone 
-                ? IconButton(
-                    icon: Icon(
-                      Icons.arrow_back,
-                      color: AppColors.onSurface,
+          // Header similar to product listing page (for wide screens)
+          if (isWideScreen)
+            SliverToBoxAdapter(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                child: Row(
+                  children: [
+                    // LEFT: Welcome section
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.store,
+                            color: AppColors.primary,
+                            size: 16,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Seller Dashboard',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.onSurface.withValues(alpha: 0.6),
+                                fontSize: 11,
+                              ),
+                            ),
+                            Text(
+                              'Hi $_userFirstName',
+                              style: AppTextStyles.titleMedium.copyWith(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                    onPressed: () => Navigator.of(context).pop(),
-                  )
-                : null,
-            title: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.store,
-                    color: AppColors.primary,
-                    size: 16,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Seller Dashboard',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.onSurface.withValues(alpha: 0.6),
-                          fontSize: 11,
+                    
+                    // CENTER: Spacer
+                    const Expanded(child: SizedBox()),
+                    
+                    // RIGHT: Navigation buttons
+                    Row(
+                      children: [
+                        // My Listings button
+                        GestureDetector(
+                          onTap: () {
+                            if (mounted) {
+                              setState(() {
+                                _showingMyListings = true;
+                              });
+                            }
+                          },
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.inventory,
+                                size: 22,
+                                color: _showingMyListings 
+                                    ? AppColors.primary 
+                                    : AppColors.onSurface.withOpacity(0.7),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'My Listings',
+                                style: AppTextStyles.titleMedium.copyWith(
+                                  color: _showingMyListings 
+                                      ? AppColors.primary 
+                                      : AppColors.onSurface.withOpacity(0.7),
+                                  fontWeight: _showingMyListings 
+                                      ? FontWeight.bold 
+                                      : FontWeight.normal,
+                                  fontSize: 18,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      Text(
-                        'Hi $_userFirstName',
-                        style: AppTextStyles.titleMedium.copyWith(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
+                        const SizedBox(width: 24),
+                        // Profile button
+                        GestureDetector(
+                          onTap: () {
+                            if (mounted) {
+                              setState(() {
+                                _showingMyListings = false;
+                              });
+                            }
+                          },
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.person_outline,
+                                size: 22,
+                                color: !_showingMyListings 
+                                    ? AppColors.primary 
+                                    : AppColors.onSurface.withOpacity(0.7),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Profile',
+                                style: AppTextStyles.titleMedium.copyWith(
+                                  color: !_showingMyListings 
+                                      ? AppColors.primary 
+                                      : AppColors.onSurface.withOpacity(0.7),
+                                  fontWeight: !_showingMyListings 
+                                      ? FontWeight.bold 
+                                      : FontWeight.normal,
+                                  fontSize: 18,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            flexibleSpace: FlexibleSpaceBar(
-              background: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      AppColors.primary.withValues(alpha: 0.05),
-                      AppColors.secondary.withValues(alpha: 0.02),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            actions: [
-              Container(
-                margin: const EdgeInsets.only(right: 8, top: 8, bottom: 8),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
+                      ],
                     ),
                   ],
                 ),
-                child: IconButton(
-                  iconSize: 20,
-                  padding: const EdgeInsets.all(8),
-                  constraints: const BoxConstraints(
-                    minWidth: 36,
-                    minHeight: 36,
-                  ),
-                  icon: const Icon(
-                    Icons.add,
-                    color: AppColors.onSurface,
-                  ),
-                  onPressed: _navigateToAddProduct,
-                ),
-              ),
-              const SizedBox(width: 8),
-            ],
-          ),
-          
-          // Navigation tabs section
-          SliverToBoxAdapter(
-            child: Container(
-              color: AppColors.surface,
-              child: TabBar(
-                controller: _mainTabController,
-                labelColor: AppColors.primary,
-                unselectedLabelColor: AppColors.onSurface.withValues(alpha: 0.6),
-                indicatorColor: AppColors.primary,
-                indicatorWeight: 3,
-                labelStyle: AppTextStyles.titleSmall.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-                unselectedLabelStyle: AppTextStyles.titleSmall,
-                tabs: const [
-                  Tab(text: 'My Listings'),
-                  Tab(text: 'Profile'),
-                ],
-                onTap: (index) {
-                  setState(() {
-                    _selectedIndex = index;
-                  });
-                  _pageController.animateToPage(
-                    index,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                  );
-                },
               ),
             ),
-          ),
+          
+          // SliverAppBar for mobile/tablet only
+          if (!isWideScreen)
+            SliverAppBar(
+              expandedHeight: 60,
+              floating: false,
+              pinned: true,
+              elevation: 0,
+              backgroundColor: AppColors.surface,
+              automaticallyImplyLeading: widget.isStandalone,
+              leading: widget.isStandalone 
+                  ? IconButton(
+                      icon: Icon(
+                        Icons.arrow_back,
+                        color: AppColors.onSurface,
+                      ),
+                      onPressed: () => Navigator.of(context).pop(),
+                    )
+                  : null,
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.store,
+                      color: AppColors.primary,
+                      size: 16,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Seller Dashboard',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.onSurface.withValues(alpha: 0.6),
+                            fontSize: 11,
+                          ),
+                        ),
+                        Text(
+                          'Hi $_userFirstName',
+                          style: AppTextStyles.titleMedium.copyWith(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              flexibleSpace: FlexibleSpaceBar(
+                background: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        AppColors.primary.withValues(alpha: 0.05),
+                        AppColors.secondary.withValues(alpha: 0.02),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              actions: [
+                Container(
+                  margin: const EdgeInsets.only(right: 8, top: 8, bottom: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: IconButton(
+                    iconSize: 20,
+                    padding: const EdgeInsets.all(8),
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
+                    icon: const Icon(
+                      Icons.add,
+                      color: AppColors.onSurface,
+                    ),
+                    onPressed: _navigateToAddProduct,
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+            ),
+          
+          // Navigation tabs section for mobile only
+          if (!isWideScreen)
+            SliverToBoxAdapter(
+              child: Container(
+                color: AppColors.surface,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          if (mounted) {
+                            setState(() {
+                              _showingMyListings = true;
+                            });
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(
+                                color: _showingMyListings 
+                                    ? AppColors.primary 
+                                    : Colors.transparent,
+                                width: 3,
+                              ),
+                            ),
+                          ),
+                          child: Text(
+                            'My Listings',
+                            textAlign: TextAlign.center,
+                            style: AppTextStyles.titleSmall.copyWith(
+                              color: _showingMyListings 
+                                  ? AppColors.primary 
+                                  : AppColors.onSurface.withValues(alpha: 0.6),
+                              fontWeight: _showingMyListings 
+                                  ? FontWeight.w600 
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          if (mounted) {
+                            setState(() {
+                              _showingMyListings = false;
+                            });
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(
+                                color: !_showingMyListings 
+                                    ? AppColors.primary 
+                                    : Colors.transparent,
+                                width: 3,
+                              ),
+                            ),
+                          ),
+                          child: Text(
+                            'Profile',
+                            textAlign: TextAlign.center,
+                            style: AppTextStyles.titleSmall.copyWith(
+                              color: !_showingMyListings 
+                                  ? AppColors.primary 
+                                  : AppColors.onSurface.withValues(alpha: 0.6),
+                              fontWeight: !_showingMyListings 
+                                  ? FontWeight.w600 
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           
           // Page content
           SliverFillRemaining(
-            child: PageView(
-              controller: _pageController,
-              onPageChanged: (index) {
-                setState(() {
-                  _selectedIndex = index;
-                });
-                _mainTabController.animateTo(index);
-              },
-              children: [
-                // My Listings Page
-                _buildListingsPage(),
-                // Profile Page - wrap in container to handle navigation properly
-                Container(
-                  child: const ProfilePage(),
-                ),
-              ],
-            ),
+            child: _showingMyListings ? _buildListingsPage() : const ProfilePage(),
           ),
         ],
       ),
@@ -597,25 +834,58 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
       return _buildEmptyTabState(category);
     }
     
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: _getResponsiveCrossAxisCount(context),
-        childAspectRatio: 0.75,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-      ),
-      itemCount: products.length,
-      itemBuilder: (context, index) {
-        final product = products[index];
-        return GestureDetector(
-          onTap: () => _navigateToEditProduct(product),
-          child: ProductCard(
-            product: product,
-            onTap: () => _navigateToEditProduct(product),
+    return Column(
+      children: [
+        Expanded(
+          child: GridView.builder(
+            controller: _scrollController,
+            padding: const EdgeInsets.all(16),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: _getResponsiveCrossAxisCount(context),
+              childAspectRatio: 0.75,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+            ),
+            itemCount: products.length + (_isLoadingMore ? 1 : 0),
+            itemBuilder: (context, index) {
+              // Show loading indicator at the end
+              if (index >= products.length) {
+                return Container(
+                  padding: const EdgeInsets.all(32),
+                  child: const Center(child: CircularProgressIndicator()),
+                );
+              }
+              
+              final product = products[index];
+              return GestureDetector(
+                onTap: () => _navigateToEditProduct(product),
+                child: ProductCard(
+                  product: product,
+                  onTap: () => _navigateToEditProduct(product),
+                ),
+              );
+            },
           ),
-        );
-      },
+        ),
+        // Loading indicator at the bottom when loading more
+        if (_isLoadingMore)
+          Container(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(width: 12),
+                Text(
+                  'Loading more products...',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 
