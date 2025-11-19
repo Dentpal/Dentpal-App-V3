@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:dentpal/product/pages/product_listing_page.dart';
+import 'package:dentpal/product/pages/seller_dashboard_page.dart';
 import 'package:dentpal/product/pages/cart_page.dart';
 import 'package:dentpal/profile/pages/profile_page.dart';
 import 'package:dentpal/login_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'core/app_theme/app_colors.dart';
 import 'core/app_theme/app_text_styles.dart';
 import 'package:flutter/services.dart';
@@ -17,33 +19,120 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
+  bool _isSeller = false;
+  bool _isLoadingSellerStatus = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkSellerStatus();
+    
+    // Listen to auth state changes to refresh seller status
+    FirebaseAuth.instance.authStateChanges().listen((User? user) {
+      _checkSellerStatus();
+    });
+  }
+
+  Future<void> _checkSellerStatus() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        setState(() {
+          _isSeller = false;
+          _isLoadingSellerStatus = false;
+        });
+        return;
+      }
+
+      // Check if user document exists and has role='seller'
+      final userDoc = await FirebaseFirestore.instance
+          .collection('User')
+          .doc(user.uid)
+          .get();
+
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>;
+        final userRole = userData['role'] as String?;
+
+        if (userRole == 'seller') {
+          // Check if seller collection exists with the user's ID
+          final sellerDoc = await FirebaseFirestore.instance
+              .collection('Seller')
+              .doc(user.uid)
+              .get();
+
+          if (sellerDoc.exists) {
+            setState(() {
+              _isSeller = true;
+              _isLoadingSellerStatus = false;
+            });
+            return;
+          }
+        }
+      }
+
+      setState(() {
+        _isSeller = false;
+        _isLoadingSellerStatus = false;
+      });
+    } catch (e) {
+      print('Error checking seller status: $e');
+      setState(() {
+        _isSeller = false;
+        _isLoadingSellerStatus = false;
+      });
+    }
+  }
 
   List<Widget> get _pages {
     final user = FirebaseAuth.instance.currentUser;
 
-    return [
-      const ProductListingPage(),
-      user != null
-          ? CartPage(
-              onBackPressed: () => _onItemTapped(0),
-            ) // Go back to Products tab
-          : const _LoginRequiredPage(message: 'Please login to view your cart'),
-      user != null
-          ? const ProfilePage()
-          : const _LoginRequiredPage(
-              message: 'Please login to view your profile',
-            ),
-    ];
+    if (_isSeller) {
+      // Seller navigation - only My Products and Profile
+      return [
+        const SellerDashboardPage(), // My Products
+        user != null
+            ? const ProfilePage()
+            : const _LoginRequiredPage(
+                message: 'Please login to view your profile',
+              ),
+      ];
+    } else {
+      // Regular user navigation - Products, Cart, Profile
+      return [
+        const ProductListingPage(),
+        user != null
+            ? CartPage(
+                onBackPressed: () => _onItemTapped(0),
+              ) // Go back to Products tab
+            : const _LoginRequiredPage(message: 'Please login to view your cart'),
+        user != null
+            ? const ProfilePage()
+            : const _LoginRequiredPage(
+                message: 'Please login to view your profile',
+              ),
+      ];
+    }
   }
 
   void _onItemTapped(int index) {
-    // Check if user is authenticated when trying to access Cart or Profile
+    // Check if user is authenticated when trying to access protected features
     final user = FirebaseAuth.instance.currentUser;
 
-    if (user == null && (index == 1 || index == 2)) {
-      // User is not authenticated and trying to access Cart or Profile
-      _showLoginRequiredDialog();
-      return;
+    if (_isSeller) {
+      // For sellers: only My Products (index 0) and Profile (index 1)
+      if (user == null && index == 1) {
+        // User is not authenticated and trying to access Profile
+        _showLoginRequiredDialog();
+        return;
+      }
+    } else {
+      // For regular users: Products (0), Cart (1), Profile (2)
+      if (user == null && (index == 1 || index == 2)) {
+        // User is not authenticated and trying to access Cart or Profile
+        _showLoginRequiredDialog();
+        return;
+      }
     }
 
     setState(() {
@@ -180,6 +269,13 @@ class _HomePageState extends State<HomePage> {
     final screenWidth = MediaQuery.of(context).size.width;
     final isWebView = screenWidth > 900;
 
+    // Show loading while checking seller status
+    if (_isLoadingSellerStatus) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
@@ -199,28 +295,53 @@ class _HomePageState extends State<HomePage> {
               )
             : Scaffold(
                 body: _pages[_selectedIndex],
-                bottomNavigationBar: BottomNavigationBar(
-                  items: const <BottomNavigationBarItem>[
-                    BottomNavigationBarItem(
-                      icon: Icon(Icons.store),
-                      label: 'Products',
-                    ),
-                    BottomNavigationBarItem(
-                      icon: Icon(Icons.shopping_cart),
-                      label: 'Cart',
-                    ),
-                    BottomNavigationBarItem(
-                      icon: Icon(Icons.person),
-                      label: 'Profile',
-                    ),
-                  ],
-                  currentIndex: _selectedIndex,
-                  selectedItemColor: Theme.of(context).primaryColor,
-                  onTap: _onItemTapped,
-                ),
+                // Only show bottom navigation bar for regular users, not sellers
+                bottomNavigationBar: _isSeller ? null : _buildBottomNavigationBar(),
               ),
       ),
     );
+  }
+
+  Widget _buildBottomNavigationBar() {
+    if (_isSeller) {
+      // Seller navigation - only My Products and Profile
+      return BottomNavigationBar(
+        items: const <BottomNavigationBarItem>[
+          BottomNavigationBarItem(
+            icon: Icon(Icons.inventory),
+            label: 'My Products',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person),
+            label: 'Profile',
+          ),
+        ],
+        currentIndex: _selectedIndex,
+        selectedItemColor: Theme.of(context).primaryColor,
+        onTap: _onItemTapped,
+      );
+    } else {
+      // Regular user navigation - Products, Cart, Profile
+      return BottomNavigationBar(
+        items: const <BottomNavigationBarItem>[
+          BottomNavigationBarItem(
+            icon: Icon(Icons.store),
+            label: 'Products',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.shopping_cart),
+            label: 'Cart',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person),
+            label: 'Profile',
+          ),
+        ],
+        currentIndex: _selectedIndex,
+        selectedItemColor: Theme.of(context).primaryColor,
+        onTap: _onItemTapped,
+      );
+    }
   }
 }
 

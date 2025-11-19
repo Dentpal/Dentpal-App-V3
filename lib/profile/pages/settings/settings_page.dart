@@ -131,8 +131,9 @@ class _SettingsPageState extends State<SettingsPage> {
                           );
                         },
                       ),
-                      _buildDivider(),
-                      _buildSettingsOption(
+                      if (userRole == 'buyer') ...[
+                        _buildDivider(),
+                        _buildSettingsOption(
                         context,
                         'Edit Profile',
                         Icons.person_outline,
@@ -144,6 +145,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           );
                         },
                       ),
+                      ],
                       // Show Edit Seller Profile only for sellers
                       if (userRole == 'seller') ...[
                         _buildDivider(),
