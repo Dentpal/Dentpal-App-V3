@@ -536,7 +536,27 @@ export const createCheckoutSession = onRequest(
           throw new Error(`Invalid total shipping cost calculated: ₱${shippingCost}`);
         }
         
-        const totalAmount = subtotal + shippingCost;
+        // Calculate shipping fee allocation based on 10% cart value threshold
+        const cartValueThreshold = subtotal * 0.1; // 10% of cart value
+        let sellerShippingCharge: number;
+        let buyerShippingCharge: number;
+        
+        if (shippingCost >= cartValueThreshold) {
+          // If shipping >= 10% cart value: 50% to seller, 50% to buyer
+          sellerShippingCharge = shippingCost * 0.5;
+          buyerShippingCharge = shippingCost * 0.5;
+          console.log(`📦 Shipping >= 10% of cart value (₱${cartValueThreshold.toFixed(2)}): Split 50/50`);
+        } else {
+          // If shipping < 10% cart value: 100% to buyer
+          sellerShippingCharge = 0;
+          buyerShippingCharge = shippingCost;
+          console.log(`📦 Shipping < 10% of cart value (₱${cartValueThreshold.toFixed(2)}): 100% to buyer`);
+        }
+        
+        console.log(`📦 Shipping allocation - Seller: ₱${sellerShippingCharge.toFixed(2)}, Buyer: ₱${buyerShippingCharge.toFixed(2)}`);
+        
+        // Total amount includes only buyer's shipping charge (seller's charge is separate)
+        const totalAmount = subtotal + buyerShippingCharge;
 
         // Get unique seller IDs
         const sellerIds = [...new Set(orderItems.map(item => item.sellerId))];
@@ -562,6 +582,8 @@ export const createCheckoutSession = onRequest(
             discountAmount: 0,
             total: totalAmount,
             totalItems: orderItems.reduce((sum, item) => sum + item.quantity, 0),
+            sellerShippingCharge: sellerShippingCharge,
+            buyerShippingCharge: buyerShippingCharge,
           },
           shippingInfo: {
             addressId: addressId,
@@ -598,14 +620,16 @@ export const createCheckoutSession = onRequest(
           images: item.productImage ? [item.productImage] : undefined,
         }));
 
-        // Add shipping as a line item
-        if (shippingCost > 0) {
+        // Add shipping as a line item (only buyer's portion)
+        if (buyerShippingCharge > 0) {
           lineItems.push({
-            name: 'Shipping Fee',
+            name: 'Shipping Fee (Buyer Portion)',
             quantity: 1,
-            amount: Math.round(shippingCost * 100),
+            amount: Math.round(buyerShippingCharge * 100),
             currency: 'PHP',
-            description: 'Standard shipping',
+            description: sellerShippingCharge > 0 
+              ? `Buyer portion of shipping (Seller pays: ₱${sellerShippingCharge.toFixed(2)})`
+              : 'Full shipping cost',
             images: undefined,
           });
         }
