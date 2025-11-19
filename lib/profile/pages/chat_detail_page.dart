@@ -5,6 +5,7 @@ import 'package:dentpal/services/chat_service.dart';
 import 'package:intl/intl.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dentpal/product/pages/product_detail_page.dart';
+import 'package:flutter/foundation.dart' show kIsWeb; // Added for web detection
 
 class ChatDetailPage extends StatefulWidget {
   final String chatRoomId;
@@ -74,7 +75,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       );
 
       _messageController.clear();
-      
+
       // Scroll to bottom after sending message
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _scrollToBottom();
@@ -112,7 +113,8 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                 color: AppColors.onSurface,
               ),
             ),
-            if (widget.otherUserShopName != null && widget.otherUserShopName!.isNotEmpty)
+            if (widget.otherUserShopName != null &&
+                widget.otherUserShopName!.isNotEmpty)
               Text(
                 widget.otherUserShopName!,
                 style: AppTextStyles.bodySmall.copyWith(
@@ -138,114 +140,136 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Messages list
-          Expanded(
-            child: StreamBuilder<List<ChatMessage>>(
-              stream: _chatService.getMessagesStream(widget.chatRoomId),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: CircularProgressIndicator(),
-                  );
-                }
-                
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.error_outline,
-                          size: 64,
-                          color: AppColors.error,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Error loading messages',
-                          style: AppTextStyles.titleMedium.copyWith(
-                            color: AppColors.error,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-                
-                final messages = snapshot.data ?? [];
-                
-                if (messages.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(24),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withValues(alpha: 0.1),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.chat_bubble_outline,
-                            size: 64,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        Text(
-                          'Start the conversation',
-                          style: AppTextStyles.titleMedium.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.onSurface,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Send a message to ${widget.otherUserName}',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            color: AppColors.onSurface.withValues(alpha: 0.7),
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  );
-                }
+      // Responsive wrapper added (web-only centered layout when wide)
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWideWeb = kIsWeb && constraints.maxWidth > 800; // BREAKPOINT
+          final content = Column(
+            children: [
+              // Messages list
+              Expanded(
+                child: StreamBuilder<List<ChatMessage>>(
+                  stream: _chatService.getMessagesStream(widget.chatRoomId),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
 
-                // Auto-scroll to bottom when new messages arrive
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (_scrollController.hasClients) {
-                    _scrollToBottom();
-                  }
-                });
-                
-                return ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(16),
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final message = messages[index];
-                    final isMe = message.senderId == FirebaseAuth.instance.currentUser?.uid;
-                    final showTimestamp = index == 0 || 
-                        messages[index - 1].timestamp.difference(message.timestamp).inMinutes.abs() > 5;
-                    
-                    return Column(
-                      children: [
-                        if (showTimestamp)
-                          _buildTimestampDivider(message.timestamp),
-                        _buildMessageBubble(message, isMe),
-                      ],
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.error_outline,
+                              size: 64,
+                              color: AppColors.error,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Error loading messages',
+                              style: AppTextStyles.titleMedium.copyWith(
+                                color: AppColors.error,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    final messages = snapshot.data ?? [];
+
+                    if (messages.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(24),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.chat_bubble_outline,
+                                size: 64,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            Text(
+                              'Start the conversation',
+                              style: AppTextStyles.titleMedium.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.onSurface,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Send a message to ${widget.otherUserName}',
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                color: AppColors.onSurface.withValues(
+                                  alpha: 0.7,
+                                ),
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    // Auto-scroll to bottom when new messages arrive
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_scrollController.hasClients) {
+                        _scrollToBottom();
+                      }
+                    });
+
+                    return ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.all(16),
+                      itemCount: messages.length,
+                      itemBuilder: (context, index) {
+                        final message = messages[index];
+                        final isMe =
+                            message.senderId ==
+                            FirebaseAuth.instance.currentUser?.uid;
+                        final showTimestamp =
+                            index == 0 ||
+                            messages[index - 1].timestamp
+                                    .difference(message.timestamp)
+                                    .inMinutes
+                                    .abs() >
+                                5;
+
+                        return Column(
+                          children: [
+                            if (showTimestamp)
+                              _buildTimestampDivider(message.timestamp),
+                            _buildMessageBubble(message, isMe),
+                          ],
+                        );
+                      },
                     );
                   },
-                );
-              },
-            ),
-          ),
-          
-          // Message input
-          _buildMessageInput(),
-        ],
+                ),
+              ),
+
+              // Message input
+              _buildMessageInput(),
+            ],
+          );
+          if (isWideWeb) {
+            return Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 640), // MAX_WIDTH
+                child: Material(color: Colors.transparent, child: content),
+              ),
+            );
+          }
+          return content; // mobile & narrow web full width
+        },
       ),
     );
   }
@@ -280,27 +304,28 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       child: Row(
-        mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: isMe
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isMe) ...[
             CircleAvatar(
               radius: 16,
               backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-              backgroundImage: message.senderAvatar != null && message.senderAvatar!.isNotEmpty
+              backgroundImage:
+                  message.senderAvatar != null &&
+                      message.senderAvatar!.isNotEmpty
                   ? CachedNetworkImageProvider(message.senderAvatar!)
                   : null,
-              child: message.senderAvatar == null || message.senderAvatar!.isEmpty
-                  ? Icon(
-                      Icons.person,
-                      size: 20,
-                      color: AppColors.primary,
-                    )
+              child:
+                  message.senderAvatar == null || message.senderAvatar!.isEmpty
+                  ? Icon(Icons.person, size: 20, color: AppColors.primary)
                   : null,
             ),
             const SizedBox(width: 8),
           ],
-          
+
           Expanded(
             child: Align(
               alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
@@ -314,74 +339,81 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(16),
                       topRight: const Radius.circular(16),
-                      bottomLeft: isMe ? const Radius.circular(16) : const Radius.circular(4),
-                      bottomRight: isMe ? const Radius.circular(4) : const Radius.circular(16),
+                      bottomLeft: isMe
+                          ? const Radius.circular(16)
+                          : const Radius.circular(4),
+                      bottomRight: isMe
+                          ? const Radius.circular(4)
+                          : const Radius.circular(16),
                     ),
                     boxShadow: [
                       BoxShadow(
                         color: AppColors.onSurface.withValues(alpha: 0.1),
                         blurRadius: 4,
-                    offset: const Offset(0, 2),
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Product card if this is a product inquiry
-                  if (message.productId != null && message.productName != null)
-                    _buildProductCard(message),
-                  
-                  // Message text with read indicator
-                  Padding(
-                    padding: EdgeInsets.all(message.productId != null ? 8 : 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          message.message,
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            color: isMe ? AppColors.onPrimary : AppColors.onSurface,
-                            height: 1.4,
-                          ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Product card if this is a product inquiry
+                      if (message.productId != null &&
+                          message.productName != null)
+                        _buildProductCard(message),
+
+                      // Message text with read indicator
+                      Padding(
+                        padding: EdgeInsets.all(
+                          message.productId != null ? 8 : 12,
                         ),
-                        if (isMe) ...[
-                          const SizedBox(height: 4),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              Text(
-                                _formatMessageTime(message.timestamp),
-                                style: AppTextStyles.bodySmall.copyWith(
-                                  color: AppColors.onPrimary.withValues(alpha: 0.7),
-                                  fontSize: 10,
-                                ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              message.message,
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                color: isMe
+                                    ? AppColors.onPrimary
+                                    : AppColors.onSurface,
+                                height: 1.4,
                               ),
-                              const SizedBox(width: 4),
-                              _buildReadIndicator(message.isRead),
+                            ),
+                            if (isMe) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    _formatMessageTime(message.timestamp),
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      color: AppColors.onPrimary.withValues(
+                                        alpha: 0.7,
+                                      ),
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  _buildReadIndicator(message.isRead),
+                                ],
+                              ),
                             ],
-                          ),
-                        ],
-                      ],
-                    ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ),
                 ),
               ),
             ),
-          
+          ),
+
           if (isMe) ...[
             const SizedBox(width: 8),
             CircleAvatar(
               radius: 16,
               backgroundColor: AppColors.secondary.withValues(alpha: 0.1),
-              child: Icon(
-                Icons.person,
-                size: 20,
-                color: AppColors.secondary,
-              ),
+              child: Icon(Icons.person, size: 20, color: AppColors.secondary),
             ),
           ],
         ],
@@ -395,9 +427,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       decoration: BoxDecoration(
         color: AppColors.background.withValues(alpha: 0.8),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: AppColors.onSurface.withValues(alpha: 0.1),
-        ),
+        border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.1)),
       ),
       child: Material(
         color: Colors.transparent,
@@ -408,7 +438,8 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => ProductDetailPage(productId: message.productId!),
+                  builder: (context) =>
+                      ProductDetailPage(productId: message.productId!),
                 ),
               );
             }
@@ -424,7 +455,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                     width: 50,
                     height: 50,
                     color: AppColors.onSurface.withValues(alpha: 0.1),
-                    child: message.productImage != null && message.productImage!.isNotEmpty
+                    child:
+                        message.productImage != null &&
+                            message.productImage!.isNotEmpty
                         ? CachedNetworkImage(
                             imageUrl: message.productImage!,
                             fit: BoxFit.cover,
@@ -432,14 +465,18 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                               color: AppColors.onSurface.withValues(alpha: 0.1),
                               child: Icon(
                                 Icons.image,
-                                color: AppColors.onSurface.withValues(alpha: 0.3),
+                                color: AppColors.onSurface.withValues(
+                                  alpha: 0.3,
+                                ),
                               ),
                             ),
                             errorWidget: (context, url, error) => Container(
                               color: AppColors.onSurface.withValues(alpha: 0.1),
                               child: Icon(
                                 Icons.broken_image,
-                                color: AppColors.onSurface.withValues(alpha: 0.3),
+                                color: AppColors.onSurface.withValues(
+                                  alpha: 0.3,
+                                ),
                               ),
                             ),
                           )
@@ -449,9 +486,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                           ),
                   ),
                 ),
-                
+
                 const SizedBox(width: 12),
-                
+
                 // Product info
                 Expanded(
                   child: Column(
@@ -477,7 +514,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                     ],
                   ),
                 ),
-                
+
                 Icon(
                   Icons.chevron_right,
                   color: AppColors.onSurface.withValues(alpha: 0.4),
@@ -529,10 +566,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(24),
-                    borderSide: BorderSide(
-                      color: AppColors.primary,
-                      width: 2,
-                    ),
+                    borderSide: BorderSide(color: AppColors.primary, width: 2),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -542,16 +576,17 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                 onSubmitted: (_) => _sendMessage(),
               ),
             ),
-            
+
             const SizedBox(width: 12),
-            
+
             GestureDetector(
               onTap: _isLoading ? null : _sendMessage,
               child: Container(
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: _messageController.text.trim().isNotEmpty && !_isLoading
+                  color:
+                      _messageController.text.trim().isNotEmpty && !_isLoading
                       ? AppColors.primary
                       : AppColors.primary,
                   shape: BoxShape.circle,
@@ -561,7 +596,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                         padding: const EdgeInsets.all(12),
                         child: const CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(AppColors.onPrimary),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            AppColors.onPrimary,
+                          ),
                         ),
                       )
                     : Icon(
@@ -605,9 +642,9 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              
+
               const SizedBox(height: 24),
-              
+
               // Delete chat option
               ListTile(
                 leading: Container(
@@ -640,7 +677,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                   _showDeleteConfirmation();
                 },
               ),
-              
+
               const SizedBox(height: 24),
             ],
           ),
@@ -766,7 +803,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   String _formatFullTimestamp(DateTime timestamp) {
     final now = DateTime.now();
     final difference = now.difference(timestamp);
-    
+
     if (difference.inDays == 0) {
       return DateFormat('h:mm a').format(timestamp);
     } else if (difference.inDays == 1) {

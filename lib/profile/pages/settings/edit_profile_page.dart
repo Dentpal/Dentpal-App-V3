@@ -1178,302 +1178,321 @@ class _EditProfilePageState extends State<EditProfilePage> {
           ],
         ),
       ),
-      body: _isLoading && !_hasLoadedData
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 8),
-                    
-                    // Profile Photo Section
-                    _buildProfilePhotoSection(),
-                    const SizedBox(height: 32),
-                    
-                    // Basic Information Section
-                    _buildSectionHeader('Basic Information'),
-                    const SizedBox(height: 16),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.onSurface.withValues(alpha: 0.05),
-                            blurRadius: 10,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        children: [
-                          _buildTextField(
-                            controller: _displayNameController,
-                            label: 'Display Name',
-                            icon: Icons.badge_outlined,
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
-                                return 'Display name is required';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                          
-                          _buildTextField(
-                            controller: _firstNameController,
-                            label: 'First Name',
-                            icon: Icons.person_outline,
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
-                                return 'First name is required';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                          
-                          _buildTextField(
-                            controller: _middleNameController,
-                            label: 'Middle Name (Optional)',
-                            icon: Icons.person_outline,
-                          ),
-                          const SizedBox(height: 16),
-                          
-                          _buildTextField(
-                            controller: _lastNameController,
-                            label: 'Last Name',
-                            icon: Icons.person_outline,
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
-                                return 'Last name is required';
-                              }
-                              return null;
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 32),
-                    
-                    // Personal Details Section
-                    _buildSectionHeader('Personal Details'),
-                    const SizedBox(height: 16),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.onSurface.withValues(alpha: 0.05),
-                            blurRadius: 10,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Gender Selection
-                          Text(
-                            'Gender',
-                            style: AppTextStyles.bodyMedium.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.onSurface.withValues(alpha: 0.8),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Container(
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: AppColors.onSurface.withValues(alpha: 0.2),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final content = _isLoading && !_hasLoadedData
+              ? const Center(child: CircularProgressIndicator())
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 8),
+                        
+                        // Profile Photo Section
+                        _buildProfilePhotoSection(),
+                        const SizedBox(height: 32),
+                        
+                        // Basic Information Section
+                        _buildSectionHeader('Basic Information'),
+                        const SizedBox(height: 16),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.surface,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.onSurface.withValues(alpha: 0.05),
+                                blurRadius: 10,
+                                offset: const Offset(0, 2),
                               ),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: DropdownButtonFormField<String>(
-                              initialValue: _selectedGender.isEmpty ? null : _selectedGender,
-                              decoration: InputDecoration(
-                                prefixIcon: Icon(
-                                  Icons.wc_outlined,
-                                  color: AppColors.primary,
-                                ),
-                                border: InputBorder.none,
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 16,
-                                ),
+                            ],
+                          ),
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            children: [
+                              _buildTextField(
+                                controller: _displayNameController,
+                                label: 'Display Name',
+                                icon: Icons.badge_outlined,
+                                validator: (value) {
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'Display name is required';
+                                  }
+                                  return null;
+                                },
                               ),
-                              hint: Text(
-                                'Select gender',
+                              const SizedBox(height: 16),
+                              
+                              _buildTextField(
+                                controller: _firstNameController,
+                                label: 'First Name',
+                                icon: Icons.person_outline,
+                                validator: (value) {
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'First name is required';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              _buildTextField(
+                                controller: _middleNameController,
+                                label: 'Middle Name (Optional)',
+                                icon: Icons.person_outline,
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              _buildTextField(
+                                controller: _lastNameController,
+                                label: 'Last Name',
+                                icon: Icons.person_outline,
+                                validator: (value) {
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'Last name is required';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        
+                        const SizedBox(height: 32),
+                        
+                        // Personal Details Section
+                        _buildSectionHeader('Personal Details'),
+                        const SizedBox(height: 16),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.surface,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.onSurface.withValues(alpha: 0.05),
+                                blurRadius: 10,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Gender Selection
+                              Text(
+                                'Gender',
                                 style: AppTextStyles.bodyMedium.copyWith(
-                                  color: AppColors.onSurface.withValues(alpha: 0.6),
-                                ),
-                              ),
-                              items: const [
-                                DropdownMenuItem(
-                                  value: 'male',
-                                  child: Text('Male'),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'female',
-                                  child: Text('Female'),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'rather not say',
-                                  child: Text('Rather not say'),
-                                ),
-                              ],
-                              onChanged: (value) {
-                                setState(() {
-                                  _selectedGender = value ?? '';
-                                });
-                              },
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please select your gender';
-                                }
-                                return null;
-                              },
-                            ),
-                          ),
-                          
-                          const SizedBox(height: 20),
-                          
-                          // Birthdate Selection
-                          Text(
-                            'Birthdate',
-                            style: AppTextStyles.bodyMedium.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.onSurface.withValues(alpha: 0.8),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          InkWell(
-                            onTap: _selectBirthdate,
-                            borderRadius: BorderRadius.circular(12),
-                            child: Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 16,
-                              ),
-                              decoration: BoxDecoration(
-                                border: Border.all(
-                                  color: AppColors.onSurface.withValues(alpha: 0.2),
-                                ),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.calendar_today_outlined,
-                                    color: AppColors.primary,
-                                  ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: Text(
-                                      _selectedBirthdate != null
-                                          ? DateFormat('MMMM d, yyyy').format(_selectedBirthdate!)
-                                          : 'Select birthdate',
-                                      style: AppTextStyles.bodyMedium.copyWith(
-                                        color: _selectedBirthdate != null
-                                            ? AppColors.onSurface
-                                            : AppColors.onSurface.withValues(alpha: 0.6),
-                                      ),
-                                    ),
-                                  ),
-                                  Icon(
-                                    Icons.arrow_drop_down,
-                                    color: AppColors.onSurface.withValues(alpha: 0.6),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 32),
-                    
-                    // Action Buttons
-                    if (_hasLoadedData) ...[
-                      Row(
-                        children: [
-                          // Cancel Button
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: _isLoading ? null : () {
-                                if (_hasChanges()) {
-                                  _showDiscardChangesDialog();
-                                } else {
-                                  Navigator.of(context).pop();
-                                }
-                              },
-                              style: OutlinedButton.styleFrom(
-                                side: BorderSide(color: AppColors.onSurface.withValues(alpha: 0.3)),
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              child: Text(
-                                'Cancel',
-                                style: AppTextStyles.buttonLarge.copyWith(
-                                  color: AppColors.onSurface.withValues(alpha: 0.8),
                                   fontWeight: FontWeight.w600,
+                                  color: AppColors.onSurface.withValues(alpha: 0.8),
                                 ),
                               ),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          // Save Button
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: (_isLoading || !_hasChanges()) ? null : _saveProfile,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _hasChanges() ? AppColors.primary : AppColors.grey300,
-                                foregroundColor: AppColors.onPrimary,
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(
+                              const SizedBox(height: 12),
+                              Container(
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: AppColors.onSurface.withValues(alpha: 0.2),
+                                  ),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                elevation: 0,
-                              ),
-                              child: _isLoading
-                                  ? const SizedBox(
-                                      height: 20,
-                                      width: 20,
-                                      child: CircularProgressIndicator(
-                                        color: AppColors.onPrimary,
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : Text(
-                                      'Save Changes',
-                                      style: AppTextStyles.buttonLarge.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                        color: _hasChanges() ? AppColors.onPrimary : AppColors.onSurface.withValues(alpha: 0.5),
-                                      ),
+                                child: DropdownButtonFormField<String>(
+                                  initialValue: _selectedGender.isEmpty ? null : _selectedGender,
+                                  decoration: InputDecoration(
+                                    prefixIcon: Icon(
+                                      Icons.wc_outlined,
+                                      color: AppColors.primary,
                                     ),
-                            ),
+                                    border: InputBorder.none,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 16,
+                                    ),
+                                  ),
+                                  hint: Text(
+                                    'Select gender',
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      color: AppColors.onSurface.withValues(alpha: 0.6),
+                                    ),
+                                  ),
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: 'male',
+                                      child: Text('Male'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'female',
+                                      child: Text('Female'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'rather not say',
+                                      child: Text('Rather not say'),
+                                    ),
+                                  ],
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _selectedGender = value ?? '';
+                                    });
+                                  },
+                                  validator: (value) {
+                                    if (value == null || value.isEmpty) {
+                                      return 'Please select your gender';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ),
+                              
+                              const SizedBox(height: 20),
+                              
+                              // Birthdate Selection
+                              Text(
+                                'Birthdate',
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.onSurface.withValues(alpha: 0.8),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              InkWell(
+                                onTap: _selectBirthdate,
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 16,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(
+                                      color: AppColors.onSurface.withValues(alpha: 0.2),
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.calendar_today_outlined,
+                                        color: AppColors.primary,
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        child: Text(
+                                          _selectedBirthdate != null
+                                              ? DateFormat('MMMM d, yyyy').format(_selectedBirthdate!)
+                                              : 'Select birthdate',
+                                          style: AppTextStyles.bodyMedium.copyWith(
+                                            color: _selectedBirthdate != null
+                                                ? AppColors.onSurface
+                                                : AppColors.onSurface.withValues(alpha: 0.6),
+                                          ),
+                                        ),
+                                      ),
+                                      Icon(
+                                        Icons.arrow_drop_down,
+                                        color: AppColors.onSurface.withValues(alpha: 0.6),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        
+                        const SizedBox(height: 32),
+                        
+                        // Action Buttons
+                        if (_hasLoadedData) ...[
+                          Row(
+                            children: [
+                              // Cancel Button
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: _isLoading ? null : () {
+                                    if (_hasChanges()) {
+                                      _showDiscardChangesDialog();
+                                    } else {
+                                      Navigator.of(context).pop();
+                                    }
+                                  },
+                                  style: OutlinedButton.styleFrom(
+                                    side: BorderSide(color: AppColors.onSurface.withValues(alpha: 0.3)),
+                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    'Cancel',
+                                    style: AppTextStyles.buttonLarge.copyWith(
+                                      color: AppColors.onSurface.withValues(alpha: 0.8),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              // Save Button
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: (_isLoading || !_hasChanges()) ? null : _saveProfile,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: _hasChanges() ? AppColors.primary : AppColors.grey300,
+                                    foregroundColor: AppColors.onPrimary,
+                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    elevation: 0,
+                                  ),
+                                  child: _isLoading
+                                      ? const SizedBox(
+                                          height: 20,
+                                          width: 20,
+                                          child: CircularProgressIndicator(
+                                            color: AppColors.onPrimary,
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : Text(
+                                          'Save Changes',
+                                          style: AppTextStyles.buttonLarge.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                            color: _hasChanges() ? AppColors.onPrimary : AppColors.onSurface.withValues(alpha: 0.5),
+                                          ),
+                                        ),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
-                      ),
-                    ],
-                  ],
+                      ],
+                    ),
+                  ),
+                );
+
+          final isWideWeb = kIsWeb && constraints.maxWidth > 800; // BREAKPOINT
+          if (isWideWeb) {
+            return Align(
+              alignment: Alignment.topCenter, // top-centered vertically
+              child: Padding(
+                padding: const EdgeInsets.only(top: 16), // slight top spacing
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 640), // MAX_WIDTH
+                  child: Material(color: Colors.transparent, child: content),
                 ),
               ),
-            ),
-      ), // Close PopScope
-    );
-  }
+            );
+          }
+          return content; // mobile & narrow web full width
+        },
+      ), // end LayoutBuilder
+    ), // end Scaffold
+  );
+}
 
   Widget _buildProfilePhotoSection() {
     return Center(

@@ -4,6 +4,7 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import '../models/product_model.dart';
 import '../services/product_service.dart';
 import '../services/user_service.dart';
@@ -73,6 +74,9 @@ class _ProductListingPageState extends State<ProductListingPage>
 
   bool _isSeller = false;
   String _userFirstName = 'User';
+  
+  // Active banner image URL loaded from Firestore/Storage
+  String? _bannerImageUrl;
 
   // Mapping between category names and IDs for filtering
   Map<String, String> _categoryNameToId = {};
@@ -94,6 +98,7 @@ class _ProductListingPageState extends State<ProductListingPage>
     _loadFirstPage();
     _checkSellerStatus();
     _loadUserName();
+    _loadActiveBanner(); // Load active banner image (Firestore -> Storage fallback)
 
     // Add scroll listener for pagination
     _scrollController.addListener(_scrollListener);
@@ -105,6 +110,97 @@ class _ProductListingPageState extends State<ProductListingPage>
     AppLogger.d(
       "🔵 ProductListingPage initState called, products: ${_products.length}, timestamp: $_cacheTimestamp",
     );
+  }
+
+  // Fetch active banner image from Firestore collection 'BannerImages'
+  // Fallback to Firebase Storage folder 'BannerImages' (latest or isActive metadata)
+  Future<void> _loadActiveBanner() async {
+    try {
+      String? url;
+      // Try Firestore first (if you maintain an active doc)
+      try {
+        final query = await FirebaseFirestore.instance
+            .collection('BannerImages')
+            .where('isActive', isEqualTo: true)
+            .limit(1)
+            .get();
+        if (query.docs.isNotEmpty) {
+          final data = query.docs.first.data();
+          url = (data['url'] ?? data['imageUrl']) as String?;
+        }
+      } catch (e) {
+        AppLogger.d('Firestore banner lookup failed (will fallback to Storage): $e');
+      }
+
+      // Fallback to Storage if no Firestore URL found
+      url ??= await _loadActiveBannerFromStorage();
+
+      if (mounted && url != null && url.isNotEmpty) {
+        setState(() {
+          _bannerImageUrl = url;
+        });
+        AppLogger.d('Active banner loaded: $_bannerImageUrl');
+      } else {
+        AppLogger.d('No active banner found (Firestore/Storage)');
+      }
+    } catch (e) {
+      AppLogger.d('Error loading active banner: $e');
+    }
+  }
+
+  Future<String?> _loadActiveBannerFromStorage() async {
+    try {
+      final storage = FirebaseStorage.instance;
+      final dirRef = storage.ref().child('BannerImages');
+      final result = await dirRef.listAll();
+      if (result.items.isEmpty) return null;
+
+      // Collect metadata
+      final List<Map<String, dynamic>> metas = [];
+      for (final item in result.items) {
+        try {
+          final meta = await item.getMetadata();
+          metas.add({'ref': item, 'meta': meta});
+        } catch (e) {
+          AppLogger.d('Failed to get metadata for ${item.fullPath}: $e');
+        }
+      }
+
+      // 1) Prefer file with custom metadata isActive == true
+      Map<String, dynamic>? activeEntry;
+      for (final m in metas) {
+        final meta = m['meta'] as FullMetadata;
+        final isActive = meta.customMetadata?['isActive']?.toLowerCase() == 'true';
+        if (isActive) {
+          activeEntry = m;
+          break;
+        }
+      }
+
+      Reference selectedRef;
+      if (activeEntry != null) {
+        selectedRef = activeEntry['ref'] as Reference;
+      } else if (metas.isNotEmpty) {
+        // 2) Otherwise, pick the most recently created file
+        metas.sort((a, b) {
+          final aMeta = a['meta'] as FullMetadata;
+          final bMeta = b['meta'] as FullMetadata;
+          final aTime = aMeta.timeCreated ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final bTime = bMeta.timeCreated ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return bTime.compareTo(aTime); // newest first
+        });
+        selectedRef = metas.first['ref'] as Reference;
+      } else {
+        // 3) Fallback: first item
+        selectedRef = result.items.first;
+      }
+
+      final downloadUrl = await selectedRef.getDownloadURL();
+      return downloadUrl;
+    } catch (e) {
+      AppLogger.d('Storage banner load error: $e');
+      return null;
+    }
   }
 
   @override
@@ -445,7 +541,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                 '$selectedCategory Subcategories',
                 style: AppTextStyles.labelMedium.copyWith(
                   fontWeight: FontWeight.w600,
-                  color: AppColors.secondary,
+                  color: AppColors.accent,
                 ),
               ),
             ),
@@ -1065,8 +1161,8 @@ class _ProductListingPageState extends State<ProductListingPage>
                                 const SizedBox(width: 12),
                                 Icon(
                                   Icons.search,
-                                  color: AppColors.primary.withOpacity(0.7),
-                                  size: 22,
+                                  size: 20,
+                                  color: AppColors.onSurface.withOpacity(0.6),
                                 ),
                                 const SizedBox(width: 8),
                                 Expanded(
@@ -1357,7 +1453,9 @@ class _ProductListingPageState extends State<ProductListingPage>
                           child: Stack(
                             children: [
                               CachedNetworkImage(
-                                imageUrl: 'https://placehold.co/600x400',
+                                imageUrl:
+                                    _bannerImageUrl ??
+                                    'https://placehold.co/600x400',
                                 fit: BoxFit.cover,
                                 width: double.infinity,
                                 height: MediaQuery.of(context).size.width > 800
@@ -1374,9 +1472,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                                         AppColors.primary.withValues(
                                           alpha: 0.1,
                                         ),
-                                        AppColors.secondary.withValues(
-                                          alpha: 0.1,
-                                        ),
+                                        AppColors.accent.withValues(alpha: 0.1),
                                       ],
                                       begin: Alignment.topLeft,
                                       end: Alignment.bottomRight,
@@ -1397,9 +1493,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                                         AppColors.primary.withValues(
                                           alpha: 0.1,
                                         ),
-                                        AppColors.secondary.withValues(
-                                          alpha: 0.1,
-                                        ),
+                                        AppColors.accent.withValues(alpha: 0.1),
                                       ],
                                       begin: Alignment.topLeft,
                                       end: Alignment.bottomRight,
@@ -1608,10 +1702,8 @@ class _ProductListingPageState extends State<ProductListingPage>
                         ),
                       ),
 
-                      // Enhanced Image Banner Section
                       const SizedBox(height: 24),
 
-                      // Products Section Header
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: Row(
@@ -1619,14 +1711,12 @@ class _ProductListingPageState extends State<ProductListingPage>
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: AppColors.secondary.withValues(
-                                  alpha: 0.1,
-                                ),
+                                color: AppColors.accent.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: const Icon(
                                 Icons.grid_view_rounded,
-                                color: AppColors.secondary,
+                                color: AppColors.accent,
                                 size: 20,
                               ),
                             ),
@@ -1898,16 +1988,11 @@ class _ProductListingPageState extends State<ProductListingPage>
           .cast<String>()
           .toList();
 
-      // If subcategories are selected, filter by subcategory AND category
       if (_selectedSubCategories.isNotEmpty) {
-        // Product must be in a selected category
         final isInSelectedCategory = selectedCategoryIds.contains(
           product.categoryId,
         );
 
-        // Product matches if it either:
-        // 1. Has a subcategory that matches the selected subcategories, OR
-        // 2. Has no subcategory (empty/null subCategoryId) - show in all subcategory filters
         final hasSubCategory = product.subCategoryId.isNotEmpty;
         final isInSelectedSubCategory = _selectedSubCategories.contains(
           product.subCategoryId,
@@ -2048,7 +2133,6 @@ class _ProductListingPageState extends State<ProductListingPage>
     }
   }
 
-  // Helper method to get filtered products count
   int _getFilteredProductsCount() {
     return _products.where((product) {
       // Exclude draft products from product listing page
@@ -2077,9 +2161,6 @@ class _ProductListingPageState extends State<ProductListingPage>
           product.categoryId,
         );
 
-        // Product matches if it either:
-        // 1. Has a subcategory that matches the selected subcategories, OR
-        // 2. Has no subcategory (empty/null subCategoryId) - show in all subcategory filters
         final hasSubCategory = product.subCategoryId.isNotEmpty;
         final isInSelectedSubCategory = _selectedSubCategories.contains(
           product.subCategoryId,

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb; // Added for web detection
 import '../../../core/app_theme/app_colors.dart';
 import '../../../core/app_theme/app_text_styles.dart';
 import 'change_mobile_page.dart';
@@ -34,7 +35,7 @@ class _SettingsPageState extends State<SettingsPage> {
             .collection('User')
             .doc(user.uid)
             .get();
-        
+
         if (userDoc.exists) {
           _userCache = userDoc.data();
           _hasLoadedData = true;
@@ -75,20 +76,21 @@ class _SettingsPageState extends State<SettingsPage> {
       body: FutureBuilder<Map<String, dynamic>?>(
         future: _getUserData(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting && !_hasLoadedData) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !_hasLoadedData) {
             return const Center(child: CircularProgressIndicator());
           }
-          
+
           final userData = snapshot.data;
           final userRole = userData?['role'] ?? 'buyer';
-          
-          return SingleChildScrollView(
+
+          final content = SingleChildScrollView(
             padding: const EdgeInsets.all(16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 8),
-                
+
                 // Account Settings Section
                 _buildSectionHeader('Account Settings'),
                 const SizedBox(height: 16),
@@ -154,16 +156,19 @@ class _SettingsPageState extends State<SettingsPage> {
                           'Edit Seller Profile',
                           Icons.store_outlined,
                           () {
-                            _showComingSoonSnackBar(context, 'Edit seller profile');
+                            _showComingSoonSnackBar(
+                              context,
+                              'Edit seller profile',
+                            );
                           },
                         ),
                       ],
                     ],
                   ),
                 ),
-                
+
                 const SizedBox(height: 32),
-                
+
                 // Business Settings Section (for non-sellers)
                 if (userRole != 'seller') ...[
                   _buildSectionHeader('Business'),
@@ -185,14 +190,17 @@ class _SettingsPageState extends State<SettingsPage> {
                       'Upgrade to Seller Account',
                       Icons.trending_up_outlined,
                       () {
-                        _showComingSoonSnackBar(context, 'Upgrade to seller account');
+                        _showComingSoonSnackBar(
+                          context,
+                          'Upgrade to seller account',
+                        );
                       },
                       isPromoted: true,
                     ),
                   ),
                   const SizedBox(height: 32),
                 ],
-                
+
                 // Legal & Privacy Section
                 _buildSectionHeader('Legal & Privacy'),
                 const SizedBox(height: 16),
@@ -251,10 +259,37 @@ class _SettingsPageState extends State<SettingsPage> {
                     ],
                   ),
                 ),
-                
+
                 const SizedBox(height: 32),
               ],
             ),
+          );
+
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final isWideWeb =
+                  kIsWeb && constraints.maxWidth > 800; // BREAKPOINT
+              if (isWideWeb) {
+                return Align(
+                  alignment: Alignment.topCenter, // top-centered vertically
+                  child: Padding(
+                    padding: const EdgeInsets.only(
+                      top: 16,
+                    ), // slight top offset
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxWidth: 840,
+                      ), // MAX_WIDTH
+                      child: Material(
+                        color: Colors.transparent,
+                        child: content,
+                      ),
+                    ),
+                  ),
+                );
+              }
+              return content; 
+            },
           );
         },
       ),
@@ -273,7 +308,7 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
     );
   }
-  
+
   Widget _buildSettingsOption(
     BuildContext context,
     String title,
@@ -293,7 +328,7 @@ class _SettingsPageState extends State<SettingsPage> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: isPromoted 
+                  color: isPromoted
                       ? AppColors.success.withValues(alpha: 0.1)
                       : AppColors.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
@@ -316,7 +351,10 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               if (isPromoted) ...[
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.success.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
@@ -343,7 +381,7 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
     );
   }
-  
+
   Widget _buildDivider() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -360,9 +398,7 @@ class _SettingsPageState extends State<SettingsPage> {
         content: Text('$feature feature coming soon'),
         backgroundColor: AppColors.primary,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }
