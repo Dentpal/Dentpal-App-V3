@@ -242,29 +242,15 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
               child: Column(
                 children: [
-                  _buildProfileOption(
-                    context,
-                    'My Orders',
-                    Icons.shopping_bag_outlined,
-                    () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => const OrdersPage(),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildDivider(),
-                  // Show My Listings option only for sellers
-                  if (userData?['role'] == 'seller') ...[
+                  if (userData?['role'] == 'buyer') ...[
                     _buildProfileOption(
                       context,
-                      'My Listings',
-                      Icons.store_outlined,
+                      'My Orders',
+                      Icons.shopping_bag_outlined,
                       () {
                         Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (context) => const SellerListingsPage(),
+                            builder: (context) => const OrdersPage(),
                           ),
                         );
                       },
@@ -285,35 +271,38 @@ class _ProfilePageState extends State<ProfilePage> {
                     },
                   ),
                   _buildDivider(),
-                  _buildProfileOption(
-                    context,
-                    'Shipping Addresses',
-                    Icons.location_on_outlined,
-                    () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => const ShippingAddressesPage(),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildDivider(),
-                  _buildProfileOption(
-                    context,
-                    'Payment Methods',
-                    Icons.payment_outlined,
-                    () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Text(
-                            'Payment methods feature coming soon',
+                  if (userData?['role'] == 'buyer') ...[
+                    _buildProfileOption(
+                      context,
+                      'Shipping Addresses',
+                      Icons.location_on_outlined,
+                      () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => const ShippingAddressesPage(),
                           ),
-                          backgroundColor: AppColors.primary,
-                        ),
-                      );
-                    },
-                  ),
-                  _buildDivider(),
+                        );
+                      },
+                    ),
+                    _buildDivider(),
+                  
+                    _buildProfileOption(
+                      context,
+                      'Payment Methods',
+                      Icons.payment_outlined,
+                      () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: const Text(
+                              'Payment methods feature coming soon',
+                            ),
+                            backgroundColor: AppColors.primary,
+                          ),
+                        );
+                      },
+                    ),
+                    _buildDivider()
+                  ],
                   _buildProfileOption(
                     context,
                     'Settings',
@@ -393,7 +382,6 @@ class _ProfilePageState extends State<ProfilePage> {
           final userData = snapshot.data?['user'] as Map<String, dynamic>?;
           final sellerData = snapshot.data?['seller'] as Map<String, dynamic>?;
           final content = buildBody(userData, sellerData);
-
           // Responsive: use original mobile layout for small widths (even on web),
           // and centered constrained layout only for large web widths.
           return LayoutBuilder(

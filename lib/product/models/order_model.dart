@@ -279,6 +279,8 @@ class OrderSummary {
   final double discountAmount;
   final double total;
   final int totalItems;
+  final double sellerShippingCharge; // Amount charged to seller
+  final double buyerShippingCharge; // Amount charged to buyer
 
   OrderSummary({
     required this.subtotal,
@@ -287,6 +289,8 @@ class OrderSummary {
     required this.discountAmount,
     required this.total,
     required this.totalItems,
+    this.sellerShippingCharge = 0.0,
+    this.buyerShippingCharge = 0.0,
   });
 
   factory OrderSummary.fromMap(Map<String, dynamic> map) {
@@ -297,6 +301,8 @@ class OrderSummary {
       discountAmount: (map['discountAmount'] ?? 0.0).toDouble(),
       total: (map['total'] ?? 0.0).toDouble(),
       totalItems: map['totalItems'] ?? 0,
+      sellerShippingCharge: (map['sellerShippingCharge'] ?? 0.0).toDouble(),
+      buyerShippingCharge: (map['buyerShippingCharge'] ?? 0.0).toDouble(),
     );
   }
 
@@ -308,6 +314,8 @@ class OrderSummary {
       discountAmount: 0.0,
       total: cartSummary.grandTotal,
       totalItems: cartSummary.selectedItemsCount,
+      sellerShippingCharge: 0.0, // Will be calculated during checkout
+      buyerShippingCharge: 0.0, // Will be calculated during checkout
     );
   }
 
@@ -319,6 +327,8 @@ class OrderSummary {
       'discountAmount': discountAmount,
       'total': total,
       'totalItems': totalItems,
+      'sellerShippingCharge': sellerShippingCharge,
+      'buyerShippingCharge': buyerShippingCharge,
     };
   }
 }
