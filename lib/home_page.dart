@@ -21,14 +21,15 @@ class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
   bool _isSeller = false;
   bool _isLoadingSellerStatus = true;
-
+  StreamSubscription<User?>? _authSubscription;
+  
   @override
   void initState() {
     super.initState();
     _checkSellerStatus();
     
     // Listen to auth state changes to refresh seller status
-    FirebaseAuth.instance.authStateChanges().listen((User? user) {
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((User? user) {
       _checkSellerStatus();
     });
   }
@@ -42,8 +43,14 @@ class _HomePageState extends State<HomePage> {
           _isLoadingSellerStatus = false;
         });
         return;
+      }    
+      
+      @override
+      void dispose() {
+        _authSubscription?.cancel();
+        super.dispose();
       }
-
+      
       // Check if user document exists and has role='seller'
       final userDoc = await FirebaseFirestore.instance
           .collection('User')
