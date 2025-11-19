@@ -1,6 +1,7 @@
-import * as functions from 'firebase-functions/v1';
+import { onRequest, Request, HttpsError } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 import axios from 'axios';
+import { calculateJRSShippingCost, extractShippingCostFromJRS } from './utils/jrsShippingHelper';
 import cors = require('cors');
 
 // Initialize Firebase Admin
@@ -12,19 +13,222 @@ db.settings({
   ignoreUndefinedProperties: true
 });
 
+// Rate limiting store (in-memory for demo, use Redis in production)
+// NOTE: This implementation only mitigates memory leaks in warm instances.
+// For production environments, use a Redis-backed store for proper persistence and cleanup.
+const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
+
+// Start periodic cleanup of expired rate limit entries
+// This runs every 5 minutes to remove expired entries and prevent unbounded memory growth
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  let cleanedCount = 0;
+  
+  for (const [userId, data] of rateLimitStore.entries()) {
+    if (now > data.resetTime) {
+      rateLimitStore.delete(userId);
+      cleanedCount++;
+    }
+  }
+  
+  if (cleanedCount > 0) {
+    console.log(`🧹 Cleaned up ${cleanedCount} expired rate limit entries. Current size: ${rateLimitStore.size}`);
+  }
+}, CLEANUP_INTERVAL_MS);
+
+// Security headers middleware
+function setSecurityHeaders(response: any): void {
+  response.setHeader('X-Content-Type-Options', 'nosniff');
+  response.setHeader('X-Frame-Options', 'DENY');
+  response.setHeader('X-XSS-Protection', '1; mode=block');
+  response.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  response.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+}
+
+// Rate limiting function with inline cleanup of expired entries
+function checkRateLimit(userId: string): boolean {
+  const now = Date.now();
+  const windowMs = 60000; // 1 minute
+  const maxRequests = 5;
+  
+  // Clean up expired entries before applying rate limit logic
+  // This prevents memory growth during active usage
+  for (const [id, data] of rateLimitStore.entries()) {
+    if (now > data.resetTime) {
+      rateLimitStore.delete(id);
+    }
+  }
+  
+  const userLimit = rateLimitStore.get(userId);
+  
+  if (!userLimit || now > userLimit.resetTime) {
+    // Reset window
+    rateLimitStore.set(userId, { count: 1, resetTime: now + windowMs });
+    return true;
+  }
+  
+  if (userLimit.count >= maxRequests) {
+    return false; // Rate limit exceeded
+  }
+  
+  userLimit.count++;
+  return true;
+}
+
+// Input sanitization and validation functions
+function sanitizeString(input: any, maxLength: number = 255): string {
+  if (typeof input !== 'string') {
+    throw new Error('Input must be a string');
+  }
+  return input.trim().substring(0, maxLength).replace(/[<>]/g, '');
+}
+
+function validateCartItemId(id: any): string {
+  if (typeof id !== 'string') {
+    throw new Error('Cart item ID must be a string');
+  }
+  if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+    throw new Error('Cart item ID contains invalid characters');
+  }
+  if (id.length > 50) {
+    throw new Error('Cart item ID too long');
+  }
+  return id;
+}
+
+function validateAddressId(id: any): string {
+  if (typeof id !== 'string') {
+    throw new Error('Address ID must be a string');
+  }
+  if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+    throw new Error('Address ID contains invalid characters');
+  }
+  if (id.length > 50) {
+    throw new Error('Address ID too long');
+  }
+  return id;
+}
+
+function validatePaymentMethods(methods: any): string[] {
+  if (!Array.isArray(methods)) {
+    throw new Error('Payment methods must be an array');
+  }
+  
+  const validMethods = ['card', 'gcash', 'grab_pay', 'paymaya', 'billease', 'dob', 'dob_ubp'];
+  const sanitizedMethods = methods.filter(method => 
+    typeof method === 'string' && validMethods.includes(method)
+  );
+  
+  if (sanitizedMethods.length === 0) {
+    throw new Error('No valid payment methods provided');
+  }
+  
+  return sanitizedMethods;
+}
+
+function validateUrl(url: any): string | undefined {
+  if (!url) return undefined;
+  
+  if (typeof url !== 'string') {
+    throw new Error('URL must be a string');
+  }
+  
+  try {
+    const parsedUrl = new URL(url);
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      throw new Error('URL must use HTTP or HTTPS protocol');
+    }
+    return url;
+  } catch {
+    throw new Error('Invalid URL format');
+  }
+}
+
+function validateRequestBody(body: any): {
+  cartItemIds: string[];
+  addressId: string;
+  notes?: string;
+  paymentMethodTypes: string[];
+  successUrl?: string;
+  cancelUrl?: string;
+} {
+  if (!body || typeof body !== 'object') {
+    throw new Error('Request body must be an object');
+  }
+
+  // Validate cart item IDs
+  if (!body.cart_item_ids || !Array.isArray(body.cart_item_ids)) {
+    throw new Error('cart_item_ids must be a non-empty array');
+  }
+  
+  if (body.cart_item_ids.length === 0) {
+    throw new Error('cart_item_ids cannot be empty');
+  }
+  
+  if (body.cart_item_ids.length > 100) {
+    throw new Error('Too many cart items (max 100)');
+  }
+  
+  const cartItemIds = body.cart_item_ids.map(validateCartItemId);
+
+  // Validate address ID
+  const addressId = validateAddressId(body.address_id);
+
+  // Validate notes (optional)
+  const notes = body.notes ? sanitizeString(body.notes, 500) : undefined;
+
+  // Validate payment methods
+  const paymentMethodTypes = validatePaymentMethods(
+    body.payment_method_types || ['card', 'gcash', 'grab_pay', 'paymaya']
+  );
+
+  // Validate URLs (optional)
+  const successUrl = validateUrl(body.success_url);
+  const cancelUrl = validateUrl(body.cancel_url);
+
+  return {
+    cartItemIds,
+    addressId,
+    notes,
+    paymentMethodTypes,
+    successUrl,
+    cancelUrl
+  };
+}
+
 // Configure CORS
 const corsHandler = cors({ 
-  origin: true, // Allow all origins for now
+  origin: [
+    'https://dentpal-store.web.app',
+    'https://dentpal-store-sandbox-testing.web.app',
+    'https://dentpal-161e5.web.app',
+    'https://dentpal-161e5.firebaseapp.com',
+    // Add localhost for development
+    'http://localhost:1337',
+    // Add common development ports
+    'http://localhost:3000',
+    'http://127.0.0.1:1337',
+    // Add localhost for Flutter web development
+    ...(process.env.NODE_ENV === 'development' || process.env.FUNCTIONS_EMULATOR === 'true' ? [
+      'http://localhost:1337',
+      'http://localhost:3000',
+      'http://localhost:8080',
+      'http://127.0.0.1:1337'
+    ] : [])
+  ],
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
+  credentials: true,
+  optionsSuccessStatus: 200 // For legacy browser support
 });
 
 // Paymongo API configuration
 const PAYMONGO_BASE_URL = 'https://api.paymongo.com/v1';
+// Note: We'll use secrets for both public and secret keys in the function
 
 // Helper function to verify authentication
-async function verifyAuth(request: functions.Request): Promise<string> {
+async function verifyAuth(request: Request): Promise<string> {
   const authHeader = request.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     throw new Error('User must be authenticated');
@@ -63,77 +267,84 @@ function getCountryCode(countryName: string): string {
   return countryMap[normalized] || 'PH'; // Default to Philippines
 }
 
+// JRS Shipping Calculator Integration
+// JRS shipping functions are now imported from ./utils/jrsShippingHelper
+
 // ====================================
 // PAYMONGO CHECKOUT SESSION FUNCTION
 // ====================================
 
-export const createCheckoutSession = functions
-  .runWith({
-    secrets: ['PAYMONGO_SECRET_KEY'],
-    memory: '512MB',
-    timeoutSeconds: 240
-  })
-  .https.onRequest(async (request, response) => {
+export const createCheckoutSession = onRequest(
+  {
+    secrets: ['PAYMONGO_SECRET_KEY', 'PAYMONGO_PUBLIC_KEY', 'JRS_API_KEY', 'JRS_GETRATE_API_URL'],
+    memory: '512MiB',
+    timeoutSeconds: 240,
+    region: 'asia-southeast1'
+  },
+  async (request, response) => {
+    // Set security headers
+    setSecurityHeaders(response);
+    
     corsHandler(request, response, async () => {
+      let userId: string | undefined;
+      
       try {
         const PAYMONGO_SECRET_KEY = process.env.PAYMONGO_SECRET_KEY;
-        
-        if (!PAYMONGO_SECRET_KEY) {
-          response.status(500).json({ 
-            success: false, 
-            error: 'Paymongo secret key not configured' 
-          });
-          return;
-        }
+        const PAYMONGO_PUBLIC_KEY = process.env.PAYMONGO_PUBLIC_KEY;
+        const JRS_API_KEY_SECRET = process.env.JRS_API_KEY;
+        const JRS_GETRATE_API_URL = process.env.JRS_GETRATE_API_URL;
 
         // Verify user authentication
-        const userId = await verifyAuth(request);
+        userId = await verifyAuth(request);
         
-        // Parse request body
-        const data = request.body;
+        // Check rate limit
+        if (!checkRateLimit(userId)) {
+          response.status(429).json({
+            success: false,
+            error: 'Too many requests. Please try again later.'
+          });
+          return;
+        }
+
+        // Validate and sanitize input
+        const validatedInput = validateRequestBody(request.body);
         const {
-          cart_item_ids: cartItemIds,
-          address_id: addressId,
+          cartItemIds,
+          addressId,
           notes,
-          payment_method_types: paymentMethodTypes = ['card', 'gcash', 'grab_pay', 'paymaya'],
-          success_url: successUrl,
-          cancel_url: cancelUrl
-        } = data;
-
-        // Validate required fields
-        if (!cartItemIds || !Array.isArray(cartItemIds) || cartItemIds.length === 0) {
-          response.status(400).json({ 
-            success: false, 
-            error: 'Cart items are required' 
-          });
-          return;
-        }
-
-        if (!addressId) {
-          response.status(400).json({ 
-            success: false, 
-            error: 'Address ID is required' 
-          });
-          return;
-        }
+          paymentMethodTypes,
+          successUrl,
+          cancelUrl
+        } = validatedInput;
 
         console.log(`🛒 Creating checkout session for user ${userId} with ${cartItemIds.length} cart items`);
         
-        // Get user's cart items
+        // Get user's cart items with validation
         const cartPromises = cartItemIds.map(async (cartItemId: string) => {
           const cartDoc = await db
             .collection('User')
-            .doc(userId)
+            .doc(userId!)
             .collection('Cart')
             .doc(cartItemId)
             .get();
 
           if (!cartDoc.exists) {
             console.error(`❌ Cart item ${cartItemId} not found`);
-            throw new Error(`Cart item ${cartItemId} not found`);
+            throw new Error(`Cart item not found`);
           }
 
-          return { id: cartDoc.id, ...cartDoc.data() };
+          const cartData = cartDoc.data();
+          
+          // Validate cart item data
+          if (!cartData || typeof cartData.quantity !== 'number' || cartData.quantity <= 0) {
+            throw new Error('Invalid cart item data');
+          }
+          
+          if (!cartData.productId || typeof cartData.productId !== 'string') {
+            throw new Error('Invalid product ID in cart item');
+          }
+
+          return { id: cartDoc.id, ...cartData };
         });
 
         const cartItems = await Promise.all(cartPromises);
@@ -168,6 +379,12 @@ export const createCheckoutSession = functions
           
           let variationPrice = 0;
           let variationName = '';
+          let dimensions = {
+            length: product?.dimensions?.length,
+            width: product?.dimensions?.width, 
+            height: product?.dimensions?.height,
+            weight: product?.dimensions?.weight
+          };
           
           if (cartItem.variationId) {
             const variationDoc = await db
@@ -181,6 +398,19 @@ export const createCheckoutSession = functions
               const variationData = variationDoc.data();
               variationPrice = variationData?.price || 0;
               variationName = variationData?.name || '';
+              
+              // Get dimensions from variation if available, fallback to product dimensions
+              if (variationData?.dimensions) {
+                dimensions = {
+                  length: variationData.dimensions.length || dimensions.length,
+                  width: variationData.dimensions.width || dimensions.width,
+                  height: variationData.dimensions.height || dimensions.height,
+                  weight: variationData.weight || dimensions.weight
+                };
+              } else if (variationData?.weight) {
+                // Some variations might only have weight
+                dimensions.weight = variationData.weight;
+              }
             } else {
               console.error(`❌ Variation ${cartItem.variationId} not found for product ${cartItem.productId}`);
               // Fallback to base product price instead of throwing error
@@ -205,6 +435,11 @@ export const createCheckoutSession = functions
             sellerId: product?.sellerId,
             sellerName: sellerData?.displayName || 'Unknown Seller',
             total: variationPrice * cartItem.quantity,
+            // Add physical dimensions from variation or product
+            length: dimensions.length,
+            width: dimensions.width,
+            height: dimensions.height,
+            weight: dimensions.weight,
           };
         });
 
@@ -212,7 +447,95 @@ export const createCheckoutSession = functions
 
         // Calculate totals
         const subtotal = orderItems.reduce((sum, item) => sum + item.total, 0);
-        const shippingCost = 50; // Fixed shipping cost for now
+        
+        // Calculate shipping cost using JRS API - compute per seller and sum costs
+        // No fallbacks for multi-seller products - must use JRS calculated costs
+        let shippingCost = 0;
+        
+        // Group order items by seller
+        const itemsBySeller = orderItems.reduce((groups, item) => {
+          const sellerId = item.sellerId;
+          if (!groups[sellerId]) {
+            groups[sellerId] = [];
+          }
+          groups[sellerId].push(item);
+          return groups;
+        }, {} as Record<string, typeof orderItems>);
+        
+        const recipientAddress = `${shippingAddress?.city || 'Manila'}, ${shippingAddress?.state || 'Metro Manila'}`;
+        
+        console.log('Calculating shipping cost per seller using JRS API:', {
+          sellerCount: Object.keys(itemsBySeller).length,
+          recipientAddress,
+          totalItems: orderItems.length
+        });
+        
+        // Calculate shipping cost for each seller in parallel
+        const sellerShippingPromises = Object.entries(itemsBySeller).map(async ([sellerId, sellerItems]) => {
+          // Get seller address
+          const sellerDoc = await db.collection('User').doc(sellerId).get();
+          const sellerData = sellerDoc.data();
+          const sellerAddress = sellerData?.address || 'Makati, Metro Manila';
+          
+          // Validate item dimensions and filter out items with missing dimensions
+          const validItems = [];
+          for (const item of sellerItems) {
+            // Skip items that don't have required dimensions
+            if (!item.length || !item.width || !item.height || !item.weight) {
+              console.warn('Skipping item with missing dimensions:', {
+                productId: item.productId,
+                dimensions: {
+                  length: item.length,
+                  width: item.width,
+                  height: item.height,
+                  weight: item.weight
+                }
+              });
+              continue;
+            }
+            validItems.push(item);
+          }
+
+          // If no items have dimensions, throw an error
+          if (validItems.length === 0) {
+            throw new Error(`No items have the required dimensions for shipping calculation for seller ${sellerId}`);
+          }
+          
+          console.log(`Calculating shipping for seller ${sellerId}:`, {
+            sellerAddress,
+            itemCount: validItems.length,
+            originalItemCount: sellerItems.length
+          });
+          
+          // Calculate shipping cost for this seller's items - no fallback, must succeed
+          const sellerShippingCost = await calculateJRSShippingCost(
+            sellerAddress,
+            recipientAddress,
+            validItems,
+            JRS_API_KEY_SECRET,
+            JRS_GETRATE_API_URL
+          );
+          
+          // Validate that we got a valid shipping cost
+          if (!sellerShippingCost || sellerShippingCost <= 0) {
+            throw new Error(`JRS API returned invalid shipping cost (${sellerShippingCost}) for seller ${sellerId}`);
+          }
+          
+          console.log(`✅ Seller ${sellerId} shipping cost: ₱${sellerShippingCost}`);
+          return sellerShippingCost;
+        });
+        
+        // Wait for all seller shipping calculations and sum them
+        const sellerShippingCosts = await Promise.all(sellerShippingPromises);
+        shippingCost = sellerShippingCosts.reduce((total, cost) => total + cost, 0);
+        
+        console.log(`✅ Total shipping cost for all sellers: ₱${shippingCost}`);
+        
+        // Validate final shipping cost
+        if (!shippingCost || shippingCost <= 0) {
+          throw new Error(`Invalid total shipping cost calculated: ₱${shippingCost}`);
+        }
+        
         const totalAmount = subtotal + shippingCost;
 
         // Get unique seller IDs
@@ -294,8 +617,8 @@ export const createCheckoutSession = functions
               description: `DentPal Order #${orderRef.id}`,
               line_items: lineItems,
               payment_method_types: paymentMethodTypes,
-              success_url: successUrl || `${process.env.APP_URL}/order-success?session_id={CHECKOUT_SESSION_ID}`,
-              cancel_url: cancelUrl || `${process.env.APP_URL}/checkout?cancelled=true`,
+              success_url: successUrl || 'https://dentpal-store.web.app/order-success',
+              cancel_url: cancelUrl || 'https://dentpal-store.web.app/checkout?cancelled=true',
               metadata: {
                 order_id: orderRef.id,
                 user_id: userId,
@@ -319,12 +642,19 @@ export const createCheckoutSession = functions
           },
         };
 
+        // Use secret key if available, otherwise fall back to public key
+        const paymongoKey = PAYMONGO_SECRET_KEY || PAYMONGO_PUBLIC_KEY;
+        
+        if (!paymongoKey) {
+          console.warn('No Paymongo API key configured - checkout session will fail');
+        }
+
         const checkoutResponse = await axios.post(
           `${PAYMONGO_BASE_URL}/checkout_sessions`,
           checkoutSessionData,
           {
             headers: {
-              'Authorization': `Basic ${Buffer.from(PAYMONGO_SECRET_KEY + ':').toString('base64')}`,
+              'Authorization': `Basic ${Buffer.from((paymongoKey || '') + ':').toString('base64')}`,
               'Content-Type': 'application/json',
             },
           }
@@ -359,10 +689,32 @@ export const createCheckoutSession = functions
         });
 
       } catch (error: any) {
-        console.error('❌ Error creating checkout session:', error);
-        response.status(error.message.includes('authenticated') ? 401 : 500).json({
+        console.error('❌ Error creating checkout session:', {
+          error: error.message,
+          userId,
+          timestamp: new Date().toISOString()
+        });
+        
+        // Determine appropriate error response
+        let statusCode = 500;
+        let errorMessage = 'An internal error occurred. Please try again.';
+        
+        if (error.message.includes('authenticated')) {
+          statusCode = 401;
+          errorMessage = 'Authentication required.';
+        } else if (error.message.includes('Cart item') || 
+                   error.message.includes('Address') || 
+                   error.message.includes('Invalid')) {
+          statusCode = 400;
+          errorMessage = 'Invalid request data. Please check your input.';
+        } else if (error.message.includes('Too many requests')) {
+          statusCode = 429;
+          errorMessage = 'Too many requests. Please try again later.';
+        }
+        
+        response.status(statusCode).json({
           success: false,
-          error: error.message || 'Failed to create checkout session'
+          error: errorMessage
         });
       }
     });

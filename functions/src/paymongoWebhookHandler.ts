@@ -1,6 +1,8 @@
-import * as functions from 'firebase-functions/v1';
+import { onRequest } from 'firebase-functions/v2/https';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
 import cors = require('cors');
+import * as logger from 'firebase-functions/logger';
 
 // Initialize Firebase Admin if not already initialized
 if (!admin.apps.length) {
@@ -8,13 +10,123 @@ if (!admin.apps.length) {
 }
 const db = admin.firestore();
 
+// Rate limiting store (in-memory for demo, use Redis in production)
+const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
+
+// Security headers middleware
+function setSecurityHeaders(response: any): void {
+  response.setHeader('X-Content-Type-Options', 'nosniff');
+  response.setHeader('X-Frame-Options', 'DENY');
+  response.setHeader('X-XSS-Protection', '1; mode=block');
+  response.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  response.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+}
+
+// Rate limiting function
+function checkRateLimit(identifier: string): boolean {
+  const now = Date.now();
+  const windowMs = 60000; // 1 minute
+  const maxRequests = 5;
+  
+  const userLimit = rateLimitStore.get(identifier);
+  
+  if (!userLimit || now > userLimit.resetTime) {
+    // Reset window
+    rateLimitStore.set(identifier, { count: 1, resetTime: now + windowMs });
+    return true;
+  }
+  
+  if (userLimit.count >= maxRequests) {
+    return false; // Rate limit exceeded
+  }
+  
+  userLimit.count++;
+  return true;
+}
+
 // Configure CORS
 const corsHandler = cors({ 
-  origin: true,
+  origin: [
+    'https://dentpal-store.web.app',
+    'https://dentpal-store-sandbox-testing.web.app',
+    'https://dentpal-161e5.web.app',
+    'https://dentpal-161e5.firebaseapp.com',
+    // Allow Paymongo webhook endpoints
+    'https://api.paymongo.com',
+    // Add localhost for development
+    'http://localhost:1337',
+    // Add common development ports
+    'http://localhost:3000',
+    'http://127.0.0.1:1337',
+    // Add localhost for Flutter web development
+    ...(process.env.NODE_ENV === 'development' || process.env.FUNCTIONS_EMULATOR === 'true' ? [
+      'http://localhost:1337',
+      'http://localhost:3000',
+      'http://localhost:8080',
+      'http://127.0.0.1:1337'
+    ] : [])
+  ],
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
+  credentials: true,
+  optionsSuccessStatus: 200 // For legacy browser support
 });
+
+// Helper function to verify that the order belongs to a valid user
+async function verifyOrderUser(orderId: string, userId: string): Promise<boolean> {
+  try {
+    if (!userId || !orderId) {
+      logger.warn('Missing user ID or order ID for verification', { orderId, userId });
+      return false;
+    }
+
+    // Check if the user exists and is valid
+    const userDoc = await db.collection('User').doc(userId).get();
+    
+    if (!userDoc.exists) {
+      logger.warn('User not found during webhook processing', { userId, orderId });
+      return false;
+    }
+
+    const userData = userDoc.data();
+    
+    // Additional user validation (you can customize this)
+    if (userData?.status === 'disabled' || userData?.status === 'suspended') {
+      logger.warn('User account is disabled/suspended', { userId, orderId });
+      return false;
+    }
+
+    // Verify the order actually belongs to this user
+    const orderDoc = await db.collection('Order').doc(orderId).get();
+    
+    if (!orderDoc.exists) {
+      logger.warn('Order not found during user verification', { orderId, userId });
+      return false;
+    }
+
+    const orderData = orderDoc.data();
+    
+    if (orderData?.userId !== userId) {
+      logger.error('Order user ID mismatch - potential security issue', { 
+        orderId, 
+        expectedUserId: userId, 
+        actualUserId: orderData?.userId 
+      });
+      return false;
+    }
+
+    logger.debug('Order user verification successful', { orderId, userId });
+    return true;
+
+  } catch (error) {
+    logger.error('Error during order user verification', { 
+      error: error instanceof Error ? error.message : String(error),
+      orderId,
+      userId
+    });
+    return false;
+  }
+}
 
 // Helper function to handle successful checkout session payments
 async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
@@ -25,25 +137,51 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
     const paymentMethodUsed = eventAttributes.payment_method_used;
     const status = eventAttributes.status;
     
-    console.log(`✅ Processing payment event - Session: ${checkoutSessionId}, Order: ${orderId}, Status: ${status}, Payment Method: ${paymentMethodUsed}`);
+    logger.info('Processing payment event', { 
+      sessionId: checkoutSessionId, 
+      orderId, 
+      status, 
+      paymentMethod: paymentMethodUsed 
+    });
 
     // Check if payment is actually completed
     if (status !== 'paid' && status !== 'active') {
-      console.log(`⚠️ Payment not completed yet. Status: ${status}`);
+      logger.info('Payment not completed yet', { status, orderId });
       return;
     }
 
     if (!orderId) {
-      console.error('❌ No order ID found in webhook metadata');
+      logger.error('No order ID found in webhook metadata');
       return;
     }
+
+    if (!userId) {
+      logger.error('No user ID found in webhook metadata', { orderId });
+      return;
+    }
+
+    // SECURITY: Verify that the order belongs to a valid user
+    const isValidUser = await verifyOrderUser(orderId, userId);
+    if (!isValidUser) {
+      logger.error('User verification failed for webhook payment', { 
+        orderId, 
+        userId,
+        checkoutSessionId 
+      });
+      return; // Silently reject the webhook if user verification fails
+    }
+
+    logger.info('User verification successful, proceeding with payment processing', { 
+      orderId, 
+      userId 
+    });
 
     // Update order status
     const orderRef = db.collection('Order').doc(orderId);
     const orderDoc = await orderRef.get();
 
     if (!orderDoc.exists) {
-      console.error(`❌ Order ${orderId} not found`);
+      logger.error('Order not found', { orderId });
       return;
     }
 
@@ -71,8 +209,6 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
         case 'debit_card':
           paymentMethod = 'card';
           break;
-        default:
-          paymentMethod = 'card';
       }
     }
 
@@ -85,7 +221,13 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
                          eventAttributes.payment_intent?.id || 
                          checkoutSessionId;
 
-    console.log(`🔍 Debug values - checkoutSessionId: ${checkoutSessionId}, transactionId: ${transactionId}, orderId: ${orderId}`);
+    logger.debug('Processing payment update', { 
+      checkoutSessionId, 
+      transactionId, 
+      orderId,
+      finalStatus,
+      orderStatus
+    });
 
     // Prepare update object with only defined values
     const updateData: any = {
@@ -104,18 +246,18 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
     // Only add these fields if they are defined and not empty
     if (transactionId && transactionId !== '' && transactionId !== null) {
       updateData['paymentInfo.paymentIntentId'] = transactionId;
-      console.log(`✅ Adding paymentIntentId: ${transactionId}`);
     }
     if (checkoutSessionId && checkoutSessionId !== '' && checkoutSessionId !== null) {
       updateData['paymentInfo.checkoutSessionId'] = checkoutSessionId;
-      console.log(`✅ Adding checkoutSessionId: ${checkoutSessionId}`);
     }
-
-    console.log(`� Final update data:`, JSON.stringify(updateData, null, 2));
 
     await orderRef.update(updateData);
 
-    console.log(`✅ Order ${orderId} updated to ${orderStatus} status with payment ${finalStatus}`);
+    logger.info('Order payment processed successfully', { 
+      orderId, 
+      orderStatus, 
+      paymentStatus: finalStatus 
+    });
 
     // Clear cart items after successful payment
     if (userId && (orderData?.metadata?.cart_item_ids || eventAttributes.metadata?.cart_item_ids)) {
@@ -134,11 +276,11 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
       });
 
       await Promise.all(removeCartPromises);
-      console.log(`🗑️ Cleared ${itemsArray.length} cart items for user ${userId}`);
+      logger.info('Cart items cleared', { userId, itemCount: itemsArray.length });
     }
 
   } catch (error) {
-    console.error('❌ Error handling payment paid:', error);
+    logger.error('Error handling payment paid', { error: error instanceof Error ? error.message : String(error) });
     throw error;
   }
 }
@@ -147,21 +289,25 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
 // SCHEDULED ORDER EXPIRATION FUNCTION
 // ====================================
 
-export const expirePendingOrders = functions
-  .runWith({
-    memory: '256MB',
+export const expirePendingOrders = onSchedule(
+  {
+    schedule: '*/30 * * * *',  // Every 30 minutes using cron syntax
+    timeZone: 'Asia/Manila',
+    region: 'asia-southeast1',
+    memory: '256MiB',
     timeoutSeconds: 300
-  })
-  .pubsub.schedule('every 30 minutes')
-  .onRun(async (context) => {
+  },
+  async (event) => {
     try {
-      console.log('🕒 Starting scheduled order expiration job...');
+      logger.info('Starting scheduled order expiration job');
 
       // Calculate the cutoff time (3 hours ago)
       const threeHoursAgo = new Date();
       threeHoursAgo.setHours(threeHoursAgo.getHours() - 3);
 
-      console.log(`⏰ Checking for pending orders created before: ${threeHoursAgo.toISOString()}`);
+      logger.info('Checking for pending orders', { 
+        cutoffTime: threeHoursAgo.toISOString() 
+      });
 
       // Query only by status to avoid composite index requirement
       // We'll filter by time in memory
@@ -172,11 +318,11 @@ export const expirePendingOrders = functions
       const snapshot = await pendingOrdersQuery.get();
 
       if (snapshot.empty) {
-        console.log('📝 No pending orders found');
+        logger.info('No pending orders found');
         return null;
       }
 
-      console.log(`🔍 Found ${snapshot.size} pending orders to check`);
+      logger.info('Found pending orders to check', { count: snapshot.size });
 
       // Filter in memory for orders older than 3 hours
       const expiredOrders = snapshot.docs.filter(doc => {
@@ -184,7 +330,7 @@ export const expirePendingOrders = functions
         const createdAt = orderData.createdAt?.toDate();
         
         if (!createdAt) {
-          console.log(`⚠️ Order ${doc.id} has no createdAt timestamp`);
+          logger.warn('Order missing createdAt timestamp', { orderId: doc.id });
           return false;
         }
         
@@ -192,11 +338,11 @@ export const expirePendingOrders = functions
       });
 
       if (expiredOrders.length === 0) {
-        console.log('📝 No pending orders need to be expired');
+        logger.info('No pending orders need to be expired');
         return null;
       }
 
-      console.log(`⏳ Found ${expiredOrders.length} orders to expire`);
+      logger.info('Found orders to expire', { count: expiredOrders.length });
 
       // Process in smaller batches to avoid Firestore limits
       const batchSize = 20;
@@ -208,7 +354,7 @@ export const expirePendingOrders = functions
         
         batchOrders.forEach((doc) => {
           const orderId = doc.id;
-          console.log(`⏳ Expiring order: ${orderId}`);
+          logger.debug('Expiring order', { orderId });
 
           // Update the order to expired status
           const orderRef = db.collection('Order').doc(orderId);
@@ -228,50 +374,88 @@ export const expirePendingOrders = functions
         });
 
         await batch.commit();
-        console.log(`✅ Processed batch ${Math.floor(i/batchSize) + 1} - expired ${batchOrders.length} orders`);
+        logger.debug('Processed batch', { 
+          batchNumber: Math.floor(i/batchSize) + 1,
+          expiredInBatch: batchOrders.length
+        });
       }
 
       if (totalExpired > 0) {
-        console.log(`✅ Successfully expired ${totalExpired} pending orders`);
+        logger.info('Successfully expired pending orders', { totalExpired });
       } else {
-        console.log('📝 No orders needed to be expired');
+        logger.info('No orders needed to be expired');
       }
 
       return null;
 
     } catch (error) {
-      console.error('❌ Error in scheduled order expiration:', error);
+      logger.error('Error in scheduled order expiration', { 
+        error: error instanceof Error ? error.message : String(error) 
+      });
       throw error;
     }
   });
 
-export const handlePaymongoWebhook = functions
-  .runWith({
-    memory: '256MB',
-    timeoutSeconds: 60
-  })
-  .https.onRequest(async (req, res) => {
-    // Log ALL incoming requests - even before CORS
-    console.log(`🔍 RAW WEBHOOK REQUEST - Method: ${req.method}, URL: ${req.url}`);
-    console.log(`🔍 RAW HEADERS:`, JSON.stringify(req.headers, null, 2));
-    console.log(`🔍 RAW BODY:`, JSON.stringify(req.body, null, 2));
+export const handlePaymongoWebhook = onRequest(
+  {
+    memory: '256MiB',
+    timeoutSeconds: 60,
+    region: 'asia-southeast1'
+  },
+  async (req, res) => {
+    // Set security headers
+    setSecurityHeaders(res);
     
     corsHandler(req, res, async () => {
+      const clientIp = (req.ip || 
+                       (Array.isArray(req.headers['x-forwarded-for']) 
+                         ? req.headers['x-forwarded-for'][0] 
+                         : req.headers['x-forwarded-for']) || 
+                       'unknown') as string;
+      
       try {
-        console.log(`📬 Processing Paymongo webhook - Body keys: ${Object.keys(req.body || {})}`);
+        // Check rate limit based on IP
+        if (!checkRateLimit(clientIp)) {
+          logger.warn('Rate limit exceeded for webhook', { clientIp });
+          res.status(429).json({
+            success: false,
+            error: 'Too many requests'
+          });
+          return;
+        }
+
+        logger.info('Processing Paymongo webhook', { 
+          method: req.method,
+          contentType: req.headers['content-type'],
+          clientIp,
+          userAgent: req.headers['user-agent']
+        });
+
+        // Additional security check: Verify the request is actually from Paymongo
+        const userAgent = req.headers['user-agent'] as string;
+        if (userAgent && !userAgent.toLowerCase().includes('paymongo')) {
+          logger.warn('Suspicious webhook request - non-Paymongo user agent', { 
+            userAgent, 
+            clientIp 
+          });
+          // Continue processing but log the suspicious activity
+        }
+
+        // Note: Paymongo webhooks don't require signature verification
+        // They rely on the webhook URL endpoint security and HTTPS
+        logger.debug('Processing webhook without signature verification (Paymongo standard)');
 
         // Handle different webhook formats that Paymongo might send
         let webhookData = req.body?.data;
         
         // If no data field, maybe the whole body IS the webhook data
         if (!webhookData && req.body) {
-          console.log(`🔄 No 'data' field found, treating entire body as webhook data`);
+          logger.debug('No data field found, treating entire body as webhook data');
           webhookData = req.body;
         }
         
         if (!webhookData) {
-          console.error('❌ No webhook data received in any expected format');
-          console.error('❌ Request body structure:', JSON.stringify(req.body, null, 2));
+          logger.error('No webhook data received in any expected format');
           res.status(400).json({
             success: false,
             error: 'Invalid webhook data format'
@@ -283,7 +467,7 @@ export const handlePaymongoWebhook = functions
         const eventType = webhookData.type;
         const eventAttributes = webhookData.attributes;
 
-        console.log(`📬 Processing webhook event: ${eventType}`);
+        logger.info('Processing webhook event', { eventType });
 
         // Only handle payment paid events
         if (eventType === 'event') {
@@ -291,7 +475,7 @@ export const handlePaymongoWebhook = functions
           const actualEventType = eventAttributes.type;
           const eventData = eventAttributes.data;
           
-          console.log(`📬 Actual event type: ${actualEventType}`);
+          logger.info('Processing nested event', { actualEventType });
           
           if (actualEventType === 'checkout_session.payment.paid') {
             await handleCheckoutSessionPaymentPaid(eventData.attributes);
@@ -301,40 +485,42 @@ export const handlePaymongoWebhook = functions
             const sessionStatus = sessionData.status;
             const paymentMethodUsed = sessionData.payment_method_used;
             
-            console.log(`📬 Checkout session update - Status: ${sessionStatus}, Payment Method: ${paymentMethodUsed}`);
+            logger.info('Checkout session update', { sessionStatus, paymentMethodUsed });
             
             // If session has a payment method and is active, treat as payment completed
             if (sessionStatus === 'active' && paymentMethodUsed) {
-              console.log('🎯 Treating active session with payment method as paid');
+              logger.info('Treating active session with payment method as paid');
               await handleCheckoutSessionPaymentPaid(sessionData);
             } else {
-              console.log(`ℹ️ Ignoring checkout session status: ${sessionStatus} (handled on client-side)`);
+              logger.debug('Ignoring checkout session status', { sessionStatus });
             }
           } else {
-            console.log(`ℹ️ Ignoring webhook event type: ${actualEventType} (not a payment success)`);
+            logger.debug('Ignoring webhook event type', { actualEventType });
           }
         } else if (eventType === 'checkout_session.payment.paid') {
           // Direct event handling (fallback)
           await handleCheckoutSessionPaymentPaid(eventAttributes);
         } else {
-          console.log(`ℹ️ Ignoring webhook event type: ${eventType} (not a payment success)`);
+          logger.debug('Ignoring webhook event type', { eventType });
         }
 
         // Always respond with success to Paymongo
-        console.log(`✅ Webhook processed successfully`);
+        logger.info('Webhook processed successfully');
         res.status(200).json({
           success: true,
           message: 'Webhook processed successfully'
         });
 
       } catch (error: any) {
-        console.error(`❌ Error handling webhook:`, error);
+        logger.error('Error handling webhook', { 
+          error: error instanceof Error ? error.message : String(error),
+          clientIp
+        });
         
-        // Still respond with success to avoid Paymongo retries for non-critical errors
+        // Return generic error to avoid information disclosure
         res.status(200).json({
           success: false,
-          error: 'Webhook processing failed but acknowledged',
-          details: error.message
+          error: 'Webhook processing failed but acknowledged'
         });
       }
     });

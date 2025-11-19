@@ -236,10 +236,8 @@ class ProductService {
     try {
       User? currentUser = _auth.currentUser;
       final userUID = currentUser?.uid;
-      AppLogger.d('CheckSellerStatus: Current user UID: $userUID');
       
       if (currentUser == null || userUID == null) {
-        AppLogger.d('CheckSellerStatus: User is not logged in');
         return {
           'isSeller': false,
           'message': 'User is not logged in',
@@ -247,17 +245,13 @@ class ProductService {
         };
       }
 
-      // First check if user exists in the users collection using the exact UID
+      // Check if user exists in the users collection
       DocumentSnapshot userDoc = await _firestore
           .collection('User')
           .doc(userUID)
           .get();
 
-      AppLogger.d('CheckSellerStatus: Looking for User doc with UID: $userUID');
-      AppLogger.d('CheckSellerStatus: User doc exists: ${userDoc.exists}');
-      
       if (!userDoc.exists) {
-        AppLogger.d('CheckSellerStatus: User profile not found for UID: $userUID');
         return {
           'isSeller': false,
           'message': 'User profile not found',
@@ -267,12 +261,8 @@ class ProductService {
 
       // Check the role field to see if the user is a seller
       Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
-      AppLogger.d('CheckSellerStatus: User data keys: ${userData.keys.toList()}');
-      AppLogger.d('CheckSellerStatus: User role: ${userData['role']}');
-      AppLogger.d('CheckSellerStatus: User UID from doc: ${userDoc.id}');
       
       if (userData['role'] != 'seller') {
-        AppLogger.d('CheckSellerStatus: User role is not seller - role is: ${userData['role']}');
         return {
           'isSeller': false,
           'message': 'User is not registered as a seller',
@@ -280,18 +270,13 @@ class ProductService {
         };
       }
 
-      // Check if there's an entry in the Seller collection with the same UID
+      // Check if there's an entry in the Seller collection - use server fetch to bypass cache
       DocumentSnapshot sellerDoc = await _firestore
           .collection('Seller')
           .doc(userUID)
-          .get();
-
-      AppLogger.d('CheckSellerStatus: Looking for Seller doc with UID: $userUID');
-      AppLogger.d('CheckSellerStatus: Seller doc exists: ${sellerDoc.exists}');
-      AppLogger.d('CheckSellerStatus: Seller doc ID: ${sellerDoc.id}');
+          .get(const GetOptions(source: Source.server));
       
       if (!sellerDoc.exists) {
-        AppLogger.d('CheckSellerStatus: Seller profile not found for UID: $userUID');
         return {
           'isSeller': false,
           'message': 'Seller profile not setup completely',
@@ -300,13 +285,9 @@ class ProductService {
       }
 
       Map<String, dynamic> sellerData = sellerDoc.data() as Map<String, dynamic>;
-      AppLogger.d('CheckSellerStatus: Seller data keys: ${sellerData.keys.toList()}');
-      AppLogger.d('CheckSellerStatus: Seller isActive: ${sellerData['isActive']}');
-      AppLogger.d('CheckSellerStatus: Seller isActive type: ${sellerData['isActive'].runtimeType}');
       
       // Verify UIDs match between User and Seller collections
       if (userDoc.id != sellerDoc.id) {
-        AppLogger.d('CheckSellerStatus: UID mismatch - User: ${userDoc.id}, Seller: ${sellerDoc.id}');
         return {
           'isSeller': false,
           'message': 'UID mismatch between User and Seller collections',
@@ -322,10 +303,7 @@ class ProductService {
         isActive = sellerData['isActive'].toString().toLowerCase() == 'true';
       }
       
-      AppLogger.d('CheckSellerStatus: Parsed isActive value: $isActive');
-      
       if (!isActive) {
-        AppLogger.d('CheckSellerStatus: Seller account is not active - isActive: ${sellerData['isActive']}');
         return {
           'isSeller': false,
           'message': 'Seller account is not active',
@@ -333,19 +311,15 @@ class ProductService {
         };
       }
 
-      AppLogger.d('CheckSellerStatus: User is verified seller with matching UIDs');
-      AppLogger.d('CheckSellerStatus: User UID: $userUID, Seller UID: ${sellerDoc.id}');
       return {
         'isSeller': true,
         'message': 'User is a verified seller',
         'sellerId': userUID
       };
     } catch (e) {
-      AppLogger.d('CheckSellerStatus Error: $e');
-      AppLogger.d('CheckSellerStatus Stack trace: ${StackTrace.current}');
       return {
         'isSeller': false,
-        'message': 'Error: $e',
+        'message': 'Error checking seller status: $e',
         'sellerId': null
       };
     }
