@@ -410,6 +410,7 @@ class ProductSearchService {
         warrantyPeriod: product.warrantyPeriod,
         warrantyPeriodUnit: product.warrantyPeriodUnit,
         warrantyPolicy: product.warrantyPolicy,
+        allowInquiry: product.allowInquiry,
       );
     }
     

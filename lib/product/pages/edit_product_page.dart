@@ -160,6 +160,7 @@ class _EditProductPageState extends State<EditProductPage> {
     _productForm.imageURL = product.imageURL;
     _productForm.categoryId = product.categoryId;
     _productForm.subCategoryId = product.subCategoryId;
+    _productForm.allowInquiry = product.allowInquiry;
 
     // Store the product's category and subcategory IDs but don't set them as selected yet
     // They will be set when the categories are loaded and validated
@@ -1171,6 +1172,75 @@ class _EditProductPageState extends State<EditProductPage> {
                             });
                           },
                     validator: (_) => _productForm.validateSubCategory(),
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // Product Inquiry Section
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(20.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.question_answer_outlined,
+                              color: AppColors.primary,
+                              size: 24,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Product Inquiry',
+                              style: AppTextStyles.titleMedium.copyWith(
+                                color: AppColors.onSurface,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            Checkbox(
+                              value: _productForm.allowInquiry,
+                              onChanged: (value) {
+                                setState(() {
+                                  _productForm.allowInquiry = value ?? false;
+                                  _markAsChanged();
+                                });
+                              },
+                              activeColor: AppColors.primary,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Allow customers to send inquiries about this product?',
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  color: AppColors.onSurface,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
 
@@ -2214,6 +2284,11 @@ class _EditProductPageState extends State<EditProductPage> {
                   ),
                   const SizedBox(height: 40),
 
+                  // Product Inquiry Section (full width)
+                  _buildWebInquirySection(),
+
+                  const SizedBox(height: 40),
+
                   // Product Variations Section (full width)
                   _buildWebVariationsSection(),
 
@@ -3122,6 +3197,68 @@ class _EditProductPageState extends State<EditProductPage> {
                       ],
                     ),
                   ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWebInquirySection() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 15,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.question_answer_outlined, color: AppColors.primary, size: 24),
+              const SizedBox(width: 12),
+              Text(
+                'Product Inquiry',
+                style: AppTextStyles.titleLarge.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.onSurface,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Checkbox(
+                value: _productForm.allowInquiry,
+                onChanged: (value) {
+                  setState(() {
+                    _productForm.allowInquiry = value ?? false;
+                    _markAsChanged();
+                  });
+                },
+                activeColor: AppColors.primary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Allow customers to send inquiries about this product?',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.onSurface,
+                  ),
                 ),
               ),
             ],

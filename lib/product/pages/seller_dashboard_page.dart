@@ -206,7 +206,11 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
               clickCounter: product.clickCounter,
               variations: variations,
               hasWarranty: product.hasWarranty,
+              warrantyType: product.warrantyType,
+              warrantyPeriod: product.warrantyPeriod,
+              warrantyPeriodUnit: product.warrantyPeriodUnit,
               warrantyPolicy: product.warrantyPolicy,
+              allowInquiry: product.allowInquiry,
             );
           }
           

@@ -21,6 +21,7 @@ class Product {
   final String? warrantyPeriod;
   final String? warrantyPeriodUnit;
   final String? warrantyPolicy;
+  final bool allowInquiry;
 
   Product({
     required this.productId,
@@ -42,6 +43,7 @@ class Product {
     this.warrantyPeriod,
     this.warrantyPeriodUnit,
     this.warrantyPolicy,
+    required this.allowInquiry,
   });
 
   factory Product.fromFirestore(DocumentSnapshot doc) {
@@ -107,6 +109,7 @@ class Product {
       warrantyPeriod: warrantyPeriod,
       warrantyPeriodUnit: warrantyPeriodUnit,
       warrantyPolicy: warrantyPolicy,
+      allowInquiry: data['allowInquiry'] ?? false,
     );
   }
 
@@ -129,6 +132,7 @@ class Product {
       'warrantyPeriod': warrantyPeriod,
       'warrantyPeriodUnit': warrantyPeriodUnit,
       'warrantyPolicy': warrantyPolicy,
+      'allowInquiry': allowInquiry,
     };
   }
 

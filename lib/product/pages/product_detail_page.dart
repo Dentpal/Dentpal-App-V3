@@ -1899,32 +1899,35 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                             ),
                           ),
                           
-                          const SizedBox(width: 8),
-                          
-                          // Inquire button
-                          Container(
-                            decoration: BoxDecoration(
-                              color: AppColors.accent,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
+                          // Show inquiry button only if allowed
+                          if (product.allowInquiry) ...[
+                            const SizedBox(width: 8),
+                            
+                            // Inquire button
+                            Container(
+                              decoration: BoxDecoration(
+                                color: AppColors.accent,
                                 borderRadius: BorderRadius.circular(12),
-                                onTap: () => _inquireAboutProduct(product),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                  child: Text(
-                                    'Inquire',
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color: AppColors.onSecondary,
-                                      fontWeight: FontWeight.w600,
+                              ),
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(12),
+                                  onTap: () => _inquireAboutProduct(product),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    child: Text(
+                                      'Inquire',
+                                      style: AppTextStyles.bodySmall.copyWith(
+                                        color: AppColors.onSecondary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
+                          ],
                         ],
                       ),
                     ],

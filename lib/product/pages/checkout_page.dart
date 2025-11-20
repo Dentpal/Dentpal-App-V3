@@ -208,11 +208,34 @@ class _CheckoutPageState extends State<CheckoutPage> {
     }
   }
 
-  /// Calculate total including shipping
+  /// Calculate buyer's portion of shipping cost based on shipping allocation rules:
+  /// - If shipping >= 10% of cart value: Buyer pays 50%, Seller pays 50% (seller portion handled during checkout)
+  /// - If shipping < 10% of cart value: Buyer pays 100%, Seller pays 0%
+  /// Note: Only buyer's portion is shown and charged to the user
+  double _calculateBuyerShippingPortion() {
+    final shippingCost = _calculatedShippingCost ?? 0.0;
+    
+    if (shippingCost > 0) {
+      final cartValue = widget.cartSummary.selectedItemsTotal;
+      final cartValueThreshold = cartValue * 0.1; // 10% of cart value
+      
+      if (shippingCost >= cartValueThreshold) {
+        // Split 50/50, buyer only pays their portion (seller's portion is hidden but handled during checkout)
+        return shippingCost * 0.5;
+      } else {
+        // Buyer pays all shipping (seller pays nothing)
+        return shippingCost;
+      }
+    }
+    
+    return 0.0;
+  }
+
+  /// Calculate total including only buyer's shipping portion
   double _calculateTotalWithShipping() {
     final subtotal = widget.cartSummary.selectedItemsTotal;
-    final shipping = _calculatedShippingCost ?? 0.0;
-    return subtotal + shipping;
+    final buyerShippingPortion = _calculateBuyerShippingPortion();
+    return subtotal + buyerShippingPortion;
   }
   
   /// Check if total is estimated (shipping not yet calculated)
@@ -264,34 +287,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
       );
     }
 
-    // Calculate shipping allocation for preview
+    // Show only buyer's shipping portion (seller's portion is hidden)
     if (shippingCost > 0) {
-      final cartValue = widget.cartSummary.selectedItemsTotal;
-      final cartValueThreshold = cartValue * 0.1; // 10% of cart value
-      
-      if (shippingCost >= cartValueThreshold) {
-        // Split 50/50
-        final sellerPortion = shippingCost * 0.5;
-        final buyerPortion = shippingCost * 0.5;
-        
-        return Column(
-          children: [
-            _buildSummaryRow('Shipping (Total)', shippingCost),
-            _buildShippingAllocationRow('• You pay', buyerPortion),
-            _buildShippingAllocationRow('• Seller pays', sellerPortion),
-            const SizedBox(height: 8),
-          ],
-        );
-      } else {
-        // Buyer pays all
-        return Column(
-          children: [
-            _buildSummaryRow('Shipping', shippingCost),
-            _buildShippingAllocationNote('Full shipping cost'),
-            const SizedBox(height: 4),
-          ],
-        );
-      }
+      final buyerShippingPortion = _calculateBuyerShippingPortion();
+      return _buildSummaryRow('Shipping', buyerShippingPortion);
     }
     
     return _buildSummaryRow('Shipping', shippingCost);
@@ -876,48 +875,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
-  Widget _buildShippingAllocationRow(String label, double amount) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 16, bottom: 2),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.onSurface.withValues(alpha: 0.6),
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-          Text(
-            '₱${amount.toStringAsFixed(2)}',
-            style: AppTextStyles.bodySmall.copyWith(
-              fontWeight: FontWeight.w500,
-              fontFamily: 'Roboto',
-              color: AppColors.onSurface.withValues(alpha: 0.7),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
-  Widget _buildShippingAllocationNote(String note) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 16),
-      child: Row(
-        children: [
-          Text(
-            '• $note',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.onSurface.withValues(alpha: 0.6),
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildShippingSection() {
     return AddressSelectionWidget(

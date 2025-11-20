@@ -154,7 +154,11 @@ class ProductService {
             clickCounter: product.clickCounter,
             variations: variations,
             hasWarranty: product.hasWarranty,
+            warrantyType: product.warrantyType,
+            warrantyPeriod: product.warrantyPeriod,
+            warrantyPeriodUnit: product.warrantyPeriodUnit,
             warrantyPolicy: product.warrantyPolicy,
+            allowInquiry: product.allowInquiry,
           );
         }
         
@@ -220,7 +224,11 @@ class ProductService {
           clickCounter: product.clickCounter,
           variations: variations,
           hasWarranty: product.hasWarranty,
+          warrantyType: product.warrantyType,
+          warrantyPeriod: product.warrantyPeriod,
+          warrantyPeriodUnit: product.warrantyPeriodUnit,
           warrantyPolicy: product.warrantyPolicy,
+          allowInquiry: product.allowInquiry,
         );
       }
       
@@ -366,6 +374,7 @@ class ProductService {
         'warrantyType': productForm.warrantyType,
         'warrantyPeriod': productForm.warrantyPeriod,
         'warrantyPolicy': productForm.warrantyPolicy,
+        'allowInquiry': productForm.allowInquiry,
       });
       
       // Add variations as a sub-collection
@@ -449,6 +458,7 @@ class ProductService {
         'warrantyType': productForm.warrantyType,
         'warrantyPeriod': productForm.warrantyPeriod,
         'warrantyPolicy': productForm.warrantyPolicy,
+        'allowInquiry': productForm.allowInquiry,
       };
       
       // Add isDraft field if it's provided
@@ -590,7 +600,11 @@ class ProductService {
               clickCounter: product.clickCounter,
               variations: variations,
               hasWarranty: product.hasWarranty,
+              warrantyType: product.warrantyType,
+              warrantyPeriod: product.warrantyPeriod,
+              warrantyPeriodUnit: product.warrantyPeriodUnit,
               warrantyPolicy: product.warrantyPolicy,
+              allowInquiry: product.allowInquiry,
             );
           }
           

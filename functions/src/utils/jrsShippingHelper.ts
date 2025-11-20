@@ -110,7 +110,7 @@ export async function calculateJRSShippingCost(
         'Cache-Control': 'no-cache',
         'Ocp-Apim-Subscription-Key': jrsApiKey
       },
-      timeout: 15000 // 15 seconds timeout
+      timeout: 60000 // 60 seconds timeout
     });
 
     if (response.status === 200 && response.data) {

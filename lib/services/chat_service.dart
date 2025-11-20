@@ -324,18 +324,18 @@ class ChatService {
         );
 
         await chatRoomRef.set(chatRoom.toMap());
+      }
 
-        // If this is a product inquiry, send initial product message
-        if (productId != null && productName != null) {
-          await sendMessage(
-            chatRoomId: chatRoomId,
-            receiverId: otherUserId,
-            message: 'Hi! I\'m interested in this product.',
-            productId: productId,
-            productName: productName,
-            productImage: productImage,
-          );
-        }
+      // If this is a product inquiry, send product message (for both new and existing chat rooms)
+      if (productId != null && productName != null) {
+        await sendMessage(
+          chatRoomId: chatRoomId,
+          receiverId: otherUserId,
+          message: 'Hi! I\'m interested in this product.',
+          productId: productId,
+          productName: productName,
+          productImage: productImage,
+        );
       }
 
       return chatRoomId;

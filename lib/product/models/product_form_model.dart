@@ -15,6 +15,9 @@ class ProductFormModel {
   String warrantyPeriod = '';
   String warrantyPolicy = '';
   
+  // Inquiry field
+  bool allowInquiry = false;
+  
   // Validation
   String? validateName() {
     if (name.isEmpty) {
