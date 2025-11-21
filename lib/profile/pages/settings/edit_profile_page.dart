@@ -64,7 +64,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   void _onFieldChanged() {
     setState(() {
-      // This will trigger a rebuild to update the button state
+      // This will trigger a rebuild to update the button state and bottom bar
     });
   }
 
@@ -204,7 +204,24 @@ class _EditProfilePageState extends State<EditProfilePage> {
   }
 
   bool _hasChanges() {
-    if (!_hasLoadedData) return false; // No changes if data isn't loaded yet
+    // If data hasn't been loaded yet, check if user has entered any data
+    if (!_hasLoadedData) {
+      final currentDisplayName = _displayNameController.text.trim();
+      final currentFirstName = _firstNameController.text.trim();
+      final currentMiddleName = _middleNameController.text.trim();
+      final currentLastName = _lastNameController.text.trim();
+      
+      // Return true if user has entered any data
+      return currentDisplayName.isNotEmpty ||
+             currentFirstName.isNotEmpty ||
+             currentMiddleName.isNotEmpty ||
+             currentLastName.isNotEmpty ||
+             _selectedGender.isNotEmpty ||
+             _selectedBirthdate != null ||
+             _selectedImageFile != null ||
+             _selectedImageBytes != null ||
+             _hasNewPhoto;
+    }
     
     final currentDisplayName = _displayNameController.text.trim();
     final currentFirstName = _firstNameController.text.trim();
@@ -641,13 +658,28 @@ class _EditProfilePageState extends State<EditProfilePage> {
       if (updates.isNotEmpty) {
         updates['updatedAt'] = FieldValue.serverTimestamp();
         
-        await FirebaseFirestore.instance
-            .collection('User')
-            .doc(user.uid)
-            .update(updates);
+        // If data wasn't loaded, it means the document might not exist or we're creating new data
+        // Use set with merge instead of update to handle both cases
+        if (!_hasLoadedData) {
+          // For new profiles, add createdAt timestamp
+          updates['createdAt'] = FieldValue.serverTimestamp();
+          
+          await FirebaseFirestore.instance
+              .collection('User')
+              .doc(user.uid)
+              .set(updates, SetOptions(merge: true));
+        } else {
+          await FirebaseFirestore.instance
+              .collection('User')
+              .doc(user.uid)
+              .update(updates);
+        }
         
         // Update original values after successful save
         _updateOriginalValues();
+        
+        // Mark data as loaded after successful save
+        _hasLoadedData = true;
         
         if (mounted) {
           _showSuccessSnackBar('Profile updated successfully');
@@ -1144,9 +1176,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: !_hasChanges(),
-      onPopInvokedWithResult: (didPop, result) {
+      onPopInvokedWithResult: (didPop, result) async {
         if (!didPop && _hasChanges()) {
-          _showDiscardChangesDialog();
+          // Show the discard changes dialog
+          await _showDiscardChangesDialog();
         }
       },
       child: Scaffold(
@@ -1157,9 +1190,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: AppColors.onSurface),
-          onPressed: () {
+          onPressed: () async {
             if (_hasChanges()) {
-              _showDiscardChangesDialog();
+              await _showDiscardChangesDialog();
             } else {
               Navigator.of(context).pop();
             }
@@ -1169,21 +1202,134 @@ class _EditProfilePageState extends State<EditProfilePage> {
           children: [
             Icon(Icons.edit_outlined, color: AppColors.primary, size: 24),
             const SizedBox(width: 8),
-            Text(
-              'Edit Profile',
-              style: AppTextStyles.titleLarge.copyWith(
-                fontWeight: FontWeight.w700,
+            Expanded(
+              child: Text(
+                'Edit Profile',
+                style: AppTextStyles.titleLarge.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            // Show unsaved changes indicator
+            if (_hasChanges() && _hasLoadedData)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppColors.warning.withValues(alpha: 0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.circle,
+                      color: AppColors.warning,
+                      size: 8,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Unsaved',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.warning,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+      // Add persistent bottom navigation bar for Web only when changes are detected
+      bottomNavigationBar: kIsWeb && _hasChanges() && _hasLoadedData ? Container(
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.onSurface.withValues(alpha: 0.1),
+              blurRadius: 10,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: MediaQuery.of(context).padding.bottom + 16,
+        ),
+        child: Row(
+          children: [
+            // Discard Button
+            Expanded(
+              child: OutlinedButton(
+                onPressed: _isLoading ? null : _showDiscardChangesDialog,
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: AppColors.warning),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Text(
+                  'Discard',
+                  style: AppTextStyles.buttonLarge.copyWith(
+                    color: AppColors.warning,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            // Save Button
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _saveProfile,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: AppColors.onPrimary,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 0,
+                ),
+                child: _isLoading
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          color: AppColors.onPrimary,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : Text(
+                        'Save Changes',
+                        style: AppTextStyles.buttonLarge.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
               ),
             ),
           ],
         ),
-      ),
+      ) : null,
       body: LayoutBuilder(
         builder: (context, constraints) {
           final content = _isLoading && !_hasLoadedData
               ? const Center(child: CircularProgressIndicator())
               : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16.0),
+                  padding: EdgeInsets.fromLTRB(
+                    16.0,
+                    16.0,
+                    16.0,
+                    // Add bottom padding when changes exist to account for bottom bar
+                    _hasChanges() && _hasLoadedData ? 16.0 : 32.0,
+                  ),
                   child: Form(
                     key: _formKey,
                     child: Column(
@@ -1404,22 +1550,26 @@ class _EditProfilePageState extends State<EditProfilePage> {
                         
                         const SizedBox(height: 32),
                         
-                        // Action Buttons
-                        if (_hasLoadedData) ...[
+                        // Action Buttons for Mobile - Always show
+                        if (!kIsWeb) 
                           Row(
                             children: [
                               // Cancel Button
                               Expanded(
                                 child: OutlinedButton(
-                                  onPressed: _isLoading ? null : () {
+                                  onPressed: _isLoading ? null : () async {
                                     if (_hasChanges()) {
-                                      _showDiscardChangesDialog();
+                                      await _showDiscardChangesDialog();
                                     } else {
                                       Navigator.of(context).pop();
                                     }
                                   },
                                   style: OutlinedButton.styleFrom(
-                                    side: BorderSide(color: AppColors.onSurface.withValues(alpha: 0.3)),
+                                    side: BorderSide(
+                                      color: _hasChanges() 
+                                          ? AppColors.warning 
+                                          : AppColors.onSurface.withValues(alpha: 0.3),
+                                    ),
                                     padding: const EdgeInsets.symmetric(vertical: 16),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12),
@@ -1428,7 +1578,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
                                   child: Text(
                                     'Cancel',
                                     style: AppTextStyles.buttonLarge.copyWith(
-                                      color: AppColors.onSurface.withValues(alpha: 0.8),
+                                      color: _hasChanges() 
+                                          ? AppColors.warning 
+                                          : AppColors.onSurface.withValues(alpha: 0.8),
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
@@ -1461,14 +1613,18 @@ class _EditProfilePageState extends State<EditProfilePage> {
                                           'Save Changes',
                                           style: AppTextStyles.buttonLarge.copyWith(
                                             fontWeight: FontWeight.w600,
-                                            color: _hasChanges() ? AppColors.onPrimary : AppColors.onSurface.withValues(alpha: 0.5),
+                                            color: _hasChanges() 
+                                                ? AppColors.onPrimary 
+                                                : AppColors.onSurface.withValues(alpha: 0.5),
                                           ),
                                         ),
                                 ),
                               ),
                             ],
                           ),
-                        ],
+                        
+                        // Add bottom padding
+                        const SizedBox(height: 32),
                       ],
                     ),
                   ),

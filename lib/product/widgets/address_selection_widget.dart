@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../profile/models/shipping_address.dart';
 import '../../profile/services/address_service.dart';
+import '../../profile/pages/shipping_addresses_page.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 
@@ -52,18 +53,28 @@ class _AddressSelectionWidgetState extends State<AddressSelectionWidget> {
         _isLoading = false;
       });
 
-      // Auto-select default address if no address is selected
-      if (_selectedAddress == null && addresses.isNotEmpty) {
-        final defaultAddress = addresses.firstWhere(
+      // Always check for and use the current default address
+      if (addresses.isNotEmpty) {
+        final currentDefault = addresses.firstWhere(
           (addr) => addr.isDefault,
           orElse: () => addresses.first,
         );
         
-        setState(() {
-          _selectedAddress = defaultAddress;
-        });
+        // Update selected address if:
+        // 1. No address is currently selected, OR
+        // 2. The currently selected address no longer exists in the updated list, OR
+        // 3. There's a new default address that's different from current selection
+        final shouldUpdateSelection = _selectedAddress == null ||
+            !addresses.any((addr) => addr.id == _selectedAddress?.id) ||
+            (currentDefault.isDefault && currentDefault.id != _selectedAddress?.id);
         
-        widget.onAddressSelected(defaultAddress);
+        if (shouldUpdateSelection) {
+          setState(() {
+            _selectedAddress = currentDefault;
+          });
+          
+          widget.onAddressSelected(currentDefault);
+        }
       }
 
     } catch (e) {
@@ -497,19 +508,15 @@ class _AddressSelectionWidgetState extends State<AddressSelectionWidget> {
   }
 
   void _showAddAddressDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add Address'),
-        content: const Text('Navigate to Profile > Addresses to add a new shipping address.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const ShippingAddressesPage(),
       ),
-    );
+    ).then((_) {
+      // Reload addresses when returning from the addresses page
+      // This ensures any new addresses added or changes made are reflected
+      _loadAddresses();
+    });
   }
 }
 

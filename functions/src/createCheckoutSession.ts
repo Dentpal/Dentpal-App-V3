@@ -4,6 +4,8 @@ import axios from 'axios';
 import { calculateJRSShippingCost, extractShippingCostFromJRS } from './utils/jrsShippingHelper';
 import cors = require('cors');
 
+
+
 // Initialize Firebase Admin
 admin.initializeApp();
 const db = admin.firestore();
@@ -536,21 +538,25 @@ export const createCheckoutSession = onRequest(
           throw new Error(`Invalid total shipping cost calculated: ₱${shippingCost}`);
         }
         
-        // Calculate shipping fee allocation based on 10% cart value threshold
-        const cartValueThreshold = subtotal * 0.1; // 10% of cart value
+        // Calculate shipping fee allocation based on MOV (Minimum Order Value) rule:
+        // If Cart Value ≥ MOV (i.e., SF ≤ 10% of CV): Split 50/50
+        // If Cart Value < MOV (i.e., SF > 10% of CV): Buyer pays 100%
         let sellerShippingCharge: number;
         let buyerShippingCharge: number;
-        
-        if (shippingCost >= cartValueThreshold) {
-          // If shipping >= 10% cart value: 50% to seller, 50% to buyer
+
+        const shippingPercentageOfCart = (shippingCost / subtotal) * 100;
+        const movThreshold = subtotal * 0.1; // 10% of cart value
+
+        if (shippingCost <= movThreshold) {
+          // If shipping fee ≤ 10% of cart value: split 50/50
           sellerShippingCharge = shippingCost * 0.5;
           buyerShippingCharge = shippingCost * 0.5;
-          console.log(`📦 Shipping >= 10% of cart value (₱${cartValueThreshold.toFixed(2)}): Split 50/50`);
+          console.log(`📦 Cart Value ≥ MOV: SF (₱${shippingCost.toFixed(2)}) ≤ 10% of CV (₱${movThreshold.toFixed(2)}) - Split 50/50`);
         } else {
-          // If shipping < 10% cart value: 100% to buyer
+          // If shipping fee > 10% of cart value: buyer pays full shipping
           sellerShippingCharge = 0;
           buyerShippingCharge = shippingCost;
-          console.log(`📦 Shipping < 10% of cart value (₱${cartValueThreshold.toFixed(2)}): 100% to buyer`);
+          console.log(`📦 Cart Value < MOV: SF (₱${shippingCost.toFixed(2)}) > 10% of CV (₱${movThreshold.toFixed(2)}) - Buyer pays 100%`);
         }
         
         console.log(`📦 Shipping allocation - Seller: ₱${sellerShippingCharge.toFixed(2)}, Buyer: ₱${buyerShippingCharge.toFixed(2)}`);

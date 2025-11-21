@@ -169,7 +169,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
                 const SizedBox(height: 32),
 
-                // Business Settings Section (for non-sellers)
+                /* Business Settings Section (for non-sellers)
                 if (userRole != 'seller') ...[
                   _buildSectionHeader('Business'),
                   const SizedBox(height: 16),
@@ -199,7 +199,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                   ),
                   const SizedBox(height: 32),
-                ],
+                ],*/
 
                 // Legal & Privacy Section
                 _buildSectionHeader('Legal & Privacy'),

@@ -19,6 +19,8 @@ interface JRSShippingResponse {
     shippingCost?: number;
     totalAmount?: number;
     sellerBreakdown?: SellerShippingCalculation[];
+    sellerShippingCharge?: number;
+    buyerShippingCharge?: number;
   };
   error?: string;
 }
@@ -109,8 +111,35 @@ async function handleOldInterface(request: CallableRequest<CalculateShippingRequ
       process.env.JRS_GETRATE_API_URL
     );
 
+    // Calculate subtotal for shipping allocation
+    const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+    // Calculate shipping fee allocation based on MOV (Minimum Order Value) rule:
+    // If Cart Value ≥ MOV (i.e., SF ≤ 10% of CV): Split 50/50
+    // If Cart Value < MOV (i.e., SF > 10% of CV): Buyer pays 100%
+    let sellerShippingCharge: number;
+    let buyerShippingCharge: number;
+
+    const shippingPercentageOfCart = (shippingCost / subtotal) * 100;
+    const movThreshold = subtotal * 0.1; // 10% of cart value
+
+    if (shippingCost <= movThreshold) {
+      // If shipping fee ≤ 10% of cart value: split 50/50
+      sellerShippingCharge = shippingCost * 0.5;
+      buyerShippingCharge = shippingCost * 0.5;
+      logger.info(`📦 Cart Value ≥ MOV: SF (₱${shippingCost.toFixed(2)}) ≤ 10% of CV (₱${movThreshold.toFixed(2)}) - Split 50/50`);
+    } else {
+      // If shipping fee > 10% of cart value: buyer pays full shipping
+      sellerShippingCharge = 0;
+      buyerShippingCharge = shippingCost;
+      logger.info(`📦 Cart Value < MOV: SF (₱${shippingCost.toFixed(2)}) > 10% of CV (₱${movThreshold.toFixed(2)}) - Buyer pays 100%`);
+    }
+
     logger.info('Old interface shipping calculation completed', {
       shippingCost,
+      subtotal,
+      sellerShippingCharge,
+      buyerShippingCharge,
       sellerAddress,
       recipientAddress: formattedRecipientAddress
     });
@@ -119,7 +148,9 @@ async function handleOldInterface(request: CallableRequest<CalculateShippingRequ
       success: true,
       data: {
         shippingCost: shippingCost,
-        totalAmount: shippingCost
+        totalAmount: shippingCost,
+        sellerShippingCharge: sellerShippingCharge,
+        buyerShippingCharge: buyerShippingCharge
       }
     };
 
@@ -130,7 +161,9 @@ async function handleOldInterface(request: CallableRequest<CalculateShippingRequ
       success: false,
       error: error.message || 'Failed to calculate shipping cost',
       data: {
-        shippingCost: 50.0 // Fallback shipping cost
+        shippingCost: 50.0, // Fallback shipping cost
+        sellerShippingCharge: 0, // Buyer pays full fallback cost
+        buyerShippingCharge: 50.0
       }
     };
   }
@@ -328,8 +361,35 @@ export const calculateJRSShipping = onCall(
       // Calculate total shipping cost
       const totalShippingCost = sellerShippingResults.reduce((total, seller) => total + seller.shippingCost, 0);
 
+      // Calculate subtotal for shipping allocation
+      const subtotal = cartItemsWithDetails.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+      // Calculate shipping fee allocation based on MOV (Minimum Order Value) rule:
+      // If Cart Value ≥ MOV (i.e., SF ≤ 10% of CV): Split 50/50
+      // If Cart Value < MOV (i.e., SF > 10% of CV): Buyer pays 100%
+      let sellerShippingCharge: number;
+      let buyerShippingCharge: number;
+
+      const shippingPercentageOfCart = (totalShippingCost / subtotal) * 100;
+      const movThreshold = subtotal * 0.1; // 10% of cart value
+
+      if (totalShippingCost <= movThreshold) {
+        // If shipping fee ≤ 10% of cart value: split 50/50
+        sellerShippingCharge = totalShippingCost * 0.5;
+        buyerShippingCharge = totalShippingCost * 0.5;
+        logger.info(`📦 Cart Value ≥ MOV: SF (₱${totalShippingCost.toFixed(2)}) ≤ 10% of CV (₱${movThreshold.toFixed(2)}) - Split 50/50`);
+      } else {
+        // If shipping fee > 10% of cart value: buyer pays full shipping
+        sellerShippingCharge = 0;
+        buyerShippingCharge = totalShippingCost;
+        logger.info(`📦 Cart Value < MOV: SF (₱${totalShippingCost.toFixed(2)}) > 10% of CV (₱${movThreshold.toFixed(2)}) - Buyer pays 100%`);
+      }
+
       logger.info('Multi-seller shipping calculation completed', {
         totalShippingCost,
+        subtotal,
+        sellerShippingCharge,
+        buyerShippingCharge,
         sellerResults: sellerShippingResults.map(seller => ({
           sellerId: seller.sellerId,
           sellerName: seller.sellerName,
@@ -342,7 +402,9 @@ export const calculateJRSShipping = onCall(
         data: {
           shippingCost: totalShippingCost,
           totalAmount: totalShippingCost,
-          sellerBreakdown: sellerShippingResults
+          sellerBreakdown: sellerShippingResults,
+          sellerShippingCharge: sellerShippingCharge,
+          buyerShippingCharge: buyerShippingCharge
         }
       };
 
@@ -354,7 +416,9 @@ export const calculateJRSShipping = onCall(
         success: false,
         error: error.message || 'Failed to calculate shipping cost',
         data: {
-          shippingCost: 50.0 // Fallback shipping cost
+          shippingCost: 250.0, // Fallback shipping cost
+          sellerShippingCharge: 0, // Buyer pays full fallback cost
+          buyerShippingCharge: 250.0
         }
       };
     }
