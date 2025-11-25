@@ -81,7 +81,7 @@ class ProductFormModel {
     }
     
     for (var variation in variations) {
-      if (variation.priceWithVat <= 0 || variation.stock < 0 || variation.sku.isEmpty) {
+      if (variation.price <= 0 || variation.stock < 0 || variation.sku.isEmpty) {
         return false;
       }
     }
@@ -94,7 +94,7 @@ class VariationFormModel {
   String name = '';
   String? imageURL;
   File? imageFile;
-  double price = 0; // Original price without VAT
+  double price = 0; // Price already includes VAT
   int stock = 0;
   String sku = '';
   double? weight;
@@ -104,18 +104,9 @@ class VariationFormModel {
     'height': 0.0,
   };
   
-  // VAT constants
-  static const double vatRate = 0.12; // 12% VAT
-  
-  // Calculate price with VAT (this is what gets saved)
-  double get priceWithVat => price * (1 + vatRate);
-  
-  // Calculate VAT amount
-  double get vatAmount => price * vatRate;
-  
   // Validation
   String? validatePrice() {
-    if (priceWithVat <= 0) {
+    if (price <= 0) {
       return 'Price must be greater than 0';
     }
     return null;

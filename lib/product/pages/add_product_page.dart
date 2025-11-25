@@ -496,7 +496,7 @@ class _AddProductPageState extends State<AddProductPage> {
     for (int i = 0; i < _variations.length; i++) {
       final controllers = _variationControllers[i];
       _variations[i].name = controllers['name']!.text;
-      _variations[i].price = double.tryParse(controllers['price']!.text) ?? 0; // This is the base price without VAT
+      _variations[i].price = double.tryParse(controllers['price']!.text) ?? 0; // Price already includes VAT
       _variations[i].stock = int.tryParse(controllers['stock']!.text) ?? 0;
       _variations[i].sku = controllers['sku']!.text;
       _variations[i].weight = controllers['weight']!.text.isNotEmpty
@@ -1579,7 +1579,7 @@ class _AddProductPageState extends State<AddProductPage> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Add at least one variation with price, stock, and SKU. Prices shown include 12% VAT.',
+                          'Add at least one variation with price, stock, and SKU. Prices entered already include VAT.',
                           style: AppTextStyles.bodyMedium.copyWith(
                             color: AppColors.onSurface.withValues(alpha: 0.7),
                           ),
@@ -1874,7 +1874,7 @@ class _AddProductPageState extends State<AddProductPage> {
                                       color: AppColors.onSurface,
                                     ),
                                     decoration: InputDecoration(
-                                      labelText: 'Base Price (excluding VAT) *',
+                                      labelText: 'Price (including VAT) *',
                                       labelStyle: AppTextStyles.labelLarge
                                           .copyWith(
                                             color: AppColors.onSurface
@@ -1923,7 +1923,7 @@ class _AddProductPageState extends State<AddProductPage> {
                                     ),
                                     keyboardType: TextInputType.number,
                                     onChanged: (value) {
-                                      setState(() {}); // Trigger rebuild to update VAT calculation
+                                      setState(() {}); // Trigger rebuild
                                     },
                                     validator: (value) {
                                       if (value == null || value.isEmpty) {
@@ -1939,98 +1939,7 @@ class _AddProductPageState extends State<AddProductPage> {
                                       return null;
                                     },
                                   ),
-                                  
-                                  // VAT calculation display
-                                  const SizedBox(height: 12),
-                                  Builder(builder: (context) {
-                                    final priceText = _variationControllers[index]['price']!.text;
-                                    final basePrice = double.tryParse(priceText) ?? 0;
-                                    final vatAmount = basePrice * 0.12;
-                                    final totalPrice = basePrice + vatAmount;
-                                    
-                                    if (basePrice > 0) {
-                                      return Container(
-                                        width: double.infinity,
-                                        padding: const EdgeInsets.all(16),
-                                        decoration: BoxDecoration(
-                                          color: AppColors.surface,
-                                          borderRadius: BorderRadius.circular(12),
-                                          border: Border.all(
-                                            color: AppColors.primary.withValues(alpha: 0.2),
-                                          ),
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              'VAT Calculation',
-                                              style: AppTextStyles.labelLarge.copyWith(
-                                                color: AppColors.onSurface,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 12),
-                                            Row(
-                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                              children: [
-                                                Text(
-                                                  'Base Price:',
-                                                  style: AppTextStyles.bodyMedium.copyWith(
-                                                    color: AppColors.onSurface.withValues(alpha: 0.7),
-                                                  ),
-                                                ),
-                                                Text(
-                                                  '₱${basePrice.toStringAsFixed(2)}',
-                                                  style: AppTextStyles.bodyMedium.copyWith(
-                                                    color: AppColors.onSurface,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 8),
-                                            Row(
-                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                              children: [
-                                                Text(
-                                                  'VAT (12%):',
-                                                  style: AppTextStyles.bodyMedium.copyWith(
-                                                    color: AppColors.onSurface.withValues(alpha: 0.7),
-                                                  ),
-                                                ),
-                                                Text(
-                                                  '₱${vatAmount.toStringAsFixed(2)}',
-                                                  style: AppTextStyles.bodyMedium.copyWith(
-                                                    color: AppColors.onSurface,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            const Divider(height: 16),
-                                            Row(
-                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                              children: [
-                                                Text(
-                                                  'Final Price:',
-                                                  style: AppTextStyles.labelLarge.copyWith(
-                                                    color: AppColors.onSurface,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                                Text(
-                                                  '₱${totalPrice.toStringAsFixed(2)}',
-                                                  style: AppTextStyles.labelLarge.copyWith(
-                                                    color: Colors.green,
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    }
-                                    return const SizedBox.shrink();
-                                  }),
+
                                 ],
                               ),
                               const SizedBox(height: 20),
@@ -3451,7 +3360,7 @@ class _AddProductPageState extends State<AddProductPage> {
                     ),
                     const SizedBox(height: 16),
                     
-                    // Second row - Price (full width with VAT calculation)
+                    // Second row - Price (full width)
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -3465,7 +3374,7 @@ class _AddProductPageState extends State<AddProductPage> {
                             controller: controllers['price']!,
                             style: AppTextStyles.bodyLarge.copyWith(color: AppColors.onSurface),
                             decoration: InputDecoration(
-                              labelText: 'Base Price (excluding VAT) *',
+                              labelText: 'Price (including VAT) *',
                               labelStyle: AppTextStyles.labelLarge.copyWith(
                                 color: AppColors.onSurface.withValues(alpha: 0.7),
                               ),
@@ -3483,7 +3392,7 @@ class _AddProductPageState extends State<AddProductPage> {
                             ),
                             keyboardType: TextInputType.number,
                             onChanged: (value) {
-                              setState(() {}); // Trigger rebuild to update VAT calculation
+                              setState(() {}); // Trigger rebuild
                             },
                             validator: (value) {
                               if (value == null || value.isEmpty) {
@@ -3500,98 +3409,7 @@ class _AddProductPageState extends State<AddProductPage> {
                             },
                           ),
                         ),
-                        
-                        // VAT calculation display
-                        const SizedBox(height: 16),
-                        Builder(builder: (context) {
-                          final priceText = controllers['price']!.text;
-                          final basePrice = double.tryParse(priceText) ?? 0;
-                          final vatAmount = basePrice * 0.12;
-                          final totalPrice = basePrice + vatAmount;
-                          
-                          if (basePrice > 0) {
-                            return Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(20),
-                              decoration: BoxDecoration(
-                                color: AppColors.surface,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: AppColors.primary.withValues(alpha: 0.2),
-                                ),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'VAT Calculation',
-                                    style: AppTextStyles.titleMedium.copyWith(
-                                      color: AppColors.onSurface,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        'Base Price:',
-                                        style: AppTextStyles.bodyLarge.copyWith(
-                                          color: AppColors.onSurface.withValues(alpha: 0.7),
-                                        ),
-                                      ),
-                                      Text(
-                                        '₱${basePrice.toStringAsFixed(2)}',
-                                        style: AppTextStyles.bodyLarge.copyWith(
-                                          color: AppColors.onSurface,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        'VAT (12%):',
-                                        style: AppTextStyles.bodyLarge.copyWith(
-                                          color: AppColors.onSurface.withValues(alpha: 0.7),
-                                        ),
-                                      ),
-                                      Text(
-                                        '₱${vatAmount.toStringAsFixed(2)}',
-                                        style: AppTextStyles.bodyLarge.copyWith(
-                                          color: AppColors.onSurface,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const Divider(height: 24),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        'Final Price:',
-                                        style: AppTextStyles.titleMedium.copyWith(
-                                          color: AppColors.onSurface,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      Text(
-                                        '₱${totalPrice.toStringAsFixed(2)}',
-                                        style: AppTextStyles.titleMedium.copyWith(
-                                          color: Colors.green,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            );
-                          }
-                          return const SizedBox.shrink();
-                        }),
+
                       ],
                     ),
                     const SizedBox(height: 16),

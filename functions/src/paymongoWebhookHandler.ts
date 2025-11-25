@@ -3,6 +3,11 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
 import cors = require('cors');
 import * as logger from 'firebase-functions/logger';
+import { 
+  calculatePaymentProcessingFee, 
+  calculatePlatformFee,
+  calculateNetPayout
+} from './utils/jrsShippingHelper';
 
 // Initialize Firebase Admin if not already initialized
 if (!admin.apps.length) {
@@ -196,13 +201,13 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
           paymentMethod = 'gcash';
           break;
         case 'grab_pay':
-          paymentMethod = 'grabpay';
+          paymentMethod = 'grab_pay';
           break;
         case 'paymaya':
           paymentMethod = 'paymaya';
           break;
         case 'billease':
-          paymentMethod = 'billEase';
+          paymentMethod = 'billease';
           break;
         case 'card':
         case 'credit_card':
@@ -211,6 +216,29 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
           break;
       }
     }
+
+    // Recalculate fees based on actual payment method used
+    const subtotal = orderData?.summary?.subtotal || 0;
+    const sellerShippingCharge = orderData?.summary?.sellerShippingCharge || 0;
+    const buyerShippingCharge = orderData?.summary?.buyerShippingCharge || 0;
+    const totalChargedToBuyer = subtotal + buyerShippingCharge;
+    
+    // Calculate actual fees based on payment method
+    const paymentProcessingFee = calculatePaymentProcessingFee(totalChargedToBuyer, paymentMethod);
+    const platformFee = calculatePlatformFee(subtotal);
+    const totalSellerFees = paymentProcessingFee + platformFee + sellerShippingCharge;
+    const netPayoutToSeller = calculateNetPayout(subtotal, paymentProcessingFee, platformFee, sellerShippingCharge);
+    
+    logger.info('Recalculated fees with actual payment method', {
+      orderId,
+      paymentMethod,
+      subtotal,
+      totalChargedToBuyer,
+      paymentProcessingFee,
+      platformFee,
+      totalSellerFees,
+      netPayoutToSeller
+    });
 
     // For active status with a payment method, treat as paid
     const finalStatus = (status === 'active' && paymentMethodUsed) ? 'paid' : status;
@@ -235,6 +263,14 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
       'paymentInfo.status': finalStatus,
       'paymentInfo.method': paymentMethod,
       'paymentInfo.paidAt': admin.firestore.FieldValue.serverTimestamp(),
+      // Update fees with actual payment method
+      'fees.paymentProcessingFee': paymentProcessingFee,
+      'fees.platformFee': platformFee,
+      'fees.totalSellerFees': totalSellerFees,
+      'fees.paymentMethod': paymentMethod,
+      // Update payout
+      'payout.netPayoutToSeller': netPayoutToSeller,
+      'payout.calculatedAt': admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       statusHistory: admin.firestore.FieldValue.arrayUnion({
         status: orderStatus,
@@ -251,12 +287,19 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
       updateData['paymentInfo.checkoutSessionId'] = checkoutSessionId;
     }
 
-    await orderRef.update(updateData);
+    // Use set with merge to ensure nested objects are created if they don't exist
+    await orderRef.set(updateData, { merge: true });
 
     logger.info('Order payment processed successfully', { 
       orderId, 
       orderStatus, 
-      paymentStatus: finalStatus 
+      paymentStatus: finalStatus,
+      feesUpdated: {
+        paymentProcessingFee,
+        platformFee,
+        totalSellerFees,
+        netPayoutToSeller
+      }
     });
 
     // Clear cart items after successful payment

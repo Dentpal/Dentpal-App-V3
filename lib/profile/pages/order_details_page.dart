@@ -834,13 +834,15 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
           ),
           const SizedBox(height: 16),
           _buildSummaryRow('Subtotal', '₱${widget.order.summary.subtotal.toStringAsFixed(2)}'),
-          // Show shipping breakdown if charges are allocated separately
-          if (widget.order.summary.sellerShippingCharge > 0 || widget.order.summary.buyerShippingCharge > 0) ...[
-            _buildSummaryRow('Shipping (Total)', '₱${widget.order.summary.shippingCost.toStringAsFixed(2)}'),
-            _buildSummaryRowWithIndent('• Buyer Portion', '₱${widget.order.summary.buyerShippingCharge.toStringAsFixed(2)}'),
-            _buildSummaryRowWithIndent('• Seller Portion', '₱${widget.order.summary.sellerShippingCharge.toStringAsFixed(2)}'),
-          ] else
-            _buildSummaryRow('Shipping', '₱${widget.order.summary.shippingCost.toStringAsFixed(2)}'),
+          // Display only the buyer's shipping charge (what they actually paid)
+          _buildSummaryRow(
+            'Shipping', 
+            widget.order.summary.buyerShippingCharge > 0 
+              ? '₱${widget.order.summary.buyerShippingCharge.toStringAsFixed(2)}'
+              : (widget.order.summary.shippingCost > 0 
+                  ? '₱${widget.order.summary.shippingCost.toStringAsFixed(2)}'
+                  : 'Free')
+          ),
           if (widget.order.summary.taxAmount > 0)
             _buildSummaryRow('Tax', '₱${widget.order.summary.taxAmount.toStringAsFixed(2)}'),
           if (widget.order.summary.discountAmount > 0)
@@ -966,32 +968,6 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                     fontWeight: FontWeight.w600,
                     fontFamily: 'Roboto',
                   ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSummaryRowWithIndent(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4, left: 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.onSurface.withValues(alpha: 0.5),
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-          Text(
-            value,
-            style: AppTextStyles.bodySmall.copyWith(
-              fontWeight: FontWeight.w500,
-              fontFamily: 'Roboto',
-              color: AppColors.onSurface.withValues(alpha: 0.7),
-            ),
           ),
         ],
       ),

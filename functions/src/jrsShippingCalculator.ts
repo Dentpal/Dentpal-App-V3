@@ -3,7 +3,11 @@ import * as logger from 'firebase-functions/logger';
 import { getAuth } from 'firebase-admin/auth';
 import { DecodedIdToken } from 'firebase-admin/lib/auth/token-verifier';
 import * as admin from 'firebase-admin';
-import { calculateJRSShippingCost, extractShippingCostFromJRS } from './utils/jrsShippingHelper';
+import { 
+  calculateJRSShippingCost, 
+  extractShippingCostFromJRS,
+  calculateCompleteBreakdown
+} from './utils/jrsShippingHelper';
 
 // Initialize Firebase Admin if not already initialized
 if (!admin.apps.length) {
@@ -21,6 +25,13 @@ interface JRSShippingResponse {
     sellerBreakdown?: SellerShippingCalculation[];
     sellerShippingCharge?: number;
     buyerShippingCharge?: number;
+    shippingSplitRule?: 'buyer_pays_full' | 'split_50_50';
+    // Fee breakdown
+    totalChargedToBuyer?: number;
+    paymentProcessingFee?: number;
+    platformFee?: number;
+    totalSellerFees?: number;
+    netPayoutToSeller?: number;
   };
   error?: string;
 }
@@ -40,6 +51,7 @@ interface CalculateShippingRequest {
   // New interface (multi-seller)
   cartItemIds?: string[];
   recipientAddress?: string; // Format: "City, Province/State"
+  paymentMethod?: string; // Optional: for fee calculation
   // Old interface (single seller) - for backward compatibility
   sellerAddress?: string;
   cartItems?: CartItemData[];
@@ -114,34 +126,17 @@ async function handleOldInterface(request: CallableRequest<CalculateShippingRequ
     // Calculate subtotal for shipping allocation
     const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
-    // Calculate shipping fee allocation based on MOV (Minimum Order Value) rule:
-    // If Cart Value ≥ MOV (i.e., SF ≤ 10% of CV): Split 50/50
-    // If Cart Value < MOV (i.e., SF > 10% of CV): Buyer pays 100%
-    let sellerShippingCharge: number;
-    let buyerShippingCharge: number;
+    // Get payment method from request, default to 'card'
+    const paymentMethod = request.data.paymentMethod || 'card';
 
-    const shippingPercentageOfCart = (shippingCost / subtotal) * 100;
-    const movThreshold = subtotal * 0.1; // 10% of cart value
-
-    if (shippingCost <= movThreshold) {
-      // If shipping fee ≤ 10% of cart value: split 50/50
-      sellerShippingCharge = shippingCost * 0.5;
-      buyerShippingCharge = shippingCost * 0.5;
-      logger.info(`📦 Cart Value ≥ MOV: SF (₱${shippingCost.toFixed(2)}) ≤ 10% of CV (₱${movThreshold.toFixed(2)}) - Split 50/50`);
-    } else {
-      // If shipping fee > 10% of cart value: buyer pays full shipping
-      sellerShippingCharge = 0;
-      buyerShippingCharge = shippingCost;
-      logger.info(`📦 Cart Value < MOV: SF (₱${shippingCost.toFixed(2)}) > 10% of CV (₱${movThreshold.toFixed(2)}) - Buyer pays 100%`);
-    }
+    // Calculate complete breakdown including all fees
+    const breakdown = calculateCompleteBreakdown(subtotal, shippingCost, paymentMethod);
 
     logger.info('Old interface shipping calculation completed', {
       shippingCost,
       subtotal,
-      sellerShippingCharge,
-      buyerShippingCharge,
-      sellerAddress,
-      recipientAddress: formattedRecipientAddress
+      paymentMethod,
+      ...breakdown
     });
 
     return {
@@ -149,8 +144,14 @@ async function handleOldInterface(request: CallableRequest<CalculateShippingRequ
       data: {
         shippingCost: shippingCost,
         totalAmount: shippingCost,
-        sellerShippingCharge: sellerShippingCharge,
-        buyerShippingCharge: buyerShippingCharge
+        sellerShippingCharge: breakdown.sellerShippingCharge,
+        buyerShippingCharge: breakdown.buyerShippingCharge,
+        shippingSplitRule: breakdown.shippingSplitRule,
+        totalChargedToBuyer: breakdown.totalChargedToBuyer,
+        paymentProcessingFee: breakdown.paymentProcessingFee,
+        platformFee: breakdown.platformFee,
+        totalSellerFees: breakdown.totalSellerFees,
+        netPayoutToSeller: breakdown.netPayoutToSeller
       }
     };
 
@@ -364,37 +365,22 @@ export const calculateJRSShipping = onCall(
       // Calculate subtotal for shipping allocation
       const subtotal = cartItemsWithDetails.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
-      // Calculate shipping fee allocation based on MOV (Minimum Order Value) rule:
-      // If Cart Value ≥ MOV (i.e., SF ≤ 10% of CV): Split 50/50
-      // If Cart Value < MOV (i.e., SF > 10% of CV): Buyer pays 100%
-      let sellerShippingCharge: number;
-      let buyerShippingCharge: number;
+      // Get payment method from request, default to 'card'
+      const paymentMethod = request.data.paymentMethod || 'card';
 
-      const shippingPercentageOfCart = (totalShippingCost / subtotal) * 100;
-      const movThreshold = subtotal * 0.1; // 10% of cart value
-
-      if (totalShippingCost <= movThreshold) {
-        // If shipping fee ≤ 10% of cart value: split 50/50
-        sellerShippingCharge = totalShippingCost * 0.5;
-        buyerShippingCharge = totalShippingCost * 0.5;
-        logger.info(`📦 Cart Value ≥ MOV: SF (₱${totalShippingCost.toFixed(2)}) ≤ 10% of CV (₱${movThreshold.toFixed(2)}) - Split 50/50`);
-      } else {
-        // If shipping fee > 10% of cart value: buyer pays full shipping
-        sellerShippingCharge = 0;
-        buyerShippingCharge = totalShippingCost;
-        logger.info(`📦 Cart Value < MOV: SF (₱${totalShippingCost.toFixed(2)}) > 10% of CV (₱${movThreshold.toFixed(2)}) - Buyer pays 100%`);
-      }
+      // Calculate complete breakdown including all fees
+      const breakdown = calculateCompleteBreakdown(subtotal, totalShippingCost, paymentMethod);
 
       logger.info('Multi-seller shipping calculation completed', {
         totalShippingCost,
         subtotal,
-        sellerShippingCharge,
-        buyerShippingCharge,
+        paymentMethod,
         sellerResults: sellerShippingResults.map(seller => ({
           sellerId: seller.sellerId,
           sellerName: seller.sellerName,
           shippingCost: seller.shippingCost
-        }))
+        })),
+        ...breakdown
       });
 
       return {
@@ -403,8 +389,14 @@ export const calculateJRSShipping = onCall(
           shippingCost: totalShippingCost,
           totalAmount: totalShippingCost,
           sellerBreakdown: sellerShippingResults,
-          sellerShippingCharge: sellerShippingCharge,
-          buyerShippingCharge: buyerShippingCharge
+          sellerShippingCharge: breakdown.sellerShippingCharge,
+          buyerShippingCharge: breakdown.buyerShippingCharge,
+          shippingSplitRule: breakdown.shippingSplitRule,
+          totalChargedToBuyer: breakdown.totalChargedToBuyer,
+          paymentProcessingFee: breakdown.paymentProcessingFee,
+          platformFee: breakdown.platformFee,
+          totalSellerFees: breakdown.totalSellerFees,
+          netPayoutToSeller: breakdown.netPayoutToSeller
         }
       };
 

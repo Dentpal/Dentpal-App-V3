@@ -10,6 +10,22 @@ interface ShipmentItem {
   weight: number;
 }
 
+// Payment processing fee configuration
+interface PaymentFeeConfig {
+  percentage: number;
+  fixedFee?: number;
+}
+
+const PAYMENT_PROCESSING_FEES: Record<string, PaymentFeeConfig> = {
+  'card': { percentage: 3.5, fixedFee: 15 },
+  'gcash': { percentage: 2.5 },
+  'paymaya': { percentage: 2.2 },
+  'grab_pay': { percentage: 2.2 },
+  'billease': { percentage: 1.5 },
+};
+
+const PLATFORM_FEE_PERCENTAGE = 8.88; // 8.88% of cart value
+
 interface JRSShippingRequest {
   requestType: 'getrate';
   apiShippingRequest: {
@@ -31,6 +47,137 @@ interface CartItemData {
   width?: number;
   height?: number;
   weight?: number;
+}
+
+/**
+ * Calculate payment processing fee based on payment method
+ * @param totalChargedToBuyer - Total amount charged to buyer (cart value + applicable shipping)
+ * @param paymentMethod - Payment method used
+ * @returns Payment processing fee amount
+ */
+export function calculatePaymentProcessingFee(totalChargedToBuyer: number, paymentMethod: string): number {
+  const feeConfig = PAYMENT_PROCESSING_FEES[paymentMethod.toLowerCase()];
+  
+  if (!feeConfig) {
+    logger.warn(`Unknown payment method: ${paymentMethod}, defaulting to card fees`);
+    const defaultConfig = PAYMENT_PROCESSING_FEES['card'];
+    const percentageFee = (totalChargedToBuyer * defaultConfig.percentage) / 100;
+    return percentageFee + (defaultConfig.fixedFee || 0);
+  }
+  
+  const percentageFee = (totalChargedToBuyer * feeConfig.percentage) / 100;
+  return percentageFee + (feeConfig.fixedFee || 0);
+}
+
+/**
+ * Calculate platform fee (8.88% of cart value ONLY, excluding shipping)
+ * @param cartValue - Subtotal/cart value (excluding shipping)
+ * @returns Platform fee amount
+ */
+export function calculatePlatformFee(cartValue: number): number {
+  return (cartValue * PLATFORM_FEE_PERCENTAGE) / 100;
+}
+
+/**
+ * Calculate net payout to seller after all fees and charges
+ * @param cartValue - Subtotal/cart value (excluding shipping)
+ * @param paymentProcessingFee - Payment processing fee
+ * @param platformFee - Platform fee
+ * @param sellerShippingCharge - Seller's portion of shipping (if applicable)
+ * @returns Net payout to seller
+ */
+export function calculateNetPayout(
+  cartValue: number, 
+  paymentProcessingFee: number, 
+  platformFee: number, 
+  sellerShippingCharge: number
+): number {
+  return cartValue - paymentProcessingFee - platformFee - sellerShippingCharge;
+}
+
+/**
+ * Calculate complete shipping and fee breakdown
+ * @param cartValue - Subtotal/cart value (excluding shipping)
+ * @param shippingCost - Total shipping cost
+ * @param paymentMethod - Payment method to calculate processing fee
+ * @returns Complete breakdown of charges and fees
+ */
+export function calculateCompleteBreakdown(
+  cartValue: number,
+  shippingCost: number,
+  paymentMethod: string = 'card'
+): {
+  // Shipping allocation
+  buyerShippingCharge: number;
+  sellerShippingCharge: number;
+  shippingSplitRule: 'buyer_pays_full' | 'split_50_50';
+  
+  // Buyer charges
+  totalChargedToBuyer: number;
+  
+  // Seller fees
+  paymentProcessingFee: number;
+  platformFee: number;
+  totalSellerFees: number;
+  netPayoutToSeller: number;
+} {
+  // Determine shipping split rule
+  const movThreshold = cartValue * 0.1; // 10% of cart value
+  const shippingSplitRule: 'buyer_pays_full' | 'split_50_50' = 
+    shippingCost > movThreshold ? 'buyer_pays_full' : 'split_50_50';
+  
+  // Calculate shipping allocation
+  let buyerShippingCharge: number;
+  let sellerShippingCharge: number;
+  
+  if (shippingSplitRule === 'split_50_50') {
+    buyerShippingCharge = shippingCost * 0.5;
+    sellerShippingCharge = shippingCost * 0.5;
+  } else {
+    buyerShippingCharge = shippingCost;
+    sellerShippingCharge = 0;
+  }
+  
+  // Calculate total charged to buyer
+  const totalChargedToBuyer = cartValue + buyerShippingCharge;
+  
+  // Calculate seller fees
+  const paymentProcessingFee = calculatePaymentProcessingFee(totalChargedToBuyer, paymentMethod);
+  const platformFee = calculatePlatformFee(cartValue);
+  const totalSellerFees = paymentProcessingFee + platformFee + sellerShippingCharge;
+  
+  // Calculate net payout
+  const netPayoutToSeller = calculateNetPayout(
+    cartValue, 
+    paymentProcessingFee, 
+    platformFee, 
+    sellerShippingCharge
+  );
+  
+  logger.info('Complete breakdown calculated', {
+    cartValue,
+    shippingCost,
+    paymentMethod,
+    shippingSplitRule,
+    buyerShippingCharge,
+    sellerShippingCharge,
+    totalChargedToBuyer,
+    paymentProcessingFee,
+    platformFee,
+    totalSellerFees,
+    netPayoutToSeller
+  });
+  
+  return {
+    buyerShippingCharge,
+    sellerShippingCharge,
+    shippingSplitRule,
+    totalChargedToBuyer,
+    paymentProcessingFee,
+    platformFee,
+    totalSellerFees,
+    netPayoutToSeller
+  };
 }
 
 /**

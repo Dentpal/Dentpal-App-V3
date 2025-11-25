@@ -1,7 +1,13 @@
 import { onRequest, Request, HttpsError } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 import axios from 'axios';
-import { calculateJRSShippingCost, extractShippingCostFromJRS } from './utils/jrsShippingHelper';
+import { 
+  calculateJRSShippingCost, 
+  extractShippingCostFromJRS,
+  calculateCompleteBreakdown,
+  calculatePaymentProcessingFee,
+  calculatePlatformFee
+} from './utils/jrsShippingHelper';
 import cors = require('cors');
 
 
@@ -538,31 +544,39 @@ export const createCheckoutSession = onRequest(
           throw new Error(`Invalid total shipping cost calculated: ₱${shippingCost}`);
         }
         
-        // Calculate shipping fee allocation based on MOV (Minimum Order Value) rule:
-        // If Cart Value ≥ MOV (i.e., SF ≤ 10% of CV): Split 50/50
-        // If Cart Value < MOV (i.e., SF > 10% of CV): Buyer pays 100%
-        let sellerShippingCharge: number;
-        let buyerShippingCharge: number;
-
-        const shippingPercentageOfCart = (shippingCost / subtotal) * 100;
-        const movThreshold = subtotal * 0.1; // 10% of cart value
-
-        if (shippingCost <= movThreshold) {
-          // If shipping fee ≤ 10% of cart value: split 50/50
-          sellerShippingCharge = shippingCost * 0.5;
-          buyerShippingCharge = shippingCost * 0.5;
-          console.log(`📦 Cart Value ≥ MOV: SF (₱${shippingCost.toFixed(2)}) ≤ 10% of CV (₱${movThreshold.toFixed(2)}) - Split 50/50`);
-        } else {
-          // If shipping fee > 10% of cart value: buyer pays full shipping
-          sellerShippingCharge = 0;
-          buyerShippingCharge = shippingCost;
-          console.log(`📦 Cart Value < MOV: SF (₱${shippingCost.toFixed(2)}) > 10% of CV (₱${movThreshold.toFixed(2)}) - Buyer pays 100%`);
-        }
+        // Calculate complete breakdown including shipping split and seller fees
+        // Note: Using 'card' as default payment method for initial calculation
+        // The actual payment method fee will be calculated when payment is completed
+        const defaultPaymentMethod = paymentMethodTypes[0] || 'card';
+        const breakdown = calculateCompleteBreakdown(subtotal, shippingCost, defaultPaymentMethod);
         
-        console.log(`📦 Shipping allocation - Seller: ₱${sellerShippingCharge.toFixed(2)}, Buyer: ₱${buyerShippingCharge.toFixed(2)}`);
+        console.log(`📊 Complete Breakdown:`, {
+          cartValue: subtotal,
+          shippingCost: shippingCost,
+          rule: breakdown.shippingSplitRule,
+          buyerPays: breakdown.totalChargedToBuyer,
+          buyerShipping: breakdown.buyerShippingCharge,
+          sellerShipping: breakdown.sellerShippingCharge,
+          paymentFee: breakdown.paymentProcessingFee,
+          platformFee: breakdown.platformFee,
+          totalSellerFees: breakdown.totalSellerFees,
+          sellerNetPayout: breakdown.netPayoutToSeller
+        });
         
-        // Total amount includes only buyer's shipping charge (seller's charge is separate)
-        const totalAmount = subtotal + buyerShippingCharge;
+        // Extract values from breakdown
+        const { 
+          buyerShippingCharge, 
+          sellerShippingCharge,
+          shippingSplitRule,
+          totalChargedToBuyer,
+          paymentProcessingFee,
+          platformFee,
+          totalSellerFees,
+          netPayoutToSeller
+        } = breakdown;
+        
+        // Total amount to charge buyer
+        const totalAmount = totalChargedToBuyer;
 
         // Get unique seller IDs
         const sellerIds = [...new Set(orderItems.map(item => item.sellerId))];
@@ -590,6 +604,17 @@ export const createCheckoutSession = onRequest(
             totalItems: orderItems.reduce((sum, item) => sum + item.quantity, 0),
             sellerShippingCharge: sellerShippingCharge,
             buyerShippingCharge: buyerShippingCharge,
+            shippingSplitRule: shippingSplitRule,
+          },
+          fees: {
+            paymentProcessingFee: paymentProcessingFee,
+            platformFee: platformFee,
+            totalSellerFees: totalSellerFees,
+            paymentMethod: defaultPaymentMethod, // Will be updated when payment is completed
+          },
+          payout: {
+            netPayoutToSeller: netPayoutToSeller,
+            calculatedAt: admin.firestore.FieldValue.serverTimestamp(),
           },
           shippingInfo: {
             addressId: addressId,
@@ -628,14 +653,16 @@ export const createCheckoutSession = onRequest(
 
         // Add shipping as a line item (only buyer's portion)
         if (buyerShippingCharge > 0) {
+          const shippingDescription = shippingSplitRule === 'split_50_50'
+            ? `Buyer's half of shipping (Seller pays: ₱${sellerShippingCharge.toFixed(2)}). Total shipping: ₱${shippingCost.toFixed(2)}`
+            : `Full shipping cost (Shipping > 10% of cart value)`;
+            
           lineItems.push({
-            name: 'Shipping Fee (Buyer Portion)',
+            name: 'Shipping Fee',
             quantity: 1,
             amount: Math.round(buyerShippingCharge * 100),
             currency: 'PHP',
-            description: sellerShippingCharge > 0 
-              ? `Buyer portion of shipping (Seller pays: ₱${sellerShippingCharge.toFixed(2)})`
-              : 'Full shipping cost',
+            description: shippingDescription,
             images: undefined,
           });
         }

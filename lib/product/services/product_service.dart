@@ -385,7 +385,7 @@ class ProductService {
           'productId': productRef.id,
           'name': variationForm.name,
           'imageURL': variationForm.imageURL,
-          'price': variationForm.priceWithVat, // Save the VAT-inclusive price
+          'price': variationForm.price, // Price already includes VAT
           'stock': variationForm.stock,
           'sku': variationForm.sku,
           'weight': variationForm.weight,
@@ -499,7 +499,7 @@ class ProductService {
           await productRef.collection('Variation').doc(existingVariationId).update({
             'name': variationForm.name,
             'imageURL': variationForm.imageURL,
-            'price': variationForm.priceWithVat, // Save the VAT-inclusive price
+            'price': variationForm.price, // Price already includes VAT
             'stock': variationForm.stock,
             'sku': variationForm.sku,
             'weight': variationForm.weight,
@@ -513,7 +513,7 @@ class ProductService {
             'productId': productId,
             'name': variationForm.name,
             'imageURL': variationForm.imageURL,
-            'price': variationForm.priceWithVat, // Save the VAT-inclusive price
+            'price': variationForm.price, // Price already includes VAT
             'stock': variationForm.stock,
             'sku': variationForm.sku,
             'weight': variationForm.weight,

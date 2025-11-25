@@ -209,22 +209,25 @@ class _CheckoutPageState extends State<CheckoutPage> {
   }
 
   /// Calculate buyer's portion of shipping cost based on shipping allocation rules:
-  /// - If shipping >= 10% of cart value: Buyer pays 50%, Seller pays 50% (seller portion handled during checkout)
-  /// - If shipping < 10% of cart value: Buyer pays 100%, Seller pays 0%
-  /// Note: Only buyer's portion is shown and charged to the user
+  /// Rule 1: If shipping > 10% of cart value → Buyer pays 100%
+  /// Rule 2: If shipping ≤ 10% of cart value → Buyer pays 50%, Seller pays 50%
+  /// Note: Only buyer's portion is shown and charged to the user. Seller fees are never displayed.
   double _calculateBuyerShippingPortion() {
     final shippingCost = _calculatedShippingCost ?? 0.0;
     
     if (shippingCost > 0) {
       final cartValue = widget.cartSummary.selectedItemsTotal;
-      final cartValueThreshold = cartValue * 0.1; // 10% of cart value
+      final movThreshold = cartValue * 0.1; // 10% of cart value (MOV threshold)
       
-      if (shippingCost >= cartValueThreshold) {
-        // Split 50/50, buyer only pays their portion (seller's portion is hidden but handled during checkout)
-        return shippingCost * 0.5;
-      } else {
-        // Buyer pays all shipping (seller pays nothing)
+      if (shippingCost > movThreshold) {
+        // Rule 1: Shipping > 10% → Buyer pays 100%
+        AppLogger.d('Shipping Rule 1 applied: Buyer pays 100% (₱${shippingCost.toStringAsFixed(2)} > 10% of ₱${cartValue.toStringAsFixed(2)})');
         return shippingCost;
+      } else {
+        // Rule 2: Shipping ≤ 10% → Buyer pays 50%
+        final buyerPortion = shippingCost * 0.5;
+        AppLogger.d('Shipping Rule 2 applied: Buyer pays 50% (₱${buyerPortion.toStringAsFixed(2)}) of ₱${shippingCost.toStringAsFixed(2)}');
+        return buyerPortion;
       }
     }
     
@@ -243,13 +246,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
     return _calculatedShippingCost == null && !_isCalculatingShipping;
   }
 
-    /// Build shipping row with loading state and allocation breakdown
+    /// Build shipping row with loading state and buyer-friendly display
   Widget _buildShippingRow() {
     if (_isCalculatingShipping) {
       return Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text('Shipping', style: AppTextStyles.bodyMedium),
+          Text('Shipping Fee', style: AppTextStyles.bodyMedium),
           Row(
             children: [
               SizedBox(
@@ -275,7 +278,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
       return Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text('Shipping', style: AppTextStyles.bodyMedium),
+          Text('Shipping Fee', style: AppTextStyles.bodyMedium),
           Text(
             'Calculated at checkout',
             style: AppTextStyles.bodySmall.copyWith(
@@ -287,13 +290,51 @@ class _CheckoutPageState extends State<CheckoutPage> {
       );
     }
 
-    // Show only buyer's shipping portion (seller's portion is hidden)
+    // Display buyer's shipping portion only
     if (shippingCost > 0) {
       final buyerShippingPortion = _calculateBuyerShippingPortion();
-      return _buildSummaryRow('Shipping', buyerShippingPortion);
+      final cartValue = widget.cartSummary.selectedItemsTotal;
+      final movThreshold = cartValue * 0.1;
+      
+      // Check if discounted rate applies (Rule 2: shipping ≤ 10%)
+      final hasDiscount = shippingCost <= movThreshold;
+      
+      return Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Shipping Fee', style: AppTextStyles.bodyMedium),
+                    if (hasDiscount)
+                      Text(
+                        'Discounted rate applied',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.success,
+                          fontSize: 11,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Text(
+                '₱${buyerShippingPortion.toStringAsFixed(2)}',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Roboto',
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
     }
     
-    return _buildSummaryRow('Shipping', shippingCost);
+    // Free shipping
+    return _buildSummaryRow('Shipping Fee', 0.0);
   }
 
   Future<void> _navigateToPaymongoCheckout(CreateOrderResponse orderResponse) async {
@@ -832,6 +873,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
   }
 
   Widget _buildSummaryRow(String label, double amount, {bool isTotal = false}) {
+    // Check if this is a shipping fee label
+    final isShippingFee = label == 'Shipping' || label == 'Shipping Fee';
+    
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -856,19 +900,19 @@ class _CheckoutPageState extends State<CheckoutPage> {
           ],
         ),
         Text(
-          amount == 0 && label == 'Shipping'
+          amount == 0 && isShippingFee
               ? 'Free'
               : '₱${amount.toStringAsFixed(2)}',
           style: isTotal
               ? AppTextStyles.titleMedium.copyWith(
                   fontWeight: FontWeight.w700,
                   color: AppColors.primary,
-                  fontFamily: amount == 0 && label == 'Shipping' ? null : 'Roboto',
+                  fontFamily: amount == 0 && isShippingFee ? null : 'Roboto',
                 )
               : AppTextStyles.bodyMedium.copyWith(
                   fontWeight: FontWeight.w600,
-                  fontFamily: amount == 0 && label == 'Shipping' ? null : 'Roboto',
-                  color: amount == 0 && label == 'Shipping' ? AppColors.success : null,
+                  fontFamily: amount == 0 && isShippingFee ? null : 'Roboto',
+                  color: amount == 0 && isShippingFee ? AppColors.success : null,
                 ),
         ),
       ],
