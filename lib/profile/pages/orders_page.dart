@@ -5,6 +5,8 @@ import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import '../../product/models/order_model.dart' as order_model;
 import '../../product/pages/paymongo_webview_page.dart';
+import '../../product/pages/cart_page.dart';
+import '../../product/services/cart_service.dart';
 import '../../utils/app_logger.dart';
 import '../services/order_service.dart';
 import 'order_details_page.dart';
@@ -35,6 +37,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     order_model.OrderStatus.to_ship,
     order_model.OrderStatus.shipping,
     order_model.OrderStatus.delivered,
+    order_model.OrderStatus.cancelled,
     order_model.OrderStatus.expired,
   ];
 
@@ -98,11 +101,13 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     if (selectedFilter != null) {
       if (selectedFilter == order_model.OrderStatus.to_ship) {
         // Include to_pack, to_arrangement, to_handover in processing filter
-        result = result.where((order) => 
-          order.status == order_model.OrderStatus.to_ship
-        ).toList();
+        result = result
+            .where((order) => order.status == order_model.OrderStatus.to_ship)
+            .toList();
       } else {
-        result = result.where((order) => order.status == selectedFilter).toList();
+        result = result
+            .where((order) => order.status == selectedFilter)
+            .toList();
       }
     }
 
@@ -546,7 +551,19 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                     child: const Text('View Details'),
                   ),
                   const SizedBox(width: 12),
-                  if (_canResumePayment(order))
+                  if (_canCancelOrder(order))
+                    ElevatedButton(
+                      onPressed: () => _cancelOrder(order),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.error,
+                        foregroundColor: AppColors.onPrimary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Cancel Order'),
+                    )
+                  else if (_canResumePayment(order))
                     ElevatedButton(
                       onPressed: () => _resumePayment(order),
                       style: ElevatedButton.styleFrom(
@@ -586,7 +603,21 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  if (_canResumePayment(order))
+                  if (_canCancelOrder(order))
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => _cancelOrder(order),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.error,
+                          foregroundColor: AppColors.onPrimary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text('Cancel Order'),
+                      ),
+                    )
+                  else if (_canResumePayment(order))
                     Expanded(
                       child: ElevatedButton(
                         onPressed: () => _resumePayment(order),
@@ -846,6 +877,13 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
         status == order_model.OrderStatus.expired;
   }
 
+  bool _canCancelOrder(order_model.Order order) {
+    // Can cancel if order is pending, confirmed, or to_ship (not yet shipping)
+    return order.status == order_model.OrderStatus.pending ||
+        order.status == order_model.OrderStatus.confirmed ||
+        order.status == order_model.OrderStatus.to_ship;
+  }
+
   bool _canResumePayment(order_model.Order order) {
     // Can only resume payment if:
     // 1. Order status is pending
@@ -862,14 +900,79 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     );
   }
 
-  void _reorderItems(order_model.Order order) {
-    // TODO: Implement reorder functionality
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Reorder functionality coming soon'),
-        backgroundColor: AppColors.primary,
-      ),
-    );
+  void _reorderItems(order_model.Order order) async {
+    try {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
+
+      final cartService = CartService();
+
+      // Get all current cart items to deselect them
+      final currentCartItems = await cartService.getCartItems();
+
+      // Deselect all current cart items
+      if (currentCartItems.isNotEmpty) {
+        final Map<String, bool> itemSelections = {};
+        for (var item in currentCartItems) {
+          itemSelections[item.cartItemId] = false;
+        }
+        await cartService.batchUpdateItemSelections(itemSelections);
+      }
+
+      // Add each order item to the cart
+      for (var orderItem in order.items) {
+        await cartService.addToCart(
+          productId: orderItem.productId,
+          quantity: orderItem.quantity,
+          variationId: orderItem.variationId,
+        );
+      }
+
+      // Mark cart as stale to trigger refresh
+      CartPage.markCartAsStale();
+
+      // Close loading dialog
+      if (mounted) {
+        Navigator.of(context).pop();
+
+        // Navigate to cart page
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const CartPage()),
+        );
+
+        // Show success message
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('${order.items.length} items added to cart'),
+                backgroundColor: AppColors.success,
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          }
+        });
+      }
+    } catch (e) {
+      AppLogger.d('Error reordering items: $e');
+
+      // Close loading dialog if still open
+      if (mounted) {
+        Navigator.of(context).pop();
+
+        // Show error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to reorder items. Please try again.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   void _resumePayment(order_model.Order order) async {
@@ -979,6 +1082,78 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     }
   }
 
+  void _cancelOrder(order_model.Order order) async {
+    if (!_canCancelOrder(order)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('This order cannot be cancelled'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    // Show cancellation reason dialog
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (context) => _CancelOrderDialog(),
+    );
+
+    if (result == null) return; // User dismissed the dialog
+    if (!context.mounted) return;
+
+    final reason = result['reason']!;
+    final customReason = result['customReason'];
+
+    try {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
+
+      // Build cancellation note
+      final note = customReason != null && customReason.isNotEmpty
+          ? '$reason: $customReason'
+          : reason;
+
+      await OrderService.cancelOrder(order.orderId, reason: note);
+
+      // Close loading dialog
+      if (mounted) {
+        Navigator.of(context).pop();
+
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Order cancelled successfully'),
+            backgroundColor: AppColors.success,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+
+        // Refresh orders
+        _refreshOrders();
+      }
+    } catch (e) {
+      AppLogger.d('Error cancelling order: $e');
+
+      // Close loading dialog if still open
+      if (mounted) {
+        Navigator.of(context).pop();
+
+        // Show error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to cancel order. Please try again.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
   String _shortenStatus(String status) {
     // Shorten status text for wide web view to prevent truncation
     switch (status) {
@@ -1003,5 +1178,181 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
       default:
         return status;
     }
+  }
+}
+
+/// Dialog for cancelling an order with reason selection
+class _CancelOrderDialog extends StatefulWidget {
+  const _CancelOrderDialog();
+
+  @override
+  State<_CancelOrderDialog> createState() => _CancelOrderDialogState();
+}
+
+class _CancelOrderDialogState extends State<_CancelOrderDialog> {
+  String? selectedReason;
+  final TextEditingController _customReasonController = TextEditingController();
+  String? errorMessage;
+
+  final List<String> cancellationReasons = [
+    'Changed my mind',
+    'Found a better price elsewhere',
+    'Ordered by mistake',
+    'Delivery time is too long',
+    'Need to change shipping address',
+    'Payment issues',
+    'Product no longer needed',
+    'Other',
+  ];
+
+  @override
+  void dispose() {
+    _customReasonController.dispose();
+    super.dispose();
+  }
+
+  void _handleCancel() {
+    // Validate selection
+    if (selectedReason == null) {
+      setState(() {
+        errorMessage = 'Please select a reason for cancellation.';
+      });
+      return;
+    }
+
+    // Validate custom reason if "Other" is selected
+    if (selectedReason == 'Other' &&
+        _customReasonController.text.trim().isEmpty) {
+      setState(() {
+        errorMessage = 'Please specify your reason for cancellation.';
+      });
+      return;
+    }
+
+    // Close dialog and return result - explicitly create a Map<String, String>
+    final result = <String, String>{
+      'reason': selectedReason!,
+      if (selectedReason == 'Other')
+        'customReason': _customReasonController.text.trim(),
+    };
+
+    Navigator.of(context).pop(result);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
+        children: [
+          Icon(Icons.cancel_outlined, color: AppColors.error),
+          const SizedBox(width: 8),
+          const Text('Cancel Order'),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Please tell us why you want to cancel this order:',
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.onSurface.withValues(alpha: 0.7),
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (errorMessage != null) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.error.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppColors.error.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline, color: AppColors.error, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        errorMessage!,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.error,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+            ...cancellationReasons.map((reason) {
+              return RadioListTile<String>(
+                title: Text(reason, style: AppTextStyles.bodyMedium),
+                value: reason,
+                groupValue: selectedReason,
+                activeColor: AppColors.primary,
+                onChanged: (value) {
+                  setState(() {
+                    selectedReason = value;
+                    errorMessage = null; // Clear error when selection changes
+                  });
+                },
+                contentPadding: EdgeInsets.zero,
+                visualDensity: const VisualDensity(
+                  horizontal: -4,
+                  vertical: -4,
+                ),
+              );
+            }),
+            if (selectedReason == 'Other') ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: _customReasonController,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: 'Please specify your reason...',
+                  hintStyle: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.onSurface.withValues(alpha: 0.5),
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppColors.primary),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppColors.primary, width: 2),
+                  ),
+                  filled: true,
+                  fillColor: AppColors.background,
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(
+            'Keep Order',
+            style: TextStyle(color: AppColors.onSurface.withValues(alpha: 0.6)),
+          ),
+        ),
+        ElevatedButton(
+          onPressed: _handleCancel,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.error,
+            foregroundColor: AppColors.onPrimary,
+          ),
+          child: const Text('Cancel Order'),
+        ),
+      ],
+    );
   }
 }

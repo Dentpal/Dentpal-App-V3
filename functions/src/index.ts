@@ -12,3 +12,6 @@ export { calculateJRSShipping } from './jrsShippingCalculator';
 
 // Export the JRS tracking function
 export { trackJRSShipping } from './trackJRSShipping';
+
+// Export the cancel order function
+export { cancelOrder } from './cancelOrder';
