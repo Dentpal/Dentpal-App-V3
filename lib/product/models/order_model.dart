@@ -45,7 +45,7 @@ class Order {
   final DateTime updatedAt;
   final String? notes;
   final List<OrderStatusUpdate> statusHistory;
-  final String? checkoutSessionId; // Deprecated - now in paymongo object
+  final String? checkoutSessionId;
 
   Order({
     required this.orderId,

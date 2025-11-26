@@ -290,41 +290,52 @@ class CheckoutService {
     }
   }
 
-  // Cancel order (if payment is still pending)
+  // Cancel order - DEPRECATED: Use OrderService.cancelOrder instead
+  // This method is kept for backward compatibility but delegates to the backend
+  @Deprecated('Use OrderService.cancelOrder instead which properly calls the backend cancelOrder function')
   Future<bool> cancelOrder(String orderId) async {
     try {
-      AppLogger.d('Cancelling order: $orderId');
+      AppLogger.d('Cancelling order: $orderId (legacy method - consider using OrderService.cancelOrder)');
 
-      // Check if order exists and belongs to current user
-      final order = await getOrder(orderId);
-      if (order == null) {
-        throw Exception('Order not found');
+      // Get Firebase Auth token for authentication
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('User not authenticated');
+      }
+      
+      final idToken = await user.getIdToken();
+
+      // Call the backend cancelOrder function
+      // Backend validates: pending, confirmed, or to_ship status
+      // Backend handles: refund processing if payment was made
+      // Backend ensures: atomic transaction-safe updates
+      final response = await http.post(
+        Uri.parse('https://asia-southeast1-dentpal-161e5.cloudfunctions.net/cancelOrder'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $idToken',
+        },
+        body: json.encode({
+          'orderId': orderId,
+          'reason': 'Cancelled by customer',
+        }),
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => throw Exception('Cancel order request timed out'),
+      );
+
+      if (response.statusCode != 200) {
+        final responseData = json.decode(response.body) as Map<String, dynamic>;
+        throw Exception(responseData['error'] ?? 'Failed to cancel order: ${response.body}');
       }
 
-      final userId = _getCurrentUserId();
-      if (order.userId != userId) {
-        throw Exception('Not authorized to cancel this order');
+      final responseData = json.decode(response.body) as Map<String, dynamic>;
+      
+      if (responseData['success'] != true) {
+        throw Exception(responseData['error'] ?? 'Failed to cancel order');
       }
 
-      // Check if order can be cancelled (only if payment is pending)
-      if (order.paymongo.paymentStatus != PaymentStatus.pending) {
-        throw Exception('Order cannot be cancelled. Payment has already been processed.');
-      }
-
-      // Update order status
-      await _firestore.collection('Order').doc(orderId).update({
-        'status': OrderStatus.cancelled.toString().split('.').last,
-        'updatedAt': FieldValue.serverTimestamp(),
-        'statusHistory': FieldValue.arrayUnion([
-          {
-            'status': OrderStatus.cancelled.toString().split('.').last,
-            'timestamp': FieldValue.serverTimestamp(),
-            'note': 'Cancelled by customer',
-          }
-        ]),
-      });
-
-      AppLogger.d('Order cancelled successfully');
+      AppLogger.d('Order cancelled successfully via backend');
       return true;
 
     } catch (e) {

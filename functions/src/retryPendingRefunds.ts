@@ -213,10 +213,41 @@ export const retryPendingRefunds = onSchedule(
           retryAttempt: retryCount + 1
         });
 
-        // Attempt to create refund
+        // Validate refund amount before attempting refund
+        const refundAmount = orderData.summary?.total;
+        
+        if (refundAmount === undefined || refundAmount === null || isNaN(refundAmount) || refundAmount <= 0) {
+          logger.error('Invalid refund amount, cannot process refund', { 
+            orderId,
+            paymentId,
+            refundAmount,
+            summaryTotal: orderData.summary?.total,
+            summaryExists: !!orderData.summary,
+            note: 'Order has invalid or zero amount - requires manual investigation'
+          });
+          
+          // Mark as unable to refund with detailed error
+          const existingRefundInfo = orderData.refundInfo || {};
+          await orderDoc.ref.update({
+            refundInfo: {
+              ...existingRefundInfo,
+              error: `Invalid refund amount: ${refundAmount}. Expected positive number, got: ${typeof refundAmount} ${refundAmount}`,
+              cannotRefund: true,
+              checkedAt: admin.firestore.Timestamp.now(),
+              requiresManualReview: true
+            },
+            refundRetryLastAttempt: admin.firestore.Timestamp.now(),
+            refundRetryLastError: 'Invalid refund amount'
+          });
+          
+          failedCount++;
+          continue;
+        }
+
+        // Attempt to create refund with validated amount
         const refundResult = await createPayMongoRefund(
           paymentId,
-          orderData.summary?.total || 0,
+          refundAmount,
           orderData.cancellationReason || 'Order cancelled',
           PAYMONGO_SECRET_KEY
         );
@@ -229,7 +260,7 @@ export const retryPendingRefunds = onSchedule(
           const updatedRefundInfo = {
             ...existingRefundInfo,
             refundId: refundResult.refundId,
-            refundAmount: orderData.summary?.total || 0,
+            refundAmount: refundAmount, // Use validated amount instead of summary?.total || 0
             refundStatus: refundResult.status || 'pending',
             refundRequestedAt: timestamp,
             refundReason: orderData.cancellationReason || 'Order cancelled',

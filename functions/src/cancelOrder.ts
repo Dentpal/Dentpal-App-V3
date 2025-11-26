@@ -157,8 +157,7 @@ export const cancelOrder = onRequest(
       try {
         logger.info('Cancel order request started', { 
           method: request.method,
-          headers: request.headers,
-          body: request.body
+          orderId: request.body?.orderId
         });
 
         // Only allow POST requests
@@ -190,11 +189,12 @@ export const cancelOrder = onRequest(
 
         const { orderId, reason } = requestData;
 
-        // Get the order document
+        // First, do a preliminary read to check basic conditions and get payment info for refund
+        // This is outside the transaction because the refund API call should not be inside a transaction
         const orderRef = db.collection('Order').doc(orderId);
-        const orderDoc = await orderRef.get();
+        const preliminaryDoc = await orderRef.get();
 
-        if (!orderDoc.exists) {
+        if (!preliminaryDoc.exists) {
           logger.error('Order not found', { orderId });
           response.status(404).json({
             success: false,
@@ -203,14 +203,14 @@ export const cancelOrder = onRequest(
           return;
         }
 
-        const orderData = orderDoc.data();
+        const preliminaryData = preliminaryDoc.data();
         
         // Verify that the order belongs to the authenticated user
-        if (orderData?.userId !== userId) {
+        if (preliminaryData?.userId !== userId) {
           logger.error('Unauthorized: user does not own this order', { 
             orderId, 
             userId, 
-            orderUserId: orderData?.userId 
+            orderUserId: preliminaryData?.userId 
           });
           response.status(403).json({
             success: false,
@@ -220,31 +220,31 @@ export const cancelOrder = onRequest(
         }
 
         // Check if the order can be cancelled (must be pending, confirmed, or to_ship)
-        const currentStatus = orderData?.status;
+        const preliminaryStatus = preliminaryData?.status;
         const cancellableStatuses = ['pending', 'confirmed', 'to_ship'];
         
-        if (!cancellableStatuses.includes(currentStatus)) {
+        if (!cancellableStatuses.includes(preliminaryStatus)) {
           logger.error('Order cannot be cancelled in current status', { 
             orderId, 
-            currentStatus 
+            currentStatus: preliminaryStatus 
           });
           response.status(400).json({
             success: false,
-            error: `Order cannot be cancelled. Current status: ${currentStatus}`
+            error: `Order cannot be cancelled. Current status: ${preliminaryStatus}`
           });
           return;
         }
 
         // Check if payment was made and needs refund
-        const paymongo = orderData?.paymongo;
+        const paymongo = preliminaryData?.paymongo;
         const paymentStatus = paymongo?.paymentStatus;
         const paymentId = paymongo?.paymentId; // pay_xxx - Required for refunds
         const paymentIntentId = paymongo?.paymentIntentId; // pi_xxx - For reference
-        const orderTotal = orderData?.summary?.total || 0;
+        const orderTotal = preliminaryData?.summary?.total || 0;
         
         let refundResult: { success: boolean; refundId?: string; error?: string } | null = null;
 
-        // Process refund if payment was completed
+        // Process refund if payment was completed (OUTSIDE transaction - external API call)
         // PayMongo requires paymentId (pay_xxx) for refunds, not paymentIntentId
         if (paymentStatus === 'paid') {
           if (!paymentId) {
@@ -316,45 +316,80 @@ export const cancelOrder = onRequest(
           });
         }
 
-        // Prepare the update data
-        const timestamp = admin.firestore.Timestamp.now();
-        const statusHistory = orderData?.statusHistory || [];
-        
-        // Add cancellation entry to status history
-        const cancellationNote = refundResult?.refundId
-          ? `Order cancelled: ${reason}. Refund ID: ${refundResult.refundId}`
-          : `Order cancelled: ${reason}`;
-        
-        statusHistory.push({
-          status: 'cancelled',
-          timestamp: timestamp,
-          note: cancellationNote
+        // Now perform atomic transaction to update order status
+        // This prevents race conditions with concurrent cancellation or status updates
+        await db.runTransaction(async (transaction) => {
+          // Read the order inside the transaction
+          const orderSnapshot = await transaction.get(orderRef);
+
+          if (!orderSnapshot.exists) {
+            throw new Error('Order not found during transaction');
+          }
+
+          const orderData = orderSnapshot.data();
+
+          // Re-validate that order still belongs to user (paranoid check)
+          if (orderData?.userId !== userId) {
+            throw new Error('Order ownership changed during transaction');
+          }
+
+          // Re-validate that order can still be cancelled
+          // This is critical - status might have changed between preliminary check and transaction
+          const currentStatus = orderData?.status;
+          if (!cancellableStatuses.includes(currentStatus)) {
+            throw new Error(`Order status changed to ${currentStatus} and can no longer be cancelled`);
+          }
+
+          // Build status history by appending to the snapshot's existing history
+          const timestamp = admin.firestore.Timestamp.now();
+          const existingStatusHistory = orderData?.statusHistory || [];
+          
+          const cancellationNote = refundResult?.refundId
+            ? `Order cancelled: ${reason}. Refund ID: ${refundResult.refundId}`
+            : `Order cancelled: ${reason}`;
+          
+          const newStatusHistory = [
+            ...existingStatusHistory,
+            {
+              status: 'cancelled',
+              timestamp: timestamp,
+              note: cancellationNote
+            }
+          ];
+
+          // Prepare atomic update object
+          const updateData: any = {
+            status: 'cancelled',
+            statusHistory: newStatusHistory,
+            cancelledAt: timestamp,
+            cancellationReason: reason,
+            updatedAt: timestamp
+          };
+
+          // Add refund information if refund was processed
+          if (refundResult?.refundId) {
+            updateData.refundInfo = {
+              refundId: refundResult.refundId,
+              refundAmount: orderTotal,
+              refundStatus: 'pending', // PayMongo refunds are initially pending
+              refundRequestedAt: timestamp,
+              refundReason: reason
+            };
+          }
+
+          // Perform atomic update
+          transaction.update(orderRef, updateData);
+
+          logger.info('Order cancellation transaction prepared', { 
+            orderId, 
+            userId,
+            oldStatus: currentStatus,
+            newStatus: 'cancelled',
+            refundIncluded: !!refundResult?.refundId
+          });
         });
 
-        // Prepare update object
-        const updateData: any = {
-          status: 'cancelled',
-          statusHistory: statusHistory,
-          cancelledAt: timestamp,
-          cancellationReason: reason,
-          updatedAt: timestamp
-        };
-
-        // Add refund information if refund was processed
-        if (refundResult?.refundId) {
-          updateData.refundInfo = {
-            refundId: refundResult.refundId,
-            refundAmount: orderTotal,
-            refundStatus: 'pending', // PayMongo refunds are initially pending
-            refundRequestedAt: timestamp,
-            refundReason: reason
-          };
-        }
-
-        // Update the order document
-        await orderRef.update(updateData);
-
-        logger.info('Order cancelled successfully', { 
+        logger.info('Order cancelled successfully via transaction', { 
           orderId, 
           userId,
           reason,

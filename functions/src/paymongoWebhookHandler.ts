@@ -362,12 +362,7 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
 // ====================================
 
 async function handleRefundWebhook(eventAttributes: any) {
-  try {
-    // Log the complete webhook payload for debugging
-    logger.info('Processing refund webhook - FULL PAYLOAD', { 
-      fullPayload: JSON.stringify(eventAttributes, null, 2)
-    });
-
+  try {  
     logger.info('Processing refund webhook', { 
       refundId: eventAttributes.id,
       status: eventAttributes.status
@@ -607,7 +602,8 @@ export const handlePaymongoWebhook = onRequest(
 
         // Log the complete request body for debugging
         logger.info('Webhook Request Body - FULL PAYLOAD', {
-          fullRequestBody: JSON.stringify(req.body, null, 2)
+          eventType: req.body?.data?.type,
+          orderId: req.body?.data?.attributes?.data?.attributes?.metadata?.order_id
         });
 
         // Additional security check: Verify the request is actually from Paymongo

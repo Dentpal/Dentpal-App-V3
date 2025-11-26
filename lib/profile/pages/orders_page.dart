@@ -901,14 +901,16 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
   }
 
   void _reorderItems(order_model.Order order) async {
-    try {
-      // Show loading indicator
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(child: CircularProgressIndicator()),
-      );
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
 
+    bool success = false;
+
+    try {
       final cartService = CartService();
 
       // Get all current cart items to deselect them
@@ -934,43 +936,42 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
 
       // Mark cart as stale to trigger refresh
       CartPage.markCartAsStale();
-
-      // Close loading dialog
-      if (mounted) {
-        Navigator.of(context).pop();
-
-        // Navigate to cart page
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const CartPage()),
-        );
-
-        // Show success message
-        Future.delayed(const Duration(milliseconds: 500), () {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('${order.items.length} items added to cart'),
-                backgroundColor: AppColors.success,
-                duration: const Duration(seconds: 2),
-              ),
-            );
-          }
-        });
-      }
+      
+      success = true;
     } catch (e) {
       AppLogger.d('Error reordering items: $e');
-
-      // Close loading dialog if still open
-      if (mounted) {
+      success = false;
+    } finally {
+      // Always dismiss the loading dialog
+      if (mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
+      }
 
-        // Show error message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to reorder items. Please try again.'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+      // Handle post-dialog actions only when mounted
+      if (mounted) {
+        if (success) {
+          // Show success message before navigating
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${order.items.length} items added to cart'),
+              backgroundColor: AppColors.success,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+
+          // Navigate to cart page
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => const CartPage()),
+          );
+        } else {
+          // Show error message
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to reorder items. Please try again.'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
       }
     }
   }
@@ -1105,51 +1106,56 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     final reason = result['reason']!;
     final customReason = result['customReason'];
 
-    try {
-      // Show loading indicator
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(child: CircularProgressIndicator()),
-      );
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
 
+    bool success = false;
+
+    try {
       // Build cancellation note
       final note = customReason != null && customReason.isNotEmpty
           ? '$reason: $customReason'
           : reason;
 
       await OrderService.cancelOrder(order.orderId, reason: note);
-
-      // Close loading dialog
-      if (mounted) {
-        Navigator.of(context).pop();
-
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Order cancelled successfully'),
-            backgroundColor: AppColors.success,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-
-        // Refresh orders
-        _refreshOrders();
-      }
+      
+      success = true;
     } catch (e) {
       AppLogger.d('Error cancelling order: $e');
-
-      // Close loading dialog if still open
-      if (mounted) {
+      success = false;
+    } finally {
+      // Always dismiss the loading dialog
+      if (mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
+      }
 
-        // Show error message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to cancel order. Please try again.'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+      // Handle post-dialog actions only when mounted
+      if (mounted) {
+        if (success) {
+          // Show success message
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Order cancelled successfully'),
+              backgroundColor: AppColors.success,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+
+          // Refresh orders
+          _refreshOrders();
+        } else {
+          // Show error message
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to cancel order. Please try again.'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
       }
     }
   }
