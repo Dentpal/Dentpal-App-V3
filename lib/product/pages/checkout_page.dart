@@ -1719,44 +1719,23 @@ class _CheckoutPageState extends State<CheckoutPage> {
         ),
       );
 
-      try {
-        // Verify payment status with Paymongo
-        final wasUpdated = await _checkoutService.verifyPaymentStatus(orderId);
+      // Payment status will be updated automatically by PayMongo webhooks
+      // No need to manually verify - just navigate to success page
+      await Future.delayed(const Duration(milliseconds: 500)); // Brief delay for better UX
+      
+      if (mounted) {
+        Navigator.of(context).pop(); // Close loading dialog
         
-        if (mounted) {
-          Navigator.of(context).pop(); // Close loading dialog
-          
-          if (wasUpdated) {
-            AppLogger.d('Payment verified and order updated to confirmed');
-          } else {
-            AppLogger.d('Payment status already verified');
-          }
-          
-          // Navigate to success page
-          Navigator.of(context).pushNamedAndRemoveUntil(
-            '/payment-success',
-            (route) => route.settings.name == '/', // Clear stack until home
-          );
-          
-          // Call completion callback
-          widget.onOrderComplete?.call();
-        }
-      } catch (e) {
-        AppLogger.d('Error verifying payment: $e');
+        AppLogger.d('Payment completed, webhooks will update order status');
         
-        if (mounted) {
-          Navigator.of(context).pop(); // Close loading dialog
-          
-          // Still navigate to success page since payment completion was detected
-          // but show a message that verification will happen later
-          Navigator.of(context).pushNamedAndRemoveUntil(
-            '/payment-success',
-            (route) => route.settings.name == '/', // Clear stack until home
-          );
-          
-          // Call completion callback
-          widget.onOrderComplete?.call();
-        }
+        // Navigate to success page
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/payment-success',
+          (route) => route.settings.name == '/', // Clear stack until home
+        );
+        
+        // Call completion callback
+        widget.onOrderComplete?.call();
       }
     } else if (mounted) {
       // Navigate to success page even without order ID

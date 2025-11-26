@@ -39,13 +39,13 @@ class Order {
   final List<OrderItem> items;
   final OrderSummary summary;
   final ShippingInfo shippingInfo;
-  final PaymentInfo paymentInfo;
+  final PaymongoData paymongo; // Changed from paymentInfo to paymongo
   final OrderStatus status;
   final DateTime createdAt;
   final DateTime updatedAt;
   final String? notes;
   final List<OrderStatusUpdate> statusHistory;
-  final String? checkoutSessionId; // Added for Paymongo checkout session
+  final String? checkoutSessionId;
 
   Order({
     required this.orderId,
@@ -54,7 +54,7 @@ class Order {
     required this.items,
     required this.summary,
     required this.shippingInfo,
-    required this.paymentInfo,
+    required this.paymongo,
     required this.status,
     required this.createdAt,
     required this.updatedAt,
@@ -97,10 +97,11 @@ class Order {
       AppLogger.d('Order.fromFirestore - ShippingInfo data: ${data['shippingInfo']}');
       final shippingInfo = ShippingInfo.fromMap(data['shippingInfo'] as Map<String, dynamic>);
       
-      // Parse payment info
-      AppLogger.d('Order.fromFirestore - Parsing paymentInfo...');
-      AppLogger.d('Order.fromFirestore - PaymentInfo data: ${data['paymentInfo']}');
-      final paymentInfo = PaymentInfo.fromMap(data['paymentInfo'] as Map<String, dynamic>);
+      // Parse paymongo data (supports both new 'paymongo' and legacy 'paymentInfo' keys)
+      AppLogger.d('Order.fromFirestore - Parsing paymongo...');
+      final paymongoData = data['paymongo'] ?? data['paymentInfo'];
+      AppLogger.d('Order.fromFirestore - Paymongo data: $paymongoData');
+      final paymongo = PaymongoData.fromMap(paymongoData as Map<String, dynamic>);
       
       // Parse status
       AppLogger.d('Order.fromFirestore - Parsing status...');
@@ -138,7 +139,7 @@ class Order {
         items: items,
         summary: summary,
         shippingInfo: shippingInfo,
-        paymentInfo: paymentInfo,
+        paymongo: paymongo,
         status: status,
         createdAt: createdAt,
         updatedAt: updatedAt,
@@ -161,13 +162,13 @@ class Order {
       'items': items.map((item) => item.toMap()).toList(),
       'summary': summary.toMap(),
       'shippingInfo': shippingInfo.toMap(),
-      'paymentInfo': paymentInfo.toMap(),
+      'paymongo': paymongo.toMap(),
       'status': status.toString().split('.').last,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
       'notes': notes,
       'statusHistory': statusHistory.map((update) => update.toMap()).toList(),
-      'checkoutSessionId': checkoutSessionId,
+      'checkoutSessionId': checkoutSessionId, // Deprecated - kept for backward compatibility
     };
   }
 
@@ -178,7 +179,7 @@ class Order {
     List<OrderItem>? items,
     OrderSummary? summary,
     ShippingInfo? shippingInfo,
-    PaymentInfo? paymentInfo,
+    PaymongoData? paymongo,
     OrderStatus? status,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -193,7 +194,7 @@ class Order {
       items: items ?? this.items,
       summary: summary ?? this.summary,
       shippingInfo: shippingInfo ?? this.shippingInfo,
-      paymentInfo: paymentInfo ?? this.paymentInfo,
+      paymongo: paymongo ?? this.paymongo,
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -405,37 +406,39 @@ class ShippingInfo {
   }
 }
 
-class PaymentInfo {
-  final String? paymentIntentId; // Made optional since we'll use checkout sessions
-  final String? checkoutSessionId; // Added for Paymongo checkout sessions
-  final String? checkoutUrl; // Added for PayMongo checkout URL
-  final PaymentMethod method;
-  final PaymentStatus status;
+class PaymongoData {
+  final String? paymentId; // Payment ID (pay_xxx) - Required for refunds
+  final String? paymentIntentId; // Payment Intent ID (pi_xxx) - For reference
+  final String? checkoutSessionId; // Paymongo checkout session ID
+  final String? checkoutUrl; // PayMongo checkout URL
+  final PaymentMethod paymentMethod; // Changed from 'method' to 'paymentMethod'
+  final PaymentStatus paymentStatus; // Changed from 'status' to 'paymentStatus'
   final double amount;
   final String currency;
   final DateTime? paidAt;
   final String? failureReason;
 
-  PaymentInfo({
+  PaymongoData({
+    this.paymentId,
     this.paymentIntentId,
     this.checkoutSessionId,
     this.checkoutUrl,
-    required this.method,
-    required this.status,
+    required this.paymentMethod,
+    required this.paymentStatus,
     required this.amount,
     required this.currency,
     this.paidAt,
     this.failureReason,
   });
 
-  factory PaymentInfo.fromMap(Map<String, dynamic> map) {
-    AppLogger.d('PaymentInfo.fromMap - Raw map: $map');
+  factory PaymongoData.fromMap(Map<String, dynamic> map) {
+    AppLogger.d('PaymongoData.fromMap - Raw map: $map');
     
     try {
       // Handle paidAt timestamp conversion
       DateTime? paidAt;
       final paidAtValue = map['paidAt'];
-      AppLogger.d('PaymentInfo.fromMap - paidAt value: $paidAtValue (type: ${paidAtValue.runtimeType})');
+      AppLogger.d('PaymongoData.fromMap - paidAt value: $paidAtValue (type: ${paidAtValue.runtimeType})');
       
       if (paidAtValue != null) {
         if (paidAtValue is Timestamp) {
@@ -449,50 +452,52 @@ class PaymentInfo {
         }
       }
 
-      // Parse method enum
-      final methodValue = map['method'];
-      AppLogger.d('PaymentInfo.fromMap - method value: $methodValue (type: ${methodValue.runtimeType})');
-      final method = PaymentMethod.values.firstWhere(
+      // Parse paymentMethod enum (supports both 'method' and 'paymentMethod' keys for backward compatibility)
+      final methodValue = map['paymentMethod'] ?? map['method'];
+      AppLogger.d('PaymongoData.fromMap - paymentMethod value: $methodValue (type: ${methodValue.runtimeType})');
+      final paymentMethod = PaymentMethod.values.firstWhere(
         (e) => e.toString().split('.').last == (methodValue?.toString() ?? 'card'),
         orElse: () => PaymentMethod.card,
       );
 
-      // Parse status enum
-      final statusValue = map['status'];
-      AppLogger.d('PaymentInfo.fromMap - status value: $statusValue (type: ${statusValue.runtimeType})');
-      final status = PaymentStatus.values.firstWhere(
+      // Parse paymentStatus enum (supports both 'status' and 'paymentStatus' keys for backward compatibility)
+      final statusValue = map['paymentStatus'] ?? map['status'];
+      AppLogger.d('PaymongoData.fromMap - paymentStatus value: $statusValue (type: ${statusValue.runtimeType})');
+      final paymentStatus = PaymentStatus.values.firstWhere(
         (e) => e.toString().split('.').last == (statusValue?.toString() ?? 'pending'),
         orElse: () => PaymentStatus.pending,
       );
 
-      AppLogger.d('PaymentInfo.fromMap - Parsing completed successfully');
+      AppLogger.d('PaymongoData.fromMap - Parsing completed successfully');
       
-      return PaymentInfo(
-        paymentIntentId: map['paymentIntentId'],
+      return PaymongoData(
+        paymentId: map['paymentId'], // Payment ID for refunds
+        paymentIntentId: map['paymentIntentId'], // Payment Intent ID for reference
         checkoutSessionId: map['checkoutSessionId'],
         checkoutUrl: map['checkoutUrl'],
-        method: method,
-        status: status,
+        paymentMethod: paymentMethod,
+        paymentStatus: paymentStatus,
         amount: (map['amount'] ?? 0.0).toDouble(),
         currency: map['currency'] ?? 'PHP',
         paidAt: paidAt,
         failureReason: map['failureReason'],
       );
     } catch (e, stackTrace) {
-      AppLogger.d('PaymentInfo.fromMap - Error occurred: $e');
-      AppLogger.d('PaymentInfo.fromMap - Stack trace: $stackTrace');
-      AppLogger.d('PaymentInfo.fromMap - Input map: $map');
+      AppLogger.d('PaymongoData.fromMap - Error occurred: $e');
+      AppLogger.d('PaymongoData.fromMap - Stack trace: $stackTrace');
+      AppLogger.d('PaymongoData.fromMap - Input map: $map');
       rethrow;
     }
   }
 
   Map<String, dynamic> toMap() {
     return {
-      'paymentIntentId': paymentIntentId,
+      'paymentId': paymentId, // Payment ID for refunds
+      'paymentIntentId': paymentIntentId, // Payment Intent ID for reference
       'checkoutSessionId': checkoutSessionId,
       'checkoutUrl': checkoutUrl,
-      'method': method.toString().split('.').last,
-      'status': status.toString().split('.').last,
+      'paymentMethod': paymentMethod.toString().split('.').last,
+      'paymentStatus': paymentStatus.toString().split('.').last,
       'amount': amount,
       'currency': currency,
       'paidAt': paidAt != null ? Timestamp.fromDate(paidAt!) : null,

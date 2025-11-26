@@ -6,16 +6,16 @@ import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import '../../product/models/order_model.dart' as order_model;
 import '../../product/pages/paymongo_webview_page.dart';
+import '../../product/pages/cart_page.dart';
+import '../../product/services/cart_service.dart';
 import '../../product/services/jrs_tracking_service.dart';
 import '../../utils/app_logger.dart';
+import '../services/order_service.dart';
 
 class OrderDetailsPage extends StatefulWidget {
   final order_model.Order order;
 
-  const OrderDetailsPage({
-    super.key,
-    required this.order,
-  });
+  const OrderDetailsPage({super.key, required this.order});
 
   @override
   State<OrderDetailsPage> createState() => _OrderDetailsPageState();
@@ -29,13 +29,15 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
   @override
   void initState() {
     super.initState();
-    
+
     final trackingId = _getTrackingId();
     // Debug logging for tracking ID
-    AppLogger.d('Order tracking ID from shippingInfo: ${widget.order.shippingInfo.trackingId}');
+    AppLogger.d(
+      'Order tracking ID from shippingInfo: ${widget.order.shippingInfo.trackingId}',
+    );
     AppLogger.d('Order tracking ID extracted: $trackingId');
     AppLogger.d('Order status: ${widget.order.status}');
-    
+
     // Auto-load tracking if tracking ID is available
     if (trackingId != null) {
       AppLogger.d('Tracking ID available, loading tracking...');
@@ -48,29 +50,35 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
   /// Extract tracking ID from either shippingInfo or status history
   String? _getTrackingId() {
     // First check if trackingId is directly available in shippingInfo
-    if (widget.order.shippingInfo.trackingId != null && 
+    if (widget.order.shippingInfo.trackingId != null &&
         widget.order.shippingInfo.trackingId!.isNotEmpty) {
-      AppLogger.d('Found tracking ID in shippingInfo.trackingId: ${widget.order.shippingInfo.trackingId}');
+      AppLogger.d(
+        'Found tracking ID in shippingInfo.trackingId: ${widget.order.shippingInfo.trackingId}',
+      );
       return widget.order.shippingInfo.trackingId;
     }
-    
+
     // Check if it's available in JRS response data (if shippingInfo has a Map structure)
     try {
-      final shippingInfoData = widget.order.toMap()['shippingInfo'] as Map<String, dynamic>?;
+      final shippingInfoData =
+          widget.order.toMap()['shippingInfo'] as Map<String, dynamic>?;
       if (shippingInfoData != null) {
         // Check direct trackingId field
         final directTrackingId = shippingInfoData['trackingId'] as String?;
         if (directTrackingId != null && directTrackingId.isNotEmpty) {
-          AppLogger.d('Found tracking ID in shippingInfo data: $directTrackingId');
+          AppLogger.d(
+            'Found tracking ID in shippingInfo data: $directTrackingId',
+          );
           return directTrackingId;
         }
-        
+
         // Check JRS response structure
         final jrsData = shippingInfoData['jrs'] as Map<String, dynamic>?;
         if (jrsData != null) {
           final response = jrsData['response'] as Map<String, dynamic>?;
           if (response != null) {
-            final shippingDto = response['ShippingRequestEntityDto'] as Map<String, dynamic>?;
+            final shippingDto =
+                response['ShippingRequestEntityDto'] as Map<String, dynamic>?;
             if (shippingDto != null) {
               final trackingId = shippingDto['TrackingId'] as String?;
               if (trackingId != null && trackingId.isNotEmpty) {
@@ -84,7 +92,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     } catch (e) {
       AppLogger.d('Error extracting tracking ID from shipping info: $e');
     }
-    
+
     // If not found in shipping info, try to extract from status history notes
     for (final status in widget.order.statusHistory.reversed) {
       if (status.note != null && status.note!.contains('Tracking:')) {
@@ -95,7 +103,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         }
       }
     }
-    
+
     AppLogger.d('No tracking ID found');
     return null;
   }
@@ -103,7 +111,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
   Future<void> _loadTracking() async {
     final trackingId = _getTrackingId();
     if (trackingId == null) return;
-    
+
     setState(() {
       _isLoadingTracking = true;
       _trackingError = null;
@@ -115,7 +123,8 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         _trackingResult = result;
         _isLoadingTracking = false;
         if (!result.success) {
-          _trackingError = result.error ?? 'Failed to load tracking information';
+          _trackingError =
+              result.error ?? 'Failed to load tracking information';
         }
       });
     } catch (e) {
@@ -131,8 +140,10 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
   @override
   Widget build(BuildContext context) {
     // Debug logging
-    AppLogger.d('Building OrderDetailsPage - Tracking ID: ${widget.order.shippingInfo.trackingId}');
-    
+    AppLogger.d(
+      'Building OrderDetailsPage - Tracking ID: ${widget.order.shippingInfo.trackingId}',
+    );
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -145,9 +156,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         ),
         title: Text(
           'Order Details',
-          style: AppTextStyles.titleLarge.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
+          style: AppTextStyles.titleLarge.copyWith(fontWeight: FontWeight.w700),
         ),
       ),
       body: SingleChildScrollView(
@@ -237,11 +246,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
           const SizedBox(height: 16),
           Row(
             children: [
-              Icon(
-                Icons.shopping_bag,
-                color: AppColors.primary,
-                size: 20,
-              ),
+              Icon(Icons.shopping_bag, color: AppColors.primary, size: 20),
               const SizedBox(width: 8),
               Text(
                 '${widget.order.items.length} item${widget.order.items.length > 1 ? 's' : ''}',
@@ -311,7 +316,9 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
               child: Column(
                 children: [
                   CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      AppColors.primary,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -329,7 +336,9 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
               decoration: BoxDecoration(
                 color: AppColors.error.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
+                border: Border.all(
+                  color: AppColors.error.withValues(alpha: 0.3),
+                ),
               ),
               child: Row(
                 children: [
@@ -367,8 +376,11 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                 if (_trackingResult!.location != null)
                   _buildInfoRow('Current Location', _trackingResult!.location!),
                 if (_trackingResult!.timestamp != null)
-                  _buildInfoRow('Last Update', _formatTrackingDateTime(_trackingResult!.timestamp!)),
-                
+                  _buildInfoRow(
+                    'Last Update',
+                    _formatTrackingDateTime(_trackingResult!.timestamp!),
+                  ),
+
                 if (_trackingResult!.events.isNotEmpty) ...[
                   const SizedBox(height: 16),
                   Text(
@@ -382,11 +394,13 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: _trackingResult!.events.length,
-                    separatorBuilder: (context, index) => const SizedBox(height: 12),
+                    separatorBuilder: (context, index) =>
+                        const SizedBox(height: 12),
                     itemBuilder: (context, index) {
                       final event = _trackingResult!.events[index];
-                      final isLast = index == _trackingResult!.events.length - 1;
-                      
+                      final isLast =
+                          index == _trackingResult!.events.length - 1;
+
                       return Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -404,7 +418,9 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                                 Container(
                                   width: 2,
                                   height: 30,
-                                  color: AppColors.onSurface.withValues(alpha: 0.2),
+                                  color: AppColors.onSurface.withValues(
+                                    alpha: 0.2,
+                                  ),
                                   margin: const EdgeInsets.only(top: 4),
                                 ),
                             ],
@@ -423,7 +439,9 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                                 Text(
                                   event.location,
                                   style: AppTextStyles.bodySmall.copyWith(
-                                    color: AppColors.onSurface.withValues(alpha: 0.7),
+                                    color: AppColors.onSurface.withValues(
+                                      alpha: 0.7,
+                                    ),
                                   ),
                                 ),
                                 if (event.description != null) ...[
@@ -431,7 +449,9 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                                   Text(
                                     event.description!,
                                     style: AppTextStyles.bodySmall.copyWith(
-                                      color: AppColors.onSurface.withValues(alpha: 0.6),
+                                      color: AppColors.onSurface.withValues(
+                                        alpha: 0.6,
+                                      ),
                                       fontStyle: FontStyle.italic,
                                     ),
                                   ),
@@ -439,7 +459,9 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                                 Text(
                                   _formatTrackingDateTime(event.timestamp),
                                   style: AppTextStyles.bodySmall.copyWith(
-                                    color: AppColors.onSurface.withValues(alpha: 0.5),
+                                    color: AppColors.onSurface.withValues(
+                                      alpha: 0.5,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -458,7 +480,9 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
               decoration: BoxDecoration(
                 color: AppColors.warning.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
+                border: Border.all(
+                  color: AppColors.warning.withValues(alpha: 0.3),
+                ),
               ),
               child: Row(
                 children: [
@@ -512,7 +536,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
             itemBuilder: (context, index) {
               final statusUpdate = widget.order.statusHistory[index];
               final isLast = index == widget.order.statusHistory.length - 1;
-              
+
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -541,7 +565,8 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          statusUpdate.note ?? _formatStatusTitle(statusUpdate.status),
+                          statusUpdate.note ??
+                              _formatStatusTitle(statusUpdate.status),
                           style: AppTextStyles.bodyMedium.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
@@ -637,7 +662,9 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                           height: 20,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              AppColors.primary,
+                            ),
                           ),
                         ),
                       );
@@ -651,7 +678,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                 ),
         ),
         const SizedBox(width: 16),
-        
+
         // Product Info
         Expanded(
           child: Column(
@@ -727,11 +754,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         children: [
           Row(
             children: [
-              Icon(
-                Icons.local_shipping,
-                color: AppColors.primary,
-                size: 20,
-              ),
+              Icon(Icons.local_shipping, color: AppColors.primary, size: 20),
               const SizedBox(width: 8),
               Text(
                 'Shipping Information',
@@ -747,9 +770,9 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
           _buildInfoRow(
             'Address',
             '${widget.order.shippingInfo.addressLine1}'
-            '${widget.order.shippingInfo.addressLine2 != null ? '\n${widget.order.shippingInfo.addressLine2}' : ''}'
-            '\n${widget.order.shippingInfo.city}, ${widget.order.shippingInfo.state} ${widget.order.shippingInfo.postalCode}'
-            '\n${widget.order.shippingInfo.country}',
+                '${widget.order.shippingInfo.addressLine2 != null ? '\n${widget.order.shippingInfo.addressLine2}' : ''}'
+                '\n${widget.order.shippingInfo.city}, ${widget.order.shippingInfo.state} ${widget.order.shippingInfo.postalCode}'
+                '\n${widget.order.shippingInfo.country}',
           ),
           if (widget.order.shippingInfo.notes != null)
             _buildInfoRow('Notes', widget.order.shippingInfo.notes!),
@@ -777,11 +800,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         children: [
           Row(
             children: [
-              Icon(
-                Icons.payment,
-                color: AppColors.primary,
-                size: 20,
-              ),
+              Icon(Icons.payment, color: AppColors.primary, size: 20),
               const SizedBox(width: 8),
               Text(
                 'Payment Information',
@@ -792,17 +811,36 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
             ],
           ),
           const SizedBox(height: 16),
-          _buildInfoRow('Payment Method', _formatPaymentMethod(widget.order.paymentInfo.method)),
-          _buildInfoRow('Payment Status', _formatPaymentStatus(widget.order.paymentInfo.status)),
-          _buildInfoRow('Amount', '₱${widget.order.paymentInfo.amount.toStringAsFixed(2)}'),
-          _buildInfoRow('Currency', widget.order.paymentInfo.currency),
-          if (widget.order.paymentInfo.paidAt != null)
-            _buildInfoRow('Paid At', _formatDateTime(widget.order.paymentInfo.paidAt!)),
-          if (widget.order.paymentInfo.checkoutSessionId != null)
-            _buildInfoRow('Checkout Session ID', widget.order.paymentInfo.checkoutSessionId!),
-          if (widget.order.paymentInfo.paymentIntentId != null)
-            _buildInfoRow('Payment Intent ID', widget.order.paymentInfo.paymentIntentId!),
-          if (widget.order.paymentInfo.checkoutUrl != null && _canResumePayment())
+          _buildInfoRow(
+            'Payment Method',
+            _formatPaymentMethod(widget.order.paymongo.paymentMethod),
+          ),
+          _buildInfoRow(
+            'Payment Status',
+            _formatPaymentStatus(widget.order.paymongo.paymentStatus),
+          ),
+          _buildInfoRow(
+            'Amount',
+            '₱${widget.order.paymongo.amount.toStringAsFixed(2)}',
+          ),
+          _buildInfoRow('Currency', widget.order.paymongo.currency),
+          if (widget.order.paymongo.paidAt != null)
+            _buildInfoRow(
+              'Paid At',
+              _formatDateTime(widget.order.paymongo.paidAt!),
+            ),
+          if (widget.order.paymongo.checkoutSessionId != null)
+            _buildInfoRow(
+              'Checkout Session ID',
+              widget.order.paymongo.checkoutSessionId!,
+            ),
+          if (widget.order.paymongo.paymentIntentId != null)
+            _buildInfoRow(
+              'Payment Intent ID',
+              widget.order.paymongo.paymentIntentId!,
+            ),
+          if (widget.order.paymongo.checkoutUrl != null &&
+              _canResumePayment())
             _buildInfoRow('Payment URL', 'Available for payment resumption'),
         ],
       ),
@@ -833,20 +871,29 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
             ),
           ),
           const SizedBox(height: 16),
-          _buildSummaryRow('Subtotal', '₱${widget.order.summary.subtotal.toStringAsFixed(2)}'),
+          _buildSummaryRow(
+            'Subtotal',
+            '₱${widget.order.summary.subtotal.toStringAsFixed(2)}',
+          ),
           // Display only the buyer's shipping charge (what they actually paid)
           _buildSummaryRow(
-            'Shipping', 
-            widget.order.summary.buyerShippingCharge > 0 
-              ? '₱${widget.order.summary.buyerShippingCharge.toStringAsFixed(2)}'
-              : (widget.order.summary.shippingCost > 0 
-                  ? '₱${widget.order.summary.shippingCost.toStringAsFixed(2)}'
-                  : 'Free')
+            'Shipping',
+            widget.order.summary.buyerShippingCharge > 0
+                ? '₱${widget.order.summary.buyerShippingCharge.toStringAsFixed(2)}'
+                : (widget.order.summary.shippingCost > 0
+                      ? '₱${widget.order.summary.shippingCost.toStringAsFixed(2)}'
+                      : 'Free'),
           ),
           if (widget.order.summary.taxAmount > 0)
-            _buildSummaryRow('Tax', '₱${widget.order.summary.taxAmount.toStringAsFixed(2)}'),
+            _buildSummaryRow(
+              'Tax',
+              '₱${widget.order.summary.taxAmount.toStringAsFixed(2)}',
+            ),
           if (widget.order.summary.discountAmount > 0)
-            _buildSummaryRow('Discount', '-₱${widget.order.summary.discountAmount.toStringAsFixed(2)}'),
+            _buildSummaryRow(
+              'Discount',
+              '-₱${widget.order.summary.discountAmount.toStringAsFixed(2)}',
+            ),
           const Divider(height: 24),
           _buildSummaryRow(
             'Total',
@@ -861,6 +908,23 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
   Widget _buildActionButtons(BuildContext context) {
     return Column(
       children: [
+        if (_canCancelOrder())
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => _cancelOrder(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.error,
+                foregroundColor: AppColors.onPrimary,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text('Cancel Order'),
+            ),
+          ),
+        if (_canCancelOrder()) const SizedBox(height: 12),
         if (_canResumePayment())
           SizedBox(
             width: double.infinity,
@@ -951,7 +1015,9 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
           Text(
             label,
             style: isTotal
-                ? AppTextStyles.titleMedium.copyWith(fontWeight: FontWeight.w700)
+                ? AppTextStyles.titleMedium.copyWith(
+                    fontWeight: FontWeight.w700,
+                  )
                 : AppTextStyles.bodyMedium.copyWith(
                     color: AppColors.onSurface.withValues(alpha: 0.6),
                   ),
@@ -1075,7 +1141,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
   String _formatStatusTitle(order_model.OrderStatus status) {
     // Get the raw status string to handle additional fulfillment stages
     final statusString = status.toString().split('.').last;
-    
+
     // Handle fulfillment stage statuses that might not be in the enum
     switch (statusString) {
       case 'pending':
@@ -1189,8 +1255,15 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
 
   bool _canReorder() {
     return widget.order.status == order_model.OrderStatus.confirmed ||
-           widget.order.status == order_model.OrderStatus.delivered ||
-           widget.order.status == order_model.OrderStatus.expired;
+        widget.order.status == order_model.OrderStatus.delivered ||
+        widget.order.status == order_model.OrderStatus.expired;
+  }
+
+  bool _canCancelOrder() {
+    // Can cancel if order is pending, confirmed, or to_ship (not yet shipping)
+    return widget.order.status == order_model.OrderStatus.pending ||
+        widget.order.status == order_model.OrderStatus.confirmed ||
+        widget.order.status == order_model.OrderStatus.to_ship;
   }
 
   bool _canResumePayment() {
@@ -1199,19 +1272,85 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     // 2. Order is not expired
     // 3. Order has a checkout URL
     return widget.order.status == order_model.OrderStatus.pending &&
-           widget.order.paymentInfo.checkoutUrl != null &&
-           widget.order.paymentInfo.checkoutUrl!.isNotEmpty;
+        widget.order.paymongo.checkoutUrl != null &&
+        widget.order.paymongo.checkoutUrl!.isNotEmpty;
   }
 
+  void _reorderItems(BuildContext context) async {
+    try {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
 
-  void _reorderItems(BuildContext context) {
-    // TODO: Implement reorder functionality
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Reorder functionality coming soon'),
-        backgroundColor: AppColors.primary,
-      ),
-    );
+      final cartService = CartService();
+
+      // Get all current cart items to deselect them
+      final currentCartItems = await cartService.getCartItems();
+
+      // Deselect all current cart items
+      if (currentCartItems.isNotEmpty) {
+        final Map<String, bool> itemSelections = {};
+        for (var item in currentCartItems) {
+          itemSelections[item.cartItemId] = false;
+        }
+        await cartService.batchUpdateItemSelections(itemSelections);
+      }
+
+      // Add each order item to the cart
+      for (var orderItem in widget.order.items) {
+        await cartService.addToCart(
+          productId: orderItem.productId,
+          quantity: orderItem.quantity,
+          variationId: orderItem.variationId,
+        );
+      }
+
+      // Mark cart as stale to trigger refresh
+      CartPage.markCartAsStale();
+
+      // Close loading dialog
+      if (context.mounted) {
+        Navigator.of(context).pop();
+
+        // Navigate to cart page
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const CartPage()),
+        );
+
+        // Show success message
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  '${widget.order.items.length} items added to cart',
+                ),
+                backgroundColor: AppColors.success,
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          }
+        });
+      }
+    } catch (e) {
+      AppLogger.d('Error reordering items: $e');
+
+      // Close loading dialog if still open
+      if (context.mounted) {
+        Navigator.of(context).pop();
+
+        // Show error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to reorder items. Please try again.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   void _resumePayment(BuildContext context) async {
@@ -1225,8 +1364,10 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
       return;
     }
 
-    final checkoutUrl = widget.order.paymentInfo.checkoutUrl!;
-    AppLogger.d('Resuming payment for order ${widget.order.orderId} with URL: $checkoutUrl');
+    final checkoutUrl = widget.order.paymongo.checkoutUrl!;
+    AppLogger.d(
+      'Resuming payment for order ${widget.order.orderId} with URL: $checkoutUrl',
+    );
 
     try {
       if (kIsWeb) {
@@ -1234,14 +1375,16 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         final uri = Uri.parse(checkoutUrl);
         if (await canLaunchUrl(uri)) {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
-          
+
           // Show a dialog to inform the user
           if (context.mounted) {
             showDialog(
               context: context,
               builder: (context) => AlertDialog(
                 backgroundColor: AppColors.surface,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
                 title: Row(
                   children: [
                     Icon(Icons.payment, color: AppColors.primary),
@@ -1256,7 +1399,10 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    child: Text('OK', style: TextStyle(color: AppColors.primary)),
+                    child: Text(
+                      'OK',
+                      style: TextStyle(color: AppColors.primary),
+                    ),
                   ),
                 ],
               ),
@@ -1274,8 +1420,10 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                 successUrl: 'https://dentpal-store.web.app/payment-success',
                 cancelUrl: 'https://dentpal-store.web.app/payment-failed',
                 onPaymentComplete: (isSuccess, orderId) {
-                  AppLogger.d('Payment resumed completed. Success: $isSuccess, Order ID: $orderId');
-                  
+                  AppLogger.d(
+                    'Payment resumed completed. Success: $isSuccess, Order ID: $orderId',
+                  );
+
                   if (isSuccess) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
@@ -1312,6 +1460,78 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     }
   }
 
+  void _cancelOrder(BuildContext context) async {
+    if (!_canCancelOrder()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('This order cannot be cancelled'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    // Show cancellation reason dialog
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (context) => _CancelOrderDialog(),
+    );
+
+    if (result == null) return; // User dismissed the dialog
+    if (!context.mounted) return;
+
+    final reason = result['reason']!;
+    final customReason = result['customReason'];
+
+    try {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
+
+      // Build cancellation note
+      final note = customReason != null && customReason.isNotEmpty
+          ? '$reason: $customReason'
+          : reason;
+
+      await OrderService.cancelOrder(widget.order.orderId, reason: note);
+
+      // Close loading dialog
+      if (context.mounted) {
+        Navigator.of(context).pop();
+
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Order cancelled successfully'),
+            backgroundColor: AppColors.success,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+
+        // Navigate back to orders page
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      AppLogger.d('Error cancelling order: $e');
+
+      // Close loading dialog if still open
+      if (context.mounted) {
+        Navigator.of(context).pop();
+
+        // Show error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to cancel order. Please try again.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
   void _contactSupport(BuildContext context) {
     // TODO: Implement contact support
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1319,6 +1539,182 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         content: Text('Contact support functionality coming soon'),
         backgroundColor: AppColors.primary,
       ),
+    );
+  }
+}
+
+/// Dialog for cancelling an order with reason selection
+class _CancelOrderDialog extends StatefulWidget {
+  const _CancelOrderDialog();
+
+  @override
+  State<_CancelOrderDialog> createState() => _CancelOrderDialogState();
+}
+
+class _CancelOrderDialogState extends State<_CancelOrderDialog> {
+  String? selectedReason;
+  final TextEditingController _customReasonController = TextEditingController();
+  String? errorMessage;
+
+  final List<String> cancellationReasons = [
+    'Changed my mind',
+    'Found a better price elsewhere',
+    'Ordered by mistake',
+    'Delivery time is too long',
+    'Need to change shipping address',
+    'Payment issues',
+    'Product no longer needed',
+    'Other',
+  ];
+
+  @override
+  void dispose() {
+    _customReasonController.dispose();
+    super.dispose();
+  }
+
+  void _handleCancel() {
+    // Validate selection
+    if (selectedReason == null) {
+      setState(() {
+        errorMessage = 'Please select a reason for cancellation.';
+      });
+      return;
+    }
+
+    // Validate custom reason if "Other" is selected
+    if (selectedReason == 'Other' &&
+        _customReasonController.text.trim().isEmpty) {
+      setState(() {
+        errorMessage = 'Please specify your reason for cancellation.';
+      });
+      return;
+    }
+
+    // Close dialog and return result - explicitly create a Map<String, String>
+    final result = <String, String>{
+      'reason': selectedReason!,
+      if (selectedReason == 'Other')
+        'customReason': _customReasonController.text.trim(),
+    };
+
+    Navigator.of(context).pop(result);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
+        children: [
+          Icon(Icons.cancel_outlined, color: AppColors.error),
+          const SizedBox(width: 8),
+          const Text('Cancel Order'),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Please tell us why you want to cancel this order:',
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.onSurface.withValues(alpha: 0.7),
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (errorMessage != null) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.error.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppColors.error.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline, color: AppColors.error, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        errorMessage!,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.error,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+            ...cancellationReasons.map((reason) {
+              return RadioListTile<String>(
+                title: Text(reason, style: AppTextStyles.bodyMedium),
+                value: reason,
+                groupValue: selectedReason,
+                activeColor: AppColors.primary,
+                onChanged: (value) {
+                  setState(() {
+                    selectedReason = value;
+                    errorMessage = null; // Clear error when selection changes
+                  });
+                },
+                contentPadding: EdgeInsets.zero,
+                visualDensity: const VisualDensity(
+                  horizontal: -4,
+                  vertical: -4,
+                ),
+              );
+            }),
+            if (selectedReason == 'Other') ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: _customReasonController,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: 'Please specify your reason...',
+                  hintStyle: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.onSurface.withValues(alpha: 0.5),
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppColors.primary),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppColors.primary, width: 2),
+                  ),
+                  filled: true,
+                  fillColor: AppColors.background,
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(
+            'Keep Order',
+            style: TextStyle(color: AppColors.onSurface.withValues(alpha: 0.6)),
+          ),
+        ),
+        ElevatedButton(
+          onPressed: _handleCancel,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.error,
+            foregroundColor: AppColors.onPrimary,
+          ),
+          child: const Text('Cancel Order'),
+        ),
+      ],
     );
   }
 }
