@@ -87,62 +87,6 @@ class CheckoutService {
     }
   }
 
-  // Create orders and payment intent for selected cart items using HTTP calls (Legacy method)
-  Future<CreateOrderResponse> createOrderWithPaymentIntent({
-    required List<String> cartItemIds,
-    required String addressId,
-    String? notes,
-    List<String> paymentMethodAllowed = const ['card', 'gcash', 'grab_pay', 'paymaya'],
-  }) async {
-    try {
-      AppLogger.d('Creating order with payment intent for ${cartItemIds.length} items');
-
-      // Get Firebase Auth token for authentication
-      final user = _auth.currentUser;
-      if (user == null) {
-        throw Exception('User not authenticated');
-      }
-      
-      final idToken = await user.getIdToken();
-
-      final createOrderRequest = CreateOrderRequest(
-        cartItemIds: cartItemIds,
-        addressId: addressId,
-        notes: notes,
-        paymentMethodAllowed: paymentMethodAllowed,
-      );
-
-      // Call Firebase Function via HTTP
-      final response = await http.post(
-        Uri.parse('https://us-central1-dentpal-161e5.cloudfunctions.net/createPaymentIntent'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $idToken',
-        },
-        body: json.encode(createOrderRequest.toJson()),
-      );
-
-      if (response.statusCode != 200) {
-        throw Exception('Failed to create order: ${response.body}');
-      }
-
-      final responseData = json.decode(response.body) as Map<String, dynamic>;
-      
-      if (responseData['success'] != true) {
-        throw Exception(responseData['error'] ?? 'Failed to create order');
-      }
-
-      final orderResponse = CreateOrderResponse.fromJson(responseData['data'] as Map<String, dynamic>);
-      
-      AppLogger.d('Order created successfully with payment intent: ${orderResponse.paymentIntent?.id ?? "N/A"}');
-      return orderResponse;
-
-    } catch (e) {
-      AppLogger.d('Error creating order with payment intent: $e');
-      rethrow;
-    }
-  }
-
   // Process payment using Paymongo (this would typically be handled by Paymongo SDK or web interface)
   Future<PaymentResult> processPayment({
     required String paymentIntentClientKey,
@@ -346,54 +290,6 @@ class CheckoutService {
     }
   }
 
-  // Verify payment status with Paymongo and update order if needed
-  Future<bool> verifyPaymentStatus(String orderId) async {
-    try {
-      AppLogger.d('Verifying payment status for order: $orderId');
-
-      final user = _auth.currentUser;
-      if (user == null) {
-        throw Exception('User not authenticated');
-      }
-
-      final idToken = await user.getIdToken();
-
-      final response = await http.post(
-        Uri.parse('https://us-central1-dentpal-161e5.cloudfunctions.net/verifyPaymentStatus'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $idToken',
-        },
-        body: json.encode({
-          'orderId': orderId,
-        }),
-      );
-
-      if (response.statusCode != 200) {
-        throw Exception('Failed to verify payment status: ${response.body}');
-      }
-
-      final responseData = json.decode(response.body) as Map<String, dynamic>;
-      
-      if (responseData['success'] != true) {
-        throw Exception(responseData['error'] ?? 'Failed to verify payment status');
-      }
-
-      final data = responseData['data'] as Map<String, dynamic>;
-      final paymentStatus = data['paymentStatus'] as String;
-      final updatedStatus = data['status'] as String;
-
-      AppLogger.d('Payment verification complete - Status: $paymentStatus, Order Status: $updatedStatus');
-      
-      // Return true if payment was confirmed and order was updated
-      return paymentStatus == 'paid' && updatedStatus == 'confirmed';
-
-    } catch (e) {
-      AppLogger.d('Error verifying payment status: $e');
-      rethrow;
-    }
-  }
-
   // Cancel order (if payment is still pending)
   Future<bool> cancelOrder(String orderId) async {
     try {
@@ -411,7 +307,7 @@ class CheckoutService {
       }
 
       // Check if order can be cancelled (only if payment is pending)
-      if (order.paymentInfo.status != PaymentStatus.pending) {
+      if (order.paymongo.paymentStatus != PaymentStatus.pending) {
         throw Exception('Order cannot be cancelled. Payment has already been processed.');
       }
 

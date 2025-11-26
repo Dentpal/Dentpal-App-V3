@@ -719,14 +719,13 @@ export const createCheckoutSession = onRequest(
 
         const checkoutSession = checkoutResponse.data.data;
 
-        // Update order with checkout session ID and URL
+        // Update order with PayMongo checkout session data
         await orderRef.update({
-          checkoutSessionId: checkoutSession.id,
-          paymentInfo: {
+          paymongo: {
             checkoutSessionId: checkoutSession.id,
             checkoutUrl: checkoutSession.attributes.checkout_url,
-            method: 'card', // Will be updated when payment is completed
-            status: 'pending',
+            paymentMethod: 'card', // Will be updated when payment is completed
+            paymentStatus: 'pending',
             amount: totalAmount,
             currency: 'PHP',
           },

@@ -813,33 +813,33 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
           const SizedBox(height: 16),
           _buildInfoRow(
             'Payment Method',
-            _formatPaymentMethod(widget.order.paymentInfo.method),
+            _formatPaymentMethod(widget.order.paymongo.paymentMethod),
           ),
           _buildInfoRow(
             'Payment Status',
-            _formatPaymentStatus(widget.order.paymentInfo.status),
+            _formatPaymentStatus(widget.order.paymongo.paymentStatus),
           ),
           _buildInfoRow(
             'Amount',
-            '₱${widget.order.paymentInfo.amount.toStringAsFixed(2)}',
+            '₱${widget.order.paymongo.amount.toStringAsFixed(2)}',
           ),
-          _buildInfoRow('Currency', widget.order.paymentInfo.currency),
-          if (widget.order.paymentInfo.paidAt != null)
+          _buildInfoRow('Currency', widget.order.paymongo.currency),
+          if (widget.order.paymongo.paidAt != null)
             _buildInfoRow(
               'Paid At',
-              _formatDateTime(widget.order.paymentInfo.paidAt!),
+              _formatDateTime(widget.order.paymongo.paidAt!),
             ),
-          if (widget.order.paymentInfo.checkoutSessionId != null)
+          if (widget.order.paymongo.checkoutSessionId != null)
             _buildInfoRow(
               'Checkout Session ID',
-              widget.order.paymentInfo.checkoutSessionId!,
+              widget.order.paymongo.checkoutSessionId!,
             ),
-          if (widget.order.paymentInfo.paymentIntentId != null)
+          if (widget.order.paymongo.paymentIntentId != null)
             _buildInfoRow(
               'Payment Intent ID',
-              widget.order.paymentInfo.paymentIntentId!,
+              widget.order.paymongo.paymentIntentId!,
             ),
-          if (widget.order.paymentInfo.checkoutUrl != null &&
+          if (widget.order.paymongo.checkoutUrl != null &&
               _canResumePayment())
             _buildInfoRow('Payment URL', 'Available for payment resumption'),
         ],
@@ -1272,8 +1272,8 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     // 2. Order is not expired
     // 3. Order has a checkout URL
     return widget.order.status == order_model.OrderStatus.pending &&
-        widget.order.paymentInfo.checkoutUrl != null &&
-        widget.order.paymentInfo.checkoutUrl!.isNotEmpty;
+        widget.order.paymongo.checkoutUrl != null &&
+        widget.order.paymongo.checkoutUrl!.isNotEmpty;
   }
 
   void _reorderItems(BuildContext context) async {
@@ -1364,7 +1364,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
       return;
     }
 
-    final checkoutUrl = widget.order.paymentInfo.checkoutUrl!;
+    final checkoutUrl = widget.order.paymongo.checkoutUrl!;
     AppLogger.d(
       'Resuming payment for order ${widget.order.orderId} with URL: $checkoutUrl',
     );

@@ -167,53 +167,6 @@ class OrderService {
     }
   }
 
-  /// Update order status (for sellers/admins)
-  static Future<void> updateOrderStatus(
-    String orderId, 
-    order_model.OrderStatus status, 
-    {String? note}
-  ) async {
-    final user = _auth.currentUser;
-    if (user == null) {
-      throw Exception('User not authenticated');
-    }
-
-    try {
-      AppLogger.d('Updating order $orderId status to: ${status.toString().split('.').last}');
-      
-      final idToken = await user.getIdToken();
-      final statusString = status.toString().split('.').last;
-
-      final response = await http.post(
-        Uri.parse('https://us-central1-dentpal-161e5.cloudfunctions.net/updateOrderStatus'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $idToken',
-        },
-        body: json.encode({
-          'orderId': orderId,
-          'status': statusString,
-          'note': note,
-        }),
-      );
-
-      if (response.statusCode != 200) {
-        throw Exception('Failed to update order status: ${response.body}');
-      }
-
-      final responseData = json.decode(response.body) as Map<String, dynamic>;
-      
-      if (responseData['success'] != true) {
-        throw Exception(responseData['error'] ?? 'Failed to update order status');
-      }
-
-      AppLogger.d('Order status updated successfully');
-    } catch (e) {
-      AppLogger.d('Error updating order status: $e');
-      throw Exception('Failed to update order status: $e');
-    }
-  }
-
   /// Cancel order (for customers)
   static Future<void> cancelOrder(String orderId, {String? reason}) async {
     final user = _auth.currentUser;
@@ -284,54 +237,6 @@ class OrderService {
     } catch (e) {
       AppLogger.d('Error fetching orders by status: $e');
       throw Exception('Failed to fetch orders by status: $e');
-    }
-  }
-
-  /// Verify payment status for a specific order
-  static Future<bool> verifyOrderPaymentStatus(String orderId) async {
-    final user = _auth.currentUser;
-    if (user == null) {
-      throw Exception('User not authenticated');
-    }
-
-    try {
-      AppLogger.d('Verifying payment status for order: $orderId');
-
-      final idToken = await user.getIdToken();
-
-      final response = await http.post(
-        Uri.parse('https://us-central1-dentpal-161e5.cloudfunctions.net/verifyPaymentStatus'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $idToken',
-        },
-        body: json.encode({
-          'orderId': orderId,
-        }),
-      );
-
-      if (response.statusCode != 200) {
-        throw Exception('Failed to verify payment status: ${response.body}');
-      }
-
-      final responseData = json.decode(response.body) as Map<String, dynamic>;
-      
-      if (responseData['success'] != true) {
-        throw Exception(responseData['error'] ?? 'Failed to verify payment status');
-      }
-
-      final data = responseData['data'] as Map<String, dynamic>;
-      final paymentStatus = data['paymentStatus'] as String;
-      final updatedStatus = data['status'] as String;
-
-      AppLogger.d('Payment verification complete - Status: $paymentStatus, Order Status: $updatedStatus');
-      
-      // Return true if payment was confirmed and order was updated
-      return paymentStatus == 'paid' && updatedStatus == 'confirmed';
-
-    } catch (e) {
-      AppLogger.d('Error verifying payment status: $e');
-      rethrow;
     }
   }
 }

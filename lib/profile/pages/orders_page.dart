@@ -890,8 +890,8 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     // 2. Order is not expired
     // 3. Order has a checkout URL
     return order.status == order_model.OrderStatus.pending &&
-        order.paymentInfo.checkoutUrl != null &&
-        order.paymentInfo.checkoutUrl!.isNotEmpty;
+        order.paymongo.checkoutUrl != null &&
+        order.paymongo.checkoutUrl!.isNotEmpty;
   }
 
   void _viewOrderDetails(order_model.Order order) {
@@ -986,7 +986,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
       return;
     }
 
-    final checkoutUrl = order.paymentInfo.checkoutUrl!;
+    final checkoutUrl = order.paymongo.checkoutUrl!;
     AppLogger.d(
       'Resuming payment for order ${order.orderId} with URL: $checkoutUrl',
     );

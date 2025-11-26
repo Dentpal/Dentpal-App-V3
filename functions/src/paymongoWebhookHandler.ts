@@ -244,33 +244,70 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
     const finalStatus = (status === 'active' && paymentMethodUsed) ? 'paid' : status;
     const orderStatus = finalStatus === 'paid' ? 'confirmed' : 'pending';
 
-    // Get transaction ID
-    const transactionId = eventAttributes.payments?.[0]?.data?.id || 
-                         eventAttributes.payment_intent?.id || 
-                         checkoutSessionId;
+    // Get both payment ID and payment intent ID
+    // Payment ID (pay_xxx) is used for refunds - CRITICAL for refund processing
+    // Payment Intent ID (pi_xxx) is for reference
+    // PayMongo Checkout Session webhook sends payment ID in payments[0].id (not .data.id)
+    const paymentId = eventAttributes.payments?.[0]?.id || eventAttributes.payments?.[0]?.data?.id || null;
+    const paymentIntentId = eventAttributes.payment_intent?.id || null;
+    const transactionId = paymentId || paymentIntentId || checkoutSessionId;
 
-    logger.debug('Processing payment update', { 
+    logger.info('Extracting payment IDs from webhook', { 
       checkoutSessionId, 
+      paymentId,
+      paymentIntentId,
       transactionId, 
       orderId,
       finalStatus,
-      orderStatus
+      orderStatus,
+      paymentsArray: eventAttributes.payments,
+      note: paymentId ? 'Payment ID captured - refunds will work' : 'WARNING: No payment ID - refunds will fail'
     });
 
-    // Prepare update object with only defined values
+    // Get existing paymongo data and merge with new data
+    const existingPaymongo = orderData?.paymongo || {};
+    const updatedPaymongo: any = {
+      ...existingPaymongo,
+      paymentStatus: finalStatus,
+      paymentMethod: paymentMethod,
+      paidAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    // Add payment IDs if available
+    if (paymentId && paymentId !== '' && paymentId !== null) {
+      updatedPaymongo.paymentId = paymentId;
+    }
+    if (paymentIntentId && paymentIntentId !== '' && paymentIntentId !== null) {
+      updatedPaymongo.paymentIntentId = paymentIntentId;
+    }
+    if (checkoutSessionId && checkoutSessionId !== '' && checkoutSessionId !== null) {
+      updatedPaymongo.checkoutSessionId = checkoutSessionId;
+    }
+
+    // Get existing fees data and merge with new data
+    const existingFees = orderData?.fees || {};
+    const updatedFees = {
+      ...existingFees,
+      paymentProcessingFee: paymentProcessingFee,
+      platformFee: platformFee,
+      totalSellerFees: totalSellerFees,
+      paymentMethod: paymentMethod,
+    };
+
+    // Get existing payout data and merge with new data
+    const existingPayout = orderData?.payout || {};
+    const updatedPayout = {
+      ...existingPayout,
+      netPayoutToSeller: netPayoutToSeller,
+      calculatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    // Prepare update object - update entire objects atomically
     const updateData: any = {
       status: orderStatus,
-      'paymentInfo.status': finalStatus,
-      'paymentInfo.method': paymentMethod,
-      'paymentInfo.paidAt': admin.firestore.FieldValue.serverTimestamp(),
-      // Update fees with actual payment method
-      'fees.paymentProcessingFee': paymentProcessingFee,
-      'fees.platformFee': platformFee,
-      'fees.totalSellerFees': totalSellerFees,
-      'fees.paymentMethod': paymentMethod,
-      // Update payout
-      'payout.netPayoutToSeller': netPayoutToSeller,
-      'payout.calculatedAt': admin.firestore.FieldValue.serverTimestamp(),
+      paymongo: updatedPaymongo,
+      fees: updatedFees,
+      payout: updatedPayout,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       statusHistory: admin.firestore.FieldValue.arrayUnion({
         status: orderStatus,
@@ -279,16 +316,8 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
       }),
     };
 
-    // Only add these fields if they are defined and not empty
-    if (transactionId && transactionId !== '' && transactionId !== null) {
-      updateData['paymentInfo.paymentIntentId'] = transactionId;
-    }
-    if (checkoutSessionId && checkoutSessionId !== '' && checkoutSessionId !== null) {
-      updateData['paymentInfo.checkoutSessionId'] = checkoutSessionId;
-    }
-
-    // Use set with merge to ensure nested objects are created if they don't exist
-    await orderRef.set(updateData, { merge: true });
+    // Use update instead of set with merge to ensure clean updates
+    await orderRef.update(updateData);
 
     logger.info('Order payment processed successfully', { 
       orderId, 
@@ -324,6 +353,108 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
 
   } catch (error) {
     logger.error('Error handling payment paid', { error: error instanceof Error ? error.message : String(error) });
+    throw error;
+  }
+}
+
+// ====================================
+// HANDLE REFUND WEBHOOK
+// ====================================
+
+async function handleRefundWebhook(eventAttributes: any) {
+  try {
+    // Log the complete webhook payload for debugging
+    logger.info('Processing refund webhook - FULL PAYLOAD', { 
+      fullPayload: JSON.stringify(eventAttributes, null, 2)
+    });
+
+    logger.info('Processing refund webhook', { 
+      refundId: eventAttributes.id,
+      status: eventAttributes.status
+    });
+
+    const refundId = eventAttributes.id;
+    const refundStatus = eventAttributes.status; // pending, succeeded, failed
+    const paymentId = eventAttributes.payment_id;
+    const amount = eventAttributes.amount;
+
+    if (!refundId || !paymentId) {
+      logger.error('Missing refund ID or payment ID in webhook');
+      return;
+    }
+
+    // Find the order with this refund ID
+    const ordersQuery = await db
+      .collection('Order')
+      .where('refundInfo.refundId', '==', refundId)
+      .limit(1)
+      .get();
+
+    if (ordersQuery.empty) {
+      logger.warn('No order found for refund ID', { refundId });
+      return;
+    }
+
+    const orderDoc = ordersQuery.docs[0];
+    const orderId = orderDoc.id;
+    const orderRef = db.collection('Order').doc(orderId);
+    const orderData = orderDoc.data();
+
+    // Get existing refundInfo and merge with new data
+    const existingRefundInfo = orderData?.refundInfo || {};
+    const updatedRefundInfo: any = {
+      ...existingRefundInfo,
+      refundStatus: refundStatus,
+      refundUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    // If refund succeeded, add completion timestamp
+    if (refundStatus === 'succeeded') {
+      updatedRefundInfo.refundCompletedAt = admin.firestore.FieldValue.serverTimestamp();
+      
+      // Update refund status atomically
+      await orderRef.update({
+        refundInfo: updatedRefundInfo,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        statusHistory: admin.firestore.FieldValue.arrayUnion({
+          status: 'cancelled',
+          timestamp: new Date(),
+          note: `Refund completed successfully. Refund ID: ${refundId}, Amount: ₱${(amount / 100).toFixed(2)}`
+        })
+      });
+
+      logger.info('Refund succeeded', { orderId, refundId, amount });
+    } else if (refundStatus === 'failed') {
+      // Update refund status atomically
+      await orderRef.update({
+        refundInfo: updatedRefundInfo,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        statusHistory: admin.firestore.FieldValue.arrayUnion({
+          status: 'cancelled',
+          timestamp: new Date(),
+          note: `Refund failed. Refund ID: ${refundId}. Please contact support.`
+        })
+      });
+
+      logger.error('Refund failed', { orderId, refundId });
+    } else {
+      // For pending or other statuses, just update refund info
+      await orderRef.update({
+        refundInfo: updatedRefundInfo,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+    }
+
+    logger.info('Order refund status updated', { 
+      orderId, 
+      refundId,
+      refundStatus 
+    });
+
+  } catch (error) {
+    logger.error('Error handling refund webhook', { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
     throw error;
   }
 }
@@ -474,6 +605,11 @@ export const handlePaymongoWebhook = onRequest(
           userAgent: req.headers['user-agent']
         });
 
+        // Log the complete request body for debugging
+        logger.info('Webhook Request Body - FULL PAYLOAD', {
+          fullRequestBody: JSON.stringify(req.body, null, 2)
+        });
+
         // Additional security check: Verify the request is actually from Paymongo
         const userAgent = req.headers['user-agent'] as string;
         if (userAgent && !userAgent.toLowerCase().includes('paymongo')) {
@@ -522,6 +658,9 @@ export const handlePaymongoWebhook = onRequest(
           
           if (actualEventType === 'checkout_session.payment.paid') {
             await handleCheckoutSessionPaymentPaid(eventData.attributes);
+          } else if (actualEventType === 'payment.refunded' || actualEventType === 'refund.updated') {
+            // Handle refund webhooks
+            await handleRefundWebhook(eventData.attributes);
           } else if (actualEventType === 'checkout_session') {
             // Handle general checkout session updates - only if payment was completed
             const sessionData = eventData.attributes;
@@ -549,10 +688,19 @@ export const handlePaymongoWebhook = onRequest(
 
         // Always respond with success to Paymongo
         logger.info('Webhook processed successfully');
-        res.status(200).json({
+        
+        const successResponse = {
           success: true,
           message: 'Webhook processed successfully'
+        };
+        
+        // Log the response we're sending back
+        logger.info('Sending webhook response', {
+          statusCode: 200,
+          response: JSON.stringify(successResponse)
         });
+        
+        res.status(200).json(successResponse);
 
       } catch (error: any) {
         logger.error('Error handling webhook', { 

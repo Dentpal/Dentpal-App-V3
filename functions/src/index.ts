@@ -15,3 +15,6 @@ export { trackJRSShipping } from './trackJRSShipping';
 
 // Export the cancel order function
 export { cancelOrder } from './cancelOrder';
+
+// Export the retry pending refunds scheduled function
+export { retryPendingRefunds } from './retryPendingRefunds';
