@@ -6,7 +6,10 @@ import * as admin from 'firebase-admin';
 import { 
   calculateJRSShippingCost, 
   extractShippingCostFromJRS,
-  calculateCompleteBreakdown
+  calculateCompleteBreakdown,
+  calculateMultiSellerBreakdown,
+  SellerFeeBreakdown,
+  MultiSellerBreakdown
 } from './utils/jrsShippingHelper';
 
 // Initialize Firebase Admin if not already initialized
@@ -23,10 +26,11 @@ interface JRSShippingResponse {
     shippingCost?: number;
     totalAmount?: number;
     sellerBreakdown?: SellerShippingCalculation[];
+    sellerFeeBreakdowns?: SellerFeeBreakdown[];
     sellerShippingCharge?: number;
     buyerShippingCharge?: number;
-    shippingSplitRule?: 'buyer_pays_full' | 'split_50_50';
-    // Fee breakdown
+    shippingSplitRule?: 'buyer_pays_full' | 'split_50_50' | 'per_seller';
+    // Fee breakdown (totals across all sellers)
     totalChargedToBuyer?: number;
     paymentProcessingFee?: number;
     platformFee?: number;
@@ -66,6 +70,7 @@ interface SellerShippingCalculation {
   sellerAddress: string;
   items: CartItemData[];
   shippingCost: number;
+  cartValue: number;
 }
 
 const verifyAuthToken = async (authorizationHeader: string | undefined): Promise<DecodedIdToken> => {
@@ -347,12 +352,16 @@ export const calculateJRSShipping = onCall(
           process.env.JRS_GETRATE_API_URL
         );
 
+        // Calculate cart value for this seller's items
+        const sellerCartValue = sellerItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
         return {
           sellerId,
           sellerName,
           sellerAddress,
           items: sellerItems,
-          shippingCost: sellerShippingCost
+          shippingCost: sellerShippingCost,
+          cartValue: sellerCartValue
         } as SellerShippingCalculation;
       });
 
@@ -362,26 +371,42 @@ export const calculateJRSShipping = onCall(
       // Calculate total shipping cost
       const totalShippingCost = sellerShippingResults.reduce((total, seller) => total + seller.shippingCost, 0);
 
-      // Calculate subtotal for shipping allocation
-      const subtotal = cartItemsWithDetails.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
       // Get payment method from request, default to 'card'
       const paymentMethod = request.data.paymentMethod || 'card';
 
-      // Calculate complete breakdown including all fees
-      const breakdown = calculateCompleteBreakdown(subtotal, totalShippingCost, paymentMethod);
+      // Calculate per-seller fee breakdowns using the new multi-seller function
+      const multiSellerBreakdown = calculateMultiSellerBreakdown(
+        sellerShippingResults.map(seller => ({
+          sellerId: seller.sellerId,
+          sellerName: seller.sellerName,
+          cartValue: seller.cartValue,
+          shippingCost: seller.shippingCost
+        })),
+        paymentMethod
+      );
 
       logger.info('Multi-seller shipping calculation completed', {
         totalShippingCost,
-        subtotal,
+        totalCartValue: multiSellerBreakdown.totalCartValue,
         paymentMethod,
-        sellerResults: sellerShippingResults.map(seller => ({
+        sellerResults: multiSellerBreakdown.sellerBreakdowns.map(seller => ({
           sellerId: seller.sellerId,
           sellerName: seller.sellerName,
-          shippingCost: seller.shippingCost
-        })),
-        ...breakdown
+          cartValue: seller.cartValue,
+          shippingCost: seller.shippingCost,
+          shippingSplitRule: seller.shippingSplitRule,
+          buyerShippingCharge: seller.buyerShippingCharge,
+          sellerShippingCharge: seller.sellerShippingCharge,
+          platformFee: seller.platformFee,
+          paymentProcessingFee: seller.paymentProcessingFee,
+          netPayoutToSeller: seller.netPayoutToSeller
+        }))
       });
+
+      // Determine overall shipping split rule
+      // If all sellers have the same rule, use that; otherwise 'per_seller'
+      const uniqueRules = [...new Set(multiSellerBreakdown.sellerBreakdowns.map(s => s.shippingSplitRule))];
+      const shippingSplitRule = uniqueRules.length === 1 ? uniqueRules[0] : 'per_seller';
 
       return {
         success: true,
@@ -389,14 +414,16 @@ export const calculateJRSShipping = onCall(
           shippingCost: totalShippingCost,
           totalAmount: totalShippingCost,
           sellerBreakdown: sellerShippingResults,
-          sellerShippingCharge: breakdown.sellerShippingCharge,
-          buyerShippingCharge: breakdown.buyerShippingCharge,
-          shippingSplitRule: breakdown.shippingSplitRule,
-          totalChargedToBuyer: breakdown.totalChargedToBuyer,
-          paymentProcessingFee: breakdown.paymentProcessingFee,
-          platformFee: breakdown.platformFee,
-          totalSellerFees: breakdown.totalSellerFees,
-          netPayoutToSeller: breakdown.netPayoutToSeller
+          sellerFeeBreakdowns: multiSellerBreakdown.sellerBreakdowns,
+          // Use totals from multi-seller breakdown
+          sellerShippingCharge: multiSellerBreakdown.totalSellerShippingCharge,
+          buyerShippingCharge: multiSellerBreakdown.totalBuyerShippingCharge,
+          shippingSplitRule: shippingSplitRule,
+          totalChargedToBuyer: multiSellerBreakdown.grandTotalChargedToBuyer,
+          paymentProcessingFee: multiSellerBreakdown.totalPaymentProcessingFee,
+          platformFee: multiSellerBreakdown.totalPlatformFee,
+          totalSellerFees: multiSellerBreakdown.totalSellerFees,
+          netPayoutToSeller: multiSellerBreakdown.totalNetPayoutToSellers
         }
       };
 

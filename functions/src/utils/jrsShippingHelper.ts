@@ -26,6 +26,39 @@ const PAYMENT_PROCESSING_FEES: Record<string, PaymentFeeConfig> = {
 
 const PLATFORM_FEE_PERCENTAGE = 8.88; // 8.88% of cart value
 
+// Seller fee breakdown interface
+export interface SellerFeeBreakdown {
+  sellerId: string;
+  sellerName: string;
+  cartValue: number;
+  shippingCost: number;
+  buyerShippingCharge: number;
+  sellerShippingCharge: number;
+  shippingSplitRule: 'buyer_pays_full' | 'split_50_50';
+  totalChargedToBuyer: number; // Cart value + buyer's shipping portion
+  paymentProcessingFee: number; // Based on buyer's total for this seller
+  platformFee: number; // 8.88% of this seller's cart value
+  totalSellerFees: number;
+  netPayoutToSeller: number;
+}
+
+// Multi-seller order breakdown
+export interface MultiSellerBreakdown {
+  // Summary totals
+  totalCartValue: number;
+  totalShippingCost: number;
+  totalBuyerShippingCharge: number;
+  totalSellerShippingCharge: number;
+  grandTotalChargedToBuyer: number;
+  totalPaymentProcessingFee: number;
+  totalPlatformFee: number;
+  totalSellerFees: number;
+  totalNetPayoutToSellers: number;
+  
+  // Per-seller breakdowns
+  sellerBreakdowns: SellerFeeBreakdown[];
+}
+
 interface JRSShippingRequest {
   requestType: 'getrate';
   apiShippingRequest: {
@@ -177,6 +210,131 @@ export function calculateCompleteBreakdown(
     platformFee,
     totalSellerFees,
     netPayoutToSeller
+  };
+}
+
+/**
+ * Calculate fee breakdown for each seller in a multi-seller order
+ * Each seller's fees are calculated based on THEIR cart value and shipping cost
+ * 
+ * Fee Calculation Rules:
+ * 
+ * Shipping Split:
+ * - If seller's shipping > 10% of seller's cart value: Buyer pays 100% of shipping
+ * - If seller's shipping ≤ 10% of seller's cart value: Split 50/50 between buyer and seller
+ * 
+ * Seller Fees:
+ * - Payment Processing Fee: Based on totalChargedToBuyer (seller's cart + buyer's shipping portion)
+ * - Platform Fee: 8.88% of seller's cart value
+ * - Seller's Shipping Charge: 50% of shipping (only if split rule applies)
+ * 
+ * Net Payout = Cart Value - Payment Fee - Platform Fee - Seller Shipping
+ */
+export function calculateMultiSellerBreakdown(
+  sellers: Array<{
+    sellerId: string;
+    sellerName: string;
+    cartValue: number;
+    shippingCost: number;
+  }>,
+  paymentMethod: string = 'card'
+): MultiSellerBreakdown {
+  const sellerBreakdowns: SellerFeeBreakdown[] = [];
+  
+  // Calculate breakdown for each seller
+  for (const seller of sellers) {
+    // Determine shipping split rule based on THIS seller's values
+    const movThreshold = seller.cartValue * 0.1; // 10% of THIS seller's cart value
+    const shippingSplitRule: 'buyer_pays_full' | 'split_50_50' = 
+      seller.shippingCost > movThreshold ? 'buyer_pays_full' : 'split_50_50';
+    
+    // Calculate shipping allocation for this seller
+    let buyerShippingCharge: number;
+    let sellerShippingCharge: number;
+    
+    if (shippingSplitRule === 'split_50_50') {
+      buyerShippingCharge = seller.shippingCost * 0.5;
+      sellerShippingCharge = seller.shippingCost * 0.5;
+    } else {
+      buyerShippingCharge = seller.shippingCost;
+      sellerShippingCharge = 0;
+    }
+    
+    // Calculate total charged to buyer FOR THIS SELLER's items
+    const totalChargedToBuyer = seller.cartValue + buyerShippingCharge;
+    
+    // Calculate seller fees based on THIS seller's totals
+    const paymentProcessingFee = calculatePaymentProcessingFee(totalChargedToBuyer, paymentMethod);
+    const platformFee = calculatePlatformFee(seller.cartValue);
+    const totalSellerFees = paymentProcessingFee + platformFee + sellerShippingCharge;
+    
+    // Calculate net payout for this seller
+    const netPayoutToSeller = seller.cartValue - paymentProcessingFee - platformFee - sellerShippingCharge;
+    
+    sellerBreakdowns.push({
+      sellerId: seller.sellerId,
+      sellerName: seller.sellerName,
+      cartValue: seller.cartValue,
+      shippingCost: seller.shippingCost,
+      buyerShippingCharge,
+      sellerShippingCharge,
+      shippingSplitRule,
+      totalChargedToBuyer,
+      paymentProcessingFee,
+      platformFee,
+      totalSellerFees,
+      netPayoutToSeller
+    });
+    
+    logger.info(`Seller ${seller.sellerId} fee breakdown:`, {
+      cartValue: seller.cartValue,
+      shippingCost: seller.shippingCost,
+      shippingSplitRule,
+      buyerShippingCharge,
+      sellerShippingCharge,
+      totalChargedToBuyer,
+      paymentProcessingFee,
+      platformFee,
+      totalSellerFees,
+      netPayoutToSeller
+    });
+  }
+  
+  // Calculate totals across all sellers
+  const totalCartValue = sellerBreakdowns.reduce((sum, s) => sum + s.cartValue, 0);
+  const totalShippingCost = sellerBreakdowns.reduce((sum, s) => sum + s.shippingCost, 0);
+  const totalBuyerShippingCharge = sellerBreakdowns.reduce((sum, s) => sum + s.buyerShippingCharge, 0);
+  const totalSellerShippingCharge = sellerBreakdowns.reduce((sum, s) => sum + s.sellerShippingCharge, 0);
+  const grandTotalChargedToBuyer = sellerBreakdowns.reduce((sum, s) => sum + s.totalChargedToBuyer, 0);
+  const totalPaymentProcessingFee = sellerBreakdowns.reduce((sum, s) => sum + s.paymentProcessingFee, 0);
+  const totalPlatformFee = sellerBreakdowns.reduce((sum, s) => sum + s.platformFee, 0);
+  const totalSellerFees = sellerBreakdowns.reduce((sum, s) => sum + s.totalSellerFees, 0);
+  const totalNetPayoutToSellers = sellerBreakdowns.reduce((sum, s) => sum + s.netPayoutToSeller, 0);
+  
+  logger.info('Multi-seller breakdown complete:', {
+    sellerCount: sellers.length,
+    totalCartValue,
+    totalShippingCost,
+    totalBuyerShippingCharge,
+    totalSellerShippingCharge,
+    grandTotalChargedToBuyer,
+    totalPaymentProcessingFee,
+    totalPlatformFee,
+    totalSellerFees,
+    totalNetPayoutToSellers
+  });
+  
+  return {
+    totalCartValue,
+    totalShippingCost,
+    totalBuyerShippingCharge,
+    totalSellerShippingCharge,
+    grandTotalChargedToBuyer,
+    totalPaymentProcessingFee,
+    totalPlatformFee,
+    totalSellerFees,
+    totalNetPayoutToSellers,
+    sellerBreakdowns
   };
 }
 

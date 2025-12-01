@@ -5,8 +5,11 @@ import {
   calculateJRSShippingCost, 
   extractShippingCostFromJRS,
   calculateCompleteBreakdown,
+  calculateMultiSellerBreakdown,
   calculatePaymentProcessingFee,
-  calculatePlatformFee
+  calculatePlatformFee,
+  SellerFeeBreakdown,
+  MultiSellerBreakdown
 } from './utils/jrsShippingHelper';
 import cors = require('cors');
 
@@ -41,7 +44,7 @@ setInterval(() => {
   }
   
   if (cleanedCount > 0) {
-    console.log(`🧹 Cleaned up ${cleanedCount} expired rate limit entries. Current size: ${rateLimitStore.size}`);
+    console.log(`Cleaned up ${cleanedCount} expired rate limit entries. Current size: ${rateLimitStore.size}`);
   }
 }, CLEANUP_INTERVAL_MS);
 
@@ -325,7 +328,7 @@ export const createCheckoutSession = onRequest(
           cancelUrl
         } = validatedInput;
 
-        console.log(`🛒 Creating checkout session for user ${userId} with ${cartItemIds.length} cart items`);
+        console.log(`Creating checkout session for user ${userId} with ${cartItemIds.length} cart items`);
         
         // Get user's cart items with validation
         const cartPromises = cartItemIds.map(async (cartItemId: string) => {
@@ -337,7 +340,7 @@ export const createCheckoutSession = onRequest(
             .get();
 
           if (!cartDoc.exists) {
-            console.error(`❌ Cart item ${cartItemId} not found`);
+            console.error(`Cart item ${cartItemId} not found`);
             throw new Error(`Cart item not found`);
           }
 
@@ -420,7 +423,7 @@ export const createCheckoutSession = onRequest(
                 dimensions.weight = variationData.weight;
               }
             } else {
-              console.error(`❌ Variation ${cartItem.variationId} not found for product ${cartItem.productId}`);
+              console.error(`Variation ${cartItem.variationId} not found for product ${cartItem.productId}`);
               // Fallback to base product price instead of throwing error
               variationPrice = product?.price || 0;
               variationName = 'Default';
@@ -478,12 +481,23 @@ export const createCheckoutSession = onRequest(
           totalItems: orderItems.length
         });
         
-        // Calculate shipping cost for each seller in parallel
-        const sellerShippingPromises = Object.entries(itemsBySeller).map(async ([sellerId, sellerItems]) => {
-          // Get seller address
+        // Calculate shipping cost and cart value for each seller in parallel
+        interface SellerShippingData {
+          sellerId: string;
+          sellerName: string;
+          shippingCost: number;
+          cartValue: number;
+        }
+        
+        const sellerShippingPromises: Promise<SellerShippingData>[] = Object.entries(itemsBySeller).map(async ([sellerId, sellerItems]) => {
+          // Get seller address and name
           const sellerDoc = await db.collection('User').doc(sellerId).get();
           const sellerData = sellerDoc.data();
           const sellerAddress = sellerData?.address || 'Makati, Metro Manila';
+          const sellerName = sellerData?.displayName || sellerItems[0]?.sellerName || 'Unknown Seller';
+          
+          // Calculate cart value for this seller's items
+          const sellerCartValue = sellerItems.reduce((sum, item) => sum + item.total, 0);
           
           // Validate item dimensions and filter out items with missing dimensions
           const validItems = [];
@@ -511,6 +525,8 @@ export const createCheckoutSession = onRequest(
           
           console.log(`Calculating shipping for seller ${sellerId}:`, {
             sellerAddress,
+            sellerName,
+            cartValue: sellerCartValue,
             itemCount: validItems.length,
             originalItemCount: sellerItems.length
           });
@@ -529,51 +545,55 @@ export const createCheckoutSession = onRequest(
             throw new Error(`JRS API returned invalid shipping cost (${sellerShippingCost}) for seller ${sellerId}`);
           }
           
-          console.log(`✅ Seller ${sellerId} shipping cost: ₱${sellerShippingCost}`);
-          return sellerShippingCost;
+          console.log(`Seller ${sellerId} shipping cost: ₱${sellerShippingCost}, cart value: ₱${sellerCartValue}`);
+          
+          return {
+            sellerId,
+            sellerName,
+            shippingCost: sellerShippingCost,
+            cartValue: sellerCartValue
+          };
         });
         
-        // Wait for all seller shipping calculations and sum them
-        const sellerShippingCosts = await Promise.all(sellerShippingPromises);
-        shippingCost = sellerShippingCosts.reduce((total, cost) => total + cost, 0);
+        // Wait for all seller shipping calculations
+        const sellerShippingData = await Promise.all(sellerShippingPromises);
+        shippingCost = sellerShippingData.reduce((total, seller) => total + seller.shippingCost, 0);
         
-        console.log(`✅ Total shipping cost for all sellers: ₱${shippingCost}`);
+        console.log(`Total shipping cost for all sellers: ₱${shippingCost}`);
         
         // Validate final shipping cost
         if (!shippingCost || shippingCost <= 0) {
           throw new Error(`Invalid total shipping cost calculated: ₱${shippingCost}`);
         }
         
-        // Calculate complete breakdown including shipping split and seller fees
-        // Note: Using 'card' as default payment method for initial calculation
-        // The actual payment method fee will be calculated when payment is completed
+        // Calculate PER-SELLER fee breakdowns using the multi-seller function
+        // This ensures each seller is charged based on THEIR cart value, not the total order
+        // 
+        // Fee Calculation Rules:
+        // - Shipping Split: If seller's shipping > 10% of seller's cart value → Buyer pays 100%
+        //                   If seller's shipping ≤ 10% of seller's cart value → Split 50/50
+        // - Payment Fee: Based on buyer's total for this seller (cart + buyer's shipping portion)
+        // - Platform Fee: 8.88% of this seller's cart value
+        // - Net Payout: Cart Value - Payment Fee - Platform Fee - Seller's Shipping
         const defaultPaymentMethod = paymentMethodTypes[0] || 'card';
-        const breakdown = calculateCompleteBreakdown(subtotal, shippingCost, defaultPaymentMethod);
+        const multiSellerBreakdown = calculateMultiSellerBreakdown(sellerShippingData, defaultPaymentMethod);
         
-        console.log(`📊 Complete Breakdown:`, {
-          cartValue: subtotal,
-          shippingCost: shippingCost,
-          rule: breakdown.shippingSplitRule,
-          buyerPays: breakdown.totalChargedToBuyer,
-          buyerShipping: breakdown.buyerShippingCharge,
-          sellerShipping: breakdown.sellerShippingCharge,
-          paymentFee: breakdown.paymentProcessingFee,
-          platformFee: breakdown.platformFee,
-          totalSellerFees: breakdown.totalSellerFees,
-          sellerNetPayout: breakdown.netPayoutToSeller
-        });
+        // Log minimal breakdown info (avoid exposing sensitive financial details in production)
+        console.log(`Multi-Seller Breakdown: ${multiSellerBreakdown.sellerBreakdowns.length} seller(s), total charged: ₱${multiSellerBreakdown.grandTotalChargedToBuyer.toFixed(2)}`);
         
-        // Extract values from breakdown
-        const { 
-          buyerShippingCharge, 
-          sellerShippingCharge,
-          shippingSplitRule,
-          totalChargedToBuyer,
-          paymentProcessingFee,
-          platformFee,
-          totalSellerFees,
-          netPayoutToSeller
-        } = breakdown;
+        // Extract totals from multi-seller breakdown
+        const buyerShippingCharge = multiSellerBreakdown.totalBuyerShippingCharge;
+        const sellerShippingCharge = multiSellerBreakdown.totalSellerShippingCharge;
+        const totalChargedToBuyer = multiSellerBreakdown.grandTotalChargedToBuyer;
+        const paymentProcessingFee = multiSellerBreakdown.totalPaymentProcessingFee;
+        const platformFee = multiSellerBreakdown.totalPlatformFee;
+        const totalSellerFees = multiSellerBreakdown.totalSellerFees;
+        const netPayoutToSeller = multiSellerBreakdown.totalNetPayoutToSellers;
+        
+        // Determine overall shipping split rule
+        // If all sellers have the same rule, use that; otherwise 'per_seller'
+        const uniqueRules = [...new Set(multiSellerBreakdown.sellerBreakdowns.map(s => s.shippingSplitRule))];
+        const shippingSplitRule = uniqueRules.length === 1 ? uniqueRules[0] : 'per_seller';
         
         // Total amount to charge buyer
         const totalAmount = totalChargedToBuyer;
@@ -581,7 +601,7 @@ export const createCheckoutSession = onRequest(
         // Get unique seller IDs
         const sellerIds = [...new Set(orderItems.map(item => item.sellerId))];
 
-        // Create order document
+        // Create order document with per-seller fee breakdowns
         const orderRef = await db.collection('Order').add({
           userId: userId,
           sellerIds: sellerIds,
@@ -612,6 +632,21 @@ export const createCheckoutSession = onRequest(
             totalSellerFees: totalSellerFees,
             paymentMethod: defaultPaymentMethod, // Will be updated when payment is completed
           },
+          // Per-seller fee breakdowns for accurate payout calculation
+          sellerFeeBreakdowns: multiSellerBreakdown.sellerBreakdowns.map(s => ({
+            sellerId: s.sellerId,
+            sellerName: s.sellerName,
+            cartValue: s.cartValue,
+            shippingCost: s.shippingCost,
+            buyerShippingCharge: s.buyerShippingCharge,
+            sellerShippingCharge: s.sellerShippingCharge,
+            shippingSplitRule: s.shippingSplitRule,
+            totalChargedToBuyer: s.totalChargedToBuyer,
+            paymentProcessingFee: s.paymentProcessingFee,
+            platformFee: s.platformFee,
+            totalSellerFees: s.totalSellerFees,
+            netPayoutToSeller: s.netPayoutToSeller,
+          })),
           payout: {
             netPayoutToSeller: netPayoutToSeller,
             calculatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -653,9 +688,16 @@ export const createCheckoutSession = onRequest(
 
         // Add shipping as a line item (only buyer's portion)
         if (buyerShippingCharge > 0) {
-          const shippingDescription = shippingSplitRule === 'split_50_50'
-            ? `Buyer's half of shipping (Seller pays: ₱${sellerShippingCharge.toFixed(2)}). Total shipping: ₱${shippingCost.toFixed(2)}`
-            : `Full shipping cost (Shipping > 10% of cart value)`;
+          // Generate shipping description based on split rules
+          let shippingDescription: string;
+          if (shippingSplitRule === 'per_seller') {
+            // Multi-seller with different rules
+            shippingDescription = `Shipping for ${sellerIds.length} sellers. Your portion: ₱${buyerShippingCharge.toFixed(2)}`;
+          } else if (shippingSplitRule === 'split_50_50') {
+            shippingDescription = `Buyer's half of shipping (Seller pays: ₱${sellerShippingCharge.toFixed(2)}). Total shipping: ₱${shippingCost.toFixed(2)}`;
+          } else {
+            shippingDescription = `Full shipping cost (Shipping > 10% of cart value)`;
+          }
             
           lineItems.push({
             name: 'Shipping Fee',
@@ -732,7 +774,7 @@ export const createCheckoutSession = onRequest(
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
 
-        console.log(`✅ Checkout session created: ${checkoutSession.id} for order: ${orderRef.id}`);
+        console.log(`Checkout session created: ${checkoutSession.id} for order: ${orderRef.id}`);
 
         response.status(200).json({
           success: true,
@@ -745,7 +787,7 @@ export const createCheckoutSession = onRequest(
         });
 
       } catch (error: any) {
-        console.error('❌ Error creating checkout session:', {
+        console.error('Error creating checkout session:', {
           error: error.message,
           userId,
           timestamp: new Date().toISOString()

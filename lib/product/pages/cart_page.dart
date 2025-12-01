@@ -17,13 +17,13 @@ class CartPage extends StatefulWidget {
   // Static method to mark the cart as needing refresh (only when items are actually added/removed)
   static void markCartAsStale() {
     _CartPageState._wasPopped = true;
-    AppLogger.d("🛒 Cart has been marked as stale, will refresh when user returns");
+    AppLogger.d(" Cart has been marked as stale, will refresh when user returns");
   }
 
   // Static method to mark cart as stale specifically for item additions
   static void markCartAsStaleForItemAddition() {
     _CartPageState._wasPopped = true;
-    AppLogger.d("🛒 Cart marked as stale due to item addition");
+    AppLogger.d(" Cart marked as stale due to item addition");
   }
 
   // Static method to optimistically add item to cart
@@ -93,18 +93,18 @@ class _CartPageState extends State<CartPage>
       _lastCacheTime = _instance!._lastCacheTime;
 
       AppLogger.d(
-        "🔵 CartPage initState called, cached: ${_cachedSellerGroups != null}, items: ${_cachedSellerGroups?.length ?? 0}",
+        "CartPage initState called, cached: ${_cachedSellerGroups != null}, items: ${_cachedSellerGroups?.length ?? 0}",
       );
       
       // Only load if we don't have any cached data
       if (_cachedSellerGroups == null) {
         _sellerGroupsFuture = _loadSellerGroups();
-        AppLogger.d("🔵 No cached data, loading from API");
+        AppLogger.d("No cached data, loading from API");
       }
     } else {
       // First time initialization
       _sellerGroupsFuture = _loadSellerGroups();
-      AppLogger.d("🔵 CartPage initState called, first time initialization");
+      AppLogger.d("CartPage initState called, first time initialization");
     }
 
     // Store this instance as the static instance
@@ -118,18 +118,18 @@ class _CartPageState extends State<CartPage>
     // Only refresh if we actually need to (not on normal navigation)
     if (_shouldRefreshCart()) {
       AppLogger.d(
-        "🔄 Cart needs refresh, refreshing data",
+        "Cart needs refresh, refreshing data",
       );
       _refreshCart();
       _wasPopped = false;
     } else {
-      AppLogger.d("🔵 Cart page shown via navigation, using cached data");
+      AppLogger.d("Cart page shown via navigation, using cached data");
     }
   }
 
   // Method to refresh the cart data
   void _refreshCart() {
-    AppLogger.d("🔄 Refreshing cart data");
+    AppLogger.d("Refreshing cart data");
     // Clear cache and reload
     _cachedSellerGroups = null;
     _cartSummary = null;
@@ -152,9 +152,9 @@ class _CartPageState extends State<CartPage>
     // Clear the static instance reference if this is the current instance
     if (_instance == this) {
       _instance = null;
-      AppLogger.d("🔴 CartPage dispose called, cleared static instance reference");
+      AppLogger.d("CartPage dispose called, cleared static instance reference");
     }
-    AppLogger.d("🔴 CartPage dispose called");
+    AppLogger.d("CartPage dispose called");
     super.dispose();
   }
 
@@ -165,22 +165,22 @@ class _CartPageState extends State<CartPage>
     if (_cachedSellerGroups != null && _lastCacheTime != null) {
       final cacheAge = DateTime.now().difference(_lastCacheTime!);
       if (cacheAge < _cacheDuration) {
-        AppLogger.d("🟢 Using cached seller groups: ${_cachedSellerGroups!.length} (age: ${cacheAge.inSeconds}s)");
+        AppLogger.d("Using cached seller groups: ${_cachedSellerGroups!.length} (age: ${cacheAge.inSeconds}s)");
         _updateCartSummary();
         return _cachedSellerGroups!;
       } else {
         AppLogger.d(
-          "🟡 Cache expired (${cacheAge.inMinutes} minutes old), refreshing",
+          "Cache expired (${cacheAge.inMinutes} minutes old), refreshing",
         );
       }
     } else if (_cachedSellerGroups != null) {
       // Have cached data but no timestamp - still use it for better UX
-      AppLogger.d("🟢 Using cached seller groups: ${_cachedSellerGroups!.length} (no timestamp)");
+      AppLogger.d("Using cached seller groups: ${_cachedSellerGroups!.length} (no timestamp)");
       _updateCartSummary();
       return _cachedSellerGroups!;
     }
 
-    AppLogger.d("🟡 Loading seller groups from API (optimized version)");
+    AppLogger.d("Loading seller groups from API (optimized version)");
     setState(() {
       _isLoading = true;
     });
@@ -189,7 +189,7 @@ class _CartPageState extends State<CartPage>
       final sellerGroups = await _cartService.getCartItemsGroupedBySeller();
       
       stopwatch.stop();
-      AppLogger.d("⚡ Cart loaded in ${stopwatch.elapsedMilliseconds}ms");
+      AppLogger.d("Cart loaded in ${stopwatch.elapsedMilliseconds}ms");
 
       // Cache the seller groups with current timestamp
       _cachedSellerGroups = sellerGroups;
@@ -202,7 +202,7 @@ class _CartPageState extends State<CartPage>
       return sellerGroups;
     } catch (e) {
       stopwatch.stop();
-      AppLogger.d("❌ Cart loading failed after ${stopwatch.elapsedMilliseconds}ms: $e");
+      AppLogger.d("Cart loading failed after ${stopwatch.elapsedMilliseconds}ms: $e");
       
       setState(() {
         _isLoading = false;
@@ -227,14 +227,14 @@ class _CartPageState extends State<CartPage>
     if (_lastCacheTime != null) {
       final cacheAge = DateTime.now().difference(_lastCacheTime!);
       if (cacheAge >= _cacheDuration) {
-        AppLogger.d("🟡 Cache expired, should refresh");
+        AppLogger.d("Cache expired, should refresh");
         return true;
       }
     }
     
     // Only refresh if explicitly marked as stale
     if (_wasPopped) {
-      AppLogger.d("🟡 Cart marked as stale, should refresh");
+      AppLogger.d("Cart marked as stale, should refresh");
       return true;
     }
     
@@ -243,7 +243,7 @@ class _CartPageState extends State<CartPage>
 
   // Cache-first refresh with change detection
   Future<void> _handleRefresh() async {
-    AppLogger.d("🔄 Cart refresh started - cache-first approach");
+    AppLogger.d("Cart refresh started - cache-first approach");
     
     try {
       // Store current cached data for comparison
@@ -254,7 +254,7 @@ class _CartPageState extends State<CartPage>
       
       // Compare with cached data
       if (currentSellerGroups != null && _hasSellerGroupsDataChanged(currentSellerGroups, newSellerGroups)) {
-        AppLogger.d("🔄 Cart data has changed, updating UI and cache");
+        AppLogger.d("Cart data has changed, updating UI and cache");
         
         // Update cache and UI
         _cachedSellerGroups = newSellerGroups;
@@ -267,14 +267,14 @@ class _CartPageState extends State<CartPage>
           });
         }
       } else {
-        AppLogger.d("✅ Cart data unchanged, keeping existing cache");
+        AppLogger.d("Cart data unchanged, keeping existing cache");
       }
       
       // Reset the stale flag since we've refreshed
       _wasPopped = false;
       
     } catch (e) {
-      AppLogger.d("❌ Error during cart refresh: $e");
+      AppLogger.d("Error during cart refresh: $e");
       rethrow;
     }
   }
@@ -282,7 +282,7 @@ class _CartPageState extends State<CartPage>
   // Helper method to compare seller groups data
   bool _hasSellerGroupsDataChanged(List<SellerGroup> oldData, List<SellerGroup> newData) {
     if (oldData.length != newData.length) {
-      AppLogger.d("🔍 Seller groups count changed: ${oldData.length} -> ${newData.length}");
+      AppLogger.d("Seller groups count changed: ${oldData.length} -> ${newData.length}");
       return true;
     }
     
@@ -301,7 +301,7 @@ class _CartPageState extends State<CartPage>
     // Check if seller IDs are the same
     if (oldMap.keys.toSet().difference(newMap.keys.toSet()).isNotEmpty ||
         newMap.keys.toSet().difference(oldMap.keys.toSet()).isNotEmpty) {
-      AppLogger.d("🔍 Seller groups composition changed");
+      AppLogger.d("Seller groups composition changed");
       return true;
     }
     
@@ -311,7 +311,7 @@ class _CartPageState extends State<CartPage>
       final newGroup = newMap[sellerId]!;
       
       if (oldGroup.items.length != newGroup.items.length) {
-        AppLogger.d("🔍 Items count changed for seller $sellerId: ${oldGroup.items.length} -> ${newGroup.items.length}");
+        AppLogger.d("Items count changed for seller $sellerId: ${oldGroup.items.length} -> ${newGroup.items.length}");
         return true;
       }
       
@@ -330,7 +330,7 @@ class _CartPageState extends State<CartPage>
       // Check if cart item IDs are the same
       if (oldItemsMap.keys.toSet().difference(newItemsMap.keys.toSet()).isNotEmpty ||
           newItemsMap.keys.toSet().difference(oldItemsMap.keys.toSet()).isNotEmpty) {
-        AppLogger.d("🔍 Cart items composition changed for seller $sellerId");
+        AppLogger.d("Cart items composition changed for seller $sellerId");
         return true;
       }
       
@@ -344,13 +344,13 @@ class _CartPageState extends State<CartPage>
             oldItem.productPrice != newItem.productPrice ||
             oldItem.productName != newItem.productName ||
             oldItem.availableStock != newItem.availableStock) {
-          AppLogger.d("🔍 Cart item details changed for item $cartItemId");
+          AppLogger.d("Cart item details changed for item $cartItemId");
           return true;
         }
       }
     }
     
-    AppLogger.d("✅ No changes detected in seller groups data");
+    AppLogger.d("No changes detected in seller groups data");
     return false;
   }
 
@@ -362,7 +362,7 @@ class _CartPageState extends State<CartPage>
     required CartService cartService,
   }) async {
     if (!mounted) {
-      AppLogger.d("⚠️ Cart page not mounted, skipping optimistic update");
+      AppLogger.d("Cart page not mounted, skipping optimistic update");
       await cartService.addToCart(
         productId: productId,
         quantity: quantity,
@@ -384,7 +384,7 @@ class _CartPageState extends State<CartPage>
         _refreshCart();
       }
     } catch (e) {
-      AppLogger.d("❌ Error adding to cart: $e");
+      AppLogger.d("Error adding to cart: $e");
       rethrow;
     }
   }
@@ -394,7 +394,7 @@ class _CartPageState extends State<CartPage>
 
     try {
       AppLogger.d(
-        "🛒 Updating cart item quantity: ${item.cartItemId} to $newQuantity",
+        "Updating cart item quantity: ${item.cartItemId} to $newQuantity",
       );
 
       // Update the server
@@ -416,7 +416,7 @@ class _CartPageState extends State<CartPage>
         }
       }
     } catch (e) {
-      AppLogger.d("❌ Error updating item: $e");
+      AppLogger.d("Error updating item: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -432,7 +432,7 @@ class _CartPageState extends State<CartPage>
     if (!mounted) return;
 
     try {
-      AppLogger.d("🗑️ Removing cart item: ${item.cartItemId}");
+      AppLogger.d("Removing cart item: ${item.cartItemId}");
 
       // Remove from server
       await _cartService.removeCartItem(item.cartItemId);
@@ -457,7 +457,7 @@ class _CartPageState extends State<CartPage>
         ).showSnackBar(const SnackBar(content: Text('Item removed from cart')));
       }
     } catch (e) {
-      AppLogger.d("❌ Error removing item: $e");
+      AppLogger.d("Error removing item: $e");
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -486,9 +486,9 @@ class _CartPageState extends State<CartPage>
       // Save to Firestore in background
       try {
         await _cartService.updateItemSelection(item.cartItemId, isSelected);
-        AppLogger.d("✅ Item selection saved to Firestore: ${item.cartItemId} = $isSelected");
+        AppLogger.d("Item selection saved to Firestore: ${item.cartItemId} = $isSelected");
       } catch (e) {
-        AppLogger.d("❌ Error saving item selection to Firestore: $e");
+        AppLogger.d("Error saving item selection to Firestore: $e");
         // Optionally revert the local state if Firestore update fails
         if (mounted) {
           setState(() {
@@ -528,9 +528,9 @@ class _CartPageState extends State<CartPage>
         }
         
         await _cartService.batchUpdateItemSelections(itemSelections);
-        AppLogger.d("✅ Group selection saved to Firestore for seller: ${sellerGroup.sellerName}");
+        AppLogger.d("Group selection saved to Firestore for seller: ${sellerGroup.sellerName}");
       } catch (e) {
-        AppLogger.d("❌ Error saving group selection to Firestore: $e");
+        AppLogger.d("Error saving group selection to Firestore: $e");
         // Revert to original states if Firestore update fails
         if (mounted) {
           setState(() {
@@ -929,9 +929,9 @@ class _CartPageState extends State<CartPage>
       }
       
       await _cartService.batchUpdateItemSelections(itemSelections);
-      AppLogger.d("✅ All items selection saved to Firestore");
+      AppLogger.d("All items selection saved to Firestore");
     } catch (e) {
-      AppLogger.d("❌ Error saving all items selection: $e");
+      AppLogger.d("Error saving all items selection: $e");
       // Optionally show error message to user
     }
   }
@@ -1160,7 +1160,7 @@ class _CartPageState extends State<CartPage>
   }  Widget _buildCartContent() {
     // Prioritize cached data for immediate display
     if (_cachedSellerGroups != null) {
-      AppLogger.d("🟢 Building cart content from cache (${_cachedSellerGroups!.length} seller groups)");
+      AppLogger.d("Building cart content from cache (${_cachedSellerGroups!.length} seller groups)");
       if (_cachedSellerGroups!.isEmpty) {
         return _buildEmptyCart();
       }
@@ -1168,7 +1168,7 @@ class _CartPageState extends State<CartPage>
     }
 
     // Only use FutureBuilder if no cached data is available
-    AppLogger.d("🟡 No cached data, using FutureBuilder");
+    AppLogger.d("No cached data, using FutureBuilder");
     return SliverFillRemaining(
       child: FutureBuilder<List<SellerGroup>>(
         future: _sellerGroupsFuture,

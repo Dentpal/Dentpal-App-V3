@@ -108,7 +108,7 @@ class _ProductListingPageState extends State<ProductListingPage>
 
     // Add debug log to track initialization
     AppLogger.d(
-      "🔵 ProductListingPage initState called, products: ${_products.length}, timestamp: $_cacheTimestamp",
+      "ProductListingPage initState called, products: ${_products.length}, timestamp: $_cacheTimestamp",
     );
   }
 
@@ -208,7 +208,7 @@ class _ProductListingPageState extends State<ProductListingPage>
     // Remove scroll listener to prevent memory leaks
     _scrollController.removeListener(_scrollListener);
 
-    AppLogger.d("🔴 ProductListingPage dispose called");
+    AppLogger.d("ProductListingPage dispose called");
     super.dispose();
   }
 
@@ -1858,7 +1858,7 @@ class _ProductListingPageState extends State<ProductListingPage>
             ),
             child: ElevatedButton.icon(
               onPressed: () {
-                AppLogger.d("🔄 Retry button pressed");
+                AppLogger.d("Retry button pressed");
                 _cacheTimestamp = null;
                 ProductImageCacheManager.instance.emptyCache();
                 _resetAndRefresh();
@@ -1933,7 +1933,7 @@ class _ProductListingPageState extends State<ProductListingPage>
             ),
             child: ElevatedButton.icon(
               onPressed: () {
-                AppLogger.d("🔄 Empty state refresh button pressed");
+                AppLogger.d("Empty state refresh button pressed");
                 _cacheTimestamp = null;
                 ProductImageCacheManager.instance.emptyCache();
                 _resetAndRefresh();

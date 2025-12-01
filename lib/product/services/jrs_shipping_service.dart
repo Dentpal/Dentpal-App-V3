@@ -169,13 +169,19 @@ class JRSShippingService {
         }
         
         final shippingCost = (responseData?['shippingCost'] as num?)?.toDouble() ?? 50.0;
+        final buyerShippingCharge = (responseData?['buyerShippingCharge'] as num?)?.toDouble() ?? shippingCost;
+        final sellerShippingCharge = (responseData?['sellerShippingCharge'] as num?)?.toDouble() ?? 0.0;
+        final shippingSplitRule = (responseData?['shippingSplitRule'] as String?) ?? 'buyer_pays_full';
         
-        AppLogger.d('JRS shipping cost calculated: ₱$shippingCost');
-        print('[JRS] SUCCESS: ₱$shippingCost');
+        AppLogger.d('JRS shipping cost calculated: ₱$shippingCost (buyer pays: ₱$buyerShippingCharge, rule: $shippingSplitRule)');
+        print('[JRS] SUCCESS: ₱$shippingCost (buyer: ₱$buyerShippingCharge, seller: ₱$sellerShippingCharge, rule: $shippingSplitRule)');
         
         return JRSShippingResult(
           success: true,
           shippingCost: shippingCost,
+          buyerShippingCharge: buyerShippingCharge,
+          sellerShippingCharge: sellerShippingCharge,
+          shippingSplitRule: shippingSplitRule,
           message: 'Shipping cost calculated successfully',
         );
       } else {
@@ -190,6 +196,7 @@ class JRSShippingService {
         }
         
         final fallbackCost = (fallbackData?['shippingCost'] as num?)?.toDouble() ?? 50.0;
+        final fallbackBuyerCharge = (fallbackData?['buyerShippingCharge'] as num?)?.toDouble() ?? fallbackCost;
         
         AppLogger.d('JRS API error, using fallback: $error');
         print('[JRS] API ERROR: $error (using fallback: ₱$fallbackCost)');
@@ -197,6 +204,7 @@ class JRSShippingService {
         return JRSShippingResult(
           success: false,
           shippingCost: fallbackCost,
+          buyerShippingCharge: fallbackBuyerCharge,
           message: 'JRS API issue, using fallback shipping cost',
           error: error,
         );
@@ -408,19 +416,25 @@ class JRSShippingService {
 class JRSShippingResult {
   final bool success;
   final double shippingCost;
+  final double buyerShippingCharge; // What buyer actually pays after split
+  final double sellerShippingCharge; // What seller pays after split
+  final String shippingSplitRule; // 'buyer_pays_full' or 'split_50_50'
   final String message;
   final String? error;
 
   JRSShippingResult({
     required this.success,
     required this.shippingCost,
+    this.buyerShippingCharge = 0.0,
+    this.sellerShippingCharge = 0.0,
+    this.shippingSplitRule = 'buyer_pays_full',
     required this.message,
     this.error,
   });
 
   @override
   String toString() {
-    return 'JRSShippingResult(success: $success, cost: ₱$shippingCost, message: $message${error != null ? ', error: $error' : ''})';
+    return 'JRSShippingResult(success: $success, cost: ₱$shippingCost, buyerPays: ₱$buyerShippingCharge, rule: $shippingSplitRule, message: $message${error != null ? ', error: $error' : ''})';
   }
 }
 

@@ -570,11 +570,12 @@ class CartService {
       AppLogger.d('JRS shipping result: $result');
 
       if (result.success) {
-        AppLogger.d('JRS shipping cost: ₱${result.shippingCost}');
-        return result.shippingCost;
+        // Return buyer's portion of shipping (already calculated by backend with split logic)
+        AppLogger.d('JRS shipping: full=₱${result.shippingCost}, buyerPays=₱${result.buyerShippingCharge}');
+        return result.buyerShippingCharge;
       } else {
         AppLogger.d('JRS calculation failed, using fallback: ${result.message}');
-        return result.shippingCost; // Still return the fallback cost from JRS
+        return result.buyerShippingCharge; // Still return the buyer's portion from fallback
       }
 
     } catch (e) {

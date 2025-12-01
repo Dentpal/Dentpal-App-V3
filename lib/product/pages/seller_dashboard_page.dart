@@ -85,7 +85,7 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
     _loadSellerProducts();
 
     // Add debug log to track initialization
-    AppLogger.d("🔵 SellerDashboardPage initState called");
+    AppLogger.d("SellerDashboardPage initState called");
   }
 
   @override
@@ -94,7 +94,7 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
     _scrollController.dispose();
     _productTabController.dispose();
     
-    AppLogger.d("🔴 SellerDashboardPage dispose called");
+    AppLogger.d("SellerDashboardPage dispose called");
     super.dispose();
   }
 

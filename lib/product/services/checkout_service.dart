@@ -193,7 +193,7 @@ class CheckoutService {
           
           totalShippingCost += shippingCost;
           
-          AppLogger.d('Seller $sellerId shipping cost: ₱$shippingCost');
+          AppLogger.d('Seller $sellerId buyer shipping portion: ₱$shippingCost');
           
         } catch (e) {
           AppLogger.d('Error calculating shipping for seller $sellerId: $e');
@@ -202,7 +202,7 @@ class CheckoutService {
         }
       }
       
-      AppLogger.d('Total shipping cost: ₱$totalShippingCost');
+      AppLogger.d('Total buyer shipping cost (all sellers): ₱$totalShippingCost');
       return totalShippingCost;
 
     } catch (e) {

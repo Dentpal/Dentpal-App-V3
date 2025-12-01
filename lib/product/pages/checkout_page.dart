@@ -208,30 +208,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
     }
   }
 
-  /// Calculate buyer's portion of shipping cost based on shipping allocation rules:
-  /// Rule 1: If shipping > 10% of cart value → Buyer pays 100%
-  /// Rule 2: If shipping ≤ 10% of cart value → Buyer pays 50%, Seller pays 50%
-  /// Note: Only buyer's portion is shown and charged to the user. Seller fees are never displayed.
+  /// Get buyer's portion of shipping cost.
+  /// NOTE: The shipping cost from the service is already the buyer's portion
+  /// (the split logic is applied in the backend JRS API).
   double _calculateBuyerShippingPortion() {
-    final shippingCost = _calculatedShippingCost ?? 0.0;
-    
-    if (shippingCost > 0) {
-      final cartValue = widget.cartSummary.selectedItemsTotal;
-      final movThreshold = cartValue * 0.1; // 10% of cart value (MOV threshold)
-      
-      if (shippingCost > movThreshold) {
-        // Rule 1: Shipping > 10% → Buyer pays 100%
-        AppLogger.d('Shipping Rule 1 applied: Buyer pays 100% (₱${shippingCost.toStringAsFixed(2)} > 10% of ₱${cartValue.toStringAsFixed(2)})');
-        return shippingCost;
-      } else {
-        // Rule 2: Shipping ≤ 10% → Buyer pays 50%
-        final buyerPortion = shippingCost * 0.5;
-        AppLogger.d('Shipping Rule 2 applied: Buyer pays 50% (₱${buyerPortion.toStringAsFixed(2)}) of ₱${shippingCost.toStringAsFixed(2)}');
-        return buyerPortion;
-      }
-    }
-    
-    return 0.0;
+    // The _calculatedShippingCost already contains only the buyer's portion
+    // as calculated by the backend JRS API with the split logic applied
+    return _calculatedShippingCost ?? 0.0;
   }
 
   /// Calculate total including only buyer's shipping portion
@@ -291,43 +274,18 @@ class _CheckoutPageState extends State<CheckoutPage> {
     }
 
     // Display buyer's shipping portion only
+    // Note: shippingCost here is already the buyer's portion (split applied by backend)
     if (shippingCost > 0) {
-      final buyerShippingPortion = _calculateBuyerShippingPortion();
-      final cartValue = widget.cartSummary.selectedItemsTotal;
-      final movThreshold = cartValue * 0.1;
-      
-      // Check if discounted rate applies (Rule 2: shipping ≤ 10%)
-      final hasDiscount = shippingCost <= movThreshold;
-      
-      return Column(
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Shipping Fee', style: AppTextStyles.bodyMedium),
-                    if (hasDiscount)
-                      Text(
-                        'Discounted rate applied',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.success,
-                          fontSize: 11,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              Text(
-                '₱${buyerShippingPortion.toStringAsFixed(2)}',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  fontWeight: FontWeight.w600,
-                  fontFamily: 'Roboto',
-                ),
-              ),
-            ],
+          Text('Shipping Fee', style: AppTextStyles.bodyMedium),
+          Text(
+            '₱${shippingCost.toStringAsFixed(2)}',
+            style: AppTextStyles.bodyMedium.copyWith(
+              fontWeight: FontWeight.w600,
+              fontFamily: 'Roboto',
+            ),
           ),
         ],
       );
