@@ -1,10 +1,10 @@
-import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 
 class ProductFormModel {
   String name = '';
   String description = '';
   String imageURL = '';
-  File? imageFile;
+  XFile? imageFile;
   String categoryId = '';
   String? subCategoryId = '';
   List<VariationFormModel> variations = [];
@@ -93,7 +93,7 @@ class ProductFormModel {
 class VariationFormModel {
   String name = '';
   String? imageURL;
-  File? imageFile;
+  XFile? imageFile;
   double price = 0; // Price already includes VAT
   int stock = 0;
   String sku = '';

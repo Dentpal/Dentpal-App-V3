@@ -654,36 +654,6 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
                   ),
                 ),
               ),
-              actions: [
-                Container(
-                  margin: const EdgeInsets.only(right: 8, top: 8, bottom: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.08),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: IconButton(
-                    iconSize: 20,
-                    padding: const EdgeInsets.all(8),
-                    constraints: const BoxConstraints(
-                      minWidth: 36,
-                      minHeight: 36,
-                    ),
-                    icon: const Icon(
-                      Icons.add,
-                      color: AppColors.onSurface,
-                    ),
-                    onPressed: _navigateToAddProduct,
-                  ),
-                ),
-                const SizedBox(width: 8),
-              ],
             ),
           
           // Navigation tabs section for mobile only
@@ -776,6 +746,17 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
           ),
         ],
       ),
+      floatingActionButton: _showingMyListings
+          ? FloatingActionButton(
+              onPressed: _navigateToAddProduct,
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              elevation: 4,
+              shape: const CircleBorder(),
+              child: const Icon(Icons.add, size: 28),
+            )
+          : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 

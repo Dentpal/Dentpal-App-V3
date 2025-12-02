@@ -1,5 +1,5 @@
-import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
@@ -13,7 +13,7 @@ class ImageUploadService {
   final ImagePicker _picker = ImagePicker();
 
   /// Pick image from camera or gallery
-  Future<File?> pickImage({required ImageSource source}) async {
+  Future<XFile?> pickImage({required ImageSource source}) async {
     try {
       final XFile? pickedFile = await _picker.pickImage(
         source: source,
@@ -22,9 +22,7 @@ class ImageUploadService {
         imageQuality: 85,
       );
 
-      if (pickedFile == null) return null;
-
-      return File(pickedFile.path);
+      return pickedFile;
     } catch (e) {
       AppLogger.d('Error picking image: $e');
       return null;
@@ -32,7 +30,7 @@ class ImageUploadService {
   }
 
   /// Pick and crop image to square
-  Future<File?> pickAndCropImage({required ImageSource source}) async {
+  Future<XFile?> pickAndCropImage({required ImageSource source}) async {
     try {
       // First pick the image
       final XFile? pickedFile = await _picker.pickImage(
@@ -44,8 +42,14 @@ class ImageUploadService {
 
       if (pickedFile == null) return null;
 
+      // On web, skip cropping and return the picked file directly
+      if (kIsWeb) {
+        AppLogger.d('Running on web, skipping image cropping');
+        return pickedFile;
+      }
+
       try {
-        // Then crop it to square
+        // Then crop it to square (only on mobile)
         final croppedFile = await ImageCropper().cropImage(
           sourcePath: pickedFile.path,
           aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
@@ -76,17 +80,17 @@ class ImageUploadService {
         );
 
         if (croppedFile != null) {
-          return File(croppedFile.path);
+          return XFile(croppedFile.path);
         }
         
         // If cropping was cancelled, return the original image
         AppLogger.d('Image cropping was cancelled, returning original image');
-        return File(pickedFile.path);
+        return pickedFile;
         
       } catch (cropError) {
         AppLogger.d('Error during cropping, falling back to original image: $cropError');
         // If cropping fails, return the original picked image
-        return File(pickedFile.path);
+        return pickedFile;
       }
       
     } catch (e) {
@@ -96,9 +100,9 @@ class ImageUploadService {
   }
 
   /// Resize image to optimal size while maintaining aspect ratio
-  Future<Uint8List?> resizeImage(File imageFile, {bool forceSquare = false}) async {
+  Future<Uint8List?> resizeImage(XFile imageFile, {bool forceSquare = false}) async {
     try {
-      // Read the image file
+      // Read the image file bytes (works on both web and mobile)
       final bytes = await imageFile.readAsBytes();
       final image = img.decodeImage(bytes);
       

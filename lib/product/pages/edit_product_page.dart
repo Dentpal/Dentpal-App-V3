@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/product_form_model.dart';
@@ -11,6 +12,54 @@ import '../../core/app_theme/app_text_styles.dart';
 import 'package:dentpal/utils/app_logger.dart';
 
 enum UnsavedChangesAction { saveAsDraft, discard }
+
+/// A widget that displays an XFile image, working on both web and mobile platforms
+class XFileImage extends StatelessWidget {
+  final XFile file;
+  final BoxFit fit;
+  final double? width;
+  final double? height;
+
+  const XFileImage({
+    Key? key,
+    required this.file,
+    this.fit = BoxFit.cover,
+    this.width,
+    this.height,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Uint8List>(
+      future: file.readAsBytes(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(
+            child: CircularProgressIndicator(
+              color: AppColors.primary,
+              strokeWidth: 2,
+            ),
+          );
+        }
+        if (snapshot.hasError || !snapshot.hasData) {
+          return Center(
+            child: Icon(
+              Icons.broken_image,
+              color: AppColors.error,
+              size: 48,
+            ),
+          );
+        }
+        return Image.memory(
+          snapshot.data!,
+          fit: fit,
+          width: width,
+          height: height,
+        );
+      },
+    );
+  }
+}
 
 class EditProductPage extends StatefulWidget {
   final Product product;
@@ -887,8 +936,11 @@ class _EditProductPageState extends State<EditProductPage> {
                           height: 200,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(12),
-                            image: DecorationImage(
-                              image: FileImage(_productForm.imageFile!),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: XFileImage(
+                              file: _productForm.imageFile!,
                               fit: BoxFit.cover,
                             ),
                           ),
@@ -1431,8 +1483,8 @@ class _EditProductPageState extends State<EditProductPage> {
                                       ),
                                       child: ClipRRect(
                                         borderRadius: BorderRadius.circular(8),
-                                        child: Image.file(
-                                          _variations[index].imageFile!,
+                                        child: XFileImage(
+                                          file: _variations[index].imageFile!,
                                           fit: BoxFit.cover,
                                         ),
                                       ),
@@ -2445,8 +2497,8 @@ class _EditProductPageState extends State<EditProductPage> {
               child: _productForm.imageFile != null
                   ? ClipRRect(
                       borderRadius: BorderRadius.circular(14),
-                      child: Image.file(
-                        _productForm.imageFile!,
+                      child: XFileImage(
+                        file: _productForm.imageFile!,
                         fit: BoxFit.cover,
                       ),
                     )
@@ -2969,8 +3021,8 @@ class _EditProductPageState extends State<EditProductPage> {
                       child: _variations[index].imageFile != null
                           ? ClipRRect(
                               borderRadius: BorderRadius.circular(11),
-                              child: Image.file(
-                                _variations[index].imageFile!,
+                              child: XFileImage(
+                                file: _variations[index].imageFile!,
                                 fit: BoxFit.cover,
                               ),
                             )
