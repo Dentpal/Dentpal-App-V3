@@ -209,17 +209,49 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           .doc(sellerId)
           .get();
       
-      if (sellerDoc.exists) {
+           if (sellerDoc.exists) {
         final data = sellerDoc.data() as Map<String, dynamic>;
-        final sellerInfo = {
-          'shopName': data['shopName'] ?? 'DentPal Store',
-          'address': data['address'] ?? 'No address provided',
+
+        // Safely read nested vendor > company fields
+        final vendor = (data['vendor'] is Map)
+            ? data['vendor'] as Map<String, dynamic>
+            : const {};
+        final company = (vendor['company'] is Map)
+            ? vendor['company'] as Map<String, dynamic>
+            : const {};
+
+        // Store name from vendor.company.storeName, fallback to previous keys or default
+        final String storeName =
+            (company['storeName'] as String?) ??
+            (data['storeName'] as String?) ??
+            'DentPal Store';
+
+        // Address: vendor.company.address.city and province concatenated
+        String address = 'Store location not available';
+        final addressMap = (company['address'] is Map)
+            ? company['address'] as Map<String, dynamic>
+            : const {};
+        final String? city = addressMap['city'] as String?;
+        final String? province = addressMap['province'] as String?;
+        if ((city != null && city.isNotEmpty) ||
+            (province != null && province.isNotEmpty)) {
+          address = [
+            city,
+            province,
+          ].whereType<String>().where((e) => e.isNotEmpty).join(', ');
+        } else {
+          // fallback to flat address if present
+          address = (data['address'] as String?) ?? 'No address provided';
+        }
+
+        return {
+          'shopName': storeName,
+          'address': address,
           'contactEmail': data['contactEmail'] ?? '',
           'contactNumber': data['contactNumber'] ?? '',
           'isActive': data['isActive'] ?? true,
+          'profileImageURL': data['profileImageURL'] ?? '',
         };
-        _sellerData[sellerId] = sellerInfo;
-        return sellerInfo;
       } else {
         // Default data if seller not found
         final defaultData = {
