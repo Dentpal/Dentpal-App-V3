@@ -663,11 +663,10 @@ class _LoginPageState extends State<LoginPage> {
                                                   ),
                                               children: const [
                                                 TextSpan(
-                                                  text:
-                                                      "Don't have an account? ",
+                                                  text: "Don't have an account? ",
                                                 ),
                                                 TextSpan(
-                                                  text: 'Create one',
+                                                  text: 'Download Our App now',
                                                   style: TextStyle(
                                                     color: AppColors.accent,
                                                     fontWeight: FontWeight.w700,
@@ -1055,7 +1054,7 @@ class _LoginPageState extends State<LoginPage> {
                                               ),
                                             ),
                                             TextSpan(
-                                              text: 'Sign up',
+                                              text: 'Create one',
                                               style: TextStyle(
                                                 color: AppColors.accent,
                                                 fontWeight: FontWeight.w600,

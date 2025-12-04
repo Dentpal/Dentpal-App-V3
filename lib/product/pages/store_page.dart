@@ -8,22 +8,20 @@ import '../services/category_service.dart';
 import '../widgets/product_card.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/utils/navigation_utils.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class StorePage extends StatefulWidget {
   final String sellerId;
   final Map<String, dynamic>? sellerData;
 
-  const StorePage({
-    super.key, 
-    required this.sellerId,
-    this.sellerData,
-  });
+  const StorePage({super.key, required this.sellerId, this.sellerData});
 
   @override
   _StorePageState createState() => _StorePageState();
 }
 
-class _StorePageState extends State<StorePage> with SingleTickerProviderStateMixin {
+class _StorePageState extends State<StorePage>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final ProductService _productService = ProductService();
   final CategoryService _categoryService = CategoryService();
@@ -43,7 +41,13 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
   List<SubCategory> _sellerSubCategories = [];
   bool _isLoadingCategories = false;
 
-  final List<String> _productFilters = ['Popular', 'Latest', 'Top Sales', 'Price (Low to High)', 'Price (High to Low)'];
+  final List<String> _productFilters = [
+    'Popular',
+    'Latest',
+    'Top Sales',
+    'Price (Low to High)',
+    'Price (High to Low)',
+  ];
 
   @override
   void initState() {
@@ -67,22 +71,27 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
     });
 
     try {
-      AppLogger.d('StorePage: Starting to load store data for sellerId: ${widget.sellerId}');
-      
+      AppLogger.d(
+        'StorePage: Starting to load store data for sellerId: ${widget.sellerId}',
+      );
+
       // Load store/seller data
       if (widget.sellerData != null) {
         _storeData = widget.sellerData!;
-        AppLogger.d('StorePage: Using provided seller data: ${_storeData['shopName']}');
+        AppLogger.d(
+          'StorePage: Using provided seller data: ${_storeData['shopName']}',
+        );
       } else {
         AppLogger.d('StorePage: Fetching seller data from Firestore...');
         _storeData = await _getSellerData(widget.sellerId);
-        AppLogger.d('StorePage: Fetched seller data: ${_storeData['shopName']}');
+        AppLogger.d(
+          'StorePage: Fetched seller data: ${_storeData['shopName']}',
+        );
       }
 
       // Load products when Products tab is initially selected
       AppLogger.d('StorePage: Loading seller products...');
       await _loadSellerProducts();
-      
     } catch (e) {
       AppLogger.d('StorePage: Error loading store data: $e');
       AppLogger.d('StorePage: Stack trace: ${StackTrace.current}');
@@ -99,12 +108,45 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
           .collection('Seller')
           .doc(sellerId)
           .get();
-      
+
       if (sellerDoc.exists) {
         final data = sellerDoc.data() as Map<String, dynamic>;
+
+        // Safely read nested vendor > company fields
+        final vendor = (data['vendor'] is Map)
+            ? data['vendor'] as Map<String, dynamic>
+            : const {};
+        final company = (vendor['company'] is Map)
+            ? vendor['company'] as Map<String, dynamic>
+            : const {};
+
+        // Store name from vendor.company.storeName, fallback to previous keys or default
+        final String storeName =
+            (company['storeName'] as String?) ??
+            (data['storeName'] as String?) ??
+            'DentPal Store';
+
+        // Address: vendor.company.address.city and province concatenated
+        String address = 'Store location not available';
+        final addressMap = (company['address'] is Map)
+            ? company['address'] as Map<String, dynamic>
+            : const {};
+        final String? city = addressMap['city'] as String?;
+        final String? province = addressMap['province'] as String?;
+        if ((city != null && city.isNotEmpty) ||
+            (province != null && province.isNotEmpty)) {
+          address = [
+            city,
+            province,
+          ].whereType<String>().where((e) => e.isNotEmpty).join(', ');
+        } else {
+          // fallback to flat address if present
+          address = (data['address'] as String?) ?? 'No address provided';
+        }
+
         return {
-          'shopName': data['shopName'] ?? 'DentPal Store',
-          'address': data['address'] ?? 'No address provided',
+          'shopName': storeName,
+          'address': address,
           'contactEmail': data['contactEmail'] ?? '',
           'contactNumber': data['contactNumber'] ?? '',
           'isActive': data['isActive'] ?? true,
@@ -131,15 +173,21 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
     });
 
     try {
-      AppLogger.d('StorePage: Starting to load products for seller: ${widget.sellerId}');
-      _allSellerProducts = await _productService.getProductsBySeller(widget.sellerId);
-      AppLogger.d('StorePage: Loaded ${_allSellerProducts.length} products for seller ${widget.sellerId}');
-      
+      AppLogger.d(
+        'StorePage: Starting to load products for seller: ${widget.sellerId}',
+      );
+      _allSellerProducts = await _productService.getProductsBySeller(
+        widget.sellerId,
+      );
+      AppLogger.d(
+        'StorePage: Loaded ${_allSellerProducts.length} products for seller ${widget.sellerId}',
+      );
+
       for (int i = 0; i < _allSellerProducts.length && i < 3; i++) {
         final product = _allSellerProducts[i];
         AppLogger.d('Product $i: ${product.name} (ID: ${product.productId})');
       }
-      
+
       _applyProductFilter();
     } catch (e) {
       AppLogger.d('StorePage: Error loading seller products: $e');
@@ -192,9 +240,13 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
     });
 
     try {
-      AppLogger.d('StorePage: Starting to load categories for seller: ${widget.sellerId}');
-      AppLogger.d('StorePage: Total seller products: ${_allSellerProducts.length}');
-      
+      AppLogger.d(
+        'StorePage: Starting to load categories for seller: ${widget.sellerId}',
+      );
+      AppLogger.d(
+        'StorePage: Total seller products: ${_allSellerProducts.length}',
+      );
+
       // Get unique category IDs from seller's products
       final categoryIds = _allSellerProducts
           .map((product) => product.categoryId)
@@ -209,8 +261,12 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
           .toSet()
           .toList();
 
-      AppLogger.d('StorePage: Found ${categoryIds.length} unique category IDs: $categoryIds');
-      AppLogger.d('StorePage: Found ${subCategoryIds.length} unique subcategory IDs: $subCategoryIds');
+      AppLogger.d(
+        'StorePage: Found ${categoryIds.length} unique category IDs: $categoryIds',
+      );
+      AppLogger.d(
+        'StorePage: Found ${subCategoryIds.length} unique subcategory IDs: $subCategoryIds',
+      );
 
       // Load categories
       _sellerCategories = [];
@@ -232,15 +288,20 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
       _sellerSubCategories = [];
       if (subCategoryIds.isNotEmpty) {
         try {
-          _sellerSubCategories = await _categoryService.getSubCategoriesByIds(subCategoryIds);
-          AppLogger.d('StorePage: Loaded ${_sellerSubCategories.length} subcategories');
+          _sellerSubCategories = await _categoryService.getSubCategoriesByIds(
+            subCategoryIds,
+          );
+          AppLogger.d(
+            'StorePage: Loaded ${_sellerSubCategories.length} subcategories',
+          );
         } catch (e) {
           AppLogger.d('StorePage: Error loading subcategories: $e');
         }
       }
 
-      AppLogger.d('StorePage: Final results - Categories: ${_sellerCategories.length}, Subcategories: ${_sellerSubCategories.length}');
-
+      AppLogger.d(
+        'StorePage: Final results - Categories: ${_sellerCategories.length}, Subcategories: ${_sellerSubCategories.length}',
+      );
     } catch (e) {
       AppLogger.d('StorePage: Error loading seller categories: $e');
       AppLogger.d('StorePage: Stack trace: ${StackTrace.current}');
@@ -253,19 +314,41 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
 
   @override
   Widget build(BuildContext context) {
+    const double kWebBreakpoint = 900; // [BREAKPOINT]
+    const double kWebMaxWidth = 1100; // [MAX_WIDTH]
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              child: Column(
-                children: [
-                  _buildAppBarHeader(),
-                  _buildStoreInfo(),
-                  _buildTabBar(),
-                  _buildTabContent(),
-                ],
-              ),
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                final bool isWideWeb =
+                    kIsWeb && constraints.maxWidth > kWebBreakpoint;
+
+                final Widget pageContent = SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      _buildAppBarHeader(),
+                      _buildStoreInfo(),
+                      _buildTabBar(),
+                      _buildTabContent(),
+                    ],
+                  ),
+                );
+
+                if (isWideWeb) {
+                  return Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: kWebMaxWidth),
+                      child: pageContent,
+                    ),
+                  );
+                }
+
+                // Mobile and narrow web: full-width
+                return pageContent;
+              },
             ),
     );
   }
@@ -277,13 +360,11 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppColors.primary,
-            AppColors.primary.withValues(alpha: 0.8),
-          ],
+          colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
         ),
       ),
       child: SafeArea(
+        top: !kIsWeb, // remove top inset on web to avoid large top margin
         child: Column(
           children: [
             // Back button row
@@ -297,7 +378,10 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: IconButton(
-                      icon: const Icon(Icons.arrow_back, color: AppColors.primary),
+                      icon: const Icon(
+                        Icons.arrow_back,
+                        color: AppColors.primary,
+                      ),
                       onPressed: () => Navigator.pop(context),
                     ),
                   ),
@@ -330,7 +414,7 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
 
   Widget _buildStoreIcon() {
     final profileImageURL = _storeData['profileImageURL'] as String? ?? '';
-    
+
     return Container(
       width: 80,
       height: 80,
@@ -355,20 +439,15 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
                 placeholder: (context, url) => const Center(
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      AppColors.primary,
+                    ),
                   ),
                 ),
-                errorWidget: (context, url, error) => const Icon(
-                  Icons.store,
-                  size: 40,
-                  color: AppColors.primary,
-                ),
+                errorWidget: (context, url, error) =>
+                    const Icon(Icons.store, size: 40, color: AppColors.primary),
               )
-            : const Icon(
-                Icons.store,
-                size: 40,
-                color: AppColors.primary,
-              ),
+            : const Icon(Icons.store, size: 40, color: AppColors.primary),
       ),
     );
   }
@@ -391,7 +470,11 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildInfoRow(Icons.location_on, 'Address', _storeData['address'] ?? 'Not available'),
+          _buildInfoRow(
+            Icons.location_on,
+            'Address',
+            _storeData['address'] ?? 'Not available',
+          ),
           if (_storeData['contactEmail']?.toString().isNotEmpty == true) ...[
             const SizedBox(height: 12),
             _buildInfoRow(Icons.email, 'Email', _storeData['contactEmail']),
@@ -415,11 +498,7 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
             color: AppColors.primary.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(
-            icon,
-            size: 16,
-            color: AppColors.primary,
-          ),
+          child: Icon(icon, size: 16, color: AppColors.primary),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -534,8 +613,8 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
                 child: const Center(child: CircularProgressIndicator()),
               )
             : _filteredProducts.isEmpty
-                ? _buildEmptyProductsState()
-                : _buildProductGrid(),
+            ? _buildEmptyProductsState()
+            : _buildProductGrid(),
       ],
     );
   }
@@ -557,19 +636,28 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
               },
               child: Container(
                 margin: const EdgeInsets.only(right: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: isSelected ? AppColors.primary : AppColors.surface,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: isSelected ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.2),
+                    color: isSelected
+                        ? AppColors.primary
+                        : AppColors.onSurface.withValues(alpha: 0.2),
                   ),
                 ),
                 child: Text(
                   filter,
                   style: AppTextStyles.bodySmall.copyWith(
-                    color: isSelected ? AppColors.onPrimary : AppColors.onSurface,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                    color: isSelected
+                        ? AppColors.onPrimary
+                        : AppColors.onSurface,
+                    fontWeight: isSelected
+                        ? FontWeight.w600
+                        : FontWeight.normal,
                   ),
                 ),
               ),
@@ -599,7 +687,10 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
             product: product,
             onTap: () {
               // Navigate to product detail page with deep linking support
-              NavigationUtils.navigateToProductDetail(context, product.productId);
+              NavigationUtils.navigateToProductDetail(
+                context,
+                product.productId,
+              );
             },
           );
         },
@@ -674,7 +765,9 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
               ),
             ),
             const SizedBox(height: 12),
-            ..._sellerCategories.map((category) => _buildCategoryItem(category)),
+            ..._sellerCategories.map(
+              (category) => _buildCategoryItem(category),
+            ),
             const SizedBox(height: 24),
           ],
           if (_sellerSubCategories.isNotEmpty) ...[
@@ -686,7 +779,9 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
               ),
             ),
             const SizedBox(height: 12),
-            ..._sellerSubCategories.map((subCategory) => _buildSubCategoryItem(subCategory)),
+            ..._sellerSubCategories.map(
+              (subCategory) => _buildSubCategoryItem(subCategory),
+            ),
           ],
         ],
       ),
@@ -700,9 +795,7 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: AppColors.onSurface.withValues(alpha: 0.1),
-        ),
+        border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.1)),
       ),
       child: Row(
         children: [
@@ -754,9 +847,7 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: AppColors.onSurface.withValues(alpha: 0.1),
-        ),
+        border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.1)),
       ),
       child: Row(
         children: [
@@ -831,7 +922,7 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
   // Helper method to get responsive cross axis count based on screen width
   int _getResponsiveCrossAxisCount(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    
+
     if (screenWidth >= 1200) {
       return 6; // Large desktop screens
     } else if (screenWidth >= 900) {
@@ -848,7 +939,7 @@ class _StorePageState extends State<StorePage> with SingleTickerProviderStateMix
   // Helper method to get responsive aspect ratio based on screen width
   double _getResponsiveAspectRatio(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    
+
     if (screenWidth >= 1200) {
       return 0.85; // Slightly taller cards for large desktop
     } else if (screenWidth >= 900) {
