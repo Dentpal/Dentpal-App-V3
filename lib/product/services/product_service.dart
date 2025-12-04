@@ -390,6 +390,7 @@ class ProductService {
           'sku': variationForm.sku,
           'weight': variationForm.weight,
           'dimensions': variationForm.dimensions,
+          'isFragile': variationForm.isFragile,
         });
       }
       
@@ -504,6 +505,7 @@ class ProductService {
             'sku': variationForm.sku,
             'weight': variationForm.weight,
             'dimensions': variationForm.dimensions,
+            'isFragile': variationForm.isFragile,
           });
           variationsToKeep.add(existingVariationId);
         } else {
@@ -518,6 +520,7 @@ class ProductService {
             'sku': variationForm.sku,
             'weight': variationForm.weight,
             'dimensions': variationForm.dimensions,
+            'isFragile': variationForm.isFragile,
           });
           variationsToKeep.add(variationRef.id);
         }

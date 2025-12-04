@@ -390,6 +390,7 @@ export const createCheckoutSession = onRequest(
           
           let variationPrice = 0;
           let variationName = '';
+          let isFragile = false;
           let dimensions = {
             length: product?.dimensions?.length,
             width: product?.dimensions?.width, 
@@ -409,6 +410,7 @@ export const createCheckoutSession = onRequest(
               const variationData = variationDoc.data();
               variationPrice = variationData?.price || 0;
               variationName = variationData?.name || '';
+              isFragile = variationData?.isFragile || false;
               
               // Get dimensions from variation if available, fallback to product dimensions
               if (variationData?.dimensions) {
@@ -451,6 +453,7 @@ export const createCheckoutSession = onRequest(
             width: dimensions.width,
             height: dimensions.height,
             weight: dimensions.weight,
+            isFragile: isFragile,
           };
         });
 
@@ -601,6 +604,9 @@ export const createCheckoutSession = onRequest(
         // Get unique seller IDs
         const sellerIds = [...new Set(orderItems.map(item => item.sellerId))];
 
+        // Check if any items are fragile
+        const hasFragileItems = orderItems.some(item => item.isFragile);
+
         // Create order document with per-seller fee breakdowns
         const orderRef = await db.collection('Order').add({
           userId: userId,
@@ -614,6 +620,7 @@ export const createCheckoutSession = onRequest(
             variationId: item.variationId,
             sellerId: item.sellerId,
             sellerName: item.sellerName,
+            isFragile: item.isFragile,
           })),
           summary: {
             subtotal: subtotal,
@@ -673,6 +680,7 @@ export const createCheckoutSession = onRequest(
           }],
           metadata: {
             cart_item_ids: cartItemIds,
+            hasFragileItems: hasFragileItems,
           },
         });
 
@@ -710,10 +718,11 @@ export const createCheckoutSession = onRequest(
         }
 
         // Create Paymongo Checkout Session
+        const fragilePrefix = hasFragileItems ? 'FRAGILE - ' : '';
         const checkoutSessionData = {
           data: {
             attributes: {
-              description: `DentPal Order #${orderRef.id}`,
+              description: `${fragilePrefix}DentPal Order #${orderRef.id}`,
               line_items: lineItems,
               payment_method_types: paymentMethodTypes,
               success_url: successUrl || 'https://dentpal-store.web.app/order-success',
@@ -723,6 +732,7 @@ export const createCheckoutSession = onRequest(
                 user_id: userId,
                 seller_ids: sellerIds.join(','),
                 cart_item_ids: cartItemIds.join(','),
+                has_fragile_items: hasFragileItems ? 'true' : 'false',
               },
               billing: {
                 name: userData?.displayName || shippingAddress?.fullName,

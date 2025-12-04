@@ -103,6 +103,7 @@ class VariationFormModel {
     'width': 0.0,
     'height': 0.0,
   };
+  bool isFragile = false;
   
   // Validation
   String? validatePrice() {

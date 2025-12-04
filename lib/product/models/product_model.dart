@@ -153,6 +153,7 @@ class ProductVariation {
   final String sku;
   final double? weight;
   final Map<String, dynamic>? dimensions;
+  final bool isFragile;
 
   ProductVariation({
     required this.variationId,
@@ -164,6 +165,7 @@ class ProductVariation {
     required this.sku,
     this.weight,
     this.dimensions,
+    this.isFragile = false,
   });
 
   factory ProductVariation.fromFirestore(DocumentSnapshot doc) {
@@ -218,6 +220,7 @@ class ProductVariation {
       sku: data['sku'] ?? data['SKU'] ?? '',
       weight: weight,
       dimensions: data['dimensions'],
+      isFragile: data['isFragile'] ?? false,
     );
   }
 
@@ -231,6 +234,7 @@ class ProductVariation {
       'sku': sku,
       'weight': weight,
       'dimensions': dimensions,
+      'isFragile': isFragile,
     };
   }
 }

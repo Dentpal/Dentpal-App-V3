@@ -3589,6 +3589,58 @@ class _AddProductPageState extends State<AddProductPage> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 16),
+                    
+                    // Fragile checkbox
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.background,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.1)),
+                      ),
+                      child: Row(
+                        children: [
+                          Checkbox(
+                            value: _variations[index].isFragile,
+                            onChanged: (value) {
+                              setState(() {
+                                _variations[index].isFragile = value ?? false;
+                                _markAsChanged();
+                              });
+                            },
+                            activeColor: AppColors.primary,
+                          ),
+                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            color: _variations[index].isFragile 
+                                ? AppColors.error 
+                                : AppColors.onSurface.withValues(alpha: 0.5),
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Fragile Item',
+                            style: AppTextStyles.bodyLarge.copyWith(
+                              color: AppColors.onSurface,
+                              fontWeight: _variations[index].isFragile 
+                                  ? FontWeight.w600 
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Mark if this item requires careful handling',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.onSurface.withValues(alpha: 0.6),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),

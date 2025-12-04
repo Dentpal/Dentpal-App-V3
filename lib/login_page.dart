@@ -1,11 +1,13 @@
 import 'package:dentpal/signup/signup_flow.dart';
 import 'package:dentpal/forgot_password.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dentpal/home_page.dart';
 import 'package:dentpal/core/app_theme/index.dart';
 import 'package:dentpal/utils/credential_manager.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:ui' as ui;
 
 class LoginPage extends StatefulWidget {
@@ -347,8 +349,7 @@ class _LoginPageState extends State<LoginPage> {
                                 onTap: () {
                                   Navigator.of(context).push(
                                     MaterialPageRoute(
-                                      builder: (context) =>
-                                          const HomePage(),
+                                      builder: (context) => const HomePage(),
                                     ),
                                   );
                                 },
@@ -643,16 +644,21 @@ class _LoginPageState extends State<LoginPage> {
                                         ],
                                       ),
                                       const SizedBox(height: 26),
-                                      // Sign up link
+                                      // Sign up link - Opens Play Store
                                       Center(
                                         child: TextButton(
-                                          onPressed: () {
-                                            Navigator.of(context).push(
-                                              MaterialPageRoute(
-                                                builder: (_) =>
-                                                    const SignupFlow(),
-                                              ),
-                                            );
+                                          onPressed: () async {
+                                            // Invalid Play Store link (placeholder)
+                                            const playStoreUrl =
+                                                'https://play.google.com/store/apps/details?id=com.dentpal.app';
+                                            final uri = Uri.parse(playStoreUrl);
+                                            if (await canLaunchUrl(uri)) {
+                                              await launchUrl(
+                                                uri,
+                                                mode: LaunchMode
+                                                    .externalApplication,
+                                              );
+                                            }
                                           },
                                           child: RichText(
                                             text: TextSpan(
@@ -663,7 +669,8 @@ class _LoginPageState extends State<LoginPage> {
                                                   ),
                                               children: const [
                                                 TextSpan(
-                                                  text: "Don't have an account? ",
+                                                  text:
+                                                      "Don't have an account? ",
                                                 ),
                                                 TextSpan(
                                                   text: 'Download Our App now',
@@ -1031,39 +1038,89 @@ class _LoginPageState extends State<LoginPage> {
                                   ),
                                   const SizedBox(height: 12),
                                   Center(
-                                    child: TextButton(
-                                      onPressed: () {
-                                        Navigator.of(context).push(
-                                          MaterialPageRoute(
-                                            builder: (context) =>
-                                                const SignupFlow(),
+                                    child: kIsWeb
+                                        // On web (mobile browser), show download app link
+                                        ? TextButton(
+                                            onPressed: () async {
+                                              // Invalid Play Store link (placeholder)
+                                              const playStoreUrl =
+                                                  'https://play.google.com/store/apps/details?id=com.dentpal.app';
+                                              final uri = Uri.parse(
+                                                playStoreUrl,
+                                              );
+                                              if (await canLaunchUrl(uri)) {
+                                                await launchUrl(
+                                                  uri,
+                                                  mode: LaunchMode
+                                                      .externalApplication,
+                                                );
+                                              }
+                                            },
+                                            child: RichText(
+                                              textAlign: TextAlign.center,
+                                              text: TextSpan(
+                                                style: AppTextStyles.bodyMedium,
+                                                children: const [
+                                                  TextSpan(
+                                                    text:
+                                                        "Don't have an account? ",
+                                                    style: TextStyle(
+                                                      color: AppColors
+                                                          .onSurfaceVariant,
+                                                      fontWeight:
+                                                          FontWeight.normal,
+                                                    ),
+                                                  ),
+                                                  TextSpan(
+                                                    text:
+                                                        'Download Our App now',
+                                                    style: TextStyle(
+                                                      color: AppColors.accent,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          )
+                                        // On native app, allow sign up
+                                        : TextButton(
+                                            onPressed: () {
+                                              Navigator.of(context).push(
+                                                MaterialPageRoute(
+                                                  builder: (context) =>
+                                                      const SignupFlow(),
+                                                ),
+                                              );
+                                            },
+                                            child: RichText(
+                                              textAlign: TextAlign.center,
+                                              text: TextSpan(
+                                                style: AppTextStyles.bodyMedium,
+                                                children: const [
+                                                  TextSpan(
+                                                    text:
+                                                        "Don't have an account? ",
+                                                    style: TextStyle(
+                                                      color: AppColors
+                                                          .onSurfaceVariant,
+                                                      fontWeight:
+                                                          FontWeight.normal,
+                                                    ),
+                                                  ),
+                                                  TextSpan(
+                                                    text: 'Create one',
+                                                    style: TextStyle(
+                                                      color: AppColors.accent,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
                                           ),
-                                        );
-                                      },
-                                      child: RichText(
-                                        textAlign: TextAlign.center,
-                                        text: TextSpan(
-                                          style: AppTextStyles.bodyMedium,
-                                          children: const [
-                                            TextSpan(
-                                              text: "Don't have an account? ",
-                                              style: TextStyle(
-                                                color:
-                                                    AppColors.onSurfaceVariant,
-                                                fontWeight: FontWeight.normal,
-                                              ),
-                                            ),
-                                            TextSpan(
-                                              text: 'Create one',
-                                              style: TextStyle(
-                                                color: AppColors.accent,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
                                   ),
                                   SizedBox(
                                     height:
