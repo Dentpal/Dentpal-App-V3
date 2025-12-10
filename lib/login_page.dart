@@ -1,5 +1,6 @@
 import 'package:dentpal/signup/signup_flow.dart';
 import 'package:dentpal/forgot_password.dart';
+import 'package:dentpal/utils/app_logger.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,6 +8,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dentpal/home_page.dart';
 import 'package:dentpal/core/app_theme/index.dart';
 import 'package:dentpal/utils/credential_manager.dart';
+import 'package:dentpal/product/services/user_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:ui' as ui;
 
@@ -248,6 +250,12 @@ class _LoginPageState extends State<LoginPage> {
       if (mounted) {
         final uid = FirebaseAuth.instance.currentUser?.uid;
         if (uid != null) {
+          // Clear any cached user role data before navigating
+          try {
+            UserService.clearCache();
+          } catch (e) {
+            AppLogger.d('Failed to clear cache: $e');
+          }
           // Navigate to the home page after successful login
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (context) => const HomePage()),

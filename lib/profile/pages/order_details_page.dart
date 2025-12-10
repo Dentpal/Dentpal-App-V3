@@ -9,8 +9,10 @@ import '../../product/pages/paymongo_webview_page.dart';
 import '../../product/pages/cart_page.dart';
 import '../../product/services/cart_service.dart';
 import '../../product/services/jrs_tracking_service.dart';
+import '../../services/chat_service.dart';
 import '../../utils/app_logger.dart';
 import '../services/order_service.dart';
+import 'chat_detail_page.dart';
 
 class OrderDetailsPage extends StatefulWidget {
   final order_model.Order order;
@@ -1532,14 +1534,59 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     }
   }
 
-  void _contactSupport(BuildContext context) {
-    // TODO: Implement contact support
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Contact support functionality coming soon'),
-        backgroundColor: AppColors.primary,
+  void _contactSupport(BuildContext context) async {
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
       ),
     );
+
+    try {
+      final chatService = ChatService();
+      
+      // Create or get existing support chat for this order
+      final chatRoomId = await chatService.createSupportChatRoom(
+        orderId: widget.order.orderId,
+        orderNumber: widget.order.orderId.substring(0, 8).toUpperCase(),
+      );
+
+      // Close loading dialog
+      if (context.mounted) {
+        Navigator.of(context).pop();
+      }
+
+      // Navigate to chat detail page
+      if (context.mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => ChatDetailPage(
+              chatRoomId: chatRoomId,
+              otherUserName: 'Customer Support',
+              otherUserId: 'customer_support',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      // Close loading dialog
+      if (context.mounted) {
+        Navigator.of(context).pop();
+      }
+
+      AppLogger.e('Error contacting support: $e');
+      
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to contact support. Please try again.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 }
 

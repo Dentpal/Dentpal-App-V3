@@ -1,13 +1,16 @@
 import 'dart:async';
 
+import 'package:dentpal/utils/app_logger.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:dentpal/product/pages/product_listing_page.dart';
 import 'package:dentpal/product/pages/seller_dashboard_page.dart';
+import 'package:dentpal/profile/pages/csr_dashboard_page.dart';
 import 'package:dentpal/product/pages/cart_page.dart';
 import 'package:dentpal/profile/pages/profile_page.dart';
 import 'package:dentpal/login_page.dart';
+import 'package:dentpal/product/services/user_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'core/app_theme/app_colors.dart';
 import 'core/app_theme/app_text_styles.dart';
 import 'package:flutter/services.dart';
@@ -22,81 +25,95 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
   bool _isSeller = false;
+  bool _isCustomerSupport = false;
   bool _isLoadingSellerStatus = true;
   StreamSubscription<User?>? _authSubscription;
-  
+  final UserService _userService = UserService();
+
   @override
   void initState() {
     super.initState();
-    _checkSellerStatus();
-    
-    // Listen to auth state changes to refresh seller status
-    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((User? user) {
-      _checkSellerStatus();
+    _checkUserRole();
+
+    // Listen to auth state changes to refresh user role
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((
+      User? user,
+    ) {
+      _checkUserRole();
     });
   }
 
-  Future<void> _checkSellerStatus() async {
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkUserRole() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
+      AppLogger.d('DEBUG _checkUserRole: user = ${user?.uid}');
       if (user == null) {
         setState(() {
           _isSeller = false;
+          _isCustomerSupport = false;
           _isLoadingSellerStatus = false;
         });
         return;
-      }    
-      
-      @override
-      void dispose() {
-        _authSubscription?.cancel();
-        super.dispose();
       }
-      
-      // Check if user document exists and has role='seller'
-      final userDoc = await FirebaseFirestore.instance
-          .collection('User')
-          .doc(user.uid)
-          .get();
 
-      if (userDoc.exists) {
-        final userData = userDoc.data() as Map<String, dynamic>;
-        final userRole = userData['role'] as String?;
-
-        if (userRole == 'seller') {
-          // Check if seller collection exists with the user's ID
-          final sellerDoc = await FirebaseFirestore.instance
-              .collection('Seller')
-              .doc(user.uid)
-              .get();
-
-          if (sellerDoc.exists) {
-            setState(() {
-              _isSeller = true;
-              _isLoadingSellerStatus = false;
-            });
-            return;
-          }
+      // Force refresh to ensure we get fresh data after login
+      // Check for customer support role first
+      AppLogger.d('DEBUG: Checking customer support status...');
+      final isCustomerSupport = await _userService.isCurrentUserCustomerSupport(forceRefresh: true);
+      AppLogger.d('DEBUG: isCustomerSupport = $isCustomerSupport');
+      if (isCustomerSupport) {
+        if (mounted) {
+          AppLogger.d('DEBUG: Setting state for customer support');
+          setState(() {
+            _isSeller = false;
+            _isCustomerSupport = true;
+            _isLoadingSellerStatus = false;
+          });
         }
+        return;
       }
 
-      setState(() {
-        _isSeller = false;
-        _isLoadingSellerStatus = false;
-      });
+      // Check for seller role
+      AppLogger.d('DEBUG: Checking seller status...');
+      final isSeller = await _userService.isCurrentUserSeller(forceRefresh: true);
+      AppLogger.d('DEBUG: isSeller = $isSeller');
+
+      if (mounted) {
+        setState(() {
+          _isSeller = isSeller;
+          _isCustomerSupport = false;
+          _isLoadingSellerStatus = false;
+        });
+      }
     } catch (e) {
-      print('Error checking seller status: $e');
-      setState(() {
-        _isSeller = false;
-        _isLoadingSellerStatus = false;
-      });
+      AppLogger.d('Error checking user role: $e');
+      if (mounted) {
+        setState(() {
+          _isSeller = false;
+          _isCustomerSupport = false;
+          _isLoadingSellerStatus = false;
+        });
+      }
     }
   }
 
   List<Widget> get _pages {
     final user = FirebaseAuth.instance.currentUser;
+    AppLogger.d('DEBUG _pages: _isCustomerSupport=$_isCustomerSupport, _isSeller=$_isSeller');
 
-    if (_isSeller) {
+    if (_isCustomerSupport) {
+      // Customer Support navigation - only CSR Dashboard (Chats + Profile)
+      AppLogger.d('DEBUG: Returning CsrDashboardPage');
+      return [
+        const CsrDashboardPage(),
+      ];
+    } else if (_isSeller) {
       // Seller navigation - only My Products and Profile
       return [
         const SellerDashboardPage(), // My Products
@@ -114,7 +131,9 @@ class _HomePageState extends State<HomePage> {
             ? CartPage(
                 onBackPressed: () => _onItemTapped(0),
               ) // Go back to Products tab
-            : const _LoginRequiredPage(message: 'Please login to view your cart'),
+            : const _LoginRequiredPage(
+                message: 'Please login to view your cart',
+              ),
         user != null
             ? const ProfilePage()
             : const _LoginRequiredPage(
@@ -128,7 +147,14 @@ class _HomePageState extends State<HomePage> {
     // Check if user is authenticated when trying to access protected features
     final user = FirebaseAuth.instance.currentUser;
 
-    if (_isSeller) {
+    if (_isCustomerSupport) {
+      // For customer support: only CSR Dashboard (index 0)
+      // CSR Dashboard has its own internal navigation for Chats and Profile
+      if (user == null) {
+        _showLoginRequiredDialog();
+        return;
+      }
+    } else if (_isSeller) {
       // For sellers: only My Products (index 0) and Profile (index 1)
       if (user == null && index == 1) {
         // User is not authenticated and trying to access Profile
@@ -280,15 +306,16 @@ class _HomePageState extends State<HomePage> {
 
     // Show loading while checking seller status
     if (_isLoadingSellerStatus) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return PopScope(
-      canPop: false,
+      // On web, allow normal browser navigation; on mobile, show exit confirmation
+      canPop: kIsWeb,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
+        // Skip exit confirmation on web - browsers handle their own navigation
+        if (kIsWeb) return;
         final shouldExit = await _showExitConfirmation();
         if (shouldExit && context.mounted) {
           Navigator.of(context).pop();
@@ -304,8 +331,12 @@ class _HomePageState extends State<HomePage> {
               )
             : Scaffold(
                 body: _pages[_selectedIndex],
-                // Only show bottom navigation bar for regular users, not sellers
-                bottomNavigationBar: _isSeller ? null : _buildBottomNavigationBar(),
+                // Only show bottom navigation bar for regular users
+                // Sellers use SellerDashboardPage's internal navigation
+                // Customer Support uses CsrDashboardPage's internal navigation
+                bottomNavigationBar: (_isSeller || _isCustomerSupport)
+                    ? null
+                    : _buildBottomNavigationBar(),
               ),
       ),
     );
@@ -320,10 +351,7 @@ class _HomePageState extends State<HomePage> {
             icon: Icon(Icons.inventory),
             label: 'My Products',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profile',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],
         currentIndex: _selectedIndex,
         selectedItemColor: Theme.of(context).primaryColor,
@@ -333,18 +361,12 @@ class _HomePageState extends State<HomePage> {
       // Regular user navigation - Products, Cart, Profile
       return BottomNavigationBar(
         items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.store),
-            label: 'Products',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.store), label: 'Products'),
           BottomNavigationBarItem(
             icon: Icon(Icons.shopping_cart),
             label: 'Cart',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profile',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],
         currentIndex: _selectedIndex,
         selectedItemColor: Theme.of(context).primaryColor,

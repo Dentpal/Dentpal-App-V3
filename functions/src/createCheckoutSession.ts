@@ -2,7 +2,9 @@ import { onRequest, Request, HttpsError } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 import axios from 'axios';
 import { 
-  calculateJRSShippingCost, 
+  calculateJRSShippingCost,
+  calculateJRSShippingCostWithFallback,
+  DEFAULT_FALLBACK_SHIPPING_COST,
   extractShippingCostFromJRS,
   calculateCompleteBreakdown,
   calculateMultiSellerBreakdown,
@@ -278,6 +280,54 @@ function getCountryCode(countryName: string): string {
   return countryMap[normalized] || 'PH'; // Default to Philippines
 }
 
+/**
+ * Format seller address to "City, Province" format for JRS API
+ * Handles both object format {city, state} and string format
+ */
+function formatSellerAddress(address: any): string {
+  const defaultAddress = 'Makati, Metro Manila';
+  
+  if (!address) {
+    return defaultAddress;
+  }
+  
+  // Handle object format: {city: "Quezon City", state: "Metro Manila"}
+  if (typeof address === 'object' && address !== null) {
+    const city = address.city || address.City || '';
+    const state = address.state || address.State || address.province || address.Province || 'Metro Manila';
+    
+    if (city) {
+      return `${city}, ${state}`;
+    }
+    
+    // Try to extract from other possible fields
+    if (address.addressLine1 || address.address_line_1) {
+      const addressLine = address.addressLine1 || address.address_line_1;
+      return typeof addressLine === 'string' ? addressLine : defaultAddress;
+    }
+    
+    return defaultAddress;
+  }
+  
+  // Handle string format
+  if (typeof address === 'string') {
+    const cleanAddress = address.trim();
+    
+    if (!cleanAddress) {
+      return defaultAddress;
+    }
+    
+    // If address doesn't contain a comma, add Metro Manila as default province
+    if (!cleanAddress.includes(',')) {
+      return `${cleanAddress}, Metro Manila`;
+    }
+    
+    return cleanAddress;
+  }
+  
+  return defaultAddress;
+}
+
 // JRS Shipping Calculator Integration
 // JRS shipping functions are now imported from ./utils/jrsShippingHelper
 
@@ -490,13 +540,16 @@ export const createCheckoutSession = onRequest(
           sellerName: string;
           shippingCost: number;
           cartValue: number;
+          isFallbackShipping: boolean; // Track if fallback shipping was used
+          shippingError?: string; // Store error message if JRS API failed
         }
         
         const sellerShippingPromises: Promise<SellerShippingData>[] = Object.entries(itemsBySeller).map(async ([sellerId, sellerItems]) => {
           // Get seller address and name
           const sellerDoc = await db.collection('User').doc(sellerId).get();
           const sellerData = sellerDoc.data();
-          const sellerAddress = sellerData?.address || 'Makati, Metro Manila';
+          // Format seller address - handle both object {city, state} and string formats
+          const sellerAddress = formatSellerAddress(sellerData?.address);
           const sellerName = sellerData?.displayName || sellerItems[0]?.sellerName || 'Unknown Seller';
           
           // Calculate cart value for this seller's items
@@ -521,9 +574,17 @@ export const createCheckoutSession = onRequest(
             validItems.push(item);
           }
 
-          // If no items have dimensions, throw an error
+          // If no items have dimensions, use fallback shipping
           if (validItems.length === 0) {
-            throw new Error(`No items have the required dimensions for shipping calculation for seller ${sellerId}`);
+            console.warn(`No items have dimensions for seller ${sellerId}, using fallback shipping cost of ₱${DEFAULT_FALLBACK_SHIPPING_COST}`);
+            return {
+              sellerId,
+              sellerName,
+              shippingCost: DEFAULT_FALLBACK_SHIPPING_COST,
+              cartValue: sellerCartValue,
+              isFallbackShipping: true,
+              shippingError: 'No items have required dimensions for shipping calculation'
+            };
           }
           
           console.log(`Calculating shipping for seller ${sellerId}:`, {
@@ -534,27 +595,30 @@ export const createCheckoutSession = onRequest(
             originalItemCount: sellerItems.length
           });
           
-          // Calculate shipping cost for this seller's items - no fallback, must succeed
-          const sellerShippingCost = await calculateJRSShippingCost(
+          // Calculate shipping cost for this seller's items with fallback support
+          // If JRS API fails (500 error, timeout, etc.), use fallback shipping cost
+          const shippingResult = await calculateJRSShippingCostWithFallback(
             sellerAddress,
             recipientAddress,
             validItems,
             JRS_API_KEY_SECRET,
-            JRS_GETRATE_API_URL
+            JRS_GETRATE_API_URL,
+            DEFAULT_FALLBACK_SHIPPING_COST
           );
           
-          // Validate that we got a valid shipping cost
-          if (!sellerShippingCost || sellerShippingCost <= 0) {
-            throw new Error(`JRS API returned invalid shipping cost (${sellerShippingCost}) for seller ${sellerId}`);
+          if (shippingResult.isFallback) {
+            console.warn(`JRS API failed for seller ${sellerId}, using fallback shipping cost of ₱${shippingResult.shippingCost}. Error: ${shippingResult.error}`);
+          } else {
+            console.log(`Seller ${sellerId} shipping cost: ₱${shippingResult.shippingCost}, cart value: ₱${sellerCartValue}`);
           }
-          
-          console.log(`Seller ${sellerId} shipping cost: ₱${sellerShippingCost}, cart value: ₱${sellerCartValue}`);
           
           return {
             sellerId,
             sellerName,
-            shippingCost: sellerShippingCost,
-            cartValue: sellerCartValue
+            shippingCost: shippingResult.shippingCost,
+            cartValue: sellerCartValue,
+            isFallbackShipping: shippingResult.isFallback,
+            shippingError: shippingResult.error
           };
         });
         
@@ -562,11 +626,21 @@ export const createCheckoutSession = onRequest(
         const sellerShippingData = await Promise.all(sellerShippingPromises);
         shippingCost = sellerShippingData.reduce((total, seller) => total + seller.shippingCost, 0);
         
-        console.log(`Total shipping cost for all sellers: ₱${shippingCost}`);
+        // Check if any seller used fallback shipping
+        const sellersWithFallback = sellerShippingData.filter(s => s.isFallbackShipping);
+        if (sellersWithFallback.length > 0) {
+          console.warn(`${sellersWithFallback.length} seller(s) used fallback shipping cost due to JRS API issues:`, 
+            sellersWithFallback.map(s => ({ sellerId: s.sellerId, error: s.shippingError }))
+          );
+        }
         
-        // Validate final shipping cost
+        console.log(`Total shipping cost for all sellers: ₱${shippingCost} (${sellersWithFallback.length} using fallback)`);
+        
+        // Validate final shipping cost - with fallback, this should always be valid
         if (!shippingCost || shippingCost <= 0) {
-          throw new Error(`Invalid total shipping cost calculated: ₱${shippingCost}`);
+          // This should never happen now with fallback, but just in case
+          console.error('Invalid total shipping cost even with fallback, using default');
+          shippingCost = DEFAULT_FALLBACK_SHIPPING_COST * Object.keys(itemsBySeller).length;
         }
         
         // Calculate PER-SELLER fee breakdowns using the multi-seller function
@@ -632,6 +706,9 @@ export const createCheckoutSession = onRequest(
             sellerShippingCharge: sellerShippingCharge,
             buyerShippingCharge: buyerShippingCharge,
             shippingSplitRule: shippingSplitRule,
+            // Track if fallback shipping was used (JRS API was unavailable)
+            usedFallbackShipping: sellersWithFallback.length > 0,
+            fallbackShippingSellerCount: sellersWithFallback.length,
           },
           fees: {
             paymentProcessingFee: paymentProcessingFee,

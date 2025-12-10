@@ -1,5 +1,83 @@
 import axios from 'axios';
+import * as crypto from 'crypto';
 import * as logger from 'firebase-functions/logger';
+
+// Enable verbose debug logging (set via environment variable)
+const ENABLE_DEBUG_LOGGING = process.env.JRS_DEBUG_LOGGING === 'true';
+
+/**
+ * Masks an address for logging purposes by keeping only region/city hints.
+ * Removes street numbers, names, and zip codes to protect PII.
+ * @example "123 Main St, Makati City, Metro Manila 1234" -> "*****, Makati City, Metro Manila *****"
+ */
+function maskAddress(address: string): string {
+  if (!address) return '[empty]';
+  
+  const parts = address.split(',').map(p => p.trim());
+  
+  // Keep only city/region parts (typically the last 2-3 segments), mask the rest
+  if (parts.length <= 2) {
+    // Short address - mask first part, keep last
+    return parts.length === 1 ? '*****' : `*****, ${parts[parts.length - 1]}`;
+  }
+  
+  // Mask street-level detail (first parts), keep city/region (last 2 parts)
+  const maskedParts = parts.map((part, index) => {
+    // Keep last 2 parts (typically city and region)
+    if (index >= parts.length - 2) {
+      // Mask Philippine postal codes (exactly 4 digits) at word boundaries
+      // Also mask any digits preceded by postal-related keywords
+      return part
+        .replace(/\b\d{4}\b/g, '*****') // Philippine postal codes are exactly 4 digits
+        .replace(/(?:zip|postal|zipcode|postal\s*code)\s*:?\s*\d+/gi, '*****'); // Contextual keyword match
+    }
+    return '*****';
+  });
+  
+  return maskedParts.join(', ');
+}
+
+/**
+ * Creates a one-way hash of an address for correlation in logs.
+ * Useful for debugging without exposing actual address.
+ */
+function hashAddress(address: string): string {
+  if (!address) return 'empty';
+  return crypto.createHash('sha256').update(address).digest('hex').substring(0, 8);
+}
+
+/**
+ * Summarizes shipment items for logging without exposing sensitive details.
+ */
+function summarizeShipmentItems(items: ShipmentItem[]): {
+  count: number;
+  totalWeight: number;
+  totalDeclaredValue: number;
+  avgDimensions?: { length: number; width: number; height: number };
+} {
+  if (!items || items.length === 0) {
+    return { count: 0, totalWeight: 0, totalDeclaredValue: 0 };
+  }
+  
+  const totalWeight = items.reduce((sum, item) => sum + item.weight, 0);
+  const totalDeclaredValue = items.reduce((sum, item) => sum + item.declaredValue, 0);
+  
+  // Calculate average dimensions
+  const avgLength = items.reduce((sum, item) => sum + item.length, 0) / items.length;
+  const avgWidth = items.reduce((sum, item) => sum + item.width, 0) / items.length;
+  const avgHeight = items.reduce((sum, item) => sum + item.height, 0) / items.length;
+  
+  return {
+    count: items.length,
+    totalWeight: Math.round(totalWeight * 100) / 100,
+    totalDeclaredValue: Math.round(totalDeclaredValue * 100) / 100,
+    avgDimensions: {
+      length: Math.round(avgLength * 10) / 10,
+      width: Math.round(avgWidth * 10) / 10,
+      height: Math.round(avgHeight * 10) / 10
+    }
+  };
+}
 
 // Interfaces
 interface ShipmentItem {
@@ -403,11 +481,38 @@ export async function calculateJRSShippingCost(
       }
     };
 
+    // Info-level log: non-PII summary only
+    const itemSummary = summarizeShipmentItems(shipmentItems);
     logger.info('Calling JRS API for shipping calculation:', {
-      shipperAddress,
-      recipientAddress: recipientFormattedAddress,
-      itemCount: shipmentItems.length
+      shipperAddressHash: hashAddress(shipperAddress),
+      recipientAddressHash: hashAddress(recipientFormattedAddress),
+      shipperRegion: maskAddress(shipperAddress),
+      recipientRegion: maskAddress(recipientFormattedAddress),
+      itemCount: itemSummary.count,
+      totalWeight: itemSummary.totalWeight,
+      totalDeclaredValue: itemSummary.totalDeclaredValue,
+      apiUrl: jrsApiUrl ? 'configured' : 'NOT CONFIGURED',
+      apiKey: jrsApiKey ? 'configured' : 'NOT CONFIGURED'
     });
+
+    // Debug-level log: detailed payload (only when debug logging is enabled)
+    if (ENABLE_DEBUG_LOGGING) {
+      logger.debug('JRS API Request body (debug):', {
+        requestType: jrsRequest.requestType,
+        express: jrsRequest.apiShippingRequest.express,
+        insurance: jrsRequest.apiShippingRequest.insurance,
+        valuation: jrsRequest.apiShippingRequest.valuation,
+        shipperAddressMasked: maskAddress(jrsRequest.apiShippingRequest.shipperAddressLine1),
+        recipientAddressMasked: maskAddress(jrsRequest.apiShippingRequest.recipientAddressLine1),
+        shipmentItemsCount: jrsRequest.apiShippingRequest.shipmentItems.length,
+        avgDimensions: itemSummary.avgDimensions,
+        // Only include first item's non-sensitive metadata for debugging
+        firstItemMeta: jrsRequest.apiShippingRequest.shipmentItems.length > 0 ? {
+          weight: jrsRequest.apiShippingRequest.shipmentItems[0].weight,
+          dimensions: `${jrsRequest.apiShippingRequest.shipmentItems[0].length}x${jrsRequest.apiShippingRequest.shipmentItems[0].width}x${jrsRequest.apiShippingRequest.shipmentItems[0].height}`
+        } : null
+      });
+    }
 
     const response = await axios.post(jrsApiUrl, jrsRequest, {
       headers: {
@@ -418,6 +523,14 @@ export async function calculateJRSShippingCost(
       timeout: 60000 // 60 seconds timeout
     });
 
+    // Log successful response
+    logger.info('JRS API Response received:', {
+      status: response.status,
+      statusText: response.statusText,
+      hasData: !!response.data,
+      dataKeys: response.data ? Object.keys(response.data) : []
+    });
+
     if (response.status === 200 && response.data) {
       // Extract shipping cost from JRS response
       const shippingCost = extractShippingCostFromJRS(response.data);
@@ -426,6 +539,10 @@ export async function calculateJRSShippingCost(
         logger.info(`✅ JRS shipping cost calculated: ₱${shippingCost}`);
         return shippingCost;
       } else {
+        logger.error('JRS API returned invalid shipping cost', { 
+          shippingCost, 
+          responseData: JSON.stringify(response.data).substring(0, 500) // Log first 500 chars
+        });
         throw new Error(`JRS API returned invalid shipping cost: ${shippingCost}`);
       }
     } else {
@@ -433,12 +550,128 @@ export async function calculateJRSShippingCost(
     }
 
   } catch (error: any) {
-    logger.error('Failed to calculate JRS shipping cost:', {
+    // Enhanced error logging with more context (PII-safe)
+    const errorContext: any = {
       error: error.message,
-      status: error.response?.status,
-      data: error.response?.data
-    });
+      sellerAddressHash: hashAddress(sellerAddress),
+      sellerRegion: maskAddress(sellerAddress),
+      recipientAddressHash: hashAddress(recipientAddress),
+      recipientRegion: maskAddress(recipientAddress),
+      itemCount: orderItems.length
+    };
+    
+    // Add axios-specific error details if available
+    if (error.response) {
+      errorContext.status = error.response.status;
+      errorContext.statusText = error.response.statusText;
+      // Only include non-sensitive response data
+      errorContext.hasResponseData = !!error.response.data;
+      // Debug-level only: detailed response (may contain echoed addresses)
+      if (ENABLE_DEBUG_LOGGING) {
+        errorContext.dataPreview = typeof error.response.data === 'string' 
+          ? error.response.data.substring(0, 200) 
+          : JSON.stringify(error.response.data || {}).substring(0, 200);
+      }
+    } else if (error.request) {
+      errorContext.requestMade = true;
+      errorContext.noResponse = true;
+    }
+    
+    logger.error('Failed to calculate JRS shipping cost:', errorContext);
     throw new Error(`JRS shipping calculation failed: ${error.message}`);
+  }
+}
+
+// Default fallback shipping cost when JRS API is unavailable
+export const DEFAULT_FALLBACK_SHIPPING_COST = 250;
+
+/**
+ * Calculates JRS shipping cost with fallback support.
+ * 
+ * By default, configuration errors (missing API key/URL) will throw immediately
+ * to fail fast and surface misconfigurations early. Runtime/API errors (network
+ * failures, timeouts, 500 errors, etc.) will use the fallback cost instead.
+ * 
+ * @param sellerAddress - The seller's address for shipping origin
+ * @param recipientAddress - The recipient's address for shipping destination
+ * @param orderItems - Array of cart items with dimensions and quantities
+ * @param jrsApiKey - JRS API subscription key (required unless allowConfigFallback is true)
+ * @param jrsApiUrl - JRS API endpoint URL (required unless allowConfigFallback is true)
+ * @param fallbackCost - Fallback shipping cost when API fails (default: 250)
+ * @param allowConfigFallback - If true, configuration errors will also use fallback instead of throwing (default: false)
+ * @returns Object containing shippingCost, whether it's a fallback value, and optional error message
+ * @throws Error if jrsApiKey or jrsApiUrl is missing and allowConfigFallback is false
+ */
+export async function calculateJRSShippingCostWithFallback(
+  sellerAddress: string,
+  recipientAddress: string,
+  orderItems: CartItemData[],
+  jrsApiKey?: string,
+  jrsApiUrl?: string,
+  fallbackCost: number = DEFAULT_FALLBACK_SHIPPING_COST,
+  allowConfigFallback: boolean = false
+): Promise<{ shippingCost: number; isFallback: boolean; error?: string }> {
+  // Fail fast on configuration issues unless explicitly allowed to fallback
+  if (!jrsApiKey || !jrsApiUrl) {
+    const missingConfig = [];
+    if (!jrsApiKey) missingConfig.push('jrsApiKey');
+    if (!jrsApiUrl) missingConfig.push('jrsApiUrl');
+    const configError = `JRS API configuration missing: ${missingConfig.join(', ')}`;
+    
+    if (!allowConfigFallback) {
+      throw new Error(configError);
+    }
+    
+    // Config fallback explicitly allowed - log warning and return fallback (PII-safe)
+    logger.warn(`JRS API configuration missing, using fallback shipping cost of ₱${fallbackCost}:`, {
+      missingConfig,
+      sellerAddressHash: hashAddress(sellerAddress),
+      sellerRegion: maskAddress(sellerAddress),
+      recipientAddressHash: hashAddress(recipientAddress),
+      recipientRegion: maskAddress(recipientAddress),
+      itemCount: orderItems.length,
+      fallbackCost,
+      allowConfigFallback
+    });
+    
+    return {
+      shippingCost: fallbackCost,
+      isFallback: true,
+      error: configError
+    };
+  }
+
+  try {
+    const shippingCost = await calculateJRSShippingCost(
+      sellerAddress,
+      recipientAddress,
+      orderItems,
+      jrsApiKey,
+      jrsApiUrl
+    );
+    
+    return {
+      shippingCost,
+      isFallback: false
+    };
+  } catch (error: any) {
+    // Log runtime/API failure and use fallback (PII-safe)
+    logger.warn(`JRS API runtime failure, using fallback shipping cost of ₱${fallbackCost}:`, {
+      error: error.message,
+      errorType: 'runtime',
+      sellerAddressHash: hashAddress(sellerAddress),
+      sellerRegion: maskAddress(sellerAddress),
+      recipientAddressHash: hashAddress(recipientAddress),
+      recipientRegion: maskAddress(recipientAddress),
+      itemCount: orderItems.length,
+      fallbackCost
+    });
+    
+    return {
+      shippingCost: fallbackCost,
+      isFallback: true,
+      error: error.message
+    };
   }
 }
 

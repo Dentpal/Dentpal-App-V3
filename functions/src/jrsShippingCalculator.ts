@@ -4,7 +4,9 @@ import { getAuth } from 'firebase-admin/auth';
 import { DecodedIdToken } from 'firebase-admin/lib/auth/token-verifier';
 import * as admin from 'firebase-admin';
 import { 
-  calculateJRSShippingCost, 
+  calculateJRSShippingCost,
+  calculateJRSShippingCostWithFallback,
+  DEFAULT_FALLBACK_SHIPPING_COST,
   extractShippingCostFromJRS,
   calculateCompleteBreakdown,
   calculateMultiSellerBreakdown,
@@ -119,14 +121,24 @@ async function handleOldInterface(request: CallableRequest<CalculateShippingRequ
     // Use provided recipientAddress or fallback to formatted sellerAddress
     const formattedRecipientAddress = formatAddress(recipientAddress || sellerAddress);
 
-    // Calculate shipping cost using the existing helper
-    const shippingCost = await calculateJRSShippingCost(
+    // Calculate shipping cost using the helper with fallback support
+    const shippingResult = await calculateJRSShippingCostWithFallback(
       sellerAddress,
       formattedRecipientAddress,
       cartItems,
       process.env.JRS_API_KEY,
-      process.env.JRS_GETRATE_API_URL
+      process.env.JRS_GETRATE_API_URL,
+      DEFAULT_FALLBACK_SHIPPING_COST
     );
+
+    const shippingCost = shippingResult.shippingCost;
+
+    if (shippingResult.isFallback) {
+      logger.warn('JRS API failed, using fallback shipping cost', {
+        fallbackCost: shippingCost,
+        error: shippingResult.error
+      });
+    }
 
     // Calculate subtotal for shipping allocation
     const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -141,6 +153,7 @@ async function handleOldInterface(request: CallableRequest<CalculateShippingRequ
       shippingCost,
       subtotal,
       paymentMethod,
+      isFallback: shippingResult.isFallback,
       ...breakdown
     });
 
@@ -163,13 +176,15 @@ async function handleOldInterface(request: CallableRequest<CalculateShippingRequ
   } catch (error: any) {
     logger.error('Error in old interface shipping calculation', error);
     
+    // Even if there's an unexpected error, return fallback values
+    const fallbackCost = DEFAULT_FALLBACK_SHIPPING_COST;
     return {
       success: false,
       error: error.message || 'Failed to calculate shipping cost',
       data: {
-        shippingCost: 50.0, // Fallback shipping cost
+        shippingCost: fallbackCost,
         sellerShippingCharge: 0, // Buyer pays full fallback cost
-        buyerShippingCharge: 50.0
+        buyerShippingCharge: fallbackCost
       }
     };
   }

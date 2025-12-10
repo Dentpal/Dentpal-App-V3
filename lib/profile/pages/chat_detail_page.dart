@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:dentpal/core/app_theme/index.dart';
 import 'package:dentpal/services/chat_service.dart';
+import 'package:dentpal/product/services/user_service.dart';
 import 'package:intl/intl.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dentpal/product/pages/product_detail_page.dart';
@@ -27,15 +28,38 @@ class ChatDetailPage extends StatefulWidget {
 
 class _ChatDetailPageState extends State<ChatDetailPage> {
   final ChatService _chatService = ChatService();
+  final UserService _userService = UserService();
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   bool _isLoading = false;
+  bool _isCurrentUserCsr = false;
+  ChatRoom? _chatRoom;
 
   @override
   void initState() {
     super.initState();
     // Mark messages as read when opening chat
     _markMessagesAsRead();
+    _loadChatRoomAndUserRole();
+  }
+
+  Future<void> _loadChatRoomAndUserRole() async {
+    try {
+      // Check if current user is CSR
+      final isCsr = await _userService.isCurrentUserCustomerSupport();
+      
+      // Load chat room data
+      final chatRoomRef = await _chatService.getChatRoom(widget.chatRoomId);
+      
+      if (mounted) {
+        setState(() {
+          _isCurrentUserCsr = isCsr;
+          _chatRoom = chatRoomRef;
+        });
+      }
+    } catch (e) {
+      // Ignore errors
+    }
   }
 
   @override
@@ -68,11 +92,44 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     });
 
     try {
-      await _chatService.sendMessage(
-        chatRoomId: widget.chatRoomId,
-        receiverId: widget.otherUserId,
-        message: message,
-      );
+      // Check if this is a support chat or has support requested
+      final isSupportChat = widget.chatRoomId.startsWith('support_');
+      final hasSupportRequested = _chatRoom?.supportRequested == true;
+      
+      if (_isCurrentUserCsr && (isSupportChat || hasSupportRequested)) {
+        // Get CSR name for the lock
+        final currentUser = FirebaseAuth.instance.currentUser;
+        String csrName = 'Support Agent';
+        if (currentUser != null) {
+          final userDoc = await _userService.getCurrentUserData();
+          csrName = userDoc?['fullName'] ?? userDoc?['displayName'] ?? 'Support Agent';
+        }
+        
+        // If CSR hasn't joined yet (for support requested chats), join first
+        if (hasSupportRequested && !_chatRoom!.hasCsrJoined && currentUser != null) {
+          await _chatService.joinChatAsSupport(
+            chatRoomId: widget.chatRoomId,
+            csrId: currentUser.uid,
+            csrName: csrName,
+          );
+        }
+        
+        // Use the support message method which handles locking
+        await _chatService.sendSupportMessage(
+          chatRoomId: widget.chatRoomId,
+          message: message,
+          isFromCsr: true,
+          csrId: currentUser?.uid,
+          csrName: csrName,
+        );
+      } else {
+        // Regular message or customer message in support chat
+        await _chatService.sendMessage(
+          chatRoomId: widget.chatRoomId,
+          receiverId: widget.otherUserId,
+          message: message,
+        );
+      }
 
       _messageController.clear();
 
@@ -80,6 +137,24 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _scrollToBottom();
       });
+      
+      // Reload chat room data to get updated lock status
+      if (isSupportChat || hasSupportRequested) {
+        _loadChatRoomAndUserRole();
+      }
+    } on ChatLockConflictException catch (e) {
+      // Another CSR already locked this chat
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: AppColors.warning,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        // Reload to get updated lock status
+        _loadChatRoomAndUserRole();
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -529,6 +604,59 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   }
 
   Widget _buildMessageInput() {
+    final isSupportChat = widget.chatRoomId.startsWith('support_');
+    final hasSupportRequested = _chatRoom?.supportRequested == true;
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    
+    // Check if CSR can message (chat not locked by another CSR)
+    final isSupportRelated = isSupportChat || hasSupportRequested;
+    final canCsrMessage = !isSupportRelated || 
+        !_isCurrentUserCsr ||
+        _chatRoom == null ||
+        !_chatRoom!.isLocked ||
+        _chatRoom!.lockedByCsrId == currentUserId;
+    
+    // Show lock indicator for CSRs viewing support chats locked by another CSR
+    if (isSupportRelated && _isCurrentUserCsr && _chatRoom != null && _chatRoom!.isLocked && _chatRoom!.lockedByCsrId != currentUserId) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.onSurface.withValues(alpha: 0.1),
+              blurRadius: 8,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.warning.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.lock, color: AppColors.warning, size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'This conversation is locked by ${_chatRoom!.lockedByCsrName ?? 'another agent'}',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.warning,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -542,73 +670,109 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         ],
       ),
       child: SafeArea(
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
-              child: TextField(
-                controller: _messageController,
-                maxLines: null,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: InputDecoration(
-                  hintText: 'Type a message...',
-                  hintStyle: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.onSurface.withValues(alpha: 0.5),
-                  ),
-                  filled: true,
-                  fillColor: AppColors.background,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: BorderSide(color: AppColors.primary, width: 2),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                ),
-                onSubmitted: (_) => _sendMessage(),
-              ),
-            ),
-
-            const SizedBox(width: 12),
-
-            GestureDetector(
-              onTap: _isLoading ? null : _sendMessage,
-              child: Container(
-                width: 48,
-                height: 48,
+            // Show lock status banner for CSR who locked this chat
+            if (isSupportRelated && _isCurrentUserCsr && _chatRoom != null && _chatRoom!.isLocked && _chatRoom!.lockedByCsrId == currentUserId)
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color:
-                      _messageController.text.trim().isNotEmpty && !_isLoading
-                      ? AppColors.primary
-                      : AppColors.primary,
-                  shape: BoxShape.circle,
+                  color: AppColors.success.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                child: _isLoading
-                    ? Container(
-                        padding: const EdgeInsets.all(12),
-                        child: const CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            AppColors.onPrimary,
-                          ),
+                child: Row(
+                  children: [
+                    Icon(Icons.lock, color: AppColors.success, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'You have this conversation locked',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.success,
                         ),
-                      )
-                    : Icon(
-                        Icons.send,
-                        color: _messageController.text.trim().isNotEmpty
-                            ? AppColors.onPrimary
-                            : AppColors.onPrimary,
-                        size: 20,
                       ),
+                    ),
+                    TextButton(
+                      onPressed: _unlockChat,
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.success,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        minimumSize: const Size(0, 32),
+                      ),
+                      child: const Text('Unlock'),
+                    ),
+                  ],
+                ),
               ),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _messageController,
+                    enabled: canCsrMessage,
+                    maxLines: null,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: InputDecoration(
+                      hintText: 'Type a message...',
+                      hintStyle: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.onSurface.withValues(alpha: 0.5),
+                      ),
+                      filled: true,
+                      fillColor: AppColors.background,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide.none,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide.none,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide(color: AppColors.primary, width: 2),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                    ),
+                    onSubmitted: (_) => _sendMessage(),
+                  ),
+                ),
+
+                const SizedBox(width: 12),
+
+                GestureDetector(
+                  onTap: (_isLoading || !canCsrMessage) ? null : _sendMessage,
+                  child: Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: canCsrMessage
+                          ? AppColors.primary
+                          : AppColors.primary.withValues(alpha: 0.5),
+                      shape: BoxShape.circle,
+                    ),
+                    child: _isLoading
+                        ? Container(
+                            padding: const EdgeInsets.all(12),
+                            child: const CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                AppColors.onPrimary,
+                              ),
+                            ),
+                          )
+                        : Icon(
+                            Icons.send,
+                            color: AppColors.onPrimary,
+                            size: 20,
+                          ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -616,7 +780,47 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     );
   }
 
+  Future<void> _unlockChat() async {
+    try {
+      await _chatService.unlockSupportChat(chatRoomId: widget.chatRoomId);
+      _loadChatRoomAndUserRole();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Chat unlocked successfully'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to unlock chat: ${e.toString()}'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
   void _showChatOptions() {
+    final isSupportChat = widget.chatRoomId.startsWith('support_');
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    
+    // Determine if "Contact Support" should be shown
+    // Hide if: it's already a support chat, support was requested, or CSR has joined
+    final canRequestSupport = !isSupportChat && 
+        !_isCurrentUserCsr && 
+        _chatRoom != null &&
+        !_chatRoom!.supportRequested && 
+        !_chatRoom!.hasCsrJoined;
+    
+    // Determine if CSR lock/unlock options should be shown
+    final showCsrOptions = _isCurrentUserCsr && 
+        (_chatRoom?.isSupportChat == true || _chatRoom?.supportRequested == true);
+    final isLockedByMe = _chatRoom?.lockedByCsrId == currentUserId;
+    
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -644,6 +848,110 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
               ),
 
               const SizedBox(height: 24),
+
+              // Contact Support option (for buyers/sellers)
+              if (canRequestSupport)
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.support_agent,
+                      color: AppColors.primary,
+                      size: 20,
+                    ),
+                  ),
+                  title: Text(
+                    'Contact Support',
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      color: AppColors.onSurface,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Request a support agent to join this conversation',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.onSurface.withValues(alpha: 0.6),
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _requestSupport();
+                  },
+                ),
+              
+              // Support already requested indicator (for buyers/sellers)
+              if (!_isCurrentUserCsr && _chatRoom != null && 
+                  (_chatRoom!.supportRequested || _chatRoom!.hasCsrJoined) && 
+                  !isSupportChat)
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.check_circle_outline,
+                      color: AppColors.success,
+                      size: 20,
+                    ),
+                  ),
+                  title: Text(
+                    _chatRoom!.hasCsrJoined 
+                        ? 'Support Agent Active' 
+                        : 'Support Requested',
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      color: AppColors.success,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  subtitle: Text(
+                    _chatRoom!.hasCsrJoined 
+                        ? '${_chatRoom!.csrName} is assisting you'
+                        : 'A support agent will join shortly',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.onSurface.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ),
+              
+              // CSR Lock/Unlock option
+              if (showCsrOptions && isLockedByMe)
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.warning.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.lock_open,
+                      color: AppColors.warning,
+                      size: 20,
+                    ),
+                  ),
+                  title: Text(
+                    'Unlock Conversation',
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      color: AppColors.warning,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Allow other support agents to respond',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.onSurface.withValues(alpha: 0.6),
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _unlockChat();
+                  },
+                ),
 
               // Delete chat option
               ListTile(
@@ -684,6 +992,30 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _requestSupport() async {
+    try {
+      await _chatService.requestSupportForChat(chatRoomId: widget.chatRoomId);
+      _loadChatRoomAndUserRole();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Support request sent. A support agent will join shortly.'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to request support: ${e.toString()}'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   void _showDeleteConfirmation() {

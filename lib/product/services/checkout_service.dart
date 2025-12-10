@@ -8,6 +8,7 @@ import '../models/paymongo_model.dart';
 import '../models/cart_model.dart';
 import '../../profile/models/shipping_address.dart';
 import 'cart_service.dart';
+import 'jrs_shipping_service.dart';
 
 class CheckoutService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -197,8 +198,9 @@ class CheckoutService {
           
         } catch (e) {
           AppLogger.d('Error calculating shipping for seller $sellerId: $e');
-          // Fallback to simple calculation for this seller
-          totalShippingCost += 50.0;
+          // Fallback to default shipping cost (₱250) when JRS API fails
+          // This matches the backend fallback in jrsShippingHelper.ts
+          totalShippingCost += JRSShippingService.defaultFallbackShippingCost;
         }
       }
       
@@ -207,7 +209,8 @@ class CheckoutService {
 
     } catch (e) {
       AppLogger.d('Error calculating shipping cost: $e');
-      return 50.0; // Default shipping cost per seller
+      // Default shipping cost per seller when calculation fails
+      return JRSShippingService.defaultFallbackShippingCost;
     }
   }
 

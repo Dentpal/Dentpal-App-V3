@@ -585,6 +585,21 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         productImage: selectedVariation?.imageURL ?? product.imageURL,
       );
 
+      // Create inquiry record in the product's Inquiries sub-collection
+      await FirebaseFirestore.instance
+          .collection('Products')
+          .doc(product.productId)
+          .collection('Inquiries')
+          .doc(user.uid)
+          .set({
+        'userId': user.uid,
+        'isCharged': false,
+        'createdAt': FieldValue.serverTimestamp(),
+        'lastInquiryAt': FieldValue.serverTimestamp(), // Track latest inquiry
+        'chatRoomId': chatRoomId,
+        'variationId': selectedVariation?.variationId,
+        'variationName': selectedVariation?.name,
+      }, SetOptions(mergeFields: ['lastInquiryAt', 'chatRoomId', 'variationId', 'variationName']));
       // Close loading dialog
       if (mounted) Navigator.of(context).pop();
 

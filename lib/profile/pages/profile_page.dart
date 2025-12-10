@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart'; // Added for kIsWeb check
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import '../../login_page.dart';
+import '../../product/services/user_service.dart';
 import 'shipping_addresses_page.dart';
 import 'orders_page.dart';
 import 'seller_listings_page.dart';
@@ -13,7 +14,11 @@ import 'settings/settings_page.dart';
 import 'package:dentpal/utils/app_logger.dart';
 
 class ProfilePage extends StatefulWidget {
-  const ProfilePage({super.key});
+  const ProfilePage({super.key, this.hideChats = false});
+
+  /// When true, hides the Chats option from the profile menu.
+  /// Used when ProfilePage is displayed within SellerDashboardPage which has its own Chats tab.
+  final bool hideChats;
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
@@ -64,6 +69,8 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _signOut(BuildContext context) async {
     try {
+      // Clear UserService cache before signing out
+      UserService.clearCache();
       await FirebaseAuth.instance.signOut();
       if (context.mounted) {
         Navigator.of(context).pushAndRemoveUntil(
@@ -257,20 +264,22 @@ class _ProfilePageState extends State<ProfilePage> {
                     ),
                     _buildDivider(),
                   ],
-                  // Chats option for all users
-                  _buildProfileOption(
-                    context,
-                    'Chats',
-                    Icons.chat_bubble_outline,
-                    () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => const ChatsPage(),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildDivider(),
+                  // Chats option - hidden when hideChats is true (e.g., in SellerDashboardPage)
+                  if (!widget.hideChats) ...[
+                    _buildProfileOption(
+                      context,
+                      'Chats',
+                      Icons.chat_bubble_outline,
+                      () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => const ChatsPage(),
+                          ),
+                        );
+                      },
+                    ),
+                    _buildDivider(),
+                  ],
                   if (userData?['role'] == 'buyer') ...[
                     _buildProfileOption(
                       context,
@@ -285,7 +294,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       },
                     ),
                     _buildDivider(),
-                  
+
                     _buildProfileOption(
                       context,
                       'Payment Methods',
@@ -301,7 +310,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         );
                       },
                     ),
-                    _buildDivider()
+                    _buildDivider(),
                   ],
                   _buildProfileOption(
                     context,

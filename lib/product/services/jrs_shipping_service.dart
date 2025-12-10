@@ -9,6 +9,10 @@ import '../models/cart_model.dart';
 class JRSShippingService {
   static const String _region = 'asia-southeast1';
   static FirebaseFunctions? _functions;
+  
+  /// Default fallback shipping cost when JRS API is unavailable (₱250)
+  /// This should match the backend fallback value in jrsShippingHelper.ts
+  static const double defaultFallbackShippingCost = 250.0;
 
   // Get Firebase Functions instance with proper platform configuration
   static FirebaseFunctions get functions {
@@ -17,15 +21,15 @@ class JRSShippingService {
       
       // Configure for platform compatibility
       if (kIsWeb) {
-        print('[JRS] Configuring Firebase Functions for web');
+        AppLogger.d('[JRS] Configuring Firebase Functions for web');
         // For web, functions should work out of the box
       } else {
-        print('[JRS] Configuring Firebase Functions for mobile');
+        AppLogger.d('[JRS] Configuring Firebase Functions for mobile');
         // For mobile, ensure proper configuration
         // Check if we need to use emulator or specific settings
       }
       
-      print('[JRS] Firebase Functions instance created for region: $_region');
+      AppLogger.d('[JRS] Firebase Functions instance created for region: $_region');
     }
     return _functions!;
   }
@@ -53,9 +57,9 @@ class JRSShippingService {
       AppLogger.d('   Items: ${cartItems.length}');
       
       // Add console logs for production debugging
-      print('[JRS] Starting calculation: $sellerAddress → $recipientAddress (${cartItems.length} items)');
-      if (kDebugMode) print('[JRS] Debug mode detected');
-      if (!kDebugMode) print('[JRS] Production mode detected');
+      AppLogger.d('[JRS] Starting calculation: $sellerAddress → $recipientAddress (${cartItems.length} items)');
+      if (kDebugMode) AppLogger.d('[JRS] Debug mode detected');
+      if (!kDebugMode) AppLogger.d('[JRS] Production mode detected');
 
       // Prepare the cart items data for the Firebase function
       final cartItemsData = cartItems.map((item) => item.toJRSShippingItem()).toList();
@@ -73,20 +77,20 @@ class JRSShippingService {
       AppLogger.d('JRS request data: $requestData');
 
       // Call the Firebase function with platform-specific implementation
-      print('[JRS] About to call Firebase function: calculateJRSShipping');
+      AppLogger.d('[JRS] About to call Firebase function: calculateJRSShipping');
       
       late final dynamic result;
       
       if (kIsWeb) {
         // Use HTTP directly for web to avoid dart2js Int64 issues
-        print('[JRS] Using HTTP call for web compatibility');
+        AppLogger.d('[JRS] Using HTTP call for web compatibility');
         try {
           final httpResult = await _callFirebaseFunctionViaHTTP(requestData);
           result = _MockCallableResult(httpResult);
         } catch (e) {
-          print('[JRS] Web HTTP call failed: $e');
+          AppLogger.d('[JRS] Web HTTP call failed: $e');
           // Fallback to cloud_functions for web if HTTP fails
-          print('[JRS] Falling back to cloud_functions for web');
+          AppLogger.d('[JRS] Falling back to cloud_functions for web');
           final callable = functions.httpsCallable('calculateJRSShipping');
           result = await callable.call(requestData).timeout(
             const Duration(seconds: 30),
@@ -97,13 +101,13 @@ class JRSShippingService {
         }
       } else {
         // Use cloud_functions package for mobile
-        print('[JRS] Using cloud_functions package for mobile');
+        AppLogger.d('[JRS] Using cloud_functions package for mobile');
         try {
           final callable = functions.httpsCallable('calculateJRSShipping');
           
           // Add debug info about Firebase setup
-          print('[JRS] Firebase Functions region: $_region');
-          print('[JRS] Calling function with data keys: ${requestData.keys.toList()}');
+          AppLogger.d('[JRS] Firebase Functions region: $_region');
+          AppLogger.d('[JRS] Calling function with data keys: ${requestData.keys.toList()}');
           
           result = await callable.call(requestData).timeout(
             const Duration(seconds: 30),
@@ -111,39 +115,39 @@ class JRSShippingService {
               throw Exception('Firebase function call timed out after 30 seconds');
             },
           );
-          print('[JRS] Mobile cloud_functions call succeeded');
+          AppLogger.d('[JRS] Mobile cloud_functions call succeeded');
         } catch (e) {
-          print('[JRS] Mobile cloud_functions call failed: $e');
+          AppLogger.d('[JRS] Mobile cloud_functions call failed: $e');
           
           // Check if it's an authentication or permission issue
           if (e.toString().contains('UNAUTHENTICATED') || e.toString().contains('PERMISSION_DENIED')) {
-            print('[JRS] Authentication/permission issue detected on mobile');
+            AppLogger.d('[JRS] Authentication/permission issue detected on mobile');
             AppLogger.d('JRS mobile auth issue: $e');
           } else if (e.toString().contains('UNAVAILABLE') || e.toString().contains('NETWORK')) {
-            print('[JRS] Network issue detected on mobile');
+            AppLogger.d('[JRS] Network issue detected on mobile');
             AppLogger.d('JRS mobile network issue: $e');
           } else {
-            print('[JRS] Unknown mobile error: $e');
+            AppLogger.d('[JRS] Unknown mobile error: $e');
             AppLogger.d('JRS mobile unknown error: $e');
           }
           
           // For mobile, we can also try the HTTP fallback if cloud_functions fails
-          print('[JRS] Trying HTTP fallback for mobile');
+          AppLogger.d('[JRS] Trying HTTP fallback for mobile');
           try {
             final httpResult = await _callFirebaseFunctionViaHTTP(requestData);
             result = _MockCallableResult(httpResult);
-            print('[JRS] Mobile HTTP fallback succeeded');
+            AppLogger.d('[JRS] Mobile HTTP fallback succeeded');
           } catch (httpError) {
-            print('[JRS] Mobile HTTP fallback also failed: $httpError');
+            AppLogger.d('[JRS] Mobile HTTP fallback also failed: $httpError');
             rethrow; // Re-throw the original error
           }
         }
       }
       
-      print('[JRS] Firebase function call completed');
+      AppLogger.d('[JRS] Firebase function call completed');
 
       AppLogger.d('JRS function response: ${result.data}');
-      print('[JRS] Response received: ${result.data}');
+      AppLogger.d('[JRS] Response received: ${result.data}');
 
       // Parse the response with safe type conversion for mobile compatibility
       final rawData = result.data;
@@ -174,7 +178,7 @@ class JRSShippingService {
         final shippingSplitRule = (responseData?['shippingSplitRule'] as String?) ?? 'buyer_pays_full';
         
         AppLogger.d('JRS shipping cost calculated: ₱$shippingCost (buyer pays: ₱$buyerShippingCharge, rule: $shippingSplitRule)');
-        print('[JRS] SUCCESS: ₱$shippingCost (buyer: ₱$buyerShippingCharge, seller: ₱$sellerShippingCharge, rule: $shippingSplitRule)');
+        AppLogger.d('[JRS] SUCCESS: ₱$shippingCost (buyer: ₱$buyerShippingCharge, seller: ₱$sellerShippingCharge, rule: $shippingSplitRule)');
         
         return JRSShippingResult(
           success: true,
@@ -195,11 +199,11 @@ class JRSShippingService {
           fallbackData = Map<String, dynamic>.from(fallbackDataRaw.map((key, value) => MapEntry(key.toString(), value)));
         }
         
-        final fallbackCost = (fallbackData?['shippingCost'] as num?)?.toDouble() ?? 50.0;
+        final fallbackCost = (fallbackData?['shippingCost'] as num?)?.toDouble() ?? defaultFallbackShippingCost;
         final fallbackBuyerCharge = (fallbackData?['buyerShippingCharge'] as num?)?.toDouble() ?? fallbackCost;
         
         AppLogger.d('JRS API error, using fallback: $error');
-        print('[JRS] API ERROR: $error (using fallback: ₱$fallbackCost)');
+        AppLogger.d('[JRS] API ERROR: $error (using fallback: ₱$fallbackCost)');
         
         return JRSShippingResult(
           success: false,
@@ -212,12 +216,13 @@ class JRSShippingService {
 
     } catch (e) {
       AppLogger.d('Error calculating JRS shipping: $e');
-      print('[JRS] ERROR: $e');
+      AppLogger.d('[JRS] ERROR: $e');
       
       // Return fallback shipping cost to prevent checkout from breaking
       return JRSShippingResult(
         success: false,
-        shippingCost: 50.0,
+        shippingCost: defaultFallbackShippingCost,
+        buyerShippingCharge: defaultFallbackShippingCost,
         message: 'Error calculating shipping cost, using fallback',
         error: e.toString(),
       );
@@ -229,7 +234,7 @@ class JRSShippingService {
     try {
       final url = 'https://asia-southeast1-dentpal-161e5.cloudfunctions.net/calculateJRSShipping';
       
-      print('[JRS] Making HTTP call to: $url');
+      AppLogger.d('[JRS] Making HTTP call to: $url');
       
       // Get Firebase Auth token
       String? authToken;
@@ -237,12 +242,12 @@ class JRSShippingService {
         final user = FirebaseAuth.instance.currentUser;
         if (user != null) {
           authToken = await user.getIdToken();
-          print('[JRS] Got auth token for HTTP call');
+          AppLogger.d('[JRS] Got auth token for HTTP call');
         } else {
-          print('[JRS] No authenticated user found');
+          AppLogger.d('[JRS] No authenticated user found');
         }
       } catch (e) {
-        print('[JRS] Error getting auth token: $e');
+        AppLogger.d('[JRS] Error getting auth token: $e');
       }
       
       final headers = <String, String>{
@@ -257,7 +262,7 @@ class JRSShippingService {
       // Add auth token if available
       if (authToken != null) {
         headers['Authorization'] = 'Bearer $authToken';
-        print('[JRS] Added Authorization header to HTTP request');
+        AppLogger.d('[JRS] Added Authorization header to HTTP request');
       }
       
       final response = await http.post(
@@ -266,18 +271,18 @@ class JRSShippingService {
         body: json.encode({'data': data}),
       ).timeout(const Duration(seconds: 30));
 
-      print('[JRS] HTTP response status: ${response.statusCode}');
+      AppLogger.d('[JRS] HTTP response status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
-        print('[JRS] HTTP response data: $responseData');
+        AppLogger.d('[JRS] HTTP response data: $responseData');
         return responseData['result'] ?? responseData;
       } else {
-        print('[JRS] HTTP error: ${response.statusCode} - ${response.body}');
+        AppLogger.d('[JRS] HTTP error: ${response.statusCode} - ${response.body}');
         throw Exception('HTTP ${response.statusCode}: ${response.body}');
       }
     } catch (e) {
-      print('[JRS] HTTP call failed: $e');
+      AppLogger.d('[JRS] HTTP call failed: $e');
       rethrow;
     }
   }
@@ -291,7 +296,7 @@ class JRSShippingService {
     };
 
     try {
-      print('[JRS] Testing Firebase Functions connectivity...');
+      AppLogger.d('[JRS] Testing Firebase Functions connectivity...');
       
       // Test basic callable creation
       final callable = functions.httpsCallable('calculateJRSShipping');
@@ -310,7 +315,7 @@ class JRSShippingService {
         ],
       };
       
-      print('[JRS] Making test call...');
+      AppLogger.d('[JRS] Making test call...');
       final response = await callable.call(testData).timeout(
         const Duration(seconds: 15),
         onTimeout: () {
@@ -328,10 +333,10 @@ class JRSShippingService {
         result['response_success'] = data['success'];
       }
       
-      print('[JRS] Firebase Functions connectivity test passed');
+      AppLogger.d('[JRS] Firebase Functions connectivity test passed');
       
     } catch (e) {
-      print('[JRS] Firebase Functions connectivity test failed: $e');
+      AppLogger.d('[JRS] Firebase Functions connectivity test failed: $e');
       result['error'] = e.toString();
       result['error_type'] = e.runtimeType.toString();
     }
