@@ -23,19 +23,36 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
   // Quick access to controller
   SignupController get _controller => widget.controller;
   
+  // FocusNodes for field traversal
+  final FocusNode _firstNameFocus = FocusNode();
+  final FocusNode _lastNameFocus = FocusNode();
+  final FocusNode _contactNumberFocus = FocusNode();
+  
+  @override
+  void dispose() {
+    _firstNameFocus.dispose();
+    _lastNameFocus.dispose();
+    _contactNumberFocus.dispose();
+    super.dispose();
+  }
+  
   @override
   Widget build(BuildContext context) {
-    return Form(
-      key: _controller.formKeyStep1,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.only(
-          left: 30.0,
-          right: 30.0,
-          top: 30.0
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+    return GestureDetector(
+      onTap: () {
+        FocusScope.of(context).unfocus();
+      },
+      child: Form(
+        key: _controller.formKeyStep1,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.only(
+            left: 30.0,
+            right: 30.0,
+            top: 30.0
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
             Text(
               'First Name',
               style: AppTextStyles.labelLarge.copyWith(
@@ -45,6 +62,12 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
             const SizedBox(height: 4),
             TextFormField(
               controller: _controller.firstNameController,
+              focusNode: _firstNameFocus,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+              onFieldSubmitted: (_) {
+                FocusScope.of(context).requestFocus(_lastNameFocus);
+              },
               style: AppTextStyles.inputText,
               decoration: InputDecoration(
                 hintText: 'Enter your first name',
@@ -92,6 +115,12 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
             const SizedBox(height: 4),
             TextFormField(
               controller: _controller.lastNameController,
+              focusNode: _lastNameFocus,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+              onFieldSubmitted: (_) {
+                FocusScope.of(context).requestFocus(_contactNumberFocus);
+              },
               style: AppTextStyles.inputText,
               decoration: InputDecoration(
                 hintText: 'Enter your last name',
@@ -139,7 +168,9 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
             const SizedBox(height: 4),
             TextFormField(
               controller: _controller.contactNumberController,
+              focusNode: _contactNumberFocus,
               keyboardType: TextInputType.phone,
+              textInputAction: TextInputAction.done,
               style: AppTextStyles.inputText,
               onChanged: (value) {
                 // Enable or disable verification button based on input format
@@ -406,6 +437,7 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
           ],
         ),
       ),
+    ),
     );
   }
   

@@ -59,6 +59,9 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
   // Capture countdown timer
   Timer? _captureTimer;
   int _captureCountdown = 0;
+  
+  // Android-specific: Periodic face detection timer
+  Timer? _androidFaceDetectionTimer;
 
   @override
   void initState() {
@@ -88,16 +91,15 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
         orElse: () => cameras.first,
       );
 
-      // Use different resolution for iOS to improve stability
-      final resolutionPreset = Platform.isIOS ? ResolutionPreset.medium : ResolutionPreset.high;
+      // Always use high resolution for good image quality
+      const resolutionPreset = ResolutionPreset.high;
 
       _cameraController = CameraController(
         frontCamera,
         resolutionPreset,
         enableAudio: false,
-        imageFormatGroup: Platform.isAndroid
-            ? ImageFormatGroup.nv21
-            : ImageFormatGroup.bgra8888,
+        // Only set imageFormatGroup for iOS - Android will use default to avoid CameraX NV21 conversion bug
+        imageFormatGroup: Platform.isIOS ? ImageFormatGroup.bgra8888 : null,
       );
 
       await _cameraController!.initialize();
@@ -116,13 +118,15 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
           _isInitialized = true;
         });
         
-        // Add delay for iOS camera initialization
         if (Platform.isIOS) {
+          // iOS: Use image stream for real-time face detection
           await Future.delayed(const Duration(milliseconds: 500));
+          _cameraController!.startImageStream(_processCameraImage);
+        } else {
+          // Android: Use periodic photo capture for face detection (avoids CameraX NV21 conversion crash)
+          await Future.delayed(const Duration(milliseconds: 500));
+          _startAndroidPeriodicFaceDetection();
         }
-        
-        // Start image stream for face detection
-        _cameraController!.startImageStream(_processCameraImage);
       }
     } catch (e) {
       AppLogger.d('Error initializing camera: $e');
@@ -130,6 +134,57 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
         setState(() {
           _statusMessage = "Camera initialization failed. Please check permissions.";
           _statusColor = AppColors.error;
+        });
+      }
+    }
+  }
+
+  // Android-specific: Periodic face detection using photo capture
+  void _startAndroidPeriodicFaceDetection() {
+    _androidFaceDetectionTimer?.cancel();
+    _androidFaceDetectionTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) async {
+      if (_isProcessing || _isCapturing || !mounted) return;
+      await _processAndroidFrame();
+    });
+  }
+  
+  void _stopAndroidPeriodicFaceDetection() {
+    _androidFaceDetectionTimer?.cancel();
+    _androidFaceDetectionTimer = null;
+  }
+  
+  Future<void> _processAndroidFrame() async {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
+    if (_isProcessing || _isCapturing) return;
+    
+    setState(() {
+      _isProcessing = true;
+    });
+    
+    try {
+      // Take a picture for face detection
+      final XFile imageFile = await _cameraController!.takePicture();
+      final inputImage = InputImage.fromFilePath(imageFile.path);
+      final faces = await _faceDetector.processImage(inputImage);
+      
+      // Clean up temp file
+      try {
+        await File(imageFile.path).delete();
+      } catch (_) {}
+      
+      if (mounted) {
+        setState(() {
+          _faces = faces;
+          _faceDetected = faces.isNotEmpty;
+          _updateStatusMessage(faces);
+        });
+      }
+    } catch (e) {
+      AppLogger.d('Error processing Android frame: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
         });
       }
     }
@@ -327,16 +382,20 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
       eyesClosed = face.leftEyeOpenProbability! < 0.3 && face.rightEyeOpenProbability! < 0.3;
     }
     
+    // Adjust frame thresholds: iOS uses image stream (~30fps), Android uses periodic capture (~2fps)
+    final int closedThreshold = Platform.isIOS ? 3 : 1;
+    final int openThreshold = Platform.isIOS ? 3 : 1;
+    
     if (eyesClosed) {
       _eyesClosedFrames++;
       _eyesOpenFrames = 0;
-      if (_eyesClosedFrames >= 3 && !_eyesClosed) {
+      if (_eyesClosedFrames >= closedThreshold && !_eyesClosed) {
         _eyesClosed = true;
       }
     } else {
       _eyesOpenFrames++;
       _eyesClosedFrames = 0;
-      if (_eyesOpenFrames >= 3 && _eyesClosed) {
+      if (_eyesOpenFrames >= openThreshold && _eyesClosed) {
         _blinkDetected = true;
         _eyesClosed = false;
       }
@@ -349,10 +408,13 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
     // Android: positive angle = left turn, negative = right turn
     double leftThreshold = Platform.isIOS ? -15 : 15;
     
+    // Adjust frame thresholds: iOS uses image stream (~30fps), Android uses periodic capture (~2fps)
+    final int holdFrames = Platform.isIOS ? 10 : 2;
+    
     if ((Platform.isIOS && _currentHeadAngleY < leftThreshold) || 
         (Platform.isAndroid && _currentHeadAngleY > leftThreshold)) {
       _leftTurnFrames++;
-      if (_leftTurnFrames >= 10) {  // Hold position for 10 frames
+      if (_leftTurnFrames >= holdFrames) {
         _leftTurnDetected = true;
       }
     } else {
@@ -361,9 +423,12 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
   }
 
   void _checkForCenterPosition() {
+    // Adjust frame thresholds: iOS uses image stream (~30fps), Android uses periodic capture (~2fps)
+    final int holdFrames = Platform.isIOS ? 10 : 2;
+    
     if (_currentHeadAngleY.abs() < 10) {  // Head in center position
       _centerFrames++;
-      if (_centerFrames >= 10) {  // Hold position for 10 frames
+      if (_centerFrames >= holdFrames) {
         _centerPositionDetected = true;
       }
     } else {
@@ -377,10 +442,13 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
     // Android: positive angle = left turn, negative = right turn
     double rightThreshold = Platform.isIOS ? 15 : -15;
     
+    // Adjust frame thresholds: iOS uses image stream (~30fps), Android uses periodic capture (~2fps)
+    final int holdFrames = Platform.isIOS ? 10 : 2;
+    
     if ((Platform.isIOS && _currentHeadAngleY > rightThreshold) || 
         (Platform.isAndroid && _currentHeadAngleY < rightThreshold)) {
       _rightTurnFrames++;
-      if (_rightTurnFrames >= 10) {  // Hold position for 10 frames
+      if (_rightTurnFrames >= holdFrames) {
         _rightTurnDetected = true;
       }
     } else {
@@ -468,57 +536,43 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
     });
 
     try {
-      // Stop the image stream before capturing
-      await _cameraController!.stopImageStream();
-      
-      // For iOS, add a small delay to ensure camera is ready
+      // Platform-specific handling before capture
       if (Platform.isIOS) {
+        // iOS: Stop the image stream before capturing
+        await _cameraController!.stopImageStream();
         await Future.delayed(const Duration(milliseconds: 200));
-      }
-      
-      // Ensure flash is disabled for iOS
-      if (Platform.isIOS) {
         await _cameraController!.setFlashMode(FlashMode.off);
+      } else {
+        // Android: Stop periodic face detection
+        _stopAndroidPeriodicFaceDetection();
       }
       
       // Capture the image
       final XFile imageFile = await _cameraController!.takePicture();
       final Uint8List imageBytes = await imageFile.readAsBytes();
       
-      // For iOS, skip face verification in captured image since flash can interfere
-      // We already verified liveness, so we can trust the capture
-      if (Platform.isIOS) {
-        AppLogger.d('iOS: Skipping captured image face verification due to flash interference');
-        widget.onFaceVerified(imageBytes);
-      } else {
-        // For Android, verify the captured image has a face
-        final inputImage = InputImage.fromFilePath(imageFile.path);
-        final capturedFaces = await _faceDetector.processImage(inputImage);
-        
-        if (capturedFaces.isNotEmpty) {
-          widget.onFaceVerified(imageBytes);
-        } else {
-          _showSnackBar("No face detected in captured image. Please try again.");
-          // Reset liveness check
-          _resetLivenessCheck();
-          // Restart image stream
-          _cameraController!.startImageStream(_processCameraImage);
-        }
-      }
+      // Skip post-capture face verification since we already verified liveness
+      // through multiple checks (blink, head turns left/right, center position).
+      // Using InputImage.fromFilePath() causes ML Kit to use inefficient Bitmap format.
+      AppLogger.d('Liveness verified - skipping post-capture face detection');
+      widget.onFaceVerified(imageBytes);
     } catch (e) {
       AppLogger.d('Error capturing image: $e');
       _showSnackBar("Failed to capture image. Please try again.");
       // Reset liveness check and restart for retry
       _resetLivenessCheck();
-      // Restart image stream with platform-specific handling
+      // Restart face detection with platform-specific handling
       try {
         if (Platform.isIOS) {
           // For iOS, add delay before restarting stream
           await Future.delayed(const Duration(milliseconds: 300));
+          _cameraController!.startImageStream(_processCameraImage);
+        } else {
+          // For Android, restart periodic face detection
+          _startAndroidPeriodicFaceDetection();
         }
-        _cameraController!.startImageStream(_processCameraImage);
       } catch (restartError) {
-        AppLogger.d('Error restarting image stream: $restartError');
+        AppLogger.d('Error restarting face detection: $restartError');
       }
     } finally {
       if (mounted) {
@@ -767,6 +821,7 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
   void dispose() {
     _resetTimer?.cancel();
     _captureTimer?.cancel();
+    _androidFaceDetectionTimer?.cancel();
     _cameraController?.stopImageStream();
     _cameraController?.dispose();
     _faceDetector.close();

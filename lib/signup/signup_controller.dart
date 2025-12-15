@@ -17,6 +17,10 @@ class SignupController {
   String? idVerificationError;
   Uint8List? idFaceImage; // Temporarily store face image from ID
   
+  // Specialty selection (after ID verification)
+  List<String> selectedSpecialties = [];
+  static const int maxSpecialties = 5;
+  
   // Face verification (Step 4)
   bool isFaceVerified = false;
   Uint8List? selfieImage; // Store the captured selfie

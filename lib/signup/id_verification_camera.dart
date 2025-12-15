@@ -56,6 +56,7 @@ class _IdVerificationCameraState extends State<IdVerificationCamera> {
   @override
   void dispose() {
     _captureTimer?.cancel();
+    _androidOcrTimer?.cancel();
     _cameraController?.dispose();
     _textRecognizer?.close();
     super.dispose();
@@ -73,32 +74,42 @@ class _IdVerificationCameraState extends State<IdVerificationCamera> {
         orElse: () => cameras.first,
       );
 
-      // Use different resolution presets for different platforms
-      final resolutionPreset = Platform.isIOS ? ResolutionPreset.medium : ResolutionPreset.high;
+      // Platform-specific camera configuration
+      ResolutionPreset resolutionPreset;
+      if (Platform.isIOS) {
+        resolutionPreset = ResolutionPreset.high;
+      } else {
+        // Android: Use medium resolution for stability
+        resolutionPreset = ResolutionPreset.high;
+      }
 
       _cameraController = CameraController(
         backCamera,
         resolutionPreset,
         enableAudio: false,
-        imageFormatGroup: Platform.isAndroid
-            ? ImageFormatGroup.nv21
-            : ImageFormatGroup.bgra8888,
+        // Only set imageFormatGroup for iOS - Android will use default
+        imageFormatGroup: Platform.isIOS ? ImageFormatGroup.bgra8888 : null,
       );
 
       await _cameraController!.initialize();
+      
+      // Lock orientation for consistent preview
+      await _cameraController!.lockCaptureOrientation(DeviceOrientation.portraitUp);
       
       if (mounted) {
         setState(() {
           _isInitialized = true;
         });
         
-        // Start image stream for text detection with platform-specific delay
         if (Platform.isIOS) {
-          // Add slight delay for iOS to ensure camera is fully ready
+          // iOS: Use image stream for real-time OCR
           await Future.delayed(const Duration(milliseconds: 500));
+          _cameraController!.startImageStream(_processCameraImage);
+        } else {
+          // Android: Use periodic photo capture for OCR (avoids CameraX crash)
+          await Future.delayed(const Duration(milliseconds: 500));
+          _startAndroidPeriodicOcr();
         }
-        
-        _cameraController!.startImageStream(_processCameraImage);
       }
     } catch (e) {
       AppLogger.d('Error initializing camera: $e');
@@ -111,7 +122,87 @@ class _IdVerificationCameraState extends State<IdVerificationCamera> {
     }
   }
 
+  // Android-specific: Periodic OCR using photo capture
+  Timer? _androidOcrTimer;
+  
+  void _startAndroidPeriodicOcr() {
+    _androidOcrTimer?.cancel();
+    _androidOcrTimer = Timer.periodic(const Duration(milliseconds: 1500), (timer) async {
+      if (_isProcessing || _isCapturing || _ocrConfirmed || !mounted) return;
+      await _processAndroidFrame();
+    });
+  }
+  
+  void _stopAndroidPeriodicOcr() {
+    _androidOcrTimer?.cancel();
+    _androidOcrTimer = null;
+  }
+  
+  Future<void> _processAndroidFrame() async {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
+    if (_isProcessing || _isCapturing || _ocrConfirmed) return;
+    
+    setState(() {
+      _isProcessing = true;
+    });
+    
+    try {
+      // Take a picture for OCR
+      final XFile image = await _cameraController!.takePicture();
+      final inputImage = InputImage.fromFilePath(image.path);
+      
+      if (_textRecognizer != null) {
+        final recognizedText = await _textRecognizer!.processImage(inputImage);
+        final text = recognizedText.text.toUpperCase();
+        
+        AppLogger.d('Android OCR (photo): ${text.length} chars detected');
+        
+        bool isValidId = _isValidGovernmentId(text);
+        
+        if (mounted) {
+          setState(() {
+            if (isValidId) {
+              _validIdFrames++;
+              _idDetected = true;
+              _statusMessage = "Valid PRC ID detected! Hold still...";
+              _statusColor = Colors.green;
+              
+              if (_validIdFrames >= _requiredValidFrames && _captureTimer == null) {
+                _ocrConfirmed = true;
+                _stopAndroidPeriodicOcr();
+                _startCaptureCountdown();
+              }
+            } else if (!_ocrConfirmed) {
+              _validIdFrames = 0;
+              _idDetected = false;
+              _statusMessage = "Position your PRC ID in the frame";
+              _statusColor = AppColors.grey600;
+              _cancelCapture();
+            }
+          });
+        }
+      }
+      
+      // Clean up temp file
+      try {
+        await File(image.path).delete();
+      } catch (_) {}
+      
+    } catch (e) {
+      AppLogger.d('Android OCR error: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+        });
+      }
+    }
+  }
+
+  // iOS only: Process camera image stream
   void _processCameraImage(CameraImage cameraImage) async {
+    // This method is only used on iOS
+    if (!Platform.isIOS) return;
     if (_isProcessing || _isCapturing || _ocrConfirmed) return;
     
     setState(() {
@@ -136,7 +227,7 @@ class _IdVerificationCameraState extends State<IdVerificationCamera> {
               _statusColor = Colors.green;
               
               // For iOS, reduce the required frames for faster detection
-              final requiredFrames = Platform.isIOS ? 2 : _requiredValidFrames;
+              final requiredFrames = 2;
               
               // If we've detected a valid ID for enough consecutive frames, confirm OCR and start capture
               if (_validIdFrames >= requiredFrames && _captureTimer == null) {
@@ -226,7 +317,10 @@ class _IdVerificationCameraState extends State<IdVerificationCamera> {
 
     try {
       // Stop the image stream before taking picture
-      await _cameraController!.stopImageStream();
+      // Stop image stream on iOS before taking picture
+      if (Platform.isIOS) {
+        await _cameraController!.stopImageStream();
+      }
       
       final XFile image = await _cameraController!.takePicture();
       
@@ -260,44 +354,34 @@ class _IdVerificationCameraState extends State<IdVerificationCamera> {
           _idDetected = false;
         });
         
-        // Restart image stream
-        _cameraController!.startImageStream(_processCameraImage);
+        // Restart OCR detection based on platform
+        if (Platform.isIOS) {
+          _cameraController!.startImageStream(_processCameraImage);
+        } else {
+          _startAndroidPeriodicOcr();
+        }
       }
     }
   }
 
+  // iOS only: Convert camera image to InputImage for ML Kit
   InputImage? _inputImageFromCameraImage(CameraImage cameraImage) {
+    // This is only used for iOS image stream
+    if (!Platform.isIOS) return null;
     if (_cameraController == null) return null;
 
     final camera = _cameraController!.description;
     final sensorOrientation = camera.sensorOrientation;
     
-    InputImageRotation? rotation;
-    if (Platform.isIOS) {
-      rotation = InputImageRotationValue.fromRawValue(sensorOrientation);
-    } else if (Platform.isAndroid) {
-      var rotationCompensation = orientations[_cameraController!.value.deviceOrientation];
-      if (rotationCompensation == null) {
-        return null;
-      }
-      if (camera.lensDirection == CameraLensDirection.front) {
-        rotationCompensation = (sensorOrientation + rotationCompensation) % 360;
-      } else {
-        rotationCompensation = (sensorOrientation - rotationCompensation + 360) % 360;
-      }
-      rotation = InputImageRotationValue.fromRawValue(rotationCompensation);
-    }
-    if (rotation == null) {
-      return null;
-    }
+    InputImageRotation? rotation = InputImageRotationValue.fromRawValue(sensorOrientation);
+    rotation ??= InputImageRotation.rotation0deg;
 
+    // iOS BGRA8888 format - single plane
     final format = InputImageFormatValue.fromRawValue(cameraImage.format.raw);
-    if (format == null ||
-        (Platform.isAndroid && format != InputImageFormat.nv21) ||
-        (Platform.isIOS && format != InputImageFormat.bgra8888)) {
+    if (format == null || format != InputImageFormat.bgra8888) {
       return null;
     }
-
+    
     if (cameraImage.planes.length != 1) {
       return null;
     }
@@ -314,16 +398,59 @@ class _IdVerificationCameraState extends State<IdVerificationCamera> {
     );
   }
 
+  /// Build camera preview with platform-specific aspect ratio handling
+  Widget _buildCameraPreview() {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    
+    final size = MediaQuery.of(context).size;
+    final cameraAspectRatio = _cameraController!.value.aspectRatio;
+    
+    // Platform-specific preview handling
+    if (Platform.isIOS) {
+      // iOS: Use FittedBox with BoxFit.cover to fill screen while maintaining aspect ratio
+      return ClipRect(
+        child: OverflowBox(
+          alignment: Alignment.center,
+          child: FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: size.width,
+              height: size.width * cameraAspectRatio,
+              child: CameraPreview(_cameraController!),
+            ),
+          ),
+        ),
+      );
+    } else {
+      // Android: The aspect ratio is already good, use Transform to fill screen
+      return ClipRect(
+        child: OverflowBox(
+          alignment: Alignment.center,
+          child: FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: size.width,
+              height: size.width * cameraAspectRatio,
+              child: CameraPreview(_cameraController!),
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Camera preview
+          // Camera preview with proper aspect ratio handling
           if (_isInitialized && _cameraController != null)
             Positioned.fill(
-              child: CameraPreview(_cameraController!),
+              child: _buildCameraPreview(),
             )
           else
             const Center(

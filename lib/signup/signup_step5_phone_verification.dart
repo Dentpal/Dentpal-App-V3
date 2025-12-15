@@ -271,6 +271,8 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
         'email': _controller.email,
         'gender': _controller.gender,
         'birthdate': _controller.birthdate != null ? Timestamp.fromDate(_controller.birthdate!) : null,
+        'RegistrationNo': _controller.idNumber, // PRC Registration Number from OCR
+        'specialty': _controller.selectedSpecialties, // List of selected specialties
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
         'role': 'buyer', // Default role

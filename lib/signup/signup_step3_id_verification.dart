@@ -5,6 +5,7 @@ import 'dart:io';
 import 'signup_controller.dart';
 import 'id_ocr_service.dart';
 import 'id_verification_camera.dart';
+import 'specialty_selection_widget.dart';
 import 'package:dentpal/core/app_theme/index.dart';
 
 class SignupStep3IdVerification extends StatefulWidget {
@@ -204,6 +205,20 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
             ),
           ),
           
+          // Specialty selection section - only show when ID is verified
+          if (widget.controller.isIdVerified) ...[
+            const SizedBox(height: 24),
+            SpecialtySelectionWidget(
+              selectedSpecialties: widget.controller.selectedSpecialties,
+              onSelectionChanged: (specialties) {
+                setState(() {
+                  widget.controller.selectedSpecialties = specialties;
+                });
+              },
+              maxSelections: SignupController.maxSpecialties,
+            ),
+          ],
+          
           const SizedBox(height: 32),
           
           // Action buttons
@@ -230,12 +245,12 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
               const SizedBox(width: 16),
               Expanded(
                 child: ElevatedButton(
-                  onPressed: widget.controller.isIdVerified ? widget.onNext : null,
+                  onPressed: (widget.controller.isIdVerified && widget.controller.selectedSpecialties.isNotEmpty) ? widget.onNext : null,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: widget.controller.isIdVerified 
+                    backgroundColor: (widget.controller.isIdVerified && widget.controller.selectedSpecialties.isNotEmpty)
                         ? AppColors.primary 
                         : AppColors.grey300,
-                    foregroundColor: widget.controller.isIdVerified 
+                    foregroundColor: (widget.controller.isIdVerified && widget.controller.selectedSpecialties.isNotEmpty)
                         ? AppColors.onPrimary 
                         : AppColors.grey600,
                     padding: const EdgeInsets.symmetric(vertical: 16),
