@@ -33,11 +33,11 @@ class DeepLinkService {
     try {
       final Uri? initialLink = await _appLinks.getInitialLink();
       if (initialLink != null) {
-        //AppLogger.d('App launched with initial link: $initialLink');
+        AppLogger.d('App launched with initial link: $initialLink');
         _processDeepLink(initialLink);
       }
     } catch (e) {
-      //AppLogger.d('Error handling initial link: $e');
+      AppLogger.d('Error handling initial link: $e');
     }
   }
 
@@ -45,22 +45,22 @@ class DeepLinkService {
   static void _handleIncomingLinks() {
     _linkSubscription = _appLinks.uriLinkStream.listen(
       (Uri uri) {
-        //AppLogger.d('Received deep link: $uri');
+        AppLogger.d('Received deep link: $uri');
         _processDeepLink(uri);
       },
       onError: (err) {
-        //AppLogger.d('Deep link error: $err');
+        AppLogger.d('Deep link error: $err');
       },
     );
   }
 
   /// Process and route deep links
   static void _processDeepLink(Uri uri) {
-    //AppLogger.d('Processing deep link: $uri');
+    AppLogger.d('Processing deep link: $uri');
     
     // Check if this is a Firebase auth callback - if so, ignore it and let Firebase handle it
     if (_isFirebaseAuthCallback(uri)) {
-      //AppLogger.d('Firebase auth callback detected, ignoring deep link processing');
+      AppLogger.d('Firebase auth callback detected, ignoring deep link processing');
       return;
     }
     
@@ -103,46 +103,46 @@ class DeepLinkService {
       }
 
       if (productId != null && productId.isNotEmpty) {
-        //AppLogger.d('Extracted product ID: $productId');
+        AppLogger.d('Extracted product ID: $productId');
         _navigateToProduct(productId);
       } else {
-        //AppLogger.d('Could not extract product ID from: $uri');
+        AppLogger.d('Could not extract product ID from: $uri');
         // Don't navigate to home for unrecognized links - they might be for other services
-        //AppLogger.d('Unrecognized deep link format, ignoring navigation');
+        AppLogger.d('Unrecognized deep link format, ignoring navigation');
       }
     } catch (e) {
-      //AppLogger.d('Error processing deep link: $e');
+      AppLogger.d('Error processing deep link: $e');
       // Don't navigate on error - the link might be for another service
-      //AppLogger.d('Deep link processing error, ignoring navigation');
+      AppLogger.d('Deep link processing error, ignoring navigation');
     }
   }
 
   /// Check if the deep link is a Firebase auth callback that should be ignored
   static bool _isFirebaseAuthCallback(Uri uri) {
-    //AppLogger.d('Checking if Firebase auth callback: ${uri.toString()}');
+    AppLogger.d('Checking if Firebase auth callback: ${uri.toString()}');
     
     // Check for Firebase auth callback patterns
     if (uri.scheme.contains('googleusercontent.apps') && uri.host == 'firebaseauth') {
-      //AppLogger.d('Detected Google OAuth Firebase auth callback');
+      AppLogger.d('Detected Google OAuth Firebase auth callback');
       return true;
     }
     
     // Check for Firebase auth domain callbacks
     if (uri.host.contains('firebaseapp.com') && uri.path.contains('/__/auth/callback')) {
-      //AppLogger.d('Detected Firebase app domain auth callback');
+      AppLogger.d('Detected Firebase app domain auth callback');
       return true;
     }
     
     // Check for reCAPTCHA verification callbacks
     if (uri.queryParameters.containsKey('authType') && 
         uri.queryParameters['authType'] == 'verifyApp') {
-      //AppLogger.d('Detected reCAPTCHA verification callback');
+      AppLogger.d('Detected reCAPTCHA verification callback');
       return true;
     }
     
     // Check for recaptcha token in query parameters
     if (uri.queryParameters.containsKey('recaptchaToken')) {
-      //AppLogger.d('Detected recaptcha token in query parameters');
+      AppLogger.d('Detected recaptcha token in query parameters');
       return true;
     }
     
@@ -152,22 +152,22 @@ class DeepLinkService {
       if (deepLinkId != null && (deepLinkId.contains('firebaseapp.com') || 
           deepLinkId.contains('authType=verifyApp') || 
           deepLinkId.contains('recaptchaToken'))) {
-        //AppLogger.d('Detected Firebase auth callback in deep_link_id parameter');
+        AppLogger.d('Detected Firebase auth callback in deep_link_id parameter');
         return true;
       }
     }
     
-    //AppLogger.d('Not a Firebase auth callback');
+    AppLogger.d('Not a Firebase auth callback');
     return false;
   }
 
   /// Navigate to product detail page
   static void _navigateToProduct(String productId) {
     if (_navigatorKey?.currentState != null) {
-      //AppLogger.d('Navigating to product: $productId');
+      AppLogger.d('Navigating to product: $productId');
       _navigatorKey!.currentState!.pushNamed('/product/$productId');
     } else {
-      //AppLogger.d('Navigator not available for product navigation');
+      AppLogger.d('Navigator not available for product navigation');
     }
   }
 

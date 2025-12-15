@@ -268,7 +268,7 @@ class _EditProductPageState extends State<EditProductPage> {
 
     try {
       final categories = await _categoryService.getCategories();
-      //AppLogger.d('Loaded ${categories.length} categories');
+      AppLogger.d('Loaded ${categories.length} categories');
 
       setState(() {
         _categories = categories;
@@ -292,7 +292,7 @@ class _EditProductPageState extends State<EditProductPage> {
         _loadSubCategories(_selectedCategoryId!);
       }
     } catch (e) {
-      //AppLogger.d('Error loading categories: $e');
+      AppLogger.d('Error loading categories: $e');
       setState(() {
         _isCategoriesLoading = false;
         _errorMessage = 'Failed to load categories: $e';
@@ -301,11 +301,11 @@ class _EditProductPageState extends State<EditProductPage> {
   }
 
   void _loadSubCategories(String categoryId) async {
-    //AppLogger.d('Loading subcategories for categoryId: $categoryId');
+    AppLogger.d('Loading subcategories for categoryId: $categoryId');
 
     try {
       final subCategories = await _categoryService.getSubCategories(categoryId);
-      //AppLogger.d('Received ${subCategories.length} subcategories');
+      AppLogger.d('Received ${subCategories.length} subcategories');
 
       setState(() {
         _subCategories = subCategories;
@@ -322,7 +322,7 @@ class _EditProductPageState extends State<EditProductPage> {
         }
       });
     } catch (e) {
-      //AppLogger.d('Error loading subcategories: $e');
+      AppLogger.d('Error loading subcategories: $e');
       setState(() {
         _errorMessage = 'Failed to load subcategories: $e';
         _subCategories = [];
@@ -430,7 +430,7 @@ class _EditProductPageState extends State<EditProductPage> {
         });
       }
     } catch (e) {
-      //AppLogger.d('Error picking product image: $e');
+      AppLogger.d('Error picking product image: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -480,7 +480,7 @@ class _EditProductPageState extends State<EditProductPage> {
         });
       }
     } catch (e) {
-      //AppLogger.d('Error picking variation image: $e');
+      AppLogger.d('Error picking variation image: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -518,7 +518,7 @@ class _EditProductPageState extends State<EditProductPage> {
         });
       }
     } catch (e) {
-      //AppLogger.d('Error scanning barcode: $e');
+      AppLogger.d('Error scanning barcode: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1104,7 +1104,7 @@ class _EditProductPageState extends State<EditProductPage> {
                     onChanged: _isCategoriesLoading
                         ? null
                         : (value) {
-                            //AppLogger.d('Category selected: $value');
+                            AppLogger.d('Category selected: $value');
                             setState(() {
                               _selectedCategoryId = value;
                               _productForm.categoryId = value ?? '';
@@ -2718,7 +2718,7 @@ class _EditProductPageState extends State<EditProductPage> {
                 onChanged: _isCategoriesLoading
                     ? null
                     : (String? value) {
-                        //AppLogger.d('Category selected: $value');
+                        AppLogger.d('Category selected: $value');
                         setState(() {
                           _selectedCategoryId = value;
                           _productForm.categoryId = value ?? '';

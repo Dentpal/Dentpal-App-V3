@@ -8,7 +8,7 @@ class JRSTrackingService {
   /// Track JRS package by tracking ID
   static Future<JRSTrackingResult> trackPackage(String trackingId) async {
     try {
-      //AppLogger.d('Tracking JRS package: $trackingId');
+      AppLogger.d('Tracking JRS package: $trackingId');
 
       // Get current user token for authentication
       final user = FirebaseAuth.instance.currentUser;
@@ -23,7 +23,7 @@ class JRSTrackingService {
         'trackingId': trackingId.trim(),
       };
 
-      //AppLogger.d('JRS tracking request data: $requestData');
+      AppLogger.d('JRS tracking request data: $requestData');
 
       // Call the Firebase function
       final callable = _functions.httpsCallable('trackJRSShipping');
@@ -31,7 +31,7 @@ class JRSTrackingService {
       final result = await callable.call(requestData);
       final data = result.data;
 
-      //AppLogger.d('JRS tracking raw response: $data');
+      AppLogger.d('JRS tracking raw response: $data');
 
       if (data['success'] == true) {
         final trackingData = data['data'] as Map<String, dynamic>?;
@@ -60,7 +60,7 @@ class JRSTrackingService {
         }
       } else {
         final errorMessage = data['error'] ?? data['message'] ?? 'Failed to track package';
-        //AppLogger.d('JRS tracking failed: $errorMessage');
+        AppLogger.d('JRS tracking failed: $errorMessage');
         
         return JRSTrackingResult(
           success: false,
@@ -73,7 +73,7 @@ class JRSTrackingService {
       }
 
     } catch (e) {
-      //AppLogger.d('JRS tracking error: $e');
+      AppLogger.d('JRS tracking error: $e');
       
       return JRSTrackingResult(
         success: false,

@@ -12,7 +12,7 @@ class ClickTrackingService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        //AppLogger.d('No authenticated user for product click tracking');
+        AppLogger.d('No authenticated user for product click tracking');
         return;
       }
 
@@ -23,7 +23,7 @@ class ClickTrackingService {
       // Check if user already clicked this product today using SharedPreferences
       final prefs = await SharedPreferences.getInstance();
       if (prefs.getBool(clickKey) == true) {
-        //AppLogger.d('User already clicked product $productId today');
+        AppLogger.d('User already clicked product $productId today');
         return;
       }
 
@@ -35,9 +35,9 @@ class ClickTrackingService {
       // Mark this product as clicked today for this user
       await prefs.setBool(clickKey, true);
 
-      //AppLogger.d('Product click tracked for product: $productId');
+      AppLogger.d('Product click tracked for product: $productId');
     } catch (e) {
-      //AppLogger.d('Error tracking product click: $e');
+      AppLogger.d('Error tracking product click: $e');
     }
   }
 
@@ -46,7 +46,7 @@ class ClickTrackingService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        //AppLogger.d('No authenticated user for category click tracking');
+        AppLogger.d('No authenticated user for category click tracking');
         return;
       }
 
@@ -57,7 +57,7 @@ class ClickTrackingService {
       // Check if user already clicked this category today using SharedPreferences
       final prefs = await SharedPreferences.getInstance();
       if (prefs.getBool(clickKey) == true) {
-        //AppLogger.d('User already clicked category $categoryId today');
+        AppLogger.d('User already clicked category $categoryId today');
         return;
       }
 
@@ -69,9 +69,9 @@ class ClickTrackingService {
       // Mark this category as clicked today for this user
       await prefs.setBool(clickKey, true);
 
-      //AppLogger.d('Category click tracked for category: $categoryId');
+      AppLogger.d('Category click tracked for category: $categoryId');
     } catch (e) {
-      //AppLogger.d('Error tracking category click: $e');
+      AppLogger.d('Error tracking category click: $e');
     }
   }
 
@@ -80,7 +80,7 @@ class ClickTrackingService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        //AppLogger.d('No authenticated user for subcategory click tracking');
+        AppLogger.d('No authenticated user for subcategory click tracking');
         return;
       }
 
@@ -91,7 +91,7 @@ class ClickTrackingService {
       // Check if user already clicked this subcategory today using SharedPreferences
       final prefs = await SharedPreferences.getInstance();
       if (prefs.getBool(clickKey) == true) {
-        //AppLogger.d('User already clicked subcategory $subCategoryId today');
+        AppLogger.d('User already clicked subcategory $subCategoryId today');
         return;
       }
 
@@ -108,9 +108,9 @@ class ClickTrackingService {
       // Mark this subcategory as clicked today for this user
       await prefs.setBool(clickKey, true);
 
-      //AppLogger.d('SubCategory click tracked for subcategory: $subCategoryId in category: $categoryId');
+      AppLogger.d('SubCategory click tracked for subcategory: $subCategoryId in category: $categoryId');
     } catch (e) {
-      //AppLogger.d('Error tracking subcategory click: $e');
+      AppLogger.d('Error tracking subcategory click: $e');
     }
   }
 
@@ -131,9 +131,9 @@ class ClickTrackingService {
         }
       }
       
-      //AppLogger.d('Cleaned up old click tracking data');
+      AppLogger.d('Cleaned up old click tracking data');
     } catch (e) {
-      //AppLogger.d('Error cleaning up click tracking data: $e');
+      AppLogger.d('Error cleaning up click tracking data: $e');
     }
   }
 
@@ -156,7 +156,7 @@ class ClickTrackingService {
       final prefs = await SharedPreferences.getInstance();
       return prefs.getBool(clickKey) ?? false;
     } catch (e) {
-      //AppLogger.d('Error checking product click status: $e');
+      AppLogger.d('Error checking product click status: $e');
       return false;
     }
   }
@@ -174,7 +174,7 @@ class ClickTrackingService {
       final prefs = await SharedPreferences.getInstance();
       return prefs.getBool(clickKey) ?? false;
     } catch (e) {
-      //AppLogger.d('Error checking category click status: $e');
+      AppLogger.d('Error checking category click status: $e');
       return false;
     }
   }
@@ -192,7 +192,7 @@ class ClickTrackingService {
       final prefs = await SharedPreferences.getInstance();
       return prefs.getBool(clickKey) ?? false;
     } catch (e) {
-      //AppLogger.d('Error checking subcategory click status: $e');
+      AppLogger.d('Error checking subcategory click status: $e');
       return false;
     }
   }

@@ -435,9 +435,9 @@ class ChatService {
         'user2ShopName': user2ShopName,
       });
 
-      //AppLogger.d('Updated chat room $chatRoomId with correct user data');
+      AppLogger.d('Updated chat room $chatRoomId with correct user data');
     } catch (e) {
-      //AppLogger.d('Error updating chat room user data: $e');
+      AppLogger.d('Error updating chat room user data: $e');
     }
   }
 
@@ -572,7 +572,7 @@ class ChatService {
 
       return chatRoomId;
     } catch (e) {
-      //AppLogger.d('Error creating chat room: $e');
+      AppLogger.d('Error creating chat room: $e');
       throw Exception('Failed to create chat room: $e');
     }
   }
@@ -650,9 +650,9 @@ class ChatService {
         'lastActivity': DateTime.now().millisecondsSinceEpoch,
       });
 
-      //AppLogger.d('Message sent successfully');
+      AppLogger.d('Message sent successfully');
     } catch (e) {
-      //AppLogger.d('Error sending message: $e');
+      AppLogger.d('Error sending message: $e');
       throw Exception('Failed to send message: $e');
     }
   }
@@ -747,7 +747,7 @@ class ChatService {
         }
       }
     } catch (e) {
-      //AppLogger.d('Error marking messages as read: $e');
+      AppLogger.d('Error marking messages as read: $e');
     }
   }
 
@@ -785,10 +785,10 @@ class ChatService {
         // Update the chat room with the new deletedFor list
         await chatRoomRef.update({'deletedFor': deletedFor});
 
-        //AppLogger.d('Chat room hidden for user ${currentUser.uid}');
+        AppLogger.d('Chat room hidden for user ${currentUser.uid}');
       }
     } catch (e) {
-      //AppLogger.d('Error hiding chat room: $e');
+      AppLogger.d('Error hiding chat room: $e');
       throw Exception('Failed to hide chat room: $e');
     }
   }
@@ -825,10 +825,10 @@ class ChatService {
         // Update the chat room with the new deletedFor list
         await chatRoomRef.update({'deletedFor': deletedFor});
 
-        //AppLogger.d('Chat room restored for user ${currentUser.uid}');
+        AppLogger.d('Chat room restored for user ${currentUser.uid}');
       }
     } catch (e) {
-      //AppLogger.d('Error restoring chat room: $e');
+      AppLogger.d('Error restoring chat room: $e');
       throw Exception('Failed to restore chat room: $e');
     }
   }
@@ -859,7 +859,7 @@ class ChatService {
 
       if (snapshot.exists) {
         // Support chat already exists, return the existing chat room ID
-        //AppLogger.d('Support chat already exists for order $orderId');
+        AppLogger.d('Support chat already exists for order $orderId');
         return chatRoomId;
       }
 
@@ -901,10 +901,10 @@ class ChatService {
         message: 'Hi! I need help with my order #$orderNumber.',
       );
 
-      //AppLogger.d('Support chat created for order $orderId');
+      AppLogger.d('Support chat created for order $orderId');
       return chatRoomId;
     } catch (e) {
-      //AppLogger.d('Error creating support chat room: $e');
+      AppLogger.d('Error creating support chat room: $e');
       throw Exception('Failed to create support chat room: $e');
     }
   }
@@ -990,9 +990,9 @@ class ChatService {
         message: message,
       );
 
-      //AppLogger.d('Support message sent successfully');
+      AppLogger.d('Support message sent successfully');
     } catch (e) {
-      //AppLogger.d('Error sending support message: $e');
+      AppLogger.d('Error sending support message: $e');
       rethrow;
     }
   }
@@ -1079,7 +1079,7 @@ class ChatService {
       throw Exception('Failed to acquire lock on chat room');
     }
 
-    //AppLogger.d('CSR $csrId acquired lock on chat $chatRoomId');
+    AppLogger.d('CSR $csrId acquired lock on chat $chatRoomId');
   }
 
   // Lock a support chat to a specific CSR (uses atomic transaction)
@@ -1095,9 +1095,9 @@ class ChatService {
         csrId: csrId,
         csrName: csrName,
       );
-      //AppLogger.d('Support chat $chatRoomId locked by CSR $csrId');
+      AppLogger.d('Support chat $chatRoomId locked by CSR $csrId');
     } catch (e) {
-      //AppLogger.d('Error locking support chat: $e');
+      AppLogger.d('Error locking support chat: $e');
       rethrow;
     }
   }
@@ -1142,9 +1142,9 @@ class ChatService {
 
       await chatRoomRef.update(updates);
 
-      //AppLogger.d('Support chat $chatRoomId unlocked');
+      AppLogger.d('Support chat $chatRoomId unlocked');
     } catch (e) {
-      //AppLogger.d('Error unlocking support chat: $e');
+      AppLogger.d('Error unlocking support chat: $e');
       throw Exception('Failed to unlock support chat: $e');
     }
   }
@@ -1217,9 +1217,9 @@ class ChatService {
         message: '$requesterName has requested customer support. A support agent will join this conversation shortly.',
       );
 
-      //AppLogger.d('Support requested for chat $chatRoomId');
+      AppLogger.d('Support requested for chat $chatRoomId');
     } catch (e) {
-      //AppLogger.d('Error requesting support: $e');
+      AppLogger.d('Error requesting support: $e');
       rethrow;
     }
   }
@@ -1267,9 +1267,9 @@ class ChatService {
         message: '$csrName from Customer Support has joined the conversation.',
       );
 
-      //AppLogger.d('CSR $csrId joined chat $chatRoomId');
+      AppLogger.d('CSR $csrId joined chat $chatRoomId');
     } catch (e) {
-      //AppLogger.d('Error joining chat as support: $e');
+      AppLogger.d('Error joining chat as support: $e');
       rethrow;
     }
   }
@@ -1285,7 +1285,7 @@ class ChatService {
       }
       return null;
     } catch (e) {
-      //AppLogger.d('Error getting chat room: $e');
+      AppLogger.d('Error getting chat room: $e');
       return null;
     }
   }
@@ -1305,7 +1305,7 @@ class ChatService {
       }
       return null;
     } catch (e) {
-      //AppLogger.d('Error getting support chat for order: $e');
+      AppLogger.d('Error getting support chat for order: $e');
       rethrow;
     }
   }
@@ -1323,7 +1323,7 @@ class ChatService {
 
       return userDoc.data()?['role'] == 'customer_support';
     } catch (e) {
-      //AppLogger.d('Error checking CSR status: $e');
+      AppLogger.d('Error checking CSR status: $e');
       return false;
     }
   }

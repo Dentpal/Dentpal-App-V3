@@ -140,11 +140,11 @@ class _EditProfilePageState extends State<EditProfilePage> {
           _lastNameController.text = _originalLastName;
           
           // Debug logging
-          //AppLogger.d('Loaded Profile Data:');
-          //AppLogger.d('  firstName: $_originalFirstName');
-          //AppLogger.d('  middleName: $_originalMiddleName');
-          //AppLogger.d('  lastName: $_originalLastName');
-          //AppLogger.d('  Has individual fields: ${userData.containsKey('firstName') || userData.containsKey('middleName') || userData.containsKey('lastName')}');
+          AppLogger.d('Loaded Profile Data:');
+          AppLogger.d('  firstName: $_originalFirstName');
+          AppLogger.d('  middleName: $_originalMiddleName');
+          AppLogger.d('  lastName: $_originalLastName');
+          AppLogger.d('  Has individual fields: ${userData.containsKey('firstName') || userData.containsKey('middleName') || userData.containsKey('lastName')}');
           
           _originalGender = userData['gender'] ?? '';
           _selectedGender = _originalGender.toLowerCase(); // Normalize to lowercase to match dropdown items
@@ -164,7 +164,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         }
       }
     } catch (e) {
-      //AppLogger.d('Error loading user data: $e');
+      AppLogger.d('Error loading user data: $e');
       if (mounted) {
         _showErrorSnackBar('Failed to load profile data');
       }
@@ -380,7 +380,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         await _processSelectedImage(image);
       }
     } catch (e) {
-      //AppLogger.d('Error taking photo: $e');
+      AppLogger.d('Error taking photo: $e');
       
       // Check if it's a permission error and handle accordingly
       if (e.toString().contains('camera_access_denied') || 
@@ -436,7 +436,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         await _processSelectedImage(image);
       }
     } catch (e) {
-      //AppLogger.d('Error picking image: $e');
+      AppLogger.d('Error picking image: $e');
       
       // Check if it's a permission error and handle accordingly
       if (e.toString().contains('photo_access_denied') || 
@@ -492,7 +492,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
       _showSuccessSnackBar('Image selected successfully');
     } catch (e) {
-      //AppLogger.d('Error processing image: $e');
+      AppLogger.d('Error processing image: $e');
       _showErrorSnackBar('Failed to process image');
     }
   }
@@ -544,7 +544,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
       
       return downloadUrl;
     } catch (e) {
-      //AppLogger.d('Error uploading photo: $e');
+      AppLogger.d('Error uploading photo: $e');
       _showErrorSnackBar('Failed to upload photo');
       return null;
     } finally {
@@ -597,23 +597,23 @@ class _EditProfilePageState extends State<EditProfilePage> {
       final newLastName = _lastNameController.text.trim();
       
       // Debug logging
-      //AppLogger.d('Save Profile - Name Fields:');
-      //AppLogger.d('  Original: $_originalFirstName | $_originalMiddleName | $_originalLastName');
-      //AppLogger.d('  New: $newFirstName | $newMiddleName | $newLastName');
+      AppLogger.d('Save Profile - Name Fields:');
+      AppLogger.d('  Original: $_originalFirstName | $_originalMiddleName | $_originalLastName');
+      AppLogger.d('  New: $newFirstName | $newMiddleName | $newLastName');
       
       // Check if any name field has changed
       bool nameFieldsChanged = newFirstName != _originalFirstName ||
                               newMiddleName != _originalMiddleName ||
                               newLastName != _originalLastName;
       
-      //AppLogger.d('  Name fields changed: $nameFieldsChanged');
+      AppLogger.d('  Name fields changed: $nameFieldsChanged');
       
       // If any name field changed, update all name fields to ensure consistency
       if (nameFieldsChanged) {
         updates['firstName'] = newFirstName;
         updates['middleName'] = newMiddleName;
         updates['lastName'] = newLastName;
-        //AppLogger.d('  Added name updates to batch: firstName=$newFirstName, middleName=$newMiddleName, lastName=$newLastName');
+        AppLogger.d('  Added name updates to batch: firstName=$newFirstName, middleName=$newMiddleName, lastName=$newLastName');
       }
       
       // Update gender
@@ -687,7 +687,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         }
       }
     } catch (e) {
-      //AppLogger.d('Error updating profile: $e');
+      AppLogger.d('Error updating profile: $e');
       if (mounted) {
         _showErrorSnackBar('Failed to update profile');
       }

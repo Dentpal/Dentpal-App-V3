@@ -59,7 +59,7 @@ class CartService {
         return newDoc.id;
       }
     } catch (e) {
-      //AppLogger.d('Error adding to cart: $e');
+      AppLogger.d('Error adding to cart: $e');
       rethrow;
     }
   }
@@ -76,14 +76,14 @@ class CartService {
         return cartItems;
       }
 
-      //AppLogger.d('Loading ${cartItems.length} cart items with optimized queries');
+      AppLogger.d('Loading ${cartItems.length} cart items with optimized queries');
       
       // Extract unique product IDs and seller IDs for batch fetching
       Set<String> productIds = cartItems.map((item) => item.productId).toSet();
       Set<String> sellerIds = <String>{};
       
       // STEP 1: Batch fetch all product documents in parallel
-      //AppLogger.d('Step 1: Fetching ${productIds.length} products in parallel');
+      AppLogger.d('Step 1: Fetching ${productIds.length} products in parallel');
       Map<String, Product> productsMap = {};
       List<Future<void>> productFutures = productIds.map((productId) async {
         try {
@@ -94,15 +94,15 @@ class CartService {
             sellerIds.add(product.sellerId); // Collect seller IDs
           }
         } catch (e) {
-          //AppLogger.d('Error fetching product $productId: $e');
+          AppLogger.d('Error fetching product $productId: $e');
         }
       }).toList();
       
       await Future.wait(productFutures);
-      //AppLogger.d('Fetched ${productsMap.length} products');
+      AppLogger.d('Fetched ${productsMap.length} products');
 
       // STEP 2: Batch fetch all seller documents in parallel
-      //AppLogger.d('Step 2: Fetching ${sellerIds.length} sellers in parallel');
+      AppLogger.d('Step 2: Fetching ${sellerIds.length} sellers in parallel');
       Map<String, Map<String, dynamic>> sellersMap = {};
       List<Future<void>> sellerFutures = sellerIds.map((sellerId) async {
         try {
@@ -111,15 +111,15 @@ class CartService {
             sellersMap[sellerId] = sellerDoc.data() as Map<String, dynamic>;
           }
         } catch (e) {
-          //AppLogger.d('Error fetching seller $sellerId: $e');
+          AppLogger.d('Error fetching seller $sellerId: $e');
         }
       }).toList();
       
       await Future.wait(sellerFutures);
-      //AppLogger.d('Fetched ${sellersMap.length} sellers');
+      AppLogger.d('Fetched ${sellersMap.length} sellers');
 
       // STEP 3: Batch fetch all variation documents in parallel
-      //AppLogger.d('Step 3: Fetching variations in parallel');
+      AppLogger.d('Step 3: Fetching variations in parallel');
       Map<String, ProductVariation> variationsMap = {};
       List<Future<void>> variationFutures = cartItems.map((item) async {
         try {
@@ -151,15 +151,15 @@ class CartService {
             }
           }
         } catch (e) {
-          //AppLogger.d('Error fetching variation for ${item.productId}: $e');
+          AppLogger.d('Error fetching variation for ${item.productId}: $e');
         }
       }).toList();
       
       await Future.wait(variationFutures);
-      //AppLogger.d('Fetched ${variationsMap.length} variations');
+      AppLogger.d('Fetched ${variationsMap.length} variations');
 
       // STEP 4: Populate cart items with fetched data (fast, no network calls)
-      //AppLogger.d('Step 4: Populating cart items with fetched data');
+      AppLogger.d('Step 4: Populating cart items with fetched data');
       for (var item in cartItems) {
         final product = productsMap[item.productId];
         if (product != null) {
@@ -191,7 +191,7 @@ class CartService {
                 }
               }
             } catch (e) {
-              //AppLogger.d('Error parsing seller address for ${product.sellerId}: $e');
+              AppLogger.d('Error parsing seller address for ${product.sellerId}: $e');
               // Try alternative address field as fallback
               final shippingAddress = sellerData['shippingAddress'] as String?;
               if (shippingAddress != null && shippingAddress.isNotEmpty) {
@@ -232,10 +232,10 @@ class CartService {
         }
       }
       
-      //AppLogger.d('Cart loading completed successfully with ${cartItems.length} items');
+      AppLogger.d('Cart loading completed successfully with ${cartItems.length} items');
       return cartItems;
     } catch (e) {
-      //AppLogger.d('Error getting cart items: $e');
+      AppLogger.d('Error getting cart items: $e');
       return [];
     }
   }
@@ -283,7 +283,7 @@ class CartService {
       
       return sellerGroups;
     } catch (e) {
-      //AppLogger.d('Error getting cart items grouped by seller: $e');
+      AppLogger.d('Error getting cart items grouped by seller: $e');
       return [];
     }
   }
@@ -296,7 +296,7 @@ class CartService {
         'isSelected': isSelected,
       });
     } catch (e) {
-      //AppLogger.d('Error updating item selection: $e');
+      AppLogger.d('Error updating item selection: $e');
       rethrow;
     }
   }
@@ -312,9 +312,9 @@ class CartService {
       }
       
       await batch.commit();
-      //AppLogger.d('Batch updated ${itemSelections.length} item selections');
+      AppLogger.d('Batch updated ${itemSelections.length} item selections');
     } catch (e) {
-      //AppLogger.d('Error batch updating item selections: $e');
+      AppLogger.d('Error batch updating item selections: $e');
       rethrow;
     }
   }
@@ -328,7 +328,7 @@ class CartService {
         await _getCartRefRequired().doc(cartItemId).update({'quantity': quantity});
       }
     } catch (e) {
-      //AppLogger.d('Error updating cart item: $e');
+      AppLogger.d('Error updating cart item: $e');
       rethrow;
     }
   }
@@ -338,7 +338,7 @@ class CartService {
     try {
       await _getCartRefRequired().doc(cartItemId).delete();
     } catch (e) {
-      //AppLogger.d('Error removing cart item: $e');
+      AppLogger.d('Error removing cart item: $e');
       rethrow;
     }
   }
@@ -396,7 +396,7 @@ class CartService {
                 }
               }
             } catch (e) {
-              //AppLogger.d('Error parsing seller address: $e');
+              AppLogger.d('Error parsing seller address: $e');
               // Try alternative address field as fallback
               final shippingAddress = sellerData['shippingAddress'] as String?;
               if (shippingAddress != null && shippingAddress.isNotEmpty) {
@@ -405,7 +405,7 @@ class CartService {
             }
           }
         } catch (e) {
-          //AppLogger.d('Error fetching seller info: $e');
+          AppLogger.d('Error fetching seller info: $e');
           cartItem.sellerName = 'Unknown Seller';
         }
         
@@ -468,7 +468,7 @@ class CartService {
       
       return cartItem;
     } catch (e) {
-      //AppLogger.d('Error getting cart item: $e');
+      AppLogger.d('Error getting cart item: $e');
       return null;
     }
   }
@@ -482,7 +482,7 @@ class CartService {
         await doc.reference.delete();
       }
     } catch (e) {
-      //AppLogger.d('Error clearing cart: $e');
+      AppLogger.d('Error clearing cart: $e');
       rethrow;
     }
   }
@@ -500,10 +500,10 @@ class CartService {
     required String recipientAddress,
   }) async {
     try {
-      //AppLogger.d('Calculating shipping cost with recipient address');
-      //AppLogger.d('   Seller: $sellerId');
-      //AppLogger.d('   Recipient: $recipientAddress');
-      //AppLogger.d('   Items: ${items.length}');
+      AppLogger.d('Calculating shipping cost with recipient address');
+      AppLogger.d('   Seller: $sellerId');
+      AppLogger.d('   Recipient: $recipientAddress');
+      AppLogger.d('   Items: ${items.length}');
 
       if (items.isEmpty) {
         return 0.0;
@@ -536,7 +536,7 @@ class CartService {
               sellerAddress = JRSShippingService.formatShippingAddressForJRS(addressField);
             }
           } catch (e) {
-            //AppLogger.d('Error parsing seller address: $e');
+            AppLogger.d('Error parsing seller address: $e');
           }
           
           // Alternative: check if seller has a direct shipping address field
@@ -548,14 +548,14 @@ class CartService {
           }
         }
       } catch (e) {
-        //AppLogger.d('Error fetching seller address, using default: $e');
+        AppLogger.d('Error fetching seller address, using default: $e');
       }
 
       // Format recipient address for JRS
       final formattedRecipientAddress = JRSShippingService.formatShippingAddressForJRS(recipientAddress);
 
-      //AppLogger.d(' Seller address: $sellerAddress');
-      //AppLogger.d(' Recipient address: $formattedRecipientAddress');
+      AppLogger.d(' Seller address: $sellerAddress');
+      AppLogger.d(' Recipient address: $formattedRecipientAddress');
 
       // Calculate shipping using JRS API
       final result = await JRSShippingService.calculateShippingCost(
@@ -567,19 +567,19 @@ class CartService {
         valuation: true,
       );
 
-      //AppLogger.d('JRS shipping result: $result');
+      AppLogger.d('JRS shipping result: $result');
 
       if (result.success) {
         // Return buyer's portion of shipping (already calculated by backend with split logic)
-        //AppLogger.d('JRS shipping: full=₱${result.shippingCost}, buyerPays=₱${result.buyerShippingCharge}');
+        AppLogger.d('JRS shipping: full=₱${result.shippingCost}, buyerPays=₱${result.buyerShippingCharge}');
         return result.buyerShippingCharge;
       } else {
-        //AppLogger.d('JRS calculation failed, using fallback: ${result.message}');
+        AppLogger.d('JRS calculation failed, using fallback: ${result.message}');
         return result.buyerShippingCharge; // Still return the buyer's portion from fallback
       }
 
     } catch (e) {
-      //AppLogger.d('Error calculating JRS shipping cost with address: $e');
+      AppLogger.d('Error calculating JRS shipping cost with address: $e');
       
       // Fallback to simple logic
       double totalValue = items.fold(0.0, (sum, item) => sum + item.totalPrice);

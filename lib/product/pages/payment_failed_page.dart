@@ -67,7 +67,7 @@ class _PaymentFailedPageState extends State<PaymentFailedPage>
     // Start countdown timer
     _startCountdown();
 
-    //AppLogger.d('Payment Failed Page loaded with sessionId: ${widget.sessionId}, orderId: ${widget.orderId}');
+    AppLogger.d('Payment Failed Page loaded with sessionId: ${widget.sessionId}, orderId: ${widget.orderId}');
   }
 
   void _startCountdown() {
@@ -84,7 +84,7 @@ class _PaymentFailedPageState extends State<PaymentFailedPage>
   }
 
   void _redirectToCart() {
-    //AppLogger.d('Redirecting to cart page...');
+    AppLogger.d('Redirecting to cart page...');
     // Navigate to cart page using MaterialPageRoute to avoid URL changes
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (context) => const CartPage()),
@@ -93,7 +93,7 @@ class _PaymentFailedPageState extends State<PaymentFailedPage>
   }
 
   void _retryPayment() {
-    //AppLogger.d('Retrying payment...');
+    AppLogger.d('Retrying payment...');
     // Navigate back to checkout
     Navigator.of(context).pushNamedAndRemoveUntil('/checkout', (route) => false);
   }

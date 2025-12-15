@@ -107,7 +107,7 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
         try {
           await _cameraController!.setFlashMode(FlashMode.off);
         } catch (e) {
-          //AppLogger.d('Could not disable flash: $e');
+          AppLogger.d('Could not disable flash: $e');
         }
       }
       
@@ -125,7 +125,7 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
         _cameraController!.startImageStream(_processCameraImage);
       }
     } catch (e) {
-      //AppLogger.d('Error initializing camera: $e');
+      AppLogger.d('Error initializing camera: $e');
       if (mounted) {
         setState(() {
           _statusMessage = "Camera initialization failed. Please check permissions.";
@@ -156,7 +156,7 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
         }
       }
     } catch (e) {
-      //AppLogger.d('Error processing camera image: $e');
+      AppLogger.d('Error processing camera image: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -244,7 +244,7 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
     _currentHeadAngleY = face.headEulerAngleY ?? 0.0;
     
     // Debug: Log head angles for platform-specific tuning
-    //AppLogger.d('Platform: ${Platform.operatingSystem}, HeadAngleY: $_currentHeadAngleY');
+    AppLogger.d('Platform: ${Platform.operatingSystem}, HeadAngleY: $_currentHeadAngleY');
     
     // Check for blink detection
     if (!_blinkDetected) {
@@ -488,7 +488,7 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
       // For iOS, skip face verification in captured image since flash can interfere
       // We already verified liveness, so we can trust the capture
       if (Platform.isIOS) {
-        //AppLogger.d('iOS: Skipping captured image face verification due to flash interference');
+        AppLogger.d('iOS: Skipping captured image face verification due to flash interference');
         widget.onFaceVerified(imageBytes);
       } else {
         // For Android, verify the captured image has a face
@@ -506,7 +506,7 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
         }
       }
     } catch (e) {
-      //AppLogger.d('Error capturing image: $e');
+      AppLogger.d('Error capturing image: $e');
       _showSnackBar("Failed to capture image. Please try again.");
       // Reset liveness check and restart for retry
       _resetLivenessCheck();
@@ -518,7 +518,7 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
         }
         _cameraController!.startImageStream(_processCameraImage);
       } catch (restartError) {
-        //AppLogger.d('Error restarting image stream: $restartError');
+        AppLogger.d('Error restarting image stream: $restartError');
       }
     } finally {
       if (mounted) {

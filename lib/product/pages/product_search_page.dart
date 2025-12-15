@@ -165,7 +165,7 @@ class _ProductSearchPageState extends State<ProductSearchPage> {
     });
 
     try {
-      //AppLogger.d('ProductSearchPage: Performing search with query: "$_searchQuery"');
+      AppLogger.d('ProductSearchPage: Performing search with query: "$_searchQuery"');
       
       final result = await _searchService.searchProducts(
         searchQuery: _searchQuery.isEmpty ? null : _searchQuery,
@@ -715,7 +715,7 @@ class _ProductSearchPageState extends State<ProductSearchPage> {
           orElse: () => Category(categoryId: '', categoryName: 'Unknown', clickCounter: 0),
         );
         chips.add(_buildActiveFilterChip('Category: ${category.categoryName}', () {
-          //AppLogger.d('Removing category filter: ${category.categoryName}');
+          AppLogger.d('Removing category filter: ${category.categoryName}');
           setState(() {
             List<String> newCategoryIds = List.from(_currentFilters.categoryIds);
             newCategoryIds.remove(categoryId);
@@ -727,7 +727,7 @@ class _ProductSearchPageState extends State<ProductSearchPage> {
               _subcategoriesByCategory.clear();
             }
           });
-          //AppLogger.d('Category filter cleared, performing search');
+          AppLogger.d('Category filter cleared, performing search');
           _performSearch();
         }));
       }
@@ -772,7 +772,7 @@ class _ProductSearchPageState extends State<ProductSearchPage> {
         priceText += 'Up to ₱${_currentFilters.maxPrice}';
       }
       chips.add(_buildActiveFilterChip(priceText, () {
-        //AppLogger.d('Removing price filter');
+        AppLogger.d('Removing price filter');
         setState(() {
           _currentFilters = _currentFilters.copyWith(
             minPrice: null,
@@ -781,7 +781,7 @@ class _ProductSearchPageState extends State<ProductSearchPage> {
           _minPriceController.clear();
           _maxPriceController.clear();
         });
-        //AppLogger.d('Price filter cleared, performing search');
+        AppLogger.d('Price filter cleared, performing search');
         _performSearch();
       }));
     }
@@ -821,7 +821,7 @@ class _ProductSearchPageState extends State<ProductSearchPage> {
             color: Colors.transparent,
             child: InkWell(
               onTap: () {
-                //AppLogger.d('Removing filter: $label');
+                AppLogger.d('Removing filter: $label');
                 onRemove();
               },
               borderRadius: BorderRadius.circular(10),

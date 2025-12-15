@@ -34,16 +34,18 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
 
     final trackingId = _getTrackingId();
     // Debug logging for tracking ID
-    //AppLogger.d('Order tracking ID from shippingInfo: ${widget.order.shippingInfo.trackingId}',);
-    //AppLogger.d('Order tracking ID extracted: $trackingId');
-    //AppLogger.d('Order status: ${widget.order.status}');
+    AppLogger.d(
+      'Order tracking ID from shippingInfo: ${widget.order.shippingInfo.trackingId}',
+    );
+    AppLogger.d('Order tracking ID extracted: $trackingId');
+    AppLogger.d('Order status: ${widget.order.status}');
 
     // Auto-load tracking if tracking ID is available
     if (trackingId != null) {
-      //AppLogger.d('Tracking ID available, loading tracking...');
+      AppLogger.d('Tracking ID available, loading tracking...');
       _loadTracking();
     } else {
-      //AppLogger.d('No tracking ID available for this order');
+      AppLogger.d('No tracking ID available for this order');
     }
   }
 
@@ -52,7 +54,9 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     // First check if trackingId is directly available in shippingInfo
     if (widget.order.shippingInfo.trackingId != null &&
         widget.order.shippingInfo.trackingId!.isNotEmpty) {
-      //AppLogger.d('Found tracking ID in shippingInfo.trackingId: ${widget.order.shippingInfo.trackingId}',);
+      AppLogger.d(
+        'Found tracking ID in shippingInfo.trackingId: ${widget.order.shippingInfo.trackingId}',
+      );
       return widget.order.shippingInfo.trackingId;
     }
 
@@ -64,7 +68,9 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         // Check direct trackingId field
         final directTrackingId = shippingInfoData['trackingId'] as String?;
         if (directTrackingId != null && directTrackingId.isNotEmpty) {
-          //AppLogger.d('Found tracking ID in shippingInfo data: $directTrackingId',);
+          AppLogger.d(
+            'Found tracking ID in shippingInfo data: $directTrackingId',
+          );
           return directTrackingId;
         }
 
@@ -78,7 +84,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
             if (shippingDto != null) {
               final trackingId = shippingDto['TrackingId'] as String?;
               if (trackingId != null && trackingId.isNotEmpty) {
-                //AppLogger.d('Found tracking ID in JRS response: $trackingId');
+                AppLogger.d('Found tracking ID in JRS response: $trackingId');
                 return trackingId;
               }
             }
@@ -86,7 +92,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         }
       }
     } catch (e) {
-      //AppLogger.d('Error extracting tracking ID from shipping info: $e');
+      AppLogger.d('Error extracting tracking ID from shipping info: $e');
     }
 
     // If not found in shipping info, try to extract from status history notes
@@ -94,13 +100,13 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
       if (status.note != null && status.note!.contains('Tracking:')) {
         final match = RegExp(r'Tracking:\s*(\d+)').firstMatch(status.note!);
         if (match != null) {
-          //AppLogger.d('Found tracking ID in status history: ${match.group(1)}');
+          AppLogger.d('Found tracking ID in status history: ${match.group(1)}');
           return match.group(1);
         }
       }
     }
 
-    //AppLogger.d('No tracking ID found');
+    AppLogger.d('No tracking ID found');
     return null;
   }
 
@@ -128,7 +134,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         _isLoadingTracking = false;
         _trackingError = e.toString();
       });
-      //AppLogger.d('Error loading tracking: $e');
+      AppLogger.d('Error loading tracking: $e');
     }
   }
 
@@ -136,7 +142,9 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
   @override
   Widget build(BuildContext context) {
     // Debug logging
-    //AppLogger.d('Building OrderDetailsPage - Tracking ID: ${widget.order.shippingInfo.trackingId}',);
+    AppLogger.d(
+      'Building OrderDetailsPage - Tracking ID: ${widget.order.shippingInfo.trackingId}',
+    );
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -1330,7 +1338,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         });
       }
     } catch (e) {
-      //AppLogger.d('Error reordering items: $e');
+      AppLogger.d('Error reordering items: $e');
 
       // Close loading dialog if still open
       if (context.mounted) {
@@ -1359,7 +1367,9 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     }
 
     final checkoutUrl = widget.order.paymongo.checkoutUrl!;
-    //AppLogger.d('Resuming payment for order ${widget.order.orderId} with URL: $checkoutUrl',);
+    AppLogger.d(
+      'Resuming payment for order ${widget.order.orderId} with URL: $checkoutUrl',
+    );
 
     try {
       if (kIsWeb) {
@@ -1412,7 +1422,9 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                 successUrl: 'https://dentpal-store.web.app/payment-success',
                 cancelUrl: 'https://dentpal-store.web.app/payment-failed',
                 onPaymentComplete: (isSuccess, orderId) {
-                  //AppLogger.d('Payment resumed completed. Success: $isSuccess, Order ID: $orderId',);
+                  AppLogger.d(
+                    'Payment resumed completed. Success: $isSuccess, Order ID: $orderId',
+                  );
 
                   if (isSuccess) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -1438,7 +1450,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         }
       }
     } catch (e) {
-      //AppLogger.d('Error resuming payment: $e');
+      AppLogger.d('Error resuming payment: $e');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1505,7 +1517,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         Navigator.of(context).pop();
       }
     } catch (e) {
-      //AppLogger.d('Error cancelling order: $e');
+      AppLogger.d('Error cancelling order: $e');
 
       // Close loading dialog if still open
       if (context.mounted) {

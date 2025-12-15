@@ -44,7 +44,7 @@ class _ChatsPageState extends State<ChatsPage> {
           });
         }
       } catch (e) {
-        //AppLogger.d('Failed to check user role: $e');
+        AppLogger.d('Failed to check user role: $e');
         if (mounted) {
           setState(() {
             _isCurrentUserSeller = false;

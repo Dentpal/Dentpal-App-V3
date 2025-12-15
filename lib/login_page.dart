@@ -254,7 +254,7 @@ class _LoginPageState extends State<LoginPage> {
           try {
             UserService.clearCache();
           } catch (e) {
-            //AppLogger.d('Failed to clear cache: $e');
+            AppLogger.d('Failed to clear cache: $e');
           }
           // Navigate to the home page after successful login
           Navigator.of(context).pushReplacement(

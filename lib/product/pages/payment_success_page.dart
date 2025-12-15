@@ -35,7 +35,7 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage>
     _initializeAnimations();
     _startCountdown();
     
-    //AppLogger.d('Payment Success Page - Order ID: ${widget.orderId}, Session ID: ${widget.sessionId}');
+    AppLogger.d('Payment Success Page - Order ID: ${widget.orderId}, Session ID: ${widget.sessionId}');
   }
 
   void _initializeAnimations() {
@@ -89,7 +89,7 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage>
       _isRedirecting = true;
     });
 
-    //AppLogger.d('Redirecting to cart page after successful payment');
+    AppLogger.d('Redirecting to cart page after successful payment');
     
     if (widget.onReturnToCart != null) {
       widget.onReturnToCart!();

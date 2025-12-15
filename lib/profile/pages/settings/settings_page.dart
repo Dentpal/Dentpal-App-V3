@@ -42,7 +42,7 @@ class _SettingsPageState extends State<SettingsPage> {
         }
       }
     } catch (e) {
-      //AppLogger.d('Error loading user data: $e');
+      AppLogger.d('Error loading user data: $e');
     }
 
     return _userCache;

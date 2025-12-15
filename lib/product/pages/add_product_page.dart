@@ -9,6 +9,7 @@ import '../services/image_upload_service.dart';
 import '../widgets/barcode_scanner_widget.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
+import 'package:dentpal/utils/app_logger.dart';
 
 enum UnsavedChangesAction { saveAsDraft, discard }
 
@@ -224,18 +225,20 @@ class _AddProductPageState extends State<AddProductPage> {
 
     try {
       final categories = await _categoryService.getCategories();
-      //AppLogger.d('Loaded ${categories.length} categories');
+      AppLogger.d('Loaded ${categories.length} categories');
 
-      //for (var cat in categories) {
-        //AppLogger.d('Category: ${cat.categoryName} (ID: ${cat.categoryId})');
-      //}
+      for (var cat in categories) {
+        AppLogger.d(
+          '  - Category: ${cat.categoryName} (ID: ${cat.categoryId})',
+        );
+      }
 
       setState(() {
         _categories = categories;
         _isCategoriesLoading = false;
       });
     } catch (e) {
-      //AppLogger.d('Error loading categories: $e');
+      AppLogger.d('Error loading categories: $e');
       setState(() {
         _isCategoriesLoading = false;
         _errorMessage = 'Failed to load categories: $e';
@@ -244,15 +247,17 @@ class _AddProductPageState extends State<AddProductPage> {
   }
 
   void _loadSubCategories(String categoryId) async {
-    //AppLogger.d('Loading subcategories for categoryId: $categoryId');
+    AppLogger.d('Loading subcategories for categoryId: $categoryId');
 
     try {
       final subCategories = await _categoryService.getSubCategories(categoryId);
-      //AppLogger.d('Received ${subCategories.length} subcategories');
+      AppLogger.d('Received ${subCategories.length} subcategories');
 
-      //for (var subCat in subCategories) {
-        //AppLogger.d('  - SubCategory: ${subCat.subCategoryName} (ID: ${subCat.subCategoryId}, CategoryID: ${subCat.categoryId})');
-      //}
+      for (var subCat in subCategories) {
+        AppLogger.d(
+          '  - SubCategory: ${subCat.subCategoryName} (ID: ${subCat.subCategoryId}, CategoryID: ${subCat.categoryId})',
+        );
+      }
 
       setState(() {
         _subCategories = subCategories;
@@ -260,7 +265,7 @@ class _AddProductPageState extends State<AddProductPage> {
         _productForm.subCategoryId = null;
       });
     } catch (e) {
-      //AppLogger.d('Error loading subcategories: $e');
+      AppLogger.d('Error loading subcategories: $e');
       setState(() {
         _errorMessage = 'Failed to load subcategories: $e';
         _subCategories = [];
@@ -391,7 +396,7 @@ class _AddProductPageState extends State<AddProductPage> {
         });
       }
     } catch (e) {
-      //AppLogger.d('Error picking product image: $e');
+      AppLogger.d('Error picking product image: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -441,7 +446,7 @@ class _AddProductPageState extends State<AddProductPage> {
         });
       }
     } catch (e) {
-      //AppLogger.d('Error picking variation image: $e');
+      AppLogger.d('Error picking variation image: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -479,7 +484,7 @@ class _AddProductPageState extends State<AddProductPage> {
         });
       }
     } catch (e) {
-      //AppLogger.d('Error scanning barcode: $e');
+      AppLogger.d('Error scanning barcode: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1157,7 +1162,7 @@ class _AddProductPageState extends State<AddProductPage> {
                       onChanged: _isCategoriesLoading
                           ? null
                           : (value) {
-                              //AppLogger.d('Category selected: $value');
+                              AppLogger.d('Category selected: $value');
                               setState(() {
                                 _selectedCategoryId = value;
                                 _productForm.categoryId = value ?? '';
@@ -2981,7 +2986,7 @@ class _AddProductPageState extends State<AddProductPage> {
                 onChanged: _isCategoriesLoading
                     ? null
                     : (String? value) {
-                        //AppLogger.d('Category selected: $value');
+                        AppLogger.d('Category selected: $value');
                         setState(() {
                           _selectedCategoryId = value;
                           _productForm.categoryId = value ?? '';

@@ -141,7 +141,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
         _showErrorSnackBar(errorMessage);
       }
     } catch (e) {
-      //AppLogger.d('Error verifying current password: $e');
+      AppLogger.d('Error verifying current password: $e');
       if (mounted) {
         _showErrorSnackBar('An unexpected error occurred. Please try again.');
       }
@@ -195,7 +195,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
         _showErrorSnackBar(errorMessage);
       }
     } catch (e) {
-      //AppLogger.d('Error changing password: $e');
+      AppLogger.d('Error changing password: $e');
       if (mounted) {
         _showErrorSnackBar('An unexpected error occurred. Please try again.');
       }
@@ -243,7 +243,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
         _showErrorSnackBar(errorMessage);
       }
     } catch (e) {
-      //AppLogger.d('Error sending password reset email: $e');
+      AppLogger.d('Error sending password reset email: $e');
       if (mounted) {
         _showErrorSnackBar('An unexpected error occurred. Please try again.');
       }

@@ -100,7 +100,7 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
         }
       }
     } catch (e) {
-      //AppLogger.d('Error loading current phone number: $e');
+      AppLogger.d('Error loading current phone number: $e');
     }
 
     setState(() {
@@ -765,7 +765,7 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
       setState(() {
         _isLoading = false;
       });
-      //AppLogger.d('Error checking for duplicate phone: $e');
+      AppLogger.d('Error checking for duplicate phone: $e');
       _showMessage(false, 'Error checking phone number availability: $e');
     }
   }
@@ -847,13 +847,15 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
         _isLoading = false;
       });
 
-      //AppLogger.d('Current phone OTP accepted, proceeding to new phone verification',);
+      AppLogger.d(
+        'Current phone OTP accepted, proceeding to new phone verification',
+      );
       _sendNewPhoneVerification();
     } catch (e) {
       setState(() {
         _isLoading = false;
       });
-      //AppLogger.d('Current phone verification failed: $e');
+      AppLogger.d('Current phone verification failed: $e');
       _showMessage(
         false,
         'Invalid verification code for current number. Please try again.',
@@ -933,13 +935,13 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
         _isLoading = false;
       });
 
-      //AppLogger.d('New phone OTP verified successfully');
+      AppLogger.d('New phone OTP verified successfully');
       await _updatePhoneNumber();
     } catch (e) {
       setState(() {
         _isLoading = false;
       });
-      //AppLogger.d('New phone verification failed: $e');
+      AppLogger.d('New phone verification failed: $e');
       _showMessage(
         false,
         'Invalid verification code for new number. Please try again.',
@@ -958,22 +960,28 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
         throw Exception('User not authenticated');
       }
 
-      //AppLogger.d('Starting phone number update for user: ${user.uid}');
-      //AppLogger.d('User ${user.uid} verified access to both $_currentPhoneNumber and $_formattedNewPhoneNumber',);
+      AppLogger.d('Starting phone number update for user: ${user.uid}');
+      AppLogger.d(
+        'User ${user.uid} verified access to both $_currentPhoneNumber and $_formattedNewPhoneNumber',
+      );
 
       // Update Firebase Auth phone number using the new phone credential
       if (_newPhoneCredential != null) {
         try {
           await user.updatePhoneNumber(_newPhoneCredential!);
-          //AppLogger.d('Firebase Auth phone number updated successfully');
+          AppLogger.d('Firebase Auth phone number updated successfully');
         } catch (e) {
           // If Firebase Auth update fails, we'll continue with Firestore updates only
           // The phone verification already confirmed the user has access to the new number
-          //AppLogger.d('Firebase Auth phone update failed: $e');
-          //AppLogger.d('Continuing with Firestore-only update since phone verification was successful',);
+          AppLogger.d('Firebase Auth phone update failed: $e');
+          AppLogger.d(
+            'Continuing with Firestore-only update since phone verification was successful',
+          );
         }
       } else {
-        //AppLogger.d('New phone credential not available, updating Firestore only',);
+        AppLogger.d(
+          'New phone credential not available, updating Firestore only',
+        );
       }
 
       // Get user data first to retrieve email and createdAt
@@ -1011,7 +1019,7 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
               'contactNumber': _formattedNewPhoneNumber,
               'updatedAt': FieldValue.serverTimestamp(),
             });
-        //AppLogger.d('UserLookup document updated');
+        AppLogger.d('UserLookup document updated');
       } else {
         // Create new UserLookup document
         await FirebaseFirestore.instance
@@ -1023,22 +1031,22 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
               'createdAt': userCreatedAt,
               'updatedAt': FieldValue.serverTimestamp(),
             });
-        //AppLogger.d('UserLookup document created');
+        AppLogger.d('UserLookup document created');
       }
 
-      //AppLogger.d('Phone number updated in Firestore collections');
+      AppLogger.d('Phone number updated in Firestore collections');
 
       setState(() {
         _currentStep = VerificationStep.completed;
         _isUpdatingPhone = false;
       });
 
-      //AppLogger.d('Phone number update completed successfully');
+      AppLogger.d('Phone number update completed successfully');
     } catch (e) {
       setState(() {
         _isUpdatingPhone = false;
       });
-      //AppLogger.d('Error updating phone number: $e');
+      AppLogger.d('Error updating phone number: $e');
       _showMessage(false, 'Error updating phone number: $e');
     }
   }

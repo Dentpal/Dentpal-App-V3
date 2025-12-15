@@ -13,6 +13,7 @@ import '../services/click_tracking_service.dart';
 import '../widgets/product_card.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
+import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/utils/navigation_utils.dart';
 import 'cart_page.dart';
 import 'product_search_page.dart';
@@ -106,7 +107,9 @@ class _ProductListingPageState extends State<ProductListingPage>
     _clickTrackingService.cleanupOldClickData();
 
     // Add debug log to track initialization
-    //AppLogger.d("ProductListingPage initState called, products: ${_products.length}, timestamp: $_cacheTimestamp",);
+    AppLogger.d(
+      "ProductListingPage initState called, products: ${_products.length}, timestamp: $_cacheTimestamp",
+    );
   }
 
   // Fetch active banner image from Firestore collection 'BannerImages'
@@ -126,7 +129,7 @@ class _ProductListingPageState extends State<ProductListingPage>
           url = (data['url'] ?? data['imageUrl']) as String?;
         }
       } catch (e) {
-        //AppLogger.d('Firestore banner lookup failed (will fallback to Storage): $e');
+        AppLogger.d('Firestore banner lookup failed (will fallback to Storage): $e');
       }
 
       // Fallback to Storage if no Firestore URL found
@@ -136,12 +139,12 @@ class _ProductListingPageState extends State<ProductListingPage>
         setState(() {
           _bannerImageUrl = url;
         });
-        //AppLogger.d('Active banner loaded: $_bannerImageUrl');
+        AppLogger.d('Active banner loaded: $_bannerImageUrl');
       } else {
-        //AppLogger.d('No active banner found (Firestore/Storage)');
+        AppLogger.d('No active banner found (Firestore/Storage)');
       }
     } catch (e) {
-      //AppLogger.d('Error loading active banner: $e');
+      AppLogger.d('Error loading active banner: $e');
     }
   }
 
@@ -159,7 +162,7 @@ class _ProductListingPageState extends State<ProductListingPage>
           final meta = await item.getMetadata();
           metas.add({'ref': item, 'meta': meta});
         } catch (e) {
-          //AppLogger.d('Failed to get metadata for ${item.fullPath}: $e');
+          AppLogger.d('Failed to get metadata for ${item.fullPath}: $e');
         }
       }
 
@@ -195,7 +198,7 @@ class _ProductListingPageState extends State<ProductListingPage>
       final downloadUrl = await selectedRef.getDownloadURL();
       return downloadUrl;
     } catch (e) {
-      //AppLogger.d('Storage banner load error: $e');
+      AppLogger.d('Storage banner load error: $e');
       return null;
     }
   }
@@ -205,18 +208,20 @@ class _ProductListingPageState extends State<ProductListingPage>
     // Remove scroll listener to prevent memory leaks
     _scrollController.removeListener(_scrollListener);
 
-    //AppLogger.d("ProductListingPage dispose called");
+    AppLogger.d("ProductListingPage dispose called");
     super.dispose();
   }
 
   Future<void> _checkSellerStatus() async {
     try {
-      //AppLogger.d('ProductListingPage: Checking seller status...');
+      AppLogger.d('ProductListingPage: Checking seller status...');
 
       // First check if user is authenticated
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
-        //AppLogger.d('ProductListingPage: User not authenticated, setting _isSeller to false',);
+        AppLogger.d(
+          'ProductListingPage: User not authenticated, setting _isSeller to false',
+        );
         if (mounted) {
           setState(() {
             _isSeller = false;
@@ -226,16 +231,16 @@ class _ProductListingPageState extends State<ProductListingPage>
       }
 
       final result = await _productService.checkSellerStatus();
-      //AppLogger.d('ProductListingPage: Seller status result: $result');
+      AppLogger.d('ProductListingPage: Seller status result: $result');
 
       if (mounted) {
         setState(() {
           _isSeller = result['isSeller'] ?? false;
         });
-        //AppLogger.d('ProductListingPage: Updated _isSeller to: $_isSeller');
+        AppLogger.d('ProductListingPage: Updated _isSeller to: $_isSeller');
       }
     } catch (e) {
-      //AppLogger.d('ProductListingPage: Error checking seller status: $e');
+      AppLogger.d('ProductListingPage: Error checking seller status: $e');
       if (mounted) {
         setState(() {
           _isSeller = false;
@@ -435,24 +440,30 @@ class _ProductListingPageState extends State<ProductListingPage>
 
     final categoryId = _categoryNameToId[categoryName];
     if (categoryId == null) {
-      //AppLogger.d('No categoryId found for category: $categoryName');
+      AppLogger.d('No categoryId found for category: $categoryName');
       return;
     }
 
     // Skip if subcategories already loaded for this category
     if (_subcategoriesByCategory.containsKey(categoryId)) {
-      //AppLogger.d('Subcategories already loaded for category: $categoryName (ID: $categoryId)',);
+      AppLogger.d(
+        'Subcategories already loaded for category: $categoryName (ID: $categoryId)',
+      );
       return;
     }
 
     try {
-      //AppLogger.d('Loading subcategories for category: $categoryName (ID: $categoryId)',);
+      AppLogger.d(
+        'Loading subcategories for category: $categoryName (ID: $categoryId)',
+      );
       final subcategories = await _categoryService.getSubCategories(categoryId);
 
-      //AppLogger.d('Loaded ${subcategories.length} subcategories for $categoryName',);
-      //for (var sub in subcategories) {
-        //AppLogger.d('${sub.subCategoryName} (ID: ${sub.subCategoryId})');
-      //}
+      AppLogger.d(
+        'Loaded ${subcategories.length} subcategories for $categoryName',
+      );
+      for (var sub in subcategories) {
+        AppLogger.d('${sub.subCategoryName} (ID: ${sub.subCategoryId})');
+      }
 
       if (!mounted) return; // Check if widget is still mounted
 
@@ -462,7 +473,7 @@ class _ProductListingPageState extends State<ProductListingPage>
         });
       }
     } catch (e) {
-      //AppLogger.d('Error loading subcategories for $categoryName: $e');
+      AppLogger.d('Error loading subcategories for $categoryName: $e');
     }
   }
 
@@ -470,22 +481,22 @@ class _ProductListingPageState extends State<ProductListingPage>
   void _onSubCategorySelected(String subCategoryId, String subCategoryName) {
     if (!mounted) return;
 
-    //AppLogger.d('Subcategory selected: $subCategoryName (ID: $subCategoryId)');
+    AppLogger.d('Subcategory selected: $subCategoryName (ID: $subCategoryId)');
 
     setState(() {
       List<String> newSelectedSubCategories = List.from(_selectedSubCategories);
       if (newSelectedSubCategories.contains(subCategoryId)) {
         // Remove subcategory if already selected
         newSelectedSubCategories.remove(subCategoryId);
-        //AppLogger.d('Removed subcategory: $subCategoryName');
+        AppLogger.d('Removed subcategory: $subCategoryName');
       } else {
         // Add subcategory to selection
         newSelectedSubCategories.add(subCategoryId);
-        //AppLogger.d('Added subcategory: $subCategoryName');
+        AppLogger.d('Added subcategory: $subCategoryName');
       }
       _selectedSubCategories = newSelectedSubCategories;
 
-      //AppLogger.d('Current selected subcategories: $_selectedSubCategories');
+      AppLogger.d('Current selected subcategories: $_selectedSubCategories');
 
       // Reset pagination parameters for the new selection
       _products = [];
@@ -657,9 +668,9 @@ class _ProductListingPageState extends State<ProductListingPage>
     });
 
     try {
-      //AppLogger.d('ProductListingPage: Loading first page of products...');
-      //AppLogger.d('DEBUG: Selected categories: $_selectedCategories');
-      //AppLogger.d('DEBUG: Selected subcategories: $_selectedSubCategories');
+      AppLogger.d('ProductListingPage: Loading first page of products...');
+      AppLogger.d('DEBUG: Selected categories: $_selectedCategories');
+      AppLogger.d('DEBUG: Selected subcategories: $_selectedSubCategories');
 
       // Use server-side filtering when possible
       String? filterCategoryId;
@@ -668,13 +679,15 @@ class _ProductListingPageState extends State<ProductListingPage>
       // If only one category is selected, use server-side filtering
       if (_selectedCategories.length == 1) {
         filterCategoryId = _categoryNameToId[_selectedCategories.first];
-        //AppLogger.d('Using server-side category filter: $filterCategoryId');
+        AppLogger.d('Using server-side category filter: $filterCategoryId');
       }
 
       // If only one subcategory is selected, use server-side filtering
       if (_selectedSubCategories.length == 1) {
         filterSubCategoryId = _selectedSubCategories.first;
-        //AppLogger.d('Using server-side subcategory filter: $filterSubCategoryId',);
+        AppLogger.d(
+          'Using server-side subcategory filter: $filterSubCategoryId',
+        );
       }
 
       final result = await _productService.getProductsPaginated(
@@ -700,7 +713,9 @@ class _ProductListingPageState extends State<ProductListingPage>
 
           if (!mounted) return; // Check if widget is still mounted
 
-          //AppLogger.d('DEBUG: Fetched ${allCategories.length} categories from service',);
+          AppLogger.d(
+            'DEBUG: Fetched ${allCategories.length} categories from service',
+          );
 
           // Build categories list starting with 'All'
           Set<String> categorySet = {'All'};
@@ -711,16 +726,18 @@ class _ProductListingPageState extends State<ProductListingPage>
 
           // Add all category names from the service and build mappings
           for (var category in allCategories) {
-            //AppLogger.d('DEBUG: Category - Name: ${category.categoryName}, ID: ${category.categoryId}',);
+            AppLogger.d(
+              'DEBUG: Category - Name: ${category.categoryName}, ID: ${category.categoryId}',
+            );
             categorySet.add(category.categoryName);
             _categoryNameToId[category.categoryName] = category.categoryId;
             _categoryIdToName[category.categoryId] = category.categoryName;
           }
 
           _categories = categorySet.toList();
-          //AppLogger.d('DEBUG: Final categories list: $_categories');
+          AppLogger.d('DEBUG: Final categories list: $_categories');
         } catch (e) {
-          //AppLogger.d('Error loading categories: $e');
+          AppLogger.d('Error loading categories: $e');
           // Fallback to just 'All' if category loading fails
           _categories = ['All'];
         }
@@ -736,10 +753,10 @@ class _ProductListingPageState extends State<ProductListingPage>
         });
       }
 
-      //AppLogger.d('Loaded ${newProducts.length} products (first page)');
+      AppLogger.d('Loaded ${newProducts.length} products (first page)');
     } catch (e) {
-      //AppLogger.d('Error loading first page: $e');
-      //AppLogger.d('Stack trace: ${StackTrace.current}');
+      AppLogger.d('Error loading first page: $e');
+      AppLogger.d('Stack trace: ${StackTrace.current}');
 
       if (mounted) {
         setState(() {
@@ -760,7 +777,7 @@ class _ProductListingPageState extends State<ProductListingPage>
     });
 
     try {
-      //AppLogger.d('ProductListingPage: Loading more products...');
+      AppLogger.d('ProductListingPage: Loading more products...');
 
       // Use same filtering logic as first page
       String? filterCategoryId;
@@ -799,10 +816,10 @@ class _ProductListingPageState extends State<ProductListingPage>
         });
       }
 
-      //AppLogger.d('Loaded ${newProducts.length} more products');
+      AppLogger.d('Loaded ${newProducts.length} more products');
     } catch (e) {
-      //AppLogger.d('Error loading more products: $e');
-      //AppLogger.d('Stack trace: ${StackTrace.current}');
+      AppLogger.d('Error loading more products: $e');
+      AppLogger.d('Stack trace: ${StackTrace.current}');
 
       if (mounted) {
         setState(() {
@@ -815,7 +832,9 @@ class _ProductListingPageState extends State<ProductListingPage>
   // Helper method to compare product lists for change detection
   bool _hasDataChanged(List<Product> oldProducts, List<Product> newProducts) {
     if (oldProducts.length != newProducts.length) {
-      //AppLogger.d('Data changed: Product count differs (${oldProducts.length} vs ${newProducts.length})',);
+      AppLogger.d(
+        'Data changed: Product count differs (${oldProducts.length} vs ${newProducts.length})',
+      );
       return true;
     }
 
@@ -828,7 +847,7 @@ class _ProductListingPageState extends State<ProductListingPage>
           oldProduct.lowestPrice != newProduct.lowestPrice ||
           oldProduct.imageURL != newProduct.imageURL ||
           oldProduct.categoryId != newProduct.categoryId) {
-        //AppLogger.d('Data changed: Product ${oldProduct.name} has differences');
+        AppLogger.d('Data changed: Product ${oldProduct.name} has differences');
         return true;
       }
     }
@@ -842,13 +861,15 @@ class _ProductListingPageState extends State<ProductListingPage>
     Map<String, String> newMapping,
   ) {
     if (oldMapping.length != newMapping.length) {
-      //AppLogger.d('Categories changed: Count differs (${oldMapping.length} vs ${newMapping.length})',);
+      AppLogger.d(
+        'Categories changed: Count differs (${oldMapping.length} vs ${newMapping.length})',
+      );
       return true;
     }
 
     for (final entry in oldMapping.entries) {
       if (newMapping[entry.key] != entry.value) {
-        //AppLogger.d('Categories changed: ${entry.key} mapping differs');
+        AppLogger.d('Categories changed: ${entry.key} mapping differs');
         return true;
       }
     }
@@ -860,7 +881,9 @@ class _ProductListingPageState extends State<ProductListingPage>
   Future<void> _handleRefresh() async {
     if (!mounted) return;
 
-    //AppLogger.d('ProductListingPage: Pull-to-refresh triggered (cache-first approach)',);
+    AppLogger.d(
+      'ProductListingPage: Pull-to-refresh triggered (cache-first approach)',
+    );
 
     try {
       // Clear category cache on manual refresh to get fresh data
@@ -871,10 +894,12 @@ class _ProductListingPageState extends State<ProductListingPage>
       final currentCategories = Map<String, String>.from(_categoryNameToId);
       final currentTimestamp = _cacheTimestamp;
 
-      //AppLogger.d('Current cache: ${currentProducts.length} products, ${currentCategories.length} categories',);
+      AppLogger.d(
+        'Current cache: ${currentProducts.length} products, ${currentCategories.length} categories',
+      );
 
       // Fetch fresh data from Firebase
-      //AppLogger.d('Fetching fresh data from Firebase...');
+      AppLogger.d('Fetching fresh data from Firebase...');
       final result = await _productService.getProductsPaginated(
         limit: _pageSize,
         categoryId: null,
@@ -899,9 +924,9 @@ class _ProductListingPageState extends State<ProductListingPage>
           freshCategoryMapping[category.categoryName] = category.categoryId;
           freshCategoryIdToName[category.categoryId] = category.categoryName;
         }
-        //AppLogger.d('Fetched ${allCategories.length} fresh categories');
+        AppLogger.d('Fetched ${allCategories.length} fresh categories');
       } catch (e) {
-        //AppLogger.d('Error fetching fresh categories: $e');
+        AppLogger.d('Error fetching fresh categories: $e');
         // Keep existing categories on error
         freshCategoryMapping = currentCategories;
         freshCategoriesList = _categories;
@@ -918,7 +943,7 @@ class _ProductListingPageState extends State<ProductListingPage>
       final hasAnyChanges = hasProductChanges || hasCategoryChanges;
 
       if (hasAnyChanges || currentTimestamp == null || _isCacheExpired()) {
-        //AppLogger.d('Changes detected or cache expired - updating data');
+        AppLogger.d('Changes detected or cache expired - updating data');
 
         if (mounted) {
           // Update with fresh data
@@ -936,11 +961,13 @@ class _ProductListingPageState extends State<ProductListingPage>
 
         // Clear image cache only if there are actual changes
         if (hasProductChanges) {
-          //AppLogger.d('Clearing image cache due to product changes');
+          AppLogger.d('Clearing image cache due to product changes');
           await ProductImageCacheManager.instance.emptyCache();
         }
 
-        //AppLogger.d('Data updated: ${freshProducts.length} products, ${freshCategoriesList.length - 1} categories',);
+        AppLogger.d(
+          'Data updated: ${freshProducts.length} products, ${freshCategoriesList.length - 1} categories',
+        );
       } else {
         // No changes detected, just refresh timestamp
         if (mounted) {
@@ -949,11 +976,11 @@ class _ProductListingPageState extends State<ProductListingPage>
           });
         }
 
-        //AppLogger.d('No changes detected - cache timestamp refreshed');
+        AppLogger.d('No changes detected - cache timestamp refreshed');
       }
     } catch (e) {
-      //AppLogger.d('Refresh error: $e');
-      //AppLogger.d('Stack trace: ${StackTrace.current}');
+      AppLogger.d('Refresh error: $e');
+      AppLogger.d('Stack trace: ${StackTrace.current}');
 
       // Keep existing data on error, but show error state if we have no data
       if (_products.isEmpty && mounted) {
@@ -963,7 +990,7 @@ class _ProductListingPageState extends State<ProductListingPage>
       }
     }
 
-    //AppLogger.d('ProductListingPage: Pull-to-refresh completed');
+    AppLogger.d('ProductListingPage: Pull-to-refresh completed');
   }
 
   Future<bool> _showExitConfirmation() async {
@@ -1765,7 +1792,9 @@ class _ProductListingPageState extends State<ProductListingPage>
               ),
               child: FloatingActionButton(
                 onPressed: () {
-                  //AppLogger.d('ProductListingPage: FAB pressed - navigating to add-product',);
+                  AppLogger.d(
+                    'ProductListingPage: FAB pressed - navigating to add-product',
+                  );
                   Navigator.pushNamed(context, '/add-product');
                 },
                 backgroundColor: AppColors.primary,
@@ -1829,7 +1858,7 @@ class _ProductListingPageState extends State<ProductListingPage>
             ),
             child: ElevatedButton.icon(
               onPressed: () {
-                //AppLogger.d("Retry button pressed");
+                AppLogger.d("Retry button pressed");
                 _cacheTimestamp = null;
                 ProductImageCacheManager.instance.emptyCache();
                 _resetAndRefresh();
@@ -1904,7 +1933,7 @@ class _ProductListingPageState extends State<ProductListingPage>
             ),
             child: ElevatedButton.icon(
               onPressed: () {
-                //AppLogger.d("Empty state refresh button pressed");
+                AppLogger.d("Empty state refresh button pressed");
                 _cacheTimestamp = null;
                 ProductImageCacheManager.instance.emptyCache();
                 _resetAndRefresh();
@@ -1932,11 +1961,11 @@ class _ProductListingPageState extends State<ProductListingPage>
 
   // Build modern product grid with enhanced design
   Widget _buildModernProductGrid() {
-    //AppLogger.d('DEBUG: _buildModernProductGrid called');
-    //AppLogger.d('Selected categories: $_selectedCategories');
-    //AppLogger.d('Selected subcategories: $_selectedSubCategories');
-    //AppLogger.d('Category name to ID mapping: $_categoryNameToId');
-    //AppLogger.d('Total products: ${_products.length}');
+    AppLogger.d('DEBUG: _buildModernProductGrid called');
+    AppLogger.d('Selected categories: $_selectedCategories');
+    AppLogger.d('Selected subcategories: $_selectedSubCategories');
+    AppLogger.d('Category name to ID mapping: $_categoryNameToId');
+    AppLogger.d('Total products: ${_products.length}');
 
     // Calculate filtered products first
     final filteredProducts = _products.where((product) {
@@ -1972,9 +2001,15 @@ class _ProductListingPageState extends State<ProductListingPage>
 
         if (_products.indexOf(product) < 3) {
           // Only log first 3 products to avoid spam
-          //AppLogger.d('Product ${product.name}: categoryId=${product.categoryId}, subCategoryId=${product.subCategoryId}',);
-          //AppLogger.d('Is in selected category: $isInSelectedCategory, Has subcategory: $hasSubCategory, Is in selected subcategory: $isInSelectedSubCategory',);
-          //AppLogger.d('Should show product: $shouldShowProduct (category match: $isInSelectedCategory)',);
+          AppLogger.d(
+            'Product ${product.name}: categoryId=${product.categoryId}, subCategoryId=${product.subCategoryId}',
+          );
+          AppLogger.d(
+            'Is in selected category: $isInSelectedCategory, Has subcategory: $hasSubCategory, Is in selected subcategory: $isInSelectedSubCategory',
+          );
+          AppLogger.d(
+            'Should show product: $shouldShowProduct (category match: $isInSelectedCategory)',
+          );
         }
 
         return isInSelectedCategory && shouldShowProduct;
@@ -1984,10 +2019,12 @@ class _ProductListingPageState extends State<ProductListingPage>
       return selectedCategoryIds.contains(product.categoryId);
     }).toList();
 
-    //final categoryDisplay = _selectedCategories.isEmpty
-        //? 'All'
-        //: _selectedCategories.join(', ');
-    //AppLogger.d('Displaying ${filteredProducts.length} products for categories: $categoryDisplay',);
+    final categoryDisplay = _selectedCategories.isEmpty
+        ? 'All'
+        : _selectedCategories.join(', ');
+    AppLogger.d(
+      'Displaying ${filteredProducts.length} products for categories: $categoryDisplay',
+    );
 
     if (filteredProducts.isEmpty) {
       return SliverToBoxAdapter(
@@ -2151,7 +2188,7 @@ class _ProductListingPageState extends State<ProductListingPage>
       }
       return 0;
     } catch (e) {
-      //AppLogger.d('Error getting subcategory click count: $e');
+      AppLogger.d('Error getting subcategory click count: $e');
       return 0;
     }
   }

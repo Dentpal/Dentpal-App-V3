@@ -38,12 +38,12 @@ class _CsrDashboardPageState extends State<CsrDashboardPage>
   void initState() {
     super.initState();
     _loadUserName();
-    //AppLogger.d("CsrDashboardPage initState called");
+    AppLogger.d("CsrDashboardPage initState called");
   }
 
   @override
   void dispose() {
-    //AppLogger.d("CsrDashboardPage dispose called");
+    AppLogger.d("CsrDashboardPage dispose called");
     super.dispose();
   }
 

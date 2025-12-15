@@ -52,7 +52,7 @@ class _HomePageState extends State<HomePage> {
   Future<void> _checkUserRole() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
-      //AppLogger.d('DEBUG _checkUserRole: user = ${user?.uid}');
+      AppLogger.d('DEBUG _checkUserRole: user = ${user?.uid}');
       if (user == null) {
         setState(() {
           _isSeller = false;
@@ -64,12 +64,12 @@ class _HomePageState extends State<HomePage> {
 
       // Force refresh to ensure we get fresh data after login
       // Check for customer support role first
-      //AppLogger.d('DEBUG: Checking customer support status...');
+      AppLogger.d('DEBUG: Checking customer support status...');
       final isCustomerSupport = await _userService.isCurrentUserCustomerSupport(forceRefresh: true);
-      //AppLogger.d('DEBUG: isCustomerSupport = $isCustomerSupport');
+      AppLogger.d('DEBUG: isCustomerSupport = $isCustomerSupport');
       if (isCustomerSupport) {
         if (mounted) {
-          //AppLogger.d('DEBUG: Setting state for customer support');
+          AppLogger.d('DEBUG: Setting state for customer support');
           setState(() {
             _isSeller = false;
             _isCustomerSupport = true;
@@ -80,9 +80,9 @@ class _HomePageState extends State<HomePage> {
       }
 
       // Check for seller role
-      //AppLogger.d('DEBUG: Checking seller status...');
+      AppLogger.d('DEBUG: Checking seller status...');
       final isSeller = await _userService.isCurrentUserSeller(forceRefresh: true);
-      //AppLogger.d('DEBUG: isSeller = $isSeller');
+      AppLogger.d('DEBUG: isSeller = $isSeller');
 
       if (mounted) {
         setState(() {
@@ -92,7 +92,7 @@ class _HomePageState extends State<HomePage> {
         });
       }
     } catch (e) {
-      //AppLogger.d('Error checking user role: $e');
+      AppLogger.d('Error checking user role: $e');
       if (mounted) {
         setState(() {
           _isSeller = false;
@@ -105,11 +105,11 @@ class _HomePageState extends State<HomePage> {
 
   List<Widget> get _pages {
     final user = FirebaseAuth.instance.currentUser;
-    //AppLogger.d('DEBUG _pages: _isCustomerSupport=$_isCustomerSupport, _isSeller=$_isSeller');
+    AppLogger.d('DEBUG _pages: _isCustomerSupport=$_isCustomerSupport, _isSeller=$_isSeller');
 
     if (_isCustomerSupport) {
       // Customer Support navigation - only CSR Dashboard (Chats + Profile)
-      //AppLogger.d('DEBUG: Returning CsrDashboardPage');
+      AppLogger.d('DEBUG: Returning CsrDashboardPage');
       return [
         const CsrDashboardPage(),
       ];
