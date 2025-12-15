@@ -21,11 +21,11 @@ class CategoryService {
       if (_cachedCategories != null && 
           _categoriesCacheTimestamp != null &&
           DateTime.now().difference(_categoriesCacheTimestamp!) < _cacheDuration) {
-        AppLogger.d('Using cached categories (${_cachedCategories!.length} items)');
+        //AppLogger.d('Using cached categories (${_cachedCategories!.length} items)');
         return _cachedCategories!;
       }
       
-      AppLogger.d('Fetching categories from Firestore...');
+      //AppLogger.d('Fetching categories from Firestore...');
       
       QuerySnapshot querySnapshot = await _firestore
           .collection('Category')
@@ -40,10 +40,10 @@ class CategoryService {
       _cachedCategories = categories;
       _categoriesCacheTimestamp = DateTime.now();
       
-      AppLogger.d('Fetched and cached ${categories.length} categories');
+      //AppLogger.d('Fetched and cached ${categories.length} categories');
       return categories;
     } catch (e) {
-      AppLogger.d('Error fetching categories: $e');
+      //AppLogger.d('Error fetching categories: $e');
       // Return cached data if available, even if expired
       return _cachedCategories ?? [];
     }
@@ -56,11 +56,11 @@ class CategoryService {
       if (_cachedSubCategories.containsKey(categoryId) && 
           _subCategoriesCacheTimestamp.containsKey(categoryId) &&
           DateTime.now().difference(_subCategoriesCacheTimestamp[categoryId]!) < _cacheDuration) {
-        AppLogger.d('Using cached subcategories for $categoryId (${_cachedSubCategories[categoryId]!.length} items)');
+        //AppLogger.d('Using cached subcategories for $categoryId (${_cachedSubCategories[categoryId]!.length} items)');
         return _cachedSubCategories[categoryId]!;
       }
       
-      AppLogger.d('Fetching subcategories for category: $categoryId');
+      //AppLogger.d('Fetching subcategories for category: $categoryId');
       
       QuerySnapshot querySnapshot = await _firestore
           .collection('Category')
@@ -77,10 +77,10 @@ class CategoryService {
       _cachedSubCategories[categoryId] = subCategories;
       _subCategoriesCacheTimestamp[categoryId] = DateTime.now();
       
-      AppLogger.d('Fetched and cached ${subCategories.length} subcategories for $categoryId');
+      //AppLogger.d('Fetched and cached ${subCategories.length} subcategories for $categoryId');
       return subCategories;
     } catch (e) {
-      AppLogger.d('Error fetching subcategories: $e');
+      //AppLogger.d('Error fetching subcategories: $e');
       // Return cached data if available, even if expired
       return _cachedSubCategories[categoryId] ?? [];
     }
@@ -92,7 +92,7 @@ class CategoryService {
     _categoriesCacheTimestamp = null;
     _cachedSubCategories.clear();
     _subCategoriesCacheTimestamp.clear();
-    AppLogger.d('Category cache cleared');
+    //AppLogger.d('Category cache cleared');
   }
 
   // Get category by ID
@@ -108,7 +108,7 @@ class CategoryService {
       }
       return null;
     } catch (e) {
-      AppLogger.d('Error fetching category by ID: $e');
+      //AppLogger.d('Error fetching category by ID: $e');
       return null;
     }
   }
@@ -128,7 +128,7 @@ class CategoryService {
       }
       return null;
     } catch (e) {
-      AppLogger.d('Error fetching subcategory by ID: $e');
+      //AppLogger.d('Error fetching subcategory by ID: $e');
       return null;
     }
   }
@@ -142,10 +142,10 @@ class CategoryService {
         'categoryName': categoryName,
       });
       
-      AppLogger.d('Created category with ID: ${docRef.id}');
+      //AppLogger.d('Created category with ID: ${docRef.id}');
       return docRef.id;
     } catch (e) {
-      AppLogger.d('Error creating category: $e');
+      //AppLogger.d('Error creating category: $e');
       return null;
     }
   }
@@ -162,10 +162,10 @@ class CategoryService {
         'categoryId': categoryId,  // Changed from 'categoryID' to 'categoryId'
       });
       
-      AppLogger.d('Created subcategory with ID: ${docRef.id}');
+      //AppLogger.d('Created subcategory with ID: ${docRef.id}');
       return docRef.id;
     } catch (e) {
-      AppLogger.d('Error creating subcategory: $e');
+      //AppLogger.d('Error creating subcategory: $e');
       return null;
     }
   }
@@ -173,7 +173,7 @@ class CategoryService {
   // Get subcategories by searching through all categories
   Future<List<SubCategory>> getSubCategoriesByIds(List<String> subCategoryIds) async {
     try {
-      AppLogger.d('Searching for subcategories with IDs: $subCategoryIds');
+      //AppLogger.d('Searching for subcategories with IDs: $subCategoryIds');
       
       List<SubCategory> foundSubCategories = [];
       
@@ -197,10 +197,10 @@ class CategoryService {
         }
       }
       
-      AppLogger.d('Found ${foundSubCategories.length} subcategories');
+      //AppLogger.d('Found ${foundSubCategories.length} subcategories');
       return foundSubCategories;
     } catch (e) {
-      AppLogger.d('Error searching subcategories: $e');
+      //AppLogger.d('Error searching subcategories: $e');
       return [];
     }
   }

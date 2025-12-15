@@ -24,7 +24,7 @@ class ImageUploadService {
 
       return pickedFile;
     } catch (e) {
-      AppLogger.d('Error picking image: $e');
+      //AppLogger.d('Error picking image: $e');
       return null;
     }
   }
@@ -44,7 +44,7 @@ class ImageUploadService {
 
       // On web, skip cropping and return the picked file directly
       if (kIsWeb) {
-        AppLogger.d('Running on web, skipping image cropping');
+        //AppLogger.d('Running on web, skipping image cropping');
         return pickedFile;
       }
 
@@ -84,17 +84,17 @@ class ImageUploadService {
         }
         
         // If cropping was cancelled, return the original image
-        AppLogger.d('Image cropping was cancelled, returning original image');
+        //AppLogger.d('Image cropping was cancelled, returning original image');
         return pickedFile;
         
       } catch (cropError) {
-        AppLogger.d('Error during cropping, falling back to original image: $cropError');
+        //AppLogger.d('Error during cropping, falling back to original image: $cropError');
         // If cropping fails, return the original picked image
         return pickedFile;
       }
       
     } catch (e) {
-      AppLogger.d('Error picking and cropping image: $e');
+      //AppLogger.d('Error picking and cropping image: $e');
       return null;
     }
   }
@@ -107,7 +107,7 @@ class ImageUploadService {
       final image = img.decodeImage(bytes);
       
       if (image == null) {
-        AppLogger.d('Failed to decode image');
+        //AppLogger.d('Failed to decode image');
         return null;
       }
 
@@ -146,7 +146,7 @@ class ImageUploadService {
       final resizedBytes = img.encodeJpg(resized, quality: 95);
       return Uint8List.fromList(resizedBytes);
     } catch (e) {
-      AppLogger.d('Error resizing image: $e');
+      //AppLogger.d('Error resizing image: $e');
       return null;
     }
   }
@@ -157,7 +157,7 @@ class ImageUploadService {
     required String path,
   }) async {
     try {
-      AppLogger.d('Uploading image to: $path');
+      //AppLogger.d('Uploading image to: $path');
       
       final ref = _storage.ref().child(path);
       final uploadTask = ref.putData(
@@ -173,10 +173,10 @@ class ImageUploadService {
       final snapshot = await uploadTask;
       final downloadUrl = await snapshot.ref.getDownloadURL();
       
-      AppLogger.d('Image uploaded successfully: $downloadUrl');
+      //AppLogger.d('Image uploaded successfully: $downloadUrl');
       return downloadUrl;
     } catch (e) {
-      AppLogger.d('Error uploading image: $e');
+      //AppLogger.d('Error uploading image: $e');
       return null;
     }
   }
@@ -203,7 +203,7 @@ class ImageUploadService {
 
       return downloadUrl;
     } catch (e) {
-      AppLogger.d('Error in complete image flow: $e');
+      //AppLogger.d('Error in complete image flow: $e');
       return null;
     }
   }

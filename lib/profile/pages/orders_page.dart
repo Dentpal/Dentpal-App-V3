@@ -939,7 +939,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
       
       success = true;
     } catch (e) {
-      AppLogger.d('Error reordering items: $e');
+      //AppLogger.d('Error reordering items: $e');
       success = false;
     } finally {
       // Always dismiss the loading dialog
@@ -988,9 +988,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     }
 
     final checkoutUrl = order.paymongo.checkoutUrl!;
-    AppLogger.d(
-      'Resuming payment for order ${order.orderId} with URL: $checkoutUrl',
-    );
+    //AppLogger.d('Resuming payment for order ${order.orderId} with URL: $checkoutUrl',);
 
     try {
       if (kIsWeb) {
@@ -1043,9 +1041,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                 successUrl: 'https://dentpal-store.web.app/payment-success',
                 cancelUrl: 'https://dentpal-store.web.app/payment-failed',
                 onPaymentComplete: (isSuccess, orderId) {
-                  AppLogger.d(
-                    'Payment resumed completed. Success: $isSuccess, Order ID: $orderId',
-                  );
+                  //AppLogger.d('Payment resumed completed. Success: $isSuccess, Order ID: $orderId',);
 
                   if (isSuccess) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -1071,7 +1067,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
         }
       }
     } catch (e) {
-      AppLogger.d('Error resuming payment: $e');
+      //AppLogger.d('Error resuming payment: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1125,7 +1121,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
       
       success = true;
     } catch (e) {
-      AppLogger.d('Error cancelling order: $e');
+      //AppLogger.d('Error cancelling order: $e');
       success = false;
     } finally {
       // Always dismiss the loading dialog

@@ -101,7 +101,7 @@ class _IdVerificationCameraState extends State<IdVerificationCamera> {
         _cameraController!.startImageStream(_processCameraImage);
       }
     } catch (e) {
-      AppLogger.d('Error initializing camera: $e');
+      //AppLogger.d('Error initializing camera: $e');
       if (mounted) {
         setState(() {
           _statusMessage = "Camera initialization failed. Please check permissions.";
@@ -155,7 +155,7 @@ class _IdVerificationCameraState extends State<IdVerificationCamera> {
         }
       }
     } catch (e) {
-      AppLogger.d('Error processing camera image: $e');
+      //AppLogger.d('Error processing camera image: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -248,7 +248,7 @@ class _IdVerificationCameraState extends State<IdVerificationCamera> {
       widget.onIdVerified(verificationResult);
       
     } catch (e) {
-      AppLogger.d('Error capturing ID: $e');
+      //AppLogger.d('Error capturing ID: $e');
       if (mounted) {
         setState(() {
           _statusMessage = "Failed to capture PRC ID. Please try again.";

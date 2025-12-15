@@ -21,7 +21,7 @@ class ProductService {
           .map((doc) => ProductVariation.fromFirestore(doc))
           .toList();
     } catch (e) {
-      AppLogger.d('Error fetching variations for product $productId: $e');
+      //AppLogger.d('Error fetching variations for product $productId: $e');
       return [];
     }
   }
@@ -29,14 +29,14 @@ class ProductService {
   // Get all products (legacy method - kept for backward compatibility)
   Future<List<Product>> getProducts() async {
     try {
-      AppLogger.d('Fetching all products from Firestore...');
+      //AppLogger.d('Fetching all products from Firestore...');
       
       // Get the first page of products with a large limit
       final result = await getProductsPaginated(limit: 100);
       return result['products'] as List<Product>;
     } catch (e) {
-      AppLogger.d('Error fetching all products: $e');
-      AppLogger.d('Stack trace: ${StackTrace.current}');
+      //AppLogger.d('Error fetching all products: $e');
+      //AppLogger.d('Stack trace: ${StackTrace.current}');
       return [];
     }
   }
@@ -52,7 +52,7 @@ class ProductService {
     bool includeArchived = false,
   }) async {
     try {
-      AppLogger.d('Fetching paginated products from Firestore...');
+      //AppLogger.d('Fetching paginated products from Firestore...');
       
       // Start building the query - Use fewer WHERE clauses to avoid complex indexes
       Query query = _firestore.collection('Product');
@@ -82,7 +82,7 @@ class ProductService {
       // Execute the query
       QuerySnapshot querySnapshot = await query.get();
       
-      AppLogger.d('Fetched page with ${querySnapshot.docs.length} products');
+      //AppLogger.d('Fetched page with ${querySnapshot.docs.length} products');
       
       // Check if we've reached the end of the data
       bool hasMore = querySnapshot.docs.length == limit;
@@ -115,7 +115,7 @@ class ProductService {
       }).toList();
       
       if (filteredProducts.isEmpty) {
-        AppLogger.d('No products found after client-side filtering');
+        //AppLogger.d('No products found after client-side filtering');
         return {
           'products': pageProducts,
           'lastDocument': lastVisibleDocument,
@@ -124,7 +124,7 @@ class ProductService {
       }
       
       // Batch fetch all variations in parallel to avoid N+1 queries
-      AppLogger.d('Fetching variations for ${filteredProducts.length} products in parallel...');
+      //AppLogger.d('Fetching variations for ${filteredProducts.length} products in parallel...');
       
       List<Future<List<ProductVariation>>> variationFutures = filteredProducts
           .map((product) => _getProductVariations(product.productId))
@@ -165,7 +165,7 @@ class ProductService {
         pageProducts.add(product);
       }
       
-      AppLogger.d('Successfully fetched ${pageProducts.length} products');
+      //AppLogger.d('Successfully fetched ${pageProducts.length} products');
       
       // Return a map with all pagination-related data
       return {
@@ -174,8 +174,8 @@ class ProductService {
         'hasMore': hasMore
       };
     } catch (e) {
-      AppLogger.d('Error fetching paginated products: $e');
-      AppLogger.d('Stack trace: ${StackTrace.current}');
+      //AppLogger.d('Error fetching paginated products: $e');
+      //AppLogger.d('Stack trace: ${StackTrace.current}');
       return {
         'products': <Product>[],
         'lastDocument': null,
@@ -234,7 +234,7 @@ class ProductService {
       
       return product;
     } catch (e) {
-      AppLogger.d('Error fetching product: $e');
+      //AppLogger.d('Error fetching product: $e');
       return null;
     }
   }
@@ -400,7 +400,7 @@ class ProductService {
         'productId': productRef.id
       };
     } catch (e) {
-      AppLogger.d('Error adding product: $e');
+      //AppLogger.d('Error adding product: $e');
       return {
         'success': false,
         'message': 'Error: $e',
@@ -538,7 +538,7 @@ class ProductService {
         'message': 'Product updated successfully',
       };
     } catch (e) {
-      AppLogger.d('Error updating product: $e');
+      //AppLogger.d('Error updating product: $e');
       return {
         'success': false,
         'message': 'Error: $e',
@@ -549,7 +549,7 @@ class ProductService {
   // Get all products for a specific seller
   Future<List<Product>> getProductsBySeller(String sellerId) async {
     try {
-      AppLogger.d('ProductService: Fetching products for seller: $sellerId');
+      //AppLogger.d('ProductService: Fetching products for seller: $sellerId');
       
       // Use simple query to avoid index requirements
       QuerySnapshot querySnapshot = await _firestore
@@ -557,19 +557,19 @@ class ProductService {
           .where('sellerId', isEqualTo: sellerId)
           .get();
       
-      AppLogger.d('ProductService: Simple query successful with ${querySnapshot.docs.length} documents');
+      //AppLogger.d('ProductService: Simple query successful with ${querySnapshot.docs.length} documents');
       
-      AppLogger.d('ProductService: Query returned ${querySnapshot.docs.length} documents');
+      //AppLogger.d('ProductService: Query returned ${querySnapshot.docs.length} documents');
       
       List<Product> products = [];
       for (var doc in querySnapshot.docs) {
         try {
-          AppLogger.d('ProductService: Processing document ${doc.id}');
+          //AppLogger.d('ProductService: Processing document ${doc.id}');
           Product product = Product.fromFirestore(doc);
           
           // Filter by isActive manually since we're using simple query
           if (!product.isActive) {
-            AppLogger.d('ProductService: Skipping inactive product ${product.name}');
+            //AppLogger.d('ProductService: Skipping inactive product ${product.name}');
             continue;
           }
           
@@ -580,7 +580,7 @@ class ProductService {
               .collection('Variation')
               .get();
           
-          AppLogger.d('ProductService: Found ${variationsSnapshot.docs.length} variations for ${product.name}');
+          //AppLogger.d('ProductService: Found ${variationsSnapshot.docs.length} variations for ${product.name}');
           
           if (variationsSnapshot.docs.isNotEmpty) {
             List<ProductVariation> variations = variationsSnapshot.docs
@@ -612,17 +612,17 @@ class ProductService {
           }
           
           products.add(product);
-          AppLogger.d('ProductService: Added product ${product.name} to results');
+          //AppLogger.d('ProductService: Added product ${product.name} to results');
         } catch (productError) {
-          AppLogger.d('ProductService: Error processing product document ${doc.id}: $productError');
+          //AppLogger.d('ProductService: Error processing product document ${doc.id}: $productError');
         }
       }
       
-      AppLogger.d('ProductService: Final result - Fetched ${products.length} active products for seller $sellerId');
+      //AppLogger.d('ProductService: Final result - Fetched ${products.length} active products for seller $sellerId');
       return products;
     } catch (e) {
-      AppLogger.d('ProductService: Error fetching products for seller $sellerId: $e');
-      AppLogger.d('ProductService: Stack trace: ${StackTrace.current}');
+      //AppLogger.d('ProductService: Error fetching products for seller $sellerId: $e');
+      //AppLogger.d('ProductService: Stack trace: ${StackTrace.current}');
       return [];
     }
   }

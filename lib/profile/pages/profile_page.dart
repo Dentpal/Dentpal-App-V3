@@ -61,7 +61,7 @@ class _ProfilePageState extends State<ProfilePage> {
         }
       }
     } catch (e) {
-      AppLogger.d('Error loading user data: $e');
+      //AppLogger.d('Error loading user data: $e');
     }
 
     return {'user': _userCache, 'seller': _sellerCache};

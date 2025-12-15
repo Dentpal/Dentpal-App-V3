@@ -21,7 +21,7 @@ class _SignupFlowState extends State<SignupFlow> {
   int _currentPage = 0;
   
   void nextPage() {
-    AppLogger.d('SignupFlow nextPage called - current: $_currentPage');
+    //AppLogger.d('SignupFlow nextPage called - current: $_currentPage');
     if (_currentPage < 4) {
       _pageController.nextPage(
         duration: const Duration(milliseconds: 300),
@@ -29,7 +29,7 @@ class _SignupFlowState extends State<SignupFlow> {
       );
       setState(() {
         _currentPage++;
-        AppLogger.d('SignupFlow moved to page: $_currentPage');
+        //AppLogger.d('SignupFlow moved to page: $_currentPage');
       });
     }
   }
@@ -124,7 +124,7 @@ class _SignupFlowState extends State<SignupFlow> {
                           controller: _pageController,
                           physics: const NeverScrollableScrollPhysics(),
                           onPageChanged: (index) {
-                            AppLogger.d('SignupFlow page changed to: $index');
+                            //AppLogger.d('SignupFlow page changed to: $index');
                             setState(() {
                               _currentPage = index;
                             });

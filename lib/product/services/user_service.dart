@@ -23,7 +23,7 @@ class UserService {
       }
       return null;
     } catch (e) {
-      AppLogger.d('Error fetching user data: $e');
+      //AppLogger.d('Error fetching user data: $e');
       return null;
     }
   }
@@ -45,13 +45,11 @@ class UserService {
       if (!forceRefresh &&
           _cachedIsSeller != null &&
           _cachedUserId == user.uid) {
-        AppLogger.d(
-          'Returning cached seller status: $_cachedIsSeller for user ${user.uid}',
-        );
+        //AppLogger.d('Returning cached seller status: $_cachedIsSeller for user ${user.uid}',);
         return _cachedIsSeller!;
       }
 
-      AppLogger.d('Checking seller status for user: ${user.uid}');
+      //AppLogger.d('Checking seller status for user: ${user.uid}');
 
       // First, check if Seller document exists (primary check)
       // This handles sellers who may only have a Seller document
@@ -67,12 +65,10 @@ class UserService {
         if (isActive) {
           _cachedIsSeller = true;
           _cachedUserId = user.uid;
-          AppLogger.d(
-            'User ${user.uid} is a verified seller (found in Seller collection)',
-          );
+          //AppLogger.d('User ${user.uid} is a verified seller (found in Seller collection)',);
           return true;
         } else {
-          AppLogger.d('User ${user.uid} has inactive seller account');
+          //AppLogger.d('User ${user.uid} has inactive seller account');
           _cachedIsSeller = false;
           _cachedUserId = user.uid;
           return false;
@@ -92,19 +88,17 @@ class UserService {
           // This might be an incomplete registration, but we should still show seller UI
           _cachedIsSeller = true;
           _cachedUserId = user.uid;
-          AppLogger.d('User ${user.uid} has seller role in User collection');
+          //AppLogger.d('User ${user.uid} has seller role in User collection');
           return true;
         }
       }
 
       _cachedIsSeller = false;
       _cachedUserId = user.uid;
-      AppLogger.d(
-        'User ${user.uid} is a buyer (not found in Seller collection, no seller role)',
-      );
+      //AppLogger.d('User ${user.uid} is a buyer (not found in Seller collection, no seller role)',);
       return false;
     } catch (e) {
-      AppLogger.d('Error checking seller status: $e');
+      //AppLogger.d('Error checking seller status: $e');
       return false;
     }
   }
@@ -120,10 +114,10 @@ class UserService {
         final sellerData = sellerDoc.data() as Map<String, dynamic>;
         final isActive = sellerData['isActive'] as bool? ?? true;
         if (!isActive) {
-          AppLogger.d('User $userId has inactive seller account');
+          //AppLogger.d('User $userId has inactive seller account');
           return false;
         }
-        AppLogger.d('User $userId found in Seller collection - is a seller');
+        //AppLogger.d('User $userId found in Seller collection - is a seller');
         return true;
       }
 
@@ -134,14 +128,14 @@ class UserService {
         final userData = userDoc.data() as Map<String, dynamic>;
         final userRole = userData['role'] as String?;
         if (userRole == 'seller') {
-          AppLogger.d('User $userId has role=seller in User collection');
+          //AppLogger.d('User $userId has role=seller in User collection');
           return true;
         }
       }
 
       return false;
     } catch (e) {
-      AppLogger.d('Error checking seller status for $userId: $e');
+      //AppLogger.d('Error checking seller status for $userId: $e');
       return false;
     }
   }
@@ -155,7 +149,7 @@ class UserService {
       }
       return null;
     } catch (e) {
-      AppLogger.d('Error fetching seller data for $userId: $e');
+      //AppLogger.d('Error fetching seller data for $userId: $e');
       return null;
     }
   }
@@ -169,7 +163,7 @@ class UserService {
       }
       return 'buyer'; // Default role
     } catch (e) {
-      AppLogger.d('Error getting user role: $e');
+      //AppLogger.d('Error getting user role: $e');
       return 'buyer';
     }
   }
@@ -180,7 +174,7 @@ class UserService {
       final user = _auth.currentUser;
       if (user == null) {
         _cachedIsCustomerSupport = null;
-        AppLogger.d('isCurrentUserCustomerSupport: No user logged in');
+        //AppLogger.d('isCurrentUserCustomerSupport: No user logged in');
         return false;
       }
 
@@ -188,37 +182,35 @@ class UserService {
       if (!forceRefresh &&
           _cachedIsCustomerSupport != null &&
           _cachedUserId == user.uid) {
-        AppLogger.d(
-          'Returning cached customer support status: $_cachedIsCustomerSupport for user ${user.uid}',
-        );
+        //AppLogger.d('Returning cached customer support status: $_cachedIsCustomerSupport for user ${user.uid}',);
         return _cachedIsCustomerSupport!;
       }
 
-      AppLogger.d('Checking customer support status for user: ${user.uid} (forceRefresh: $forceRefresh)');
+      //AppLogger.d('Checking customer support status for user: ${user.uid} (forceRefresh: $forceRefresh)');
 
       // Check User collection for role='customer_support'
       final userDoc = await _firestore.collection('User').doc(user.uid).get();
-      AppLogger.d('User document exists: ${userDoc.exists}');
+      //AppLogger.d('User document exists: ${userDoc.exists}');
 
       if (userDoc.exists) {
         final userData = userDoc.data() as Map<String, dynamic>;
         final userRole = userData['role'] as String?;
-        AppLogger.d('User role from Firestore: $userRole');
+        //AppLogger.d('User role from Firestore: $userRole');
 
         if (userRole == 'customer_support') {
           _cachedIsCustomerSupport = true;
           _cachedUserId = user.uid;
-          AppLogger.d('User ${user.uid} is a Customer Support Representative');
+          //AppLogger.d('User ${user.uid} is a Customer Support Representative');
           return true;
         }
       }
 
       _cachedIsCustomerSupport = false;
       _cachedUserId = user.uid;
-      AppLogger.d('User ${user.uid} is not a Customer Support Representative');
+      //AppLogger.d('User ${user.uid} is not a Customer Support Representative');
       return false;
     } catch (e) {
-      AppLogger.d('Error checking customer support status: $e');
+      //AppLogger.d('Error checking customer support status: $e');
       return false;
     }
   }
@@ -248,7 +240,7 @@ class UserService {
       }
       return 'User';
     } catch (e) {
-      AppLogger.d('Error getting user first name: $e');
+      //AppLogger.d('Error getting user first name: $e');
       return 'User';
     }
   }
@@ -262,7 +254,7 @@ class UserService {
       }
       return 'User';
     } catch (e) {
-      AppLogger.d('Error getting user full name: $e');
+      //AppLogger.d('Error getting user full name: $e');
       return 'User';
     }
   }

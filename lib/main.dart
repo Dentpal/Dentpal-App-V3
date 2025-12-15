@@ -25,7 +25,7 @@ void main() async {
   } catch (e) {
     if (e.toString().contains('duplicate-app')) {
       // Firebase is already initialized, which is fine
-      AppLogger.d('Firebase already initialized');
+      //AppLogger.d('Firebase already initialized');
     } else {
       // Re-throw other errors
       rethrow;

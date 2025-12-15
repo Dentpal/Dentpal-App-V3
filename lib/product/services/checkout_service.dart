@@ -33,7 +33,7 @@ class CheckoutService {
     String? cancelUrl,
   }) async {
     try {
-      AppLogger.d('Creating order with checkout session for ${cartItemIds.length} items');
+      //AppLogger.d('Creating order with checkout session for ${cartItemIds.length} items');
 
       // Get Firebase Auth token for authentication
       final user = _auth.currentUser;
@@ -66,24 +66,24 @@ class CheckoutService {
         throw Exception('Failed to create checkout session: ${response.body}');
       }
 
-      AppLogger.d('RAW Response body: ${response.body}');
+      //AppLogger.d('RAW Response body: ${response.body}');
       
       final responseData = json.decode(response.body) as Map<String, dynamic>;
-      AppLogger.d('Parsed response data: $responseData');
+      //AppLogger.d('Parsed response data: $responseData');
       
       if (responseData['success'] != true) {
         throw Exception(responseData['error'] ?? 'Failed to create checkout session');
       }
 
-      AppLogger.d('About to parse CreateOrderResponse from: ${responseData['data']}');
+      //AppLogger.d('About to parse CreateOrderResponse from: ${responseData['data']}');
       final orderResponse = CreateOrderResponse.fromJson(responseData['data'] as Map<String, dynamic>);
-      AppLogger.d('Successfully parsed CreateOrderResponse: ${orderResponse.toString()}');
+      //AppLogger.d('Successfully parsed CreateOrderResponse: ${orderResponse.toString()}');
       
-      AppLogger.d('Order created successfully with checkout session: ${orderResponse.checkoutSession?.id}');
+      //AppLogger.d('Order created successfully with checkout session: ${orderResponse.checkoutSession?.id}');
       return orderResponse;
 
     } catch (e) {
-      AppLogger.d('Error creating order with checkout session: $e');
+      //AppLogger.d('Error creating order with checkout session: $e');
       rethrow;
     }
   }
@@ -95,7 +95,7 @@ class CheckoutService {
     Map<String, dynamic>? paymentDetails,
   }) async {
     try {
-      AppLogger.d('Processing payment with method: $paymentMethod');
+      //AppLogger.d('Processing payment with method: $paymentMethod');
 
       // Note: In a real implementation, this would integrate with Paymongo's client SDK
       // For now, we'll simulate the payment process
@@ -115,7 +115,7 @@ class CheckoutService {
       );
 
     } catch (e) {
-      AppLogger.d('Error processing payment: $e');
+      //AppLogger.d('Error processing payment: $e');
       return PaymentResult.failure(
         errorMessage: e.toString(),
         additionalData: {'payment_method': paymentMethod},
@@ -126,13 +126,13 @@ class CheckoutService {
   // Get order by ID using Firestore directly (for checkout verification purposes only)
   Future<Order?> getOrder(String orderId) async {
     try {
-      AppLogger.d('Fetching order: $orderId');
+      //AppLogger.d('Fetching order: $orderId');
 
       final userId = _getCurrentUserId();
       final orderDoc = await _firestore.collection('Order').doc(orderId).get();
       
       if (!orderDoc.exists) {
-        AppLogger.d('Order not found: $orderId');
+        //AppLogger.d('Order not found: $orderId');
         return null;
       }
 
@@ -148,7 +148,7 @@ class CheckoutService {
       return Order.fromFirestore(orderDoc);
 
     } catch (e) {
-      AppLogger.d('Error fetching order: $e');
+      //AppLogger.d('Error fetching order: $e');
       return null;
     }
   }
@@ -159,9 +159,9 @@ class CheckoutService {
     required ShippingAddress address,
   }) async {
     try {
-      AppLogger.d('Calculating shipping cost for checkout');
-      AppLogger.d('   Items: ${items.length}');
-      AppLogger.d('   Address: ${address.city}, ${address.state}');
+      //AppLogger.d('Calculating shipping cost for checkout');
+      //AppLogger.d('   Items: ${items.length}');
+      //AppLogger.d('   Address: ${address.city}, ${address.state}');
       
       // Group items by seller to calculate shipping per seller
       Map<String, List<CartItem>> sellerItemsMap = {};
@@ -194,21 +194,21 @@ class CheckoutService {
           
           totalShippingCost += shippingCost;
           
-          AppLogger.d('Seller $sellerId buyer shipping portion: ₱$shippingCost');
+          //AppLogger.d('Seller $sellerId buyer shipping portion: ₱$shippingCost');
           
         } catch (e) {
-          AppLogger.d('Error calculating shipping for seller $sellerId: $e');
+          //AppLogger.d('Error calculating shipping for seller $sellerId: $e');
           // Fallback to default shipping cost (₱250) when JRS API fails
           // This matches the backend fallback in jrsShippingHelper.ts
           totalShippingCost += JRSShippingService.defaultFallbackShippingCost;
         }
       }
       
-      AppLogger.d('Total buyer shipping cost (all sellers): ₱$totalShippingCost');
+      //AppLogger.d('Total buyer shipping cost (all sellers): ₱$totalShippingCost');
       return totalShippingCost;
 
     } catch (e) {
-      AppLogger.d('Error calculating shipping cost: $e');
+      //AppLogger.d('Error calculating shipping cost: $e');
       // Default shipping cost per seller when calculation fails
       return JRSShippingService.defaultFallbackShippingCost;
     }
@@ -266,7 +266,7 @@ class CheckoutService {
       return true;
 
     } catch (e) {
-      AppLogger.d('Checkout validation failed: $e');
+      //AppLogger.d('Checkout validation failed: $e');
       rethrow;
     }
   }
@@ -288,7 +288,7 @@ class CheckoutService {
       ];
 
     } catch (e) {
-      AppLogger.d('Error getting payment methods: $e');
+      //AppLogger.d('Error getting payment methods: $e');
       return [PaymentMethod.card]; // Fallback to card only
     }
   }
@@ -298,7 +298,7 @@ class CheckoutService {
   @Deprecated('Use OrderService.cancelOrder instead which properly calls the backend cancelOrder function')
   Future<bool> cancelOrder(String orderId) async {
     try {
-      AppLogger.d('Cancelling order: $orderId (legacy method - consider using OrderService.cancelOrder)');
+      //AppLogger.d('Cancelling order: $orderId (legacy method - consider using OrderService.cancelOrder)');
 
       // Get Firebase Auth token for authentication
       final user = _auth.currentUser;
@@ -338,11 +338,11 @@ class CheckoutService {
         throw Exception(responseData['error'] ?? 'Failed to cancel order');
       }
 
-      AppLogger.d('Order cancelled successfully via backend');
+      //AppLogger.d('Order cancelled successfully via backend');
       return true;
 
     } catch (e) {
-      AppLogger.d('Error cancelling order: $e');
+      //AppLogger.d('Error cancelling order: $e');
       rethrow;
     }
   }

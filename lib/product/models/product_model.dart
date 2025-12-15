@@ -70,7 +70,7 @@ class Product {
         }
       }
     } catch (e) {
-      AppLogger.d('Error parsing timestamps for product ${doc.id}: $e');
+      //AppLogger.d('Error parsing timestamps for product ${doc.id}: $e');
     }
     
     // Handle nullable string fields defensively
@@ -86,7 +86,7 @@ class Product {
       warrantyPeriodUnit = data['warrantyPeriodUnit']?.toString();
       warrantyPolicy = data['warrantyPolicy']?.toString();
     } catch (e) {
-      AppLogger.d('Error parsing warranty fields for product ${doc.id}: $e');
+      //AppLogger.d('Error parsing warranty fields for product ${doc.id}: $e');
     }
     
     return Product(
@@ -207,7 +207,7 @@ class ProductVariation {
         }
       }
     } catch (e) {
-      AppLogger.d('Error parsing numeric fields for variation ${doc.id}: $e');
+      //AppLogger.d('Error parsing numeric fields for variation ${doc.id}: $e');
     }
     
     return ProductVariation(

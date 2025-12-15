@@ -56,12 +56,12 @@ class _SellerListingsPageState extends State<SellerListingsPage>
         throw Exception('User not logged in');
       }
 
-      AppLogger.d('Loading products for seller: ${user.uid}');
+      //AppLogger.d('Loading products for seller: ${user.uid}');
 
       // Get all products by this seller (including inactive ones)
       final allProducts = await _getAllProductsBySeller(user.uid);
 
-      AppLogger.d('Loaded ${allProducts.length} products for seller');
+      //AppLogger.d('Loaded ${allProducts.length} products for seller');
 
       // Categorize products
       _categorizeProducts(allProducts);
@@ -73,7 +73,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
         });
       }
     } catch (e) {
-      AppLogger.d('Error loading seller products: $e');
+      //AppLogger.d('Error loading seller products: $e');
       if (mounted) {
         setState(() {
           _errorMessage = e.toString();
@@ -135,7 +135,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
 
           products.add(product);
         } catch (e) {
-          AppLogger.d('Error processing product document: $e');
+          //AppLogger.d('Error processing product document: $e');
         }
       }
 
@@ -144,7 +144,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
 
       return products;
     } catch (e) {
-      AppLogger.d('Error fetching seller products: $e');
+      //AppLogger.d('Error fetching seller products: $e');
       rethrow;
     }
   }
@@ -170,9 +170,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
       }
     }
 
-    AppLogger.d(
-      'Products categorized - Active: ${_activeProducts.length}, Inactive: ${_inactiveProducts.length}, Out of Stock: ${_outOfStockProducts.length}, Drafts: ${_draftProducts.length}, Archived: ${_archivedProducts.length}',
-    );
+    //AppLogger.d('Products categorized - Active: ${_activeProducts.length}, Inactive: ${_inactiveProducts.length}, Out of Stock: ${_outOfStockProducts.length}, Drafts: ${_draftProducts.length}, Archived: ${_archivedProducts.length}',);
   }
 
   bool _isProductOutOfStock(Product product) {
@@ -352,7 +350,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
         _loadSellerProducts();
       }
     } catch (e) {
-      AppLogger.d('Error toggling product status: $e');
+      //AppLogger.d('Error toggling product status: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -387,7 +385,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
         _loadSellerProducts();
       }
     } catch (e) {
-      AppLogger.d('Error publishing draft: $e');
+      //AppLogger.d('Error publishing draft: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -422,7 +420,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
         _loadSellerProducts();
       }
     } catch (e) {
-      AppLogger.d('Error archiving product: $e');
+      //AppLogger.d('Error archiving product: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -457,7 +455,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
         _loadSellerProducts();
       }
     } catch (e) {
-      AppLogger.d('Error unarchiving product: $e');
+      //AppLogger.d('Error unarchiving product: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

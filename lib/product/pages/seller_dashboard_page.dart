@@ -91,7 +91,7 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
     _loadSellerProducts();
 
     // Add debug log to track initialization
-    AppLogger.d("SellerDashboardPage initState called");
+    //AppLogger.d("SellerDashboardPage initState called");
   }
 
   @override
@@ -100,7 +100,7 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
     _scrollController.dispose();
     _productTabController.dispose();
 
-    AppLogger.d("SellerDashboardPage dispose called");
+    //AppLogger.d("SellerDashboardPage dispose called");
     super.dispose();
   }
 
@@ -142,12 +142,12 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
         throw Exception('User not logged in');
       }
 
-      AppLogger.d('Loading first page of products for seller: ${user.uid}');
+      //AppLogger.d('Loading first page of products for seller: ${user.uid}');
 
       // Load first page with pagination
       await _loadSellerProductsPage(user.uid, isFirstPage: true);
     } catch (e) {
-      AppLogger.d('Error loading seller products: $e');
+      //AppLogger.d('Error loading seller products: $e');
       if (mounted) {
         setState(() {
           _errorMessage = e.toString();
@@ -162,9 +162,7 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
     bool isFirstPage = false,
   }) async {
     try {
-      AppLogger.d(
-        'Loading ${isFirstPage ? 'first' : 'next'} page of seller products',
-      );
+      //AppLogger.d('Loading ${isFirstPage ? 'first' : 'next'} page of seller products',);
 
       Query query = FirebaseFirestore.instance
           .collection('Product')
@@ -179,9 +177,7 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
 
       QuerySnapshot querySnapshot = await query.get();
 
-      AppLogger.d(
-        'Query completed, processing ${querySnapshot.docs.length} documents',
-      );
+      //AppLogger.d('Query completed, processing ${querySnapshot.docs.length} documents',);
 
       List<Product> pageProducts = [];
 
@@ -228,7 +224,7 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
 
           pageProducts.add(product);
         } catch (e) {
-          AppLogger.d('Error processing product document: $e');
+          //AppLogger.d('Error processing product document: $e');
         }
       }
 
@@ -257,11 +253,9 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
         });
       }
 
-      AppLogger.d(
-        'Successfully loaded ${pageProducts.length} products (page total: ${_allProducts.length})',
-      );
+      //AppLogger.d('Successfully loaded ${pageProducts.length} products (page total: ${_allProducts.length})',);
     } catch (e) {
-      AppLogger.d('Error loading seller products page: $e');
+      //AppLogger.d('Error loading seller products page: $e');
       if (mounted) {
         setState(() {
           if (isFirstPage) {
@@ -305,7 +299,7 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
     try {
       await _loadSellerProductsPage(user.uid, isFirstPage: false);
     } catch (e) {
-      AppLogger.d('Error loading more products: $e');
+      //AppLogger.d('Error loading more products: $e');
     }
   }
 
@@ -330,9 +324,7 @@ class _SellerDashboardPageState extends State<SellerDashboardPage>
       }
     }
 
-    AppLogger.d(
-      'Products categorized - Active: ${_activeProducts.length}, Inactive: ${_inactiveProducts.length}, Out of Stock: ${_outOfStockProducts.length}, Drafts: ${_draftProducts.length}, Archived: ${_archivedProducts.length}',
-    );
+    //AppLogger.d('Products categorized - Active: ${_activeProducts.length}, Inactive: ${_inactiveProducts.length}, Out of Stock: ${_outOfStockProducts.length}, Drafts: ${_draftProducts.length}, Archived: ${_archivedProducts.length}',);
   }
 
   bool _isProductOutOfStock(Product product) {

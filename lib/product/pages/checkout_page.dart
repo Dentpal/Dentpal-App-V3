@@ -64,7 +64,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         });
       }
     } catch (e) {
-      AppLogger.d('Error loading payment methods: $e');
+      //AppLogger.d('Error loading payment methods: $e');
     }
   }
 
@@ -77,7 +77,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
     try {
       // First, validate that all cart items still exist in the database
-      AppLogger.d('Validating cart items before checkout...');
+      //AppLogger.d('Validating cart items before checkout...');
       await _validateCartItemsExist();
 
       // Validate checkout data
@@ -88,7 +88,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
       // Extract cart item IDs
       final cartItemIds = widget.cartItems.map((item) => item.cartItemId).toList();
-      AppLogger.d('Proceeding with cart items: $cartItemIds');
+      //AppLogger.d('Proceeding with cart items: $cartItemIds');
 
       // Create order and checkout session
       final orderResponse = await _checkoutService.createOrderWithCheckoutSession(
@@ -100,7 +100,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         cancelUrl: 'https://dentpal-store.web.app/payment-failed', // Updated cancel URL
       );
 
-      AppLogger.d('Order created successfully');
+      //AppLogger.d('Order created successfully');
 
       // Navigate to Paymongo checkout
       if (mounted) {
@@ -108,7 +108,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
       }
 
     } catch (e) {
-      AppLogger.d('Checkout failed: $e');
+      //AppLogger.d('Checkout failed: $e');
       if (mounted) {
         _showErrorDialog(e.toString());
       }
@@ -141,7 +141,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
   }
 
   Future<void> _validateCartItemsExist() async {
-    AppLogger.d('Validating ${widget.cartItems.length} cart items exist in database...');
+    //AppLogger.d('Validating ${widget.cartItems.length} cart items exist in database...');
     
     final cartService = CartService();
     final missingItems = <String>[];
@@ -151,12 +151,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
         final existingItem = await cartService.getCartItem(cartItem.cartItemId);
         if (existingItem == null) {
           missingItems.add(cartItem.cartItemId);
-          AppLogger.d('Cart item ${cartItem.cartItemId} not found in database');
+          //AppLogger.d('Cart item ${cartItem.cartItemId} not found in database');
         } else {
-          AppLogger.d('Cart item ${cartItem.cartItemId} exists in database');
+          //AppLogger.d('Cart item ${cartItem.cartItemId} exists in database');
         }
       } catch (e) {
-        AppLogger.d('Error checking cart item ${cartItem.cartItemId}: $e');
+        //AppLogger.d('Error checking cart item ${cartItem.cartItemId}: $e');
         missingItems.add(cartItem.cartItemId);
       }
     }
@@ -168,7 +168,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
       );
     }
     
-    AppLogger.d('All cart items validated successfully');
+    //AppLogger.d('All cart items validated successfully');
   }
 
   /// Calculate shipping cost when address is selected
@@ -181,7 +181,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     });
 
     try {
-      AppLogger.d('Calculating shipping cost for checkout');
+      //AppLogger.d('Calculating shipping cost for checkout');
       
       final shippingCost = await _checkoutService.calculateShippingCost(
         items: widget.cartItems,
@@ -193,10 +193,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
         _isCalculatingShipping = false;
       });
       
-      AppLogger.d('Shipping cost calculated: ₱$shippingCost');
+      //AppLogger.d('Shipping cost calculated: ₱$shippingCost');
       
     } catch (e) {
-      AppLogger.d('Error calculating shipping cost: $e');
+      //AppLogger.d('Error calculating shipping cost: $e');
       
       setState(() {
         _calculatedShippingCost = null; // Don't show any specific amount
@@ -409,7 +409,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
             ),
             ElevatedButton(
               onPressed: () async {
-                AppLogger.d('Opening Paymongo checkout URL: $checkoutUrl');
+                //AppLogger.d('Opening Paymongo checkout URL: $checkoutUrl');
                 
                 // Close the dialog first
                 Navigator.of(context).pop();
@@ -419,7 +419,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   // For now, we'll use a simple browser opening approach
                   await _openCheckoutUrl(checkoutUrl);
                 } catch (e) {
-                  AppLogger.d('Error opening checkout URL: $e');
+                  //AppLogger.d('Error opening checkout URL: $e');
                   if (mounted) {
                     _showErrorDialog('Failed to open payment page. Please try again.');
                   }
@@ -1348,7 +1348,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   Future<void> _openCheckoutUrl(String checkoutUrl) async {
     try {
-      AppLogger.d('Attempting to open checkout URL: $checkoutUrl');
+      //AppLogger.d('Attempting to open checkout URL: $checkoutUrl');
       
       if (checkoutUrl.isNotEmpty) {
         // Check if running on web platform
@@ -1371,7 +1371,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   successUrl: 'https://dentpal-store.web.app/payment-success',
                   cancelUrl: 'https://dentpal-store.web.app/payment-failed',
                   onPaymentComplete: (isSuccess, orderId) {
-                    AppLogger.d('Payment completed. Success: $isSuccess, Order ID: $orderId');
+                    //AppLogger.d('Payment completed. Success: $isSuccess, Order ID: $orderId');
                     
                     if (isSuccess) {
                       // Handle successful payment
@@ -1390,20 +1390,20 @@ class _CheckoutPageState extends State<CheckoutPage> {
         throw Exception('Invalid checkout URL');
       }
     } catch (e) {
-      AppLogger.d('Error opening checkout URL: $e');
+      //AppLogger.d('Error opening checkout URL: $e');
       rethrow;
     }
   }
 
   Future<void> _openUrlInBrowser(String url) async {
     try {
-      AppLogger.d('Attempting to open URL in browser: $url');
+      //AppLogger.d('Attempting to open URL in browser: $url');
       
       final uri = Uri.parse(url);
       
       // Check if the URL can be launched
       if (await canLaunchUrl(uri)) {
-        AppLogger.d('URL can be launched, opening in external browser');
+        //AppLogger.d('URL can be launched, opening in external browser');
         
         // Launch the URL in external browser
         final success = await launchUrl(
@@ -1412,21 +1412,21 @@ class _CheckoutPageState extends State<CheckoutPage> {
         );
         
         if (success) {
-          AppLogger.d('Successfully opened payment page in browser');
+          //AppLogger.d('Successfully opened payment page in browser');
         } else {
-          AppLogger.d('Failed to launch URL, showing manual dialog');
+          //AppLogger.d('Failed to launch URL, showing manual dialog');
           if (mounted) {
             _showManualUrlDialog(url);
           }
         }
       } else {
-        AppLogger.d('URL cannot be launched, showing manual dialog');
+        //AppLogger.d('URL cannot be launched, showing manual dialog');
         if (mounted) {
           _showManualUrlDialog(url);
         }
       }
     } catch (e) {
-      AppLogger.d('Error launching URL: $e, showing manual dialog');
+      //AppLogger.d('Error launching URL: $e, showing manual dialog');
       if (mounted) {
         _showManualUrlDialog(url);
       }
@@ -1617,7 +1617,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   );
                 }
               } catch (e) {
-                AppLogger.d('Error copying to clipboard: $e');
+                //AppLogger.d('Error copying to clipboard: $e');
               }
             },
             child: Text('Copy URL', style: AppTextStyles.buttonMedium),
@@ -1646,15 +1646,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
       await Future.delayed(Duration.zero); // Simple placeholder
       // In a real implementation, you would use:
       // await Clipboard.setData(ClipboardData(text: text));
-      AppLogger.d('URL copied to clipboard (simulated)');
+      //AppLogger.d('URL copied to clipboard (simulated)');
     } catch (e) {
-      AppLogger.d('Error copying to clipboard: $e');
+      //AppLogger.d('Error copying to clipboard: $e');
       rethrow;
     }
   }
 
   void _handlePaymentSuccess(String? orderId) async {
-    AppLogger.d('Payment completed successfully. Order ID: $orderId');
+    //AppLogger.d('Payment completed successfully. Order ID: $orderId');
     
     if (mounted && orderId != null) {
       // Show loading dialog while verifying payment
@@ -1684,7 +1684,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
       if (mounted) {
         Navigator.of(context).pop(); // Close loading dialog
         
-        AppLogger.d('Payment completed, webhooks will update order status');
+        //AppLogger.d('Payment completed, webhooks will update order status');
         
         // Navigate to success page
         Navigator.of(context).pushNamedAndRemoveUntil(
@@ -1708,7 +1708,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
   }
 
   void _handlePaymentCancellation() {
-    AppLogger.d('Payment was cancelled by user');
+    //AppLogger.d('Payment was cancelled by user');
     
     if (mounted) {
       // Navigate to dedicated payment failed page instead of showing popup
