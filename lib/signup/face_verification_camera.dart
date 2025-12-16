@@ -738,9 +738,9 @@ class _FaceVerificationCameraState extends State<FaceVerificationCamera> {
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
                         _buildProgressIndicator('Blink', _blinkDetected),
-                        _buildProgressIndicator(Platform.isIOS ? 'Turn Right' : 'Turn Left', _leftTurnDetected),
+                        _buildProgressIndicator('Turn Left', _leftTurnDetected),
                         _buildProgressIndicator('Center', _centerPositionDetected),
-                        _buildProgressIndicator(Platform.isIOS ? 'Turn Left' : 'Turn Right', _rightTurnDetected),
+                        _buildProgressIndicator('Turn Right', _rightTurnDetected),
                       ],
                     ),
                   ],
