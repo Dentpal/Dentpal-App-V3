@@ -1,8 +1,10 @@
 import 'package:dentpal/signup/signup_flow.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dentpal/core/app_theme/index.dart';
+import 'package:dentpal/change_password_standalone_page.dart'; // TEMPORARY: For testing
 
 class ForgotPasswordPage extends StatefulWidget {
   const ForgotPasswordPage({super.key});
@@ -41,6 +43,39 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   }
 
   Future<void> _submitPasswordReset() async {
+    // TEMPORARY: For testing - Navigate to change password page instead
+    setState(() {
+      _inputError = null;
+      _isLoading = true;
+    });
+
+    final input = _inputController.text.trim();
+
+    if (input.isEmpty) {
+      setState(() {
+        _inputError = 'Please enter your email or phone number.';
+        _isLoading = false;
+      });
+      return;
+    }
+
+    // Simulate a short delay for loading effect
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    setState(() {
+      _isLoading = false;
+    });
+
+    // Navigate to the change password standalone page (for testing)
+    if (mounted) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => const ChangePasswordStandalonePage(),
+        ),
+      );
+    }
+
+    /* ORIGINAL CODE - Commented out for testing
     setState(() {
       _inputError = null;
       _isLoading = true;
@@ -80,8 +115,23 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
         emailToReset = await _getEmailFromPhone(formattedPhone);
       }
 
-      // Send password reset email
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: emailToReset);
+      // Configure action code settings for custom reset URL
+      // On mobile: Opens in-app via deep link
+      // On web: Opens on custom website page
+      final actionCodeSettings = ActionCodeSettings(
+        url: 'https://dentpal.shop/reset-password',
+        handleCodeInApp: true, // Changed to true for mobile deep linking
+        androidPackageName: 'com.rrnewtech.dentpal',
+        iOSBundleId: 'com.rrnewtech.dentpal',
+        androidInstallApp: false, // Don't force app install
+        androidMinimumVersion: '1',
+      );
+
+      // Send password reset email with custom URL
+      await FirebaseAuth.instance.sendPasswordResetEmail(
+        email: emailToReset,
+        actionCodeSettings: actionCodeSettings,
+      );
 
       // Always show success popup to prevent email enumeration
       if (mounted) {
@@ -118,6 +168,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
         _isLoading = false;
       });
     }
+    */
   }
 
   // Look up email from phone number in Firestore
@@ -155,70 +206,84 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
       barrierColor: Colors.black54,
       transitionDuration: const Duration(milliseconds: 300),
       pageBuilder: (context, animation, secondaryAnimation) {
-        return Center(
-          child: Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            backgroundColor: AppColors.surface,
-            child: Padding(
-              padding: const EdgeInsets.all(30.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: .1),
-                      borderRadius: BorderRadius.circular(40),
-                    ),
-                    child: Icon(
-                      Icons.email_outlined,
-                      size: 40,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'Password Reset Link Sent!',
-                    style: AppTextStyles.headlineSmall.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Please check your inbox (and spam folder) for a link to reset your password.',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.grey600,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 30),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.of(context).pop();
-                        _showFollowUpPopup();
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: AppColors.onPrimary,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 0,
-                      ),
-                      child: Text('Got it', style: AppTextStyles.buttonLarge),
-                    ),
-                  ),
-                ],
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isWeb = kIsWeb && constraints.maxWidth > 900;
+            final dialogContent = Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
               ),
-            ),
-          ),
+              backgroundColor: AppColors.surface,
+              child: Padding(
+                padding: const EdgeInsets.all(30.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: .1),
+                        borderRadius: BorderRadius.circular(40),
+                      ),
+                      child: Icon(
+                        Icons.email_outlined,
+                        size: 40,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Password Reset Link Sent!',
+                      style: AppTextStyles.headlineSmall.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Please check your inbox (and spam folder) for a link to reset your password.',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.grey600,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 30),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          _showFollowUpPopup();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: AppColors.onPrimary,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: Text('Got it', style: AppTextStyles.buttonLarge),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+
+            if (isWeb) {
+              return Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 500),
+                  child: dialogContent,
+                ),
+              );
+            } else {
+              return Center(child: dialogContent);
+            }
+          },
         );
       },
       transitionBuilder: (context, animation, secondaryAnimation, child) {
@@ -242,101 +307,115 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
       barrierColor: Colors.black54,
       transitionDuration: const Duration(milliseconds: 400),
       pageBuilder: (context, animation, secondaryAnimation) {
-        return Center(
-          child: Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            backgroundColor: AppColors.surface,
-            child: Padding(
-              padding: const EdgeInsets.all(30.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      color: AppColors.accent.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(40),
-                    ),
-                    child: Icon(
-                      Icons.info_outline,
-                      size: 40,
-                      color: AppColors.accent,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    "Don't see an email?",
-                    style: AppTextStyles.headlineSmall.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    "If you don't see an email, either check your spam folder or consider signing up — it only takes a minute.",
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.grey600,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 30),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (context) => const SignupFlow(),
-                              ),
-                            );
-                          },
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: AppColors.accent),
-                            foregroundColor: AppColors.accent,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: Text(
-                            'Sign Up',
-                            style: AppTextStyles.buttonLarge,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                            Navigator.of(context).pop();
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: AppColors.onPrimary,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            elevation: 0,
-                          ),
-                          child: Text(
-                            'Back to Login',
-                            style: AppTextStyles.buttonLarge,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isWeb = kIsWeb && constraints.maxWidth > 900;
+            final dialogContent = Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
               ),
-            ),
-          ),
+              backgroundColor: AppColors.surface,
+              child: Padding(
+                padding: const EdgeInsets.all(30.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: AppColors.accent.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(40),
+                      ),
+                      child: Icon(
+                        Icons.info_outline,
+                        size: 40,
+                        color: AppColors.accent,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      "Don't see an email?",
+                      style: AppTextStyles.headlineSmall.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      "If you don't see an email, either check your spam folder or consider signing up — it only takes a minute.",
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.grey600,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 30),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => const SignupFlow(),
+                                ),
+                              );
+                            },
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(color: AppColors.accent),
+                              foregroundColor: AppColors.accent,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: Text(
+                              'Sign Up',
+                              style: AppTextStyles.buttonLarge,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              Navigator.of(context).pop();
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: AppColors.onPrimary,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              elevation: 0,
+                            ),
+                            child: Text(
+                              'Back to Login',
+                              style: AppTextStyles.buttonLarge,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+
+            if (isWeb) {
+              return Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 500),
+                  child: dialogContent,
+                ),
+              );
+            } else {
+              return Center(child: dialogContent);
+            }
+          },
         );
       },
       transitionBuilder: (context, animation, secondaryAnimation, child) {
