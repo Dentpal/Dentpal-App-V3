@@ -176,7 +176,10 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.close, color: AppColors.onSurface),
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () => Navigator.of(context).pushNamedAndRemoveUntil(
+            '/',
+            (route) => false,
+          ),
         ),
       ),
       body: Stack(
@@ -228,7 +231,10 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
               ),
               const SizedBox(height: 30),
               ElevatedButton(
-                onPressed: () => Navigator.of(context).pop(),
+                onPressed: () => Navigator.of(context).pushNamedAndRemoveUntil(
+                  '/',
+                  (route) => false,
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: AppColors.onPrimary,

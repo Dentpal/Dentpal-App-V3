@@ -23,7 +23,7 @@ class DeepLinkService {
   static void _initDeepLinks() {
     // Handle app launch from deep link (when app is closed)
     _handleInitialLink();
-    
+
     // Handle incoming deep links (when app is running)
     _handleIncomingLinks();
   }
@@ -57,49 +57,81 @@ class DeepLinkService {
   /// Process and route deep links
   static void _processDeepLink(Uri uri) {
     AppLogger.d('Processing deep link: $uri');
-    
+
     // Check if this is a Firebase auth callback - if so, ignore it and let Firebase handle it
     if (_isFirebaseAuthCallback(uri)) {
-      AppLogger.d('Firebase auth callback detected, ignoring deep link processing');
+      AppLogger.d(
+        'Firebase auth callback detected, ignoring deep link processing',
+      );
       return;
     }
-    
+
     try {
       String? productId;
-      
+      bool isResetPassword = false;
+      String? oobCode; // Firebase out-of-band code for password reset
+
       // Handle different URL formats:
       // https://dentpal-store.web.app/#/product/ABC123
       // https://dentpal-store-sandbox-testing.web.app/#/product/ABC123
+      // https://dentpal-store.web.app/#/reset-password?oobCode=XXX
       // dentpal://product/ABC123
-      
+      // dentpal://reset-password?oobCode=XXX
+
       if (uri.scheme == 'https' || uri.scheme == 'http') {
         // Support both production and sandbox domains
         final supportedHosts = [
           'dentpal-store.web.app',
-          'www.dentpal-store.web.app',
-          'dentpal-store-sandbox-testing.web.app'
+          'dentpal-store-sandbox-testing.web.app',
+          'dentpal.shop'
         ];
-        
+
         if (supportedHosts.contains(uri.host)) {
-          // Web URL format: https://domain/#/product/ABC123
+          // Web URL format with fragment: https://domain/#/reset-password or https://domain/#/product/ABC123
           if (uri.fragment.isNotEmpty) {
             final fragment = uri.fragment;
-            if (fragment.startsWith('/product/')) {
+            // Parse fragment for reset-password
+            if (fragment.startsWith('/reset-password')) {
+              isResetPassword = true;
+              // Extract oobCode from fragment query params if present
+              // Fragment format: /reset-password?oobCode=XXX
+              final fragmentUri = Uri.parse('https://temp.com$fragment');
+              oobCode = fragmentUri.queryParameters['oobCode'];
+            } else if (fragment.startsWith('/product/')) {
               productId = fragment.substring('/product/'.length);
             }
           }
-          // Alternative path format: https://domain/product/ABC123
-          else if (uri.path.startsWith('/product/')) {
+          // Alternative path format: https://domain/reset-password or https://domain/product/ABC123
+          else if (uri.path.startsWith('/reset-password')) {
+            isResetPassword = true;
+            oobCode = uri.queryParameters['oobCode'];
+          } else if (uri.path.startsWith('/product/')) {
             productId = uri.path.substring('/product/'.length);
           }
         }
       } else if (uri.scheme == 'dentpal') {
-        // Custom scheme format: dentpal://product/ABC123
-        if (uri.host == 'product' && uri.pathSegments.isNotEmpty) {
+        // Custom scheme format: dentpal://reset-password?oobCode=XXX or dentpal://product/ABC123
+        if (uri.host == 'reset-password') {
+          isResetPassword = true;
+          oobCode = uri.queryParameters['oobCode'];
+        } else if (uri.path == '/reset-password' ||
+            uri.path.startsWith('/reset-password')) {
+          isResetPassword = true;
+          oobCode = uri.queryParameters['oobCode'];
+        } else if (uri.host == 'product' && uri.pathSegments.isNotEmpty) {
           productId = uri.pathSegments.first;
         } else if (uri.path.startsWith('/product/')) {
           productId = uri.path.substring('/product/'.length);
         }
+      }
+
+      // Handle reset password navigation
+      if (isResetPassword) {
+        AppLogger.d(
+          'Reset password deep link detected, oobCode: ${oobCode != null ? "present" : "not present"}',
+        );
+        _navigateToResetPassword(oobCode);
+        return;
       }
 
       if (productId != null && productId.isNotEmpty) {
@@ -120,43 +152,48 @@ class DeepLinkService {
   /// Check if the deep link is a Firebase auth callback that should be ignored
   static bool _isFirebaseAuthCallback(Uri uri) {
     AppLogger.d('Checking if Firebase auth callback: ${uri.toString()}');
-    
+
     // Check for Firebase auth callback patterns
-    if (uri.scheme.contains('googleusercontent.apps') && uri.host == 'firebaseauth') {
+    if (uri.scheme.contains('googleusercontent.apps') &&
+        uri.host == 'firebaseauth') {
       AppLogger.d('Detected Google OAuth Firebase auth callback');
       return true;
     }
-    
+
     // Check for Firebase auth domain callbacks
-    if (uri.host.contains('firebaseapp.com') && uri.path.contains('/__/auth/callback')) {
+    if (uri.host.contains('firebaseapp.com') &&
+        uri.path.contains('/__/auth/callback')) {
       AppLogger.d('Detected Firebase app domain auth callback');
       return true;
     }
-    
+
     // Check for reCAPTCHA verification callbacks
-    if (uri.queryParameters.containsKey('authType') && 
+    if (uri.queryParameters.containsKey('authType') &&
         uri.queryParameters['authType'] == 'verifyApp') {
       AppLogger.d('Detected reCAPTCHA verification callback');
       return true;
     }
-    
+
     // Check for recaptcha token in query parameters
     if (uri.queryParameters.containsKey('recaptchaToken')) {
       AppLogger.d('Detected recaptcha token in query parameters');
       return true;
     }
-    
+
     // Check for deep_link_id parameter which contains Firebase auth info
     if (uri.queryParameters.containsKey('deep_link_id')) {
       final deepLinkId = uri.queryParameters['deep_link_id'];
-      if (deepLinkId != null && (deepLinkId.contains('firebaseapp.com') || 
-          deepLinkId.contains('authType=verifyApp') || 
-          deepLinkId.contains('recaptchaToken'))) {
-        AppLogger.d('Detected Firebase auth callback in deep_link_id parameter');
+      if (deepLinkId != null &&
+          (deepLinkId.contains('firebaseapp.com') ||
+              deepLinkId.contains('authType=verifyApp') ||
+              deepLinkId.contains('recaptchaToken'))) {
+        AppLogger.d(
+          'Detected Firebase auth callback in deep_link_id parameter',
+        );
         return true;
       }
     }
-    
+
     AppLogger.d('Not a Firebase auth callback');
     return false;
   }
@@ -171,6 +208,21 @@ class DeepLinkService {
     }
   }
 
+  /// Navigate to reset password page
+  /// For web: navigates to ChangePasswordStandalonePage
+  /// For mobile: navigates to ResetPasswordPage with oobCode
+  static void _navigateToResetPassword(String? oobCode) {
+    if (_navigatorKey?.currentState != null) {
+      AppLogger.d('Navigating to reset password page');
+      _navigatorKey!.currentState!.pushNamed(
+        '/reset-password',
+        arguments: {'oobCode': oobCode},
+      );
+    } else {
+      AppLogger.d('Navigator not available for reset password navigation');
+    }
+  }
+
   /// Clean up resources
   static void dispose() {
     _linkSubscription?.cancel();
@@ -178,7 +230,11 @@ class DeepLinkService {
   }
 
   /// Generate shareable deep link for a product
-  static String generateProductLink(String productId, {String? customDomain, bool useSandbox = false}) {
+  static String generateProductLink(
+    String productId, {
+    String? customDomain,
+    bool useSandbox = false,
+  }) {
     String domain;
     if (customDomain != null) {
       domain = customDomain;
@@ -193,5 +249,29 @@ class DeepLinkService {
   /// Generate custom scheme link for a product (for native app sharing)
   static String generateCustomSchemeLink(String productId) {
     return 'dentpal://product/$productId';
+  }
+
+  /// Generate shareable deep link for reset password
+  static String generateResetPasswordLink({
+    String? customDomain,
+    bool useSandbox = false,
+    String? oobCode,
+  }) {
+    String domain;
+    if (customDomain != null) {
+      domain = customDomain;
+    } else if (useSandbox) {
+      domain = 'https://dentpal-store-sandbox-testing.web.app';
+    } else {
+      domain = 'https://dentpal-store.web.app';
+    }
+    final queryString = oobCode != null ? '?oobCode=$oobCode' : '';
+    return '$domain/#/reset-password$queryString';
+  }
+
+  /// Generate custom scheme link for reset password (for native app)
+  static String generateResetPasswordCustomSchemeLink({String? oobCode}) {
+    final queryString = oobCode != null ? '?oobCode=$oobCode' : '';
+    return 'dentpal://reset-password$queryString';
   }
 }

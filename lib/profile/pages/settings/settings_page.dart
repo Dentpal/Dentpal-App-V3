@@ -218,19 +218,19 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   child: Column(
                     children: [
-                      _buildSettingsOption(
-                        context,
-                        'Data Privacy',
-                        Icons.privacy_tip_outlined,
-                        () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const DataPrivacyPage(),
-                            ),
-                          );
-                        },
-                      ),
-                      _buildDivider(),
+                      // _buildSettingsOption(
+                      //   context,
+                      //   'Data Privacy',
+                      //   Icons.privacy_tip_outlined,
+                      //   () {
+                      //     Navigator.of(context).push(
+                      //       MaterialPageRoute(
+                      //         builder: (context) => const DataPrivacyPage(),
+                      //       ),
+                      //     );
+                      //   },
+                      // ),
+                      // _buildDivider(),
                       _buildSettingsOption(
                         context,
                         'Terms and Conditions',

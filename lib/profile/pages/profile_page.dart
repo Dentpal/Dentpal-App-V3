@@ -295,22 +295,22 @@ class _ProfilePageState extends State<ProfilePage> {
                     ),
                     _buildDivider(),
 
-                    _buildProfileOption(
-                      context,
-                      'Payment Methods',
-                      Icons.payment_outlined,
-                      () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Text(
-                              'Payment methods feature coming soon',
-                            ),
-                            backgroundColor: AppColors.primary,
-                          ),
-                        );
-                      },
-                    ),
-                    _buildDivider(),
+                    // _buildProfileOption(
+                    //   context,
+                    //   'Payment Methods',
+                    //   Icons.payment_outlined,
+                    //   () {
+                    //     ScaffoldMessenger.of(context).showSnackBar(
+                    //       SnackBar(
+                    //         content: const Text(
+                    //           'Payment methods feature coming soon',
+                    //         ),
+                    //         backgroundColor: AppColors.primary,
+                    //       ),
+                    //     );
+                    //   },
+                    // ),
+                    // _buildDivider(),
                   ],
                   _buildProfileOption(
                     context,

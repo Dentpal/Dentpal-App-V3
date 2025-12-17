@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -11,12 +10,15 @@ import 'package:dentpal/home_page.dart';
 import 'package:dentpal/login_page.dart';
 import 'package:dentpal/core/app_theme/app_theme.dart';
 import 'package:dentpal/services/deep_link_service.dart';
+import 'package:dentpal/reset_password_page.dart';
+import 'package:dentpal/change_password_standalone_page.dart';
 import 'firebase_options.dart';
 import 'package:dentpal/utils/web_utils.dart';
 import 'package:dentpal/utils/app_logger.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Check if Firebase is already initialized
   try {
     await Firebase.initializeApp(
@@ -37,7 +39,7 @@ void main() async {
     persistenceEnabled: true,
     cacheSizeBytes: 100 * 1024 * 1024, // 100 MB
   );
-  
+
   runApp(const MyApp());
 }
 
@@ -45,13 +47,14 @@ class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   // Global navigator key for deep link navigation
-  static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+  static final GlobalKey<NavigatorState> navigatorKey =
+      GlobalKey<NavigatorState>();
 
   @override
   Widget build(BuildContext context) {
     // Initialize deep link service
     DeepLinkService.initialize(navigatorKey);
-    
+
     return MaterialApp(
       title: 'DentPal',
       theme: AppTheme.lightTheme,
@@ -77,7 +80,27 @@ class MyApp extends StatelessWidget {
             builder: (context) => ProductDetailPage(productId: productId),
           );
         }
-        
+
+        // Handle reset password route
+        // Web/large screens use ChangePasswordStandalonePage for better UI
+        // Mobile uses ResetPasswordPage for mobile-optimized experience
+        if (settings.name == '/reset-password') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final oobCode = args?['oobCode'] as String?;
+
+          if (kIsWeb) {
+            return MaterialPageRoute(
+              settings: settings,
+              builder: (context) => ChangePasswordStandalonePage(oobCode: oobCode ?? ''),
+            );
+          } else {
+            return MaterialPageRoute(
+              settings: settings,
+              builder: (context) => ResetPasswordPage(oobCode: oobCode ?? ''),
+            );
+          }
+        }
+
         // Handle edit product route
         if (settings.name == '/edit-product') {
           final args = settings.arguments as Map<String, dynamic>?;
@@ -92,22 +115,20 @@ class MyApp extends StatelessWidget {
                       body: Center(child: CircularProgressIndicator()),
                     );
                   }
-                  
+
                   if (snapshot.hasData && snapshot.data != null) {
                     return EditProductPage(product: snapshot.data!);
                   }
-                  
+
                   return const Scaffold(
-                    body: Center(
-                      child: Text('Product not found'),
-                    ),
+                    body: Center(child: Text('Product not found')),
                   );
                 },
               ),
             );
           }
         }
-        
+
         // Default to AuthWrapper for unknown routes
         return MaterialPageRoute(
           settings: settings,
@@ -117,18 +138,19 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
     );
   }
-  
+
   // Helper method to get product for editing
   Future<Product?> _getProductForEdit(String productId) async {
     final productService = ProductService();
     return await productService.getProductById(productId);
   }
-  
+
   String _getInitialRoute() {
     if (kIsWeb) {
       final currentPath = getCurrentPath();
       // If we're on a payment route, return it directly
-      if (currentPath == '/payment-success' || currentPath == '/payment-failed') {
+      if (currentPath == '/payment-success' ||
+          currentPath == '/payment-failed') {
         return currentPath;
       }
       // For other routes, check if they're valid

@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dentpal/core/app_theme/index.dart';
-import 'package:dentpal/change_password_standalone_page.dart'; // TEMPORARY: For testing
 
 class ForgotPasswordPage extends StatefulWidget {
   const ForgotPasswordPage({super.key});
@@ -43,39 +42,6 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   }
 
   Future<void> _submitPasswordReset() async {
-    // TEMPORARY: For testing - Navigate to change password page instead
-    setState(() {
-      _inputError = null;
-      _isLoading = true;
-    });
-
-    final input = _inputController.text.trim();
-
-    if (input.isEmpty) {
-      setState(() {
-        _inputError = 'Please enter your email or phone number.';
-        _isLoading = false;
-      });
-      return;
-    }
-
-    // Simulate a short delay for loading effect
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    setState(() {
-      _isLoading = false;
-    });
-
-    // Navigate to the change password standalone page (for testing)
-    if (mounted) {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => const ChangePasswordStandalonePage(),
-        ),
-      );
-    }
-
-    /* ORIGINAL CODE - Commented out for testing
     setState(() {
       _inputError = null;
       _isLoading = true;
@@ -115,23 +81,10 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
         emailToReset = await _getEmailFromPhone(formattedPhone);
       }
 
-      // Configure action code settings for custom reset URL
-      // On mobile: Opens in-app via deep link
-      // On web: Opens on custom website page
-      final actionCodeSettings = ActionCodeSettings(
-        url: 'https://dentpal.shop/reset-password',
-        handleCodeInApp: true, // Changed to true for mobile deep linking
-        androidPackageName: 'com.rrnewtech.dentpal',
-        iOSBundleId: 'com.rrnewtech.dentpal',
-        androidInstallApp: false, // Don't force app install
-        androidMinimumVersion: '1',
-      );
-
-      // Send password reset email with custom URL
-      await FirebaseAuth.instance.sendPasswordResetEmail(
-        email: emailToReset,
-        actionCodeSettings: actionCodeSettings,
-      );
+      // Send password reset email using Firebase's default flow
+      // Firebase will send an email with a link to reset the password
+      // The link will go to Firebase's hosted action page, which handles the reset
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: emailToReset);
 
       // Always show success popup to prevent email enumeration
       if (mounted) {
@@ -168,7 +121,6 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
         _isLoading = false;
       });
     }
-    */
   }
 
   // Look up email from phone number in Firestore
