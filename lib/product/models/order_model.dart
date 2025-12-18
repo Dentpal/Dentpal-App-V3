@@ -29,7 +29,8 @@ enum PaymentMethod {
   gcash,
   grabpay,
   paymaya,
-  billEase
+  billEase,
+  cashOnDelivery
 }
 
 class Order {
@@ -661,6 +662,8 @@ extension PaymentMethodExtension on PaymentMethod {
         return 'PayMaya';
       case PaymentMethod.billEase:
         return 'BillEase (Buy Now Pay Later)';
+      case PaymentMethod.cashOnDelivery:
+        return 'Cash on Delivery';
     }
   }
 
@@ -676,6 +679,8 @@ extension PaymentMethodExtension on PaymentMethod {
         return 'paymaya';
       case PaymentMethod.billEase:
         return 'Buy Now, Pay Later (BillEase)';
+      case PaymentMethod.cashOnDelivery:
+        return 'cash_on_delivery'; // Not used for PayMongo but provided for consistency
     }
   }
 }

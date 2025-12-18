@@ -90,21 +90,38 @@ class _CheckoutPageState extends State<CheckoutPage> {
       final cartItemIds = widget.cartItems.map((item) => item.cartItemId).toList();
       AppLogger.d('Proceeding with cart items: $cartItemIds');
 
-      // Create order and checkout session
-      final orderResponse = await _checkoutService.createOrderWithCheckoutSession(
-        cartItemIds: cartItemIds,
-        addressId: _selectedAddress!.id,
-        notes: _orderNotes,
-        paymentMethodTypes: [_selectedPaymentMethod!.paymongoType],
-        successUrl: 'https://dentpal-store.web.app/payment-success', // Updated success URL
-        cancelUrl: 'https://dentpal-store.web.app/payment-failed', // Updated cancel URL
-      );
+      // Check if Cash on Delivery is selected
+      if (_selectedPaymentMethod == PaymentMethod.cashOnDelivery) {
+        // Create COD order directly (no PayMongo integration needed)
+        final orderResponse = await _checkoutService.createCashOnDeliveryOrder(
+          cartItemIds: cartItemIds,
+          addressId: _selectedAddress!.id,
+          notes: _orderNotes,
+        );
 
-      AppLogger.d('Order created successfully');
+        AppLogger.d('COD order created successfully');
 
-      // Navigate to Paymongo checkout
-      if (mounted) {
-        await _navigateToPaymongoCheckout(orderResponse);
+        // Navigate to success page directly
+        if (mounted) {
+          await _navigateToCodOrderSuccess(orderResponse);
+        }
+      } else {
+        // Create order with PayMongo checkout session
+        final orderResponse = await _checkoutService.createOrderWithCheckoutSession(
+          cartItemIds: cartItemIds,
+          addressId: _selectedAddress!.id,
+          notes: _orderNotes,
+          paymentMethodTypes: [_selectedPaymentMethod!.paymongoType],
+          successUrl: 'https://dentpal-store.web.app/payment-success', // Updated success URL
+          cancelUrl: 'https://dentpal-store.web.app/payment-failed', // Updated cancel URL
+        );
+
+        AppLogger.d('Order created successfully');
+
+        // Navigate to Paymongo checkout
+        if (mounted) {
+          await _navigateToPaymongoCheckout(orderResponse);
+        }
       }
 
     } catch (e) {
@@ -532,6 +549,151 @@ class _CheckoutPageState extends State<CheckoutPage> {
               elevation: 0,
             ),
             child: Text('Continue', style: AppTextStyles.buttonMedium),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _navigateToCodOrderSuccess(CreateOrderResponse orderResponse) async {
+    // Show success dialog for Cash on Delivery orders
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.success.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.check_circle_outlined,
+                color: AppColors.success,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Order Placed',
+              style: AppTextStyles.titleMedium.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Your Cash on Delivery order has been placed successfully!',
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.onSurface.withValues(alpha: 0.8),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.grey50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.receipt_long, size: 16, color: AppColors.primary),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Order ID:',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.onSurface.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    orderResponse.orderId,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Icon(Icons.money, size: 16, color: AppColors.primary),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Total Amount:',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.onSurface.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '₱${orderResponse.totalAmount.toStringAsFixed(2)}',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
+                      fontFamily: 'Roboto',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.info.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: AppColors.info.withValues(alpha: 0.3),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline, size: 18, color: AppColors.info),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Please prepare the exact amount for payment upon delivery. Our rider will contact you when your order is on the way.',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.info,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop(); // Close dialog
+              Navigator.of(context).pop(); // Go back to cart/previous page
+              widget.onOrderComplete?.call();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: AppColors.onPrimary,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+            ),
+            child: Text('Continue Shopping', style: AppTextStyles.buttonMedium),
           ),
         ],
       ),
@@ -1018,6 +1180,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
         return Icons.account_balance_wallet_outlined;
       case PaymentMethod.billEase:
         return Icons.account_balance;
+      case PaymentMethod.cashOnDelivery:
+        return Icons.money;
     }
   }
 

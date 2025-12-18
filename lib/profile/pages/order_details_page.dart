@@ -1214,6 +1214,8 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         return 'PayMaya';
       case order_model.PaymentMethod.billEase:
         return 'BillEase (Buy Now Pay Later)';
+      case order_model.PaymentMethod.cashOnDelivery:
+        return 'Cash on Delivery';
     }
   }
 

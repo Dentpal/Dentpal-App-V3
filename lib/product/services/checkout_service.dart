@@ -285,11 +285,78 @@ class CheckoutService {
         PaymentMethod.gcash,
         PaymentMethod.grabpay,
         PaymentMethod.paymaya,
+        PaymentMethod.cashOnDelivery,
       ];
 
     } catch (e) {
       AppLogger.d('Error getting payment methods: $e');
       return [PaymentMethod.card]; // Fallback to card only
+    }
+  }
+
+  // Create order for Cash on Delivery (no PayMongo integration needed)
+  Future<CreateOrderResponse> createCashOnDeliveryOrder({
+    required List<String> cartItemIds,
+    required String addressId,
+    String? notes,
+  }) async {
+    try {
+      AppLogger.d('Creating Cash on Delivery order for ${cartItemIds.length} items');
+
+      // Get Firebase Auth token for authentication
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('User not authenticated');
+      }
+      
+      final idToken = await user.getIdToken();
+
+      final createCodOrderRequest = {
+        'cart_item_ids': cartItemIds,
+        'address_id': addressId,
+        'notes': notes,
+        'payment_method': 'cash_on_delivery',
+      };
+
+      // Call Firebase Function via HTTP
+      final response = await http.post(
+        Uri.parse('https://asia-southeast1-dentpal-161e5.cloudfunctions.net/createCodOrder'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $idToken',
+        },
+        body: json.encode(createCodOrderRequest),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to create COD order: ${response.body}');
+      }
+
+      AppLogger.d('COD Order Response body: ${response.body}');
+      
+      final responseData = json.decode(response.body) as Map<String, dynamic>;
+      
+      if (responseData['success'] != true) {
+        throw Exception(responseData['error'] ?? 'Failed to create COD order');
+      }
+
+      // For COD orders, we don't have a PayMongo checkout session
+      // Return a simplified response
+      final orderData = responseData['data'] as Map<String, dynamic>;
+      
+      AppLogger.d('COD order created successfully: ${orderData['order_id']}');
+      
+      return CreateOrderResponse(
+        orderId: orderData['order_id'] as String,
+        paymentIntent: null,
+        checkoutSession: null,
+        totalAmount: (orderData['total_amount'] ?? 0.0).toDouble(),
+        currency: orderData['currency'] as String? ?? 'PHP',
+      );
+
+    } catch (e) {
+      AppLogger.d('Error creating COD order: $e');
+      rethrow;
     }
   }
 

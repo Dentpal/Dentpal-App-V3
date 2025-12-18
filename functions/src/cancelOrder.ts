@@ -238,15 +238,20 @@ export const cancelOrder = onRequest(
         // Check if payment was made and needs refund
         const paymongo = preliminaryData?.paymongo;
         const paymentStatus = paymongo?.paymentStatus;
+        const paymentMethod = paymongo?.paymentMethod;
         const paymentId = paymongo?.paymentId; // pay_xxx - Required for refunds
         const paymentIntentId = paymongo?.paymentIntentId; // pi_xxx - For reference
         const orderTotal = preliminaryData?.summary?.total || 0;
         
         let refundResult: { success: boolean; refundId?: string; error?: string } | null = null;
 
+        // Check if this is a Cash on Delivery order
+        const isCodOrder = paymentMethod === 'cash_on_delivery';
+
         // Process refund if payment was completed (OUTSIDE transaction - external API call)
         // PayMongo requires paymentId (pay_xxx) for refunds, not paymentIntentId
-        if (paymentStatus === 'paid') {
+        // Skip refund for COD orders as no payment has been collected yet
+        if (paymentStatus === 'paid' && !isCodOrder) {
           if (!paymentId) {
             logger.error('Cannot process refund: paymentId missing from order', { 
               orderId, 
@@ -307,10 +312,17 @@ export const cancelOrder = onRequest(
             orderId, 
             refundId: refundResult.refundId 
           });
+        } else if (isCodOrder) {
+          logger.info('COD order cancelled - no refund needed', { 
+            orderId, 
+            paymentStatus,
+            paymentMethod
+          });
         } else {
           logger.info('No payment to refund', { 
             orderId, 
             paymentStatus,
+            paymentMethod,
             hasPaymentId: !!paymentId,
             hasPaymentIntentId: !!paymentIntentId
           });
@@ -393,13 +405,19 @@ export const cancelOrder = onRequest(
           orderId, 
           userId,
           reason,
+          isCodOrder,
           refundProcessed: !!refundResult?.refundId,
           refundId: refundResult?.refundId
         });
 
-        const responseMessage = refundResult?.refundId
-          ? 'Order cancelled successfully. Refund has been initiated and will be processed within 5-10 business days.'
-          : 'Order cancelled successfully';
+        let responseMessage: string;
+        if (isCodOrder) {
+          responseMessage = 'Order cancelled successfully. No payment was collected for this Cash on Delivery order.';
+        } else if (refundResult?.refundId) {
+          responseMessage = 'Order cancelled successfully. Refund has been initiated and will be processed within 5-10 business days.';
+        } else {
+          responseMessage = 'Order cancelled successfully';
+        }
 
         response.status(200).json({
           success: true,

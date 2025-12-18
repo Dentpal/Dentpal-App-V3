@@ -4,6 +4,9 @@
 // Export the createCheckoutSession function
 export { createCheckoutSession } from './createCheckoutSession';
 
+// Export the Cash on Delivery order creation function
+export { createCodOrder } from './createCodOrder';
+
 // Export the Paymongo webhook handler and order expiration scheduler
 export { handlePaymongoWebhook, expirePendingOrders } from './paymongoWebhookHandler';
 
