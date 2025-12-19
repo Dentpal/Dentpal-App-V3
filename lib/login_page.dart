@@ -551,106 +551,106 @@ class _LoginPageState extends State<LoginPage> {
                                       ),
                                       const SizedBox(height: 18),
                                       // Divider
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Container(
-                                              height: 1,
-                                              color: AppColors.onSurface
-                                                  .withOpacity(0.1),
-                                            ),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                            ),
-                                            child: Text(
-                                              'or',
-                                              style: AppTextStyles.bodySmall
-                                                  .copyWith(
-                                                    color: AppColors.onSurface
-                                                        .withOpacity(0.55),
-                                                  ),
-                                            ),
-                                          ),
-                                          Expanded(
-                                            child: Container(
-                                              height: 1,
-                                              color: AppColors.onSurface
-                                                  .withOpacity(0.1),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 18),
-                                      // Social buttons (placeholders)
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: OutlinedButton.icon(
-                                              onPressed: () {
-                                                ScaffoldMessenger.of(
-                                                  context,
-                                                ).showSnackBar(
-                                                  const SnackBar(
-                                                    content: Text(
-                                                      'Google Sign In - Coming Soon!',
-                                                    ),
-                                                  ),
-                                                );
-                                              },
-                                              icon: Image.asset(
-                                                'lib/assets/icons/google-logo.png',
-                                                width: 18,
-                                                height: 18,
-                                              ),
-                                              label: const Text('Google'),
-                                              style: OutlinedButton.styleFrom(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      vertical: 14,
-                                                    ),
-                                                shape: RoundedRectangleBorder(
-                                                  borderRadius:
-                                                      BorderRadius.circular(12),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 14),
-                                          Expanded(
-                                            child: OutlinedButton.icon(
-                                              onPressed: () {
-                                                ScaffoldMessenger.of(
-                                                  context,
-                                                ).showSnackBar(
-                                                  const SnackBar(
-                                                    content: Text(
-                                                      'Facebook Sign In - Coming Soon!',
-                                                    ),
-                                                  ),
-                                                );
-                                              },
-                                              icon: Image.asset(
-                                                'lib/assets/icons/facebook-logo.png',
-                                                width: 18,
-                                                height: 18,
-                                              ),
-                                              label: const Text('Facebook'),
-                                              style: OutlinedButton.styleFrom(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      vertical: 14,
-                                                    ),
-                                                shape: RoundedRectangleBorder(
-                                                  borderRadius:
-                                                      BorderRadius.circular(12),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                                      // Row(
+                                      //   children: [
+                                      //     Expanded(
+                                      //       child: Container(
+                                      //         height: 1,
+                                      //         color: AppColors.onSurface
+                                      //             .withOpacity(0.1),
+                                      //       ),
+                                      //     ),
+                                      //     Padding(
+                                      //       padding: const EdgeInsets.symmetric(
+                                      //         horizontal: 12,
+                                      //       ),
+                                      //       child: Text(
+                                      //         'or',
+                                      //         style: AppTextStyles.bodySmall
+                                      //             .copyWith(
+                                      //               color: AppColors.onSurface
+                                      //                   .withOpacity(0.55),
+                                      //             ),
+                                      //       ),
+                                      //     ),
+                                      //     Expanded(
+                                      //       child: Container(
+                                      //         height: 1,
+                                      //         color: AppColors.onSurface
+                                      //             .withOpacity(0.1),
+                                      //       ),
+                                      //     ),
+                                      //   ],
+                                      // ),
+                                      // const SizedBox(height: 18),
+                                      // // Social buttons (placeholders)
+                                      // Row(
+                                      //   children: [
+                                      //     Expanded(
+                                      //       child: OutlinedButton.icon(
+                                      //         onPressed: () {
+                                      //           ScaffoldMessenger.of(
+                                      //             context,
+                                      //           ).showSnackBar(
+                                      //             const SnackBar(
+                                      //               content: Text(
+                                      //                 'Google Sign In - Coming Soon!',
+                                      //               ),
+                                      //             ),
+                                      //           );
+                                      //         },
+                                      //         icon: Image.asset(
+                                      //           'lib/assets/icons/google-logo.png',
+                                      //           width: 18,
+                                      //           height: 18,
+                                      //         ),
+                                      //         label: const Text('Google'),
+                                      //         style: OutlinedButton.styleFrom(
+                                      //           padding:
+                                      //               const EdgeInsets.symmetric(
+                                      //                 vertical: 14,
+                                      //               ),
+                                      //           shape: RoundedRectangleBorder(
+                                      //             borderRadius:
+                                      //                 BorderRadius.circular(12),
+                                      //           ),
+                                      //         ),
+                                      //       ),
+                                      //     ),
+                                      //     const SizedBox(width: 14),
+                                      //     Expanded(
+                                      //       child: OutlinedButton.icon(
+                                      //         onPressed: () {
+                                      //           ScaffoldMessenger.of(
+                                      //             context,
+                                      //           ).showSnackBar(
+                                      //             const SnackBar(
+                                      //               content: Text(
+                                      //                 'Facebook Sign In - Coming Soon!',
+                                      //               ),
+                                      //             ),
+                                      //           );
+                                      //         },
+                                      //         icon: Image.asset(
+                                      //           'lib/assets/icons/facebook-logo.png',
+                                      //           width: 18,
+                                      //           height: 18,
+                                      //         ),
+                                      //         label: const Text('Facebook'),
+                                      //         style: OutlinedButton.styleFrom(
+                                      //           padding:
+                                      //               const EdgeInsets.symmetric(
+                                      //                 vertical: 14,
+                                      //               ),
+                                      //           shape: RoundedRectangleBorder(
+                                      //             borderRadius:
+                                      //                 BorderRadius.circular(12),
+                                      //           ),
+                                      //         ),
+                                      //       ),
+                                      //     ),
+                                      //   ],
+                                      // ),
                                       const SizedBox(height: 26),
                                       // Sign up link - Opens Play Store
                                       Center(

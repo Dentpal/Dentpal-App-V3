@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../../core/app_theme/app_colors.dart';
 import '../../../core/app_theme/app_text_styles.dart';
 import 'package:dentpal/utils/app_logger.dart';
@@ -86,27 +87,46 @@ class _PrivacyPolicyPageState extends State<PrivacyPolicyPage> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.onSurface.withValues(alpha: 0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                final isWideWeb = kIsWeb && constraints.maxWidth > 900; // BREAKPOINT
+                
+                final content = SingleChildScrollView(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.onSurface.withValues(alpha: 0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(20.0),
-                  child: _userRole == 'seller'
-                      ? _buildSellerPrivacyPolicy()
-                      : _buildBuyerPrivacyPolicy(),
-                ),
-              ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(20.0),
+                      child: _userRole == 'seller'
+                          ? _buildSellerPrivacyPolicy()
+                          : _buildBuyerPrivacyPolicy(),
+                    ),
+                  ),
+                );
+
+                if (isWideWeb) {
+                  // Web wide: centered with max width
+                  return Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 1200), // MAX_WIDTH
+                      child: content,
+                    ),
+                  );
+                }
+                
+                // Mobile and narrow web: full width
+                return content;
+              },
             ),
     );
   }
