@@ -239,4 +239,146 @@ class OrderService {
       throw Exception('Failed to fetch orders by status: $e');
     }
   }
+
+  /// Request a return for a delivered order
+  /// Returns true if successful, throws exception otherwise
+  static Future<Map<String, dynamic>> requestReturn(
+    String orderId, {
+    required String reason,
+    String? customReason,
+    List<String>? itemsToReturn,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw Exception('User not authenticated');
+    }
+
+    try {
+      AppLogger.d('Requesting return for order: $orderId');
+      
+      final idToken = await user.getIdToken();
+
+      final response = await http.post(
+        Uri.parse('https://asia-southeast1-dentpal-161e5.cloudfunctions.net/requestReturn'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $idToken',
+        },
+        body: json.encode({
+          'orderId': orderId,
+          'reason': reason,
+          if (customReason != null && customReason.isNotEmpty) 'customReason': customReason,
+          if (itemsToReturn != null && itemsToReturn.isNotEmpty) 'itemsToReturn': itemsToReturn,
+        }),
+      );
+
+      final responseData = json.decode(response.body) as Map<String, dynamic>;
+
+      if (response.statusCode != 200) {
+        throw Exception(responseData['error'] ?? 'Failed to request return');
+      }
+      
+      if (responseData['success'] != true) {
+        throw Exception(responseData['error'] ?? 'Failed to request return');
+      }
+
+      AppLogger.d('Return requested successfully: ${responseData['returnRequestId']}');
+      return responseData;
+    } catch (e) {
+      AppLogger.d('Error requesting return: $e');
+      throw Exception('Failed to request return: $e');
+    }
+  }
+
+  /// Check if an order is eligible for return
+  /// Returns a map with 'eligible' (bool) and 'reason' (String) if not eligible
+  static Map<String, dynamic> isEligibleForReturn(order_model.Order order) {
+    // Must be delivered status
+    if (order.status != order_model.OrderStatus.delivered) {
+      return {
+        'eligible': false,
+        'reason': 'Only delivered orders can be returned.',
+      };
+    }
+
+    // Check if already return requested
+    if (order.status == order_model.OrderStatus.return_requested ||
+        order.status == order_model.OrderStatus.return_approved ||
+        order.status == order_model.OrderStatus.returned ||
+        order.status == order_model.OrderStatus.refunded) {
+      return {
+        'eligible': false,
+        'reason': 'A return has already been requested or processed for this order.',
+      };
+    }
+
+    // Find delivery date from status history
+    DateTime? deliveryDate;
+    for (final statusUpdate in order.statusHistory) {
+      if (statusUpdate.status == order_model.OrderStatus.delivered) {
+        deliveryDate = statusUpdate.timestamp;
+        break;
+      }
+    }
+
+    // If no delivery date in history, use updatedAt for delivered orders
+    deliveryDate ??= order.updatedAt;
+
+    // Check if within 7-day return window
+    const returnWindowDays = 7;
+    final now = DateTime.now();
+    final daysSinceDelivery = now.difference(deliveryDate).inDays;
+
+    if (daysSinceDelivery > returnWindowDays) {
+      return {
+        'eligible': false,
+        'reason': 'The return window has expired. Orders can only be returned within $returnWindowDays days of delivery.',
+        'daysSinceDelivery': daysSinceDelivery,
+      };
+    }
+
+    // Calculate days remaining
+    final daysRemaining = returnWindowDays - daysSinceDelivery;
+
+    return {
+      'eligible': true,
+      'daysRemaining': daysRemaining,
+      'deliveryDate': deliveryDate,
+    };
+  }
+
+  /// Mark order as complete (customer confirms receipt)
+  static Future<void> markOrderComplete(String orderId) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw Exception('User not authenticated');
+    }
+
+    try {
+      final token = await user.getIdToken();
+      if (token == null) {
+        throw Exception('Failed to get authentication token');
+      }
+
+      AppLogger.d('Marking order as complete: $orderId');
+
+      // Update order status locally in Firestore
+      await _firestore.collection('Order').doc(orderId).update({
+        'status': 'completed',
+        'updatedAt': FieldValue.serverTimestamp(),
+        'statusHistory': FieldValue.arrayUnion([
+          {
+            'status': 'completed',
+            'timestamp': DateTime.now(),
+            'note': 'Order marked as complete by customer',
+          }
+        ]),
+      });
+
+      AppLogger.d('Order marked as complete successfully');
+    } catch (e) {
+      AppLogger.d('Error marking order as complete: $e');
+      throw Exception('Failed to mark order as complete: $e');
+    }
+  }
 }

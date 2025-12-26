@@ -37,6 +37,8 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     order_model.OrderStatus.to_ship,
     order_model.OrderStatus.shipping,
     order_model.OrderStatus.delivered,
+    order_model.OrderStatus.completed,
+    order_model.OrderStatus.return_requested,
     order_model.OrderStatus.cancelled,
     order_model.OrderStatus.expired,
   ];
@@ -789,6 +791,11 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
         textColor = AppColors.success;
         icon = Icons.check_circle;
         break;
+      case order_model.OrderStatus.completed:
+        backgroundColor = AppColors.success.withValues(alpha: 0.15);
+        textColor = AppColors.success;
+        icon = Icons.verified;
+        break;
       case order_model.OrderStatus.cancelled:
         backgroundColor = AppColors.error.withValues(alpha: 0.1);
         textColor = AppColors.error;
@@ -808,6 +815,31 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
         backgroundColor = AppColors.warning.withValues(alpha: 0.1);
         textColor = AppColors.warning;
         icon = Icons.access_time;
+        break;
+      case order_model.OrderStatus.failed_delivery:
+        backgroundColor = AppColors.error.withValues(alpha: 0.1);
+        textColor = AppColors.error;
+        icon = Icons.error_outline;
+        break;
+      case order_model.OrderStatus.return_requested:
+        backgroundColor = AppColors.warning.withValues(alpha: 0.1);
+        textColor = AppColors.warning;
+        icon = Icons.assignment_return;
+        break;
+      case order_model.OrderStatus.return_approved:
+        backgroundColor = AppColors.info.withValues(alpha: 0.1);
+        textColor = AppColors.info;
+        icon = Icons.assignment_turned_in;
+        break;
+      case order_model.OrderStatus.return_rejected:
+        backgroundColor = AppColors.error.withValues(alpha: 0.1);
+        textColor = AppColors.error;
+        icon = Icons.assignment_late;
+        break;
+      case order_model.OrderStatus.returned:
+        backgroundColor = AppColors.grey400.withValues(alpha: 0.1);
+        textColor = AppColors.grey600;
+        icon = Icons.assignment_returned;
         break;
     }
 
@@ -845,6 +877,8 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
       case order_model.OrderStatus.shipping:
         return 'Shipping';
       case order_model.OrderStatus.delivered:
+        return 'Delivered';
+      case order_model.OrderStatus.completed:
         return 'Completed';
       case order_model.OrderStatus.cancelled:
         return 'Cancelled';
@@ -854,6 +888,16 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
         return 'Payment Failed';
       case order_model.OrderStatus.expired:
         return 'Expired Payment';
+      case order_model.OrderStatus.failed_delivery:
+        return 'Failed Delivery';
+      case order_model.OrderStatus.return_requested:
+        return 'Returns';
+      case order_model.OrderStatus.return_approved:
+        return 'Return Approved';
+      case order_model.OrderStatus.return_rejected:
+        return 'Return Rejected';
+      case order_model.OrderStatus.returned:
+        return 'Returned';
     }
   }
 
@@ -874,7 +918,12 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
 
   bool _canReorder(order_model.OrderStatus status) {
     return status == order_model.OrderStatus.delivered ||
-        status == order_model.OrderStatus.expired;
+        status == order_model.OrderStatus.completed ||
+        status == order_model.OrderStatus.expired ||
+        status == order_model.OrderStatus.return_requested ||
+        status == order_model.OrderStatus.return_approved ||
+        status == order_model.OrderStatus.return_rejected ||
+        status == order_model.OrderStatus.returned;
   }
 
   bool _canCancelOrder(order_model.Order order) {
@@ -1171,8 +1220,10 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
         return 'In Progress';
       case 'Shipped':
         return 'On the Way';
-      case 'Completed':
+      case 'Delivered':
         return 'Delivered';
+      case 'Completed':
+        return 'Completed';
       case 'Cancelled':
         return 'Cancelled';
       case 'Refunded':
@@ -1181,6 +1232,16 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
         return 'Failed';
       case 'Expired Payment':
         return 'Expired';
+      case 'Failed Delivery':
+        return 'Failed';
+      case 'Returns':
+        return 'Returns';
+      case 'Return Approved':
+        return 'Return OK';
+      case 'Return Rejected':
+        return 'Return Denied';
+      case 'Returned':
+        return 'Returned';
       default:
         return status;
     }

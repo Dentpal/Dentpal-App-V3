@@ -19,5 +19,11 @@ export { trackJRSShipping } from './trackJRSShipping';
 // Export the cancel order function
 export { cancelOrder } from './cancelOrder';
 
+// Export the request return function
+export { requestReturn } from './requestReturn';
+
+// Export the auto-complete orders scheduled function
+export { autoCompleteOrders } from './autoCompleteOrders';
+
 // Export the retry pending refunds scheduled function
 export { retryPendingRefunds } from './retryPendingRefunds';
