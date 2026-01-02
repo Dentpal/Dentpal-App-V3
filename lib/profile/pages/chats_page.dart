@@ -177,7 +177,7 @@ class _ChatsPageState extends State<ChatsPage> {
           Expanded(
             child: StreamBuilder<List<ChatRoom>>(
               // CSR users see support chats, others see regular chats
-              stream: _isCurrentUserCsr 
+              stream: _isCurrentUserCsr
                   ? _chatService.getSupportChatRoomsStream()
                   : _chatService.getChatRoomsStream(),
               builder: (context, snapshot) {
@@ -320,16 +320,16 @@ class _ChatsPageState extends State<ChatsPage> {
     // For dedicated support chats, customer is user1
     // For support requested chats, show both users (buyer and seller)
     final isDedicatedSupport = chatRoom.isSupportChat;
-    final customerName = isDedicatedSupport 
-        ? chatRoom.user1Name 
+    final customerName = isDedicatedSupport
+        ? chatRoom.user1Name
         : '${chatRoom.user1Name} & ${chatRoom.user2Name}';
     final lastMessage = chatRoom.lastMessage;
     final isLocked = chatRoom.isLocked;
     final lockedByMe = chatRoom.lockedByCsrId == currentUserId;
-    
+
     // Check if CSR has joined (for support requested chats)
     final csrHasJoined = chatRoom.hasCsrJoined;
-    
+
     return Dismissible(
       key: Key(chatRoom.id),
       direction: DismissDirection.endToStart,
@@ -363,9 +363,9 @@ class _ChatsPageState extends State<ChatsPage> {
         try {
           await _chatService.deleteChatRoom(chatRoom.id);
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Chat deleted')),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('Chat deleted')));
           }
         } catch (e) {
           if (mounted) {
@@ -389,7 +389,10 @@ class _ChatsPageState extends State<ChatsPage> {
           ],
         ),
         child: ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 8,
+          ),
           leading: Stack(
             children: [
               CircleAvatar(
@@ -414,11 +417,7 @@ class _ChatsPageState extends State<ChatsPage> {
                       shape: BoxShape.circle,
                       border: Border.all(color: AppColors.surface, width: 2),
                     ),
-                    child: Icon(
-                      Icons.lock,
-                      size: 12,
-                      color: Colors.white,
-                    ),
+                    child: Icon(Icons.lock, size: 12, color: Colors.white),
                   ),
                 ),
             ],
@@ -438,15 +437,20 @@ class _ChatsPageState extends State<ChatsPage> {
               ),
               if (isLocked)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
-                    color: lockedByMe 
+                    color: lockedByMe
                         ? AppColors.success.withValues(alpha: 0.1)
                         : AppColors.warning.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    lockedByMe ? 'Assigned to you' : 'Locked by ${chatRoom.lockedByCsrName}',
+                    lockedByMe
+                        ? 'Assigned to you'
+                        : 'Locked by ${chatRoom.lockedByCsrName}',
                     style: AppTextStyles.labelSmall.copyWith(
                       color: lockedByMe ? AppColors.success : AppColors.warning,
                       fontWeight: FontWeight.w500,
@@ -462,21 +466,26 @@ class _ChatsPageState extends State<ChatsPage> {
               Padding(
                 padding: const EdgeInsets.only(top: 2),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
-                    color: isDedicatedSupport 
+                    color: isDedicatedSupport
                         ? AppColors.primary.withValues(alpha: 0.1)
                         : AppColors.secondary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
-                    isDedicatedSupport 
-                        ? (chatRoom.orderId != null 
-                            ? 'Order #${chatRoom.orderId!.substring(0, 8).toUpperCase()}'
-                            : 'Support Request')
+                    isDedicatedSupport
+                        ? (chatRoom.orderId != null
+                              ? 'Order #${chatRoom.orderId!.substring(0, 8).toUpperCase()}'
+                              : 'Support Request')
                         : 'Buyer/Seller Chat${csrHasJoined ? '' : ' • New'}',
                     style: AppTextStyles.labelSmall.copyWith(
-                      color: isDedicatedSupport ? AppColors.primary : AppColors.secondary,
+                      color: isDedicatedSupport
+                          ? AppColors.primary
+                          : AppColors.secondary,
                       fontWeight: FontWeight.w500,
                       fontSize: 10,
                     ),
@@ -536,7 +545,9 @@ class _ChatsPageState extends State<ChatsPage> {
                 builder: (context) => ChatDetailPage(
                   chatRoomId: chatRoom.id,
                   otherUserName: customerName,
-                  otherUserId: isDedicatedSupport ? chatRoom.user1Id : chatRoom.user1Id,
+                  otherUserId: isDedicatedSupport
+                      ? chatRoom.user1Id
+                      : chatRoom.user1Id,
                 ),
               ),
             );
@@ -679,12 +690,12 @@ class _ChatsPageState extends State<ChatsPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Product name as main title
+                      // Chat display name as main title
                       Row(
                         children: [
                           Expanded(
                             child: Text(
-                              productName ?? 'General Inquiry',
+                              _getChatDisplayName(chatRoom),
                               style: AppTextStyles.bodyLarge.copyWith(
                                 fontWeight: FontWeight.w600,
                                 color: AppColors.onSurface,
@@ -904,7 +915,7 @@ class _ChatsPageState extends State<ChatsPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      productName ?? 'General Inquiry',
+                      _getChatDisplayName(chatRoom),
                       style: AppTextStyles.bodyMedium.copyWith(
                         fontWeight: FontWeight.w500,
                         color: AppColors.onSurface,
@@ -991,12 +1002,12 @@ class _ChatsPageState extends State<ChatsPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Product name as main title
+                      // Chat display name as main title
                       Row(
                         children: [
                           Expanded(
                             child: Text(
-                              productName ?? 'General Inquiry',
+                              _getChatDisplayName(chatRoom),
                               style: AppTextStyles.bodyLarge.copyWith(
                                 fontWeight: FontWeight.w600,
                                 color: AppColors.onSurface,
@@ -1229,6 +1240,29 @@ class _ChatsPageState extends State<ChatsPage> {
         ),
       ),
     );
+  }
+
+  // Helper: Get chat display name based on chat type
+  String _getChatDisplayName(ChatRoom chatRoom) {
+    // Order-related chats
+    if (chatRoom.orderId != null && chatRoom.orderId!.isNotEmpty) {
+      final shortOrderId = chatRoom.orderId!.length > 8
+          ? chatRoom.orderId!.substring(0, 8).toUpperCase()
+          : chatRoom.orderId!.toUpperCase();
+      return 'Help With Order — #$shortOrderId';
+    }
+
+    // Product inquiry chats
+    if (chatRoom.productName != null && chatRoom.productName!.isNotEmpty) {
+      return 'Question About — ${chatRoom.productName}';
+    }
+
+    // General chat (fallback)
+    return 'General Chat — ${chatRoom.productName?.isNotEmpty == true
+        ? chatRoom.productName
+        : chatRoom.orderId?.isNotEmpty == true
+        ? chatRoom.orderId
+        : chatRoom.sellerId}';
   }
 
   String _formatTimestamp(DateTime timestamp) {

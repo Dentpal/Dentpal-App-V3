@@ -9,6 +9,7 @@ import '../../product/pages/paymongo_webview_page.dart';
 import '../../product/pages/cart_page.dart';
 import '../../product/services/cart_service.dart';
 import '../../product/services/jrs_tracking_service.dart';
+import '../../product/services/user_service.dart';
 import '../../services/chat_service.dart';
 import '../../utils/app_logger.dart';
 import '../services/order_service.dart';
@@ -841,8 +842,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
               'Payment Intent ID',
               widget.order.paymongo.paymentIntentId!,
             ),
-          if (widget.order.paymongo.checkoutUrl != null &&
-              _canResumePayment())
+          if (widget.order.paymongo.checkoutUrl != null && _canResumePayment())
             _buildInfoRow('Payment URL', 'Available for payment resumption'),
         ],
       ),
@@ -910,7 +910,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
   Widget _buildActionButtons(BuildContext context) {
     final returnEligibility = _canRequestReturn();
     final canRequestReturn = returnEligibility['eligible'] == true;
-    
+
     return Column(
       children: [
         if (_canCancelOrder())
@@ -966,7 +966,9 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                 children: [
                   const Icon(Icons.assignment_return, size: 20),
                   const SizedBox(width: 8),
-                  Text('Request Return (${returnEligibility['daysRemaining']} days left)'),
+                  Text(
+                    'Request Return (${returnEligibility['daysRemaining']} days left)',
+                  ),
                 ],
               ),
             ),
@@ -992,7 +994,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         SizedBox(
           width: double.infinity,
           child: OutlinedButton(
-            onPressed: () => _contactSupport(context),
+            onPressed: () => _contactSeller(context),
             style: OutlinedButton.styleFrom(
               side: BorderSide(color: AppColors.primary),
               foregroundColor: AppColors.primary,
@@ -1001,7 +1003,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text('Contact Support'),
+            child: const Text('Contact Seller'),
           ),
         ),
       ],
@@ -1624,23 +1626,49 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     }
   }
 
-  void _contactSupport(BuildContext context) async {
+  void _contactSeller(BuildContext context) async {
     // Show loading indicator
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(),
-      ),
+      builder: (context) => const Center(child: CircularProgressIndicator()),
     );
 
     try {
+      // Get the primary seller ID from the order
+      final sellerId = widget.order.sellerIds.isNotEmpty
+          ? widget.order.sellerIds.first
+          : widget.order.items.first.sellerId;
+
+      if (sellerId.isEmpty) {
+        throw Exception('No seller information found for this order');
+      }
+
       final chatService = ChatService();
-      
-      // Create or get existing support chat for this order
-      final chatRoomId = await chatService.createSupportChatRoom(
+      final userService = UserService();
+
+      // Get seller information
+      final sellerData = await userService.getSellerData(sellerId);
+      final sellerName =
+          sellerData?['shopName'] ??
+          sellerData?['fullName'] ??
+          sellerData?['displayName'] ??
+          'Seller';
+      final sellerShopName = sellerData?['shopName'];
+
+      // Format order date
+      final orderDate = DateFormat(
+        'MMM dd, yyyy',
+      ).format(widget.order.createdAt);
+
+      // Format title as "Order ID - Date"
+      final chatTitle = '${widget.order.orderId} - $orderDate';
+
+      // Create or get existing chat room with the seller, including order info
+      final chatRoomId = await chatService.getOrCreateChatRoom(
+        sellerId,
         orderId: widget.order.orderId,
-        orderNumber: widget.order.orderId.substring(0, 8).toUpperCase(),
+        orderDate: widget.order.createdAt,
       );
 
       // Close loading dialog
@@ -1648,14 +1676,15 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         Navigator.of(context).pop();
       }
 
-      // Navigate to chat detail page
+      // Navigate to chat detail page with formatted title
       if (context.mounted) {
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (context) => ChatDetailPage(
               chatRoomId: chatRoomId,
-              otherUserName: 'Customer Support',
-              otherUserId: 'customer_support',
+              otherUserName: chatTitle,
+              otherUserId: sellerId,
+              otherUserShopName: sellerName,
             ),
           ),
         );
@@ -1666,12 +1695,12 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         Navigator.of(context).pop();
       }
 
-      AppLogger.e('Error contacting support: $e');
-      
+      AppLogger.e('Error contacting seller: $e');
+
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to contact support. Please try again.'),
+            content: Text('Failed to contact seller. Please try again.'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -1685,7 +1714,9 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     if (eligibility['eligible'] != true) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(eligibility['reason'] ?? 'Cannot request return for this order.'),
+          content: Text(
+            eligibility['reason'] ?? 'Cannot request return for this order.',
+          ),
           backgroundColor: AppColors.error,
         ),
       );
@@ -1725,7 +1756,9 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Return request submitted successfully. Our team will review your request within 1-2 business days.'),
+            content: Text(
+              'Return request submitted successfully. Our team will review your request within 1-2 business days.',
+            ),
             backgroundColor: AppColors.success,
             duration: const Duration(seconds: 4),
           ),
