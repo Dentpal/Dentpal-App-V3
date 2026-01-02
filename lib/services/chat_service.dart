@@ -38,7 +38,7 @@ class InvalidFirebaseKeyException implements Exception {
 
 /// Validates that a string is safe to use as a Firebase Realtime Database path key.
 /// Firebase RTDB keys cannot contain: . # $ [ ] /
-/// 
+///
 /// Throws [InvalidFirebaseKeyException] if the key contains illegal characters.
 /// Returns the validated key if valid.
 String validateFirebaseKey(String key, {String fieldName = 'key'}) {
@@ -61,7 +61,8 @@ String validateFirebaseKey(String key, {String fieldName = 'key'}) {
 
   if (foundIllegal.isNotEmpty) {
     throw InvalidFirebaseKeyException(
-      message: '$fieldName contains illegal Firebase characters: ${foundIllegal.join(', ')}. '
+      message:
+          '$fieldName contains illegal Firebase characters: ${foundIllegal.join(', ')}. '
           'Firebase Realtime Database keys cannot contain . # \$ [ ] /',
       invalidKey: key,
       invalidCharacters: foundIllegal.join(''),
@@ -149,16 +150,18 @@ class ChatRoom {
   final String? sellerId; // The seller in this chat room
   final List<String>
   deletedFor; // Users who have "deleted" this chat (one-sided)
-  
+
   // Support chat fields
-  final bool isSupportChat; // True if this is a customer support chat (created from order details)
+  final bool
+  isSupportChat; // True if this is a customer support chat (created from order details)
   final String? orderId; // Order ID if this is an order-related support chat
   final String? lockedByCsrId; // CSR user ID who locked this chat
   final String? lockedByCsrName; // CSR name who locked this chat
   final DateTime? lockedAt; // When the chat was locked
-  
+
   // Support requested fields (for buyer/seller chats that need CSR help)
-  final bool supportRequested; // True if buyer/seller requested support in this chat
+  final bool
+  supportRequested; // True if buyer/seller requested support in this chat
   final String? csrId; // CSR user ID who joined this chat
   final String? csrName; // CSR name who joined this chat
 
@@ -231,8 +234,8 @@ class ChatRoom {
       orderId: data['orderId'],
       lockedByCsrId: data['lockedByCsrId'],
       lockedByCsrName: data['lockedByCsrName'],
-      lockedAt: data['lockedAt'] != null 
-          ? DateTime.fromMillisecondsSinceEpoch(data['lockedAt']) 
+      lockedAt: data['lockedAt'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(data['lockedAt'])
           : null,
       supportRequested: data['supportRequested'] ?? false,
       csrId: data['csrId'],
@@ -271,7 +274,7 @@ class ChatRoom {
 
   // Check if chat is locked by a CSR
   bool get isLocked => lockedByCsrId != null;
-  
+
   // Check if a CSR has joined this chat
   bool get hasCsrJoined => csrId != null;
 
@@ -446,13 +449,21 @@ class ChatService {
     String userId1,
     String userId2, {
     String? productId,
+    String? orderId,
   }) {
     final sortedIds = [userId1, userId2]..sort();
+
+    // Order-specific chat room (highest priority)
+    if (orderId != null && orderId.isNotEmpty) {
+      return '${sortedIds[0]}_${sortedIds[1]}_order_$orderId';
+    }
+
+    // Product-specific chat room
     if (productId != null && productId.isNotEmpty) {
-      // Product-specific chat room
       return '${sortedIds[0]}_${sortedIds[1]}_$productId';
     }
-    // General chat room (no product)
+
+    // General chat room (no product or order)
     return '${sortedIds[0]}_${sortedIds[1]}';
   }
 
@@ -462,6 +473,8 @@ class ChatService {
     String? productId,
     String? productName,
     String? productImage,
+    String? orderId,
+    DateTime? orderDate,
   }) async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
@@ -474,6 +487,7 @@ class ChatService {
         currentUser.uid,
         otherUserId,
         productId: productId,
+        orderId: orderId,
       );
       final chatRoomRef = _database.ref('chatRooms/$chatRoomId');
 
@@ -553,6 +567,7 @@ class ChatService {
           productName: productName,
           productImage: productImage,
           sellerId: sellerId,
+          orderId: orderId,
         );
 
         await chatRoomRef.set(chatRoom.toMap());
@@ -566,6 +581,15 @@ class ChatService {
             productId: productId,
             productName: productName,
             productImage: productImage,
+          );
+        }
+
+        // If this is an order-related chat, send initial order help message
+        if (orderId != null) {
+          await sendMessage(
+            chatRoomId: chatRoomId,
+            receiverId: otherUserId,
+            message: 'I need help with my order: $orderId',
           );
         }
       }
@@ -999,7 +1023,7 @@ class ChatService {
 
   /// Atomically checks and acquires a lock on a support chat for a CSR.
   /// Uses Firebase transaction to prevent TOCTOU race conditions.
-  /// 
+  ///
   /// Throws [ChatLockConflictException] if the chat is locked by another CSR.
   /// Throws [Exception] if the chat room is not found.
   Future<void> _tryAcquireCsrLock({
@@ -1067,9 +1091,12 @@ class ChatService {
       final lockedByCsrId = data['lockedByCsrId'] as String?;
       final lockedByCsrName = data['lockedByCsrName'] as String?;
 
-      if (lockedByCsrId != null && lockedByCsrId.isNotEmpty && lockedByCsrId != csrId) {
+      if (lockedByCsrId != null &&
+          lockedByCsrId.isNotEmpty &&
+          lockedByCsrId != csrId) {
         throw ChatLockConflictException(
-          message: 'This conversation is locked by another support agent${lockedByCsrName != null ? ' ($lockedByCsrName)' : ''}',
+          message:
+              'This conversation is locked by another support agent${lockedByCsrName != null ? ' ($lockedByCsrName)' : ''}',
           lockedByCsrId: lockedByCsrId,
           lockedByCsrName: lockedByCsrName,
         );
@@ -1117,11 +1144,16 @@ class ChatService {
         throw Exception('Chat room not found');
       }
 
-      final chatRoom = ChatRoom.fromMap(chatRoomId, snapshot.value as Map<dynamic, dynamic>);
+      final chatRoom = ChatRoom.fromMap(
+        chatRoomId,
+        snapshot.value as Map<dynamic, dynamic>,
+      );
 
       // Only the CSR who locked can unlock
       if (chatRoom.lockedByCsrId != currentUser.uid) {
-        throw Exception('Only the support agent who locked this chat can unlock it');
+        throw Exception(
+          'Only the support agent who locked this chat can unlock it',
+        );
       }
 
       // Base update for unlocking
@@ -1130,13 +1162,13 @@ class ChatService {
         'lockedByCsrName': null,
         'lockedAt': null,
       };
-      
+
       // Only reset user2 for dedicated support chats (not support requested)
       if (chatRoom.isSupportChat && !chatRoom.supportRequested) {
         updates['user2Id'] = 'customer_support';
         updates['user2Name'] = 'Customer Support';
       }
-      
+
       // Note: We don't clear csrId/csrName for support requested chats
       // because the CSR is still part of the conversation
 
@@ -1189,7 +1221,10 @@ class ChatService {
         throw Exception('Chat room not found');
       }
 
-      final chatRoom = ChatRoom.fromMap(chatRoomId, snapshot.value as Map<dynamic, dynamic>);
+      final chatRoom = ChatRoom.fromMap(
+        chatRoomId,
+        snapshot.value as Map<dynamic, dynamic>,
+      );
 
       // Check if support already requested or CSR already joined
       if (chatRoom.supportRequested || chatRoom.hasCsrJoined) {
@@ -1201,20 +1236,21 @@ class ChatService {
           .collection('User')
           .doc(currentUser.uid)
           .get();
-      final requesterName = userDoc.data()?['fullName'] ?? 
-          userDoc.data()?['displayName'] ?? 'User';
+      final requesterName =
+          userDoc.data()?['fullName'] ??
+          userDoc.data()?['displayName'] ??
+          'User';
 
       // Update chat room to request support
-      await chatRoomRef.update({
-        'supportRequested': true,
-      });
+      await chatRoomRef.update({'supportRequested': true});
 
       // Send a system message about support request
       await _sendSupportMessage(
         chatRoomId: chatRoomId,
         senderId: 'system',
         senderName: 'System',
-        message: '$requesterName has requested customer support. A support agent will join this conversation shortly.',
+        message:
+            '$requesterName has requested customer support. A support agent will join this conversation shortly.',
       );
 
       AppLogger.d('Support requested for chat $chatRoomId');
@@ -1238,7 +1274,10 @@ class ChatService {
         throw Exception('Chat room not found');
       }
 
-      final chatRoom = ChatRoom.fromMap(chatRoomId, snapshot.value as Map<dynamic, dynamic>);
+      final chatRoom = ChatRoom.fromMap(
+        chatRoomId,
+        snapshot.value as Map<dynamic, dynamic>,
+      );
 
       // Only allow joining chats that need support
       if (!chatRoom.isSupportChat && !chatRoom.supportRequested) {
@@ -1281,7 +1320,10 @@ class ChatService {
       final snapshot = await chatRoomRef.get();
 
       if (snapshot.exists) {
-        return ChatRoom.fromMap(chatRoomId, snapshot.value as Map<dynamic, dynamic>);
+        return ChatRoom.fromMap(
+          chatRoomId,
+          snapshot.value as Map<dynamic, dynamic>,
+        );
       }
       return null;
     } catch (e) {
@@ -1301,7 +1343,10 @@ class ChatService {
       final snapshot = await chatRoomRef.get();
 
       if (snapshot.exists) {
-        return ChatRoom.fromMap(chatRoomId, snapshot.value as Map<dynamic, dynamic>);
+        return ChatRoom.fromMap(
+          chatRoomId,
+          snapshot.value as Map<dynamic, dynamic>,
+        );
       }
       return null;
     } catch (e) {

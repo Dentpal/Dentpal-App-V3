@@ -9,6 +9,7 @@ import '../../product/pages/paymongo_webview_page.dart';
 import '../../product/pages/cart_page.dart';
 import '../../product/services/cart_service.dart';
 import '../../product/services/jrs_tracking_service.dart';
+import '../../product/services/user_service.dart';
 import '../../services/chat_service.dart';
 import '../../utils/app_logger.dart';
 import '../services/order_service.dart';
@@ -841,8 +842,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
               'Payment Intent ID',
               widget.order.paymongo.paymentIntentId!,
             ),
-          if (widget.order.paymongo.checkoutUrl != null &&
-              _canResumePayment())
+          if (widget.order.paymongo.checkoutUrl != null && _canResumePayment())
             _buildInfoRow('Payment URL', 'Available for payment resumption'),
         ],
       ),
@@ -908,6 +908,9 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
   }
 
   Widget _buildActionButtons(BuildContext context) {
+    final returnEligibility = _canRequestReturn();
+    final canRequestReturn = returnEligibility['eligible'] == true;
+
     return Column(
       children: [
         if (_canCancelOrder())
@@ -944,6 +947,33 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
             ),
           ),
         if (_canResumePayment()) const SizedBox(height: 12),
+        // Request Return button for delivered orders within 7 days
+        if (canRequestReturn)
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => _requestReturn(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.warning,
+                foregroundColor: AppColors.onPrimary,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.assignment_return, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Request Return (${returnEligibility['daysRemaining']} days left)',
+                  ),
+                ],
+              ),
+            ),
+          ),
+        if (canRequestReturn) const SizedBox(height: 12),
         if (_canReorder())
           SizedBox(
             width: double.infinity,
@@ -964,7 +994,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         SizedBox(
           width: double.infinity,
           child: OutlinedButton(
-            onPressed: () => _contactSupport(context),
+            onPressed: () => _contactSeller(context),
             style: OutlinedButton.styleFrom(
               side: BorderSide(color: AppColors.primary),
               foregroundColor: AppColors.primary,
@@ -973,7 +1003,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text('Contact Support'),
+            child: const Text('Contact Seller'),
           ),
         ),
       ],
@@ -1073,6 +1103,11 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         textColor = AppColors.success;
         icon = Icons.check_circle;
         break;
+      case order_model.OrderStatus.completed:
+        backgroundColor = AppColors.success.withValues(alpha: 0.1);
+        textColor = AppColors.success;
+        icon = Icons.verified;
+        break;
       case order_model.OrderStatus.cancelled:
         backgroundColor = AppColors.error.withValues(alpha: 0.1);
         textColor = AppColors.error;
@@ -1092,6 +1127,31 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         backgroundColor = AppColors.grey400.withValues(alpha: 0.1);
         textColor = AppColors.grey600;
         icon = Icons.access_time;
+        break;
+      case order_model.OrderStatus.failed_delivery:
+        backgroundColor = AppColors.error.withValues(alpha: 0.1);
+        textColor = AppColors.error;
+        icon = Icons.error_outline;
+        break;
+      case order_model.OrderStatus.return_requested:
+        backgroundColor = AppColors.warning.withValues(alpha: 0.1);
+        textColor = AppColors.warning;
+        icon = Icons.assignment_return;
+        break;
+      case order_model.OrderStatus.return_approved:
+        backgroundColor = AppColors.info.withValues(alpha: 0.1);
+        textColor = AppColors.info;
+        icon = Icons.assignment_turned_in;
+        break;
+      case order_model.OrderStatus.return_rejected:
+        backgroundColor = AppColors.error.withValues(alpha: 0.1);
+        textColor = AppColors.error;
+        icon = Icons.assignment_late;
+        break;
+      case order_model.OrderStatus.returned:
+        backgroundColor = AppColors.grey400.withValues(alpha: 0.1);
+        textColor = AppColors.grey600;
+        icon = Icons.assignment_returned;
         break;
     }
 
@@ -1189,6 +1249,8 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
           case order_model.OrderStatus.shipping:
             return 'Order shipping';
           case order_model.OrderStatus.delivered:
+            return 'Order Delivered';
+          case order_model.OrderStatus.completed:
             return 'Order Completed';
           case order_model.OrderStatus.cancelled:
             return 'Order Cancelled';
@@ -1198,6 +1260,16 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
             return 'Payment Failed';
           case order_model.OrderStatus.expired:
             return 'Payment Expired';
+          case order_model.OrderStatus.failed_delivery:
+            return 'Delivery Failed';
+          case order_model.OrderStatus.return_requested:
+            return 'Return Requested';
+          case order_model.OrderStatus.return_approved:
+            return 'Return Approved';
+          case order_model.OrderStatus.return_rejected:
+            return 'Return Rejected';
+          case order_model.OrderStatus.returned:
+            return 'Order Returned';
         }
     }
   }
@@ -1246,6 +1318,8 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         return AppColors.primary;
       case order_model.OrderStatus.delivered:
         return AppColors.success;
+      case order_model.OrderStatus.completed:
+        return AppColors.success;
       case order_model.OrderStatus.cancelled:
         return AppColors.error;
       case order_model.OrderStatus.refunded:
@@ -1254,12 +1328,23 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         return AppColors.error;
       case order_model.OrderStatus.expired:
         return AppColors.grey600;
+      case order_model.OrderStatus.failed_delivery:
+        return AppColors.error;
+      case order_model.OrderStatus.return_requested:
+        return AppColors.warning;
+      case order_model.OrderStatus.return_approved:
+        return AppColors.info;
+      case order_model.OrderStatus.return_rejected:
+        return AppColors.error;
+      case order_model.OrderStatus.returned:
+        return AppColors.grey600;
     }
   }
 
   bool _canReorder() {
     return widget.order.status == order_model.OrderStatus.confirmed ||
         widget.order.status == order_model.OrderStatus.delivered ||
+        widget.order.status == order_model.OrderStatus.completed ||
         widget.order.status == order_model.OrderStatus.expired;
   }
 
@@ -1278,6 +1363,11 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     return widget.order.status == order_model.OrderStatus.pending &&
         widget.order.paymongo.checkoutUrl != null &&
         widget.order.paymongo.checkoutUrl!.isNotEmpty;
+  }
+
+  /// Check if user can request a return for this order
+  Map<String, dynamic> _canRequestReturn() {
+    return OrderService.isEligibleForReturn(widget.order);
   }
 
   void _reorderItems(BuildContext context) async {
@@ -1536,23 +1626,49 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     }
   }
 
-  void _contactSupport(BuildContext context) async {
+  void _contactSeller(BuildContext context) async {
     // Show loading indicator
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(),
-      ),
+      builder: (context) => const Center(child: CircularProgressIndicator()),
     );
 
     try {
+      // Get the primary seller ID from the order
+      final sellerId = widget.order.sellerIds.isNotEmpty
+          ? widget.order.sellerIds.first
+          : widget.order.items.first.sellerId;
+
+      if (sellerId.isEmpty) {
+        throw Exception('No seller information found for this order');
+      }
+
       final chatService = ChatService();
-      
-      // Create or get existing support chat for this order
-      final chatRoomId = await chatService.createSupportChatRoom(
+      final userService = UserService();
+
+      // Get seller information
+      final sellerData = await userService.getSellerData(sellerId);
+      final sellerName =
+          sellerData?['shopName'] ??
+          sellerData?['fullName'] ??
+          sellerData?['displayName'] ??
+          'Seller';
+      final sellerShopName = sellerData?['shopName'];
+
+      // Format order date
+      final orderDate = DateFormat(
+        'MMM dd, yyyy',
+      ).format(widget.order.createdAt);
+
+      // Format title as "Order ID - Date"
+      final chatTitle = '${widget.order.orderId} - $orderDate';
+
+      // Create or get existing chat room with the seller, including order info
+      final chatRoomId = await chatService.getOrCreateChatRoom(
+        sellerId,
         orderId: widget.order.orderId,
-        orderNumber: widget.order.orderId.substring(0, 8).toUpperCase(),
+        orderDate: widget.order.createdAt,
       );
 
       // Close loading dialog
@@ -1560,14 +1676,15 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         Navigator.of(context).pop();
       }
 
-      // Navigate to chat detail page
+      // Navigate to chat detail page with formatted title
       if (context.mounted) {
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (context) => ChatDetailPage(
               chatRoomId: chatRoomId,
-              otherUserName: 'Customer Support',
-              otherUserId: 'customer_support',
+              otherUserName: chatTitle,
+              otherUserId: sellerId,
+              otherUserShopName: sellerName,
             ),
           ),
         );
@@ -1578,12 +1695,89 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         Navigator.of(context).pop();
       }
 
-      AppLogger.e('Error contacting support: $e');
-      
+      AppLogger.e('Error contacting seller: $e');
+
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to contact support. Please try again.'),
+            content: Text('Failed to contact seller. Please try again.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  void _requestReturn(BuildContext context) async {
+    // Check eligibility again (in case it changed)
+    final eligibility = _canRequestReturn();
+    if (eligibility['eligible'] != true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            eligibility['reason'] ?? 'Cannot request return for this order.',
+          ),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    // Show return reason dialog
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (context) => const _ReturnRequestDialog(),
+    );
+
+    if (result == null) return; // User dismissed the dialog
+    if (!context.mounted) return;
+
+    final reason = result['reason']!;
+    final customReason = result['customReason'];
+
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      await OrderService.requestReturn(
+        widget.order.orderId,
+        reason: reason,
+        customReason: customReason,
+      );
+
+      // Close loading dialog
+      if (context.mounted) {
+        Navigator.of(context).pop();
+
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Return request submitted successfully. Our team will review your request within 1-2 business days.',
+            ),
+            backgroundColor: AppColors.success,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+
+        // Navigate back to orders page
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      AppLogger.d('Error requesting return: $e');
+
+      // Close loading dialog if still open
+      if (context.mounted) {
+        Navigator.of(context).pop();
+
+        // Show error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to submit return request. Please try again.'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -1762,6 +1956,207 @@ class _CancelOrderDialogState extends State<_CancelOrderDialog> {
             foregroundColor: AppColors.onPrimary,
           ),
           child: const Text('Cancel Order'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Dialog for requesting a return with reason selection
+class _ReturnRequestDialog extends StatefulWidget {
+  const _ReturnRequestDialog();
+
+  @override
+  State<_ReturnRequestDialog> createState() => _ReturnRequestDialogState();
+}
+
+class _ReturnRequestDialogState extends State<_ReturnRequestDialog> {
+  String? selectedReason;
+  final TextEditingController _customReasonController = TextEditingController();
+  String? errorMessage;
+
+  final List<String> returnReasons = [
+    'Item is defective or damaged',
+    'Wrong item received',
+    'Item does not match description',
+    'Item quality is not as expected',
+    'Changed my mind',
+    'Item arrived too late',
+    'Better price found elsewhere',
+    'Other',
+  ];
+
+  @override
+  void dispose() {
+    _customReasonController.dispose();
+    super.dispose();
+  }
+
+  void _handleReturn() {
+    // Validate selection
+    if (selectedReason == null) {
+      setState(() {
+        errorMessage = 'Please select a reason for the return.';
+      });
+      return;
+    }
+
+    // Validate custom reason if "Other" is selected
+    if (selectedReason == 'Other' &&
+        _customReasonController.text.trim().isEmpty) {
+      setState(() {
+        errorMessage = 'Please specify your reason for the return.';
+      });
+      return;
+    }
+
+    // Close dialog and return result
+    final result = <String, String>{
+      'reason': selectedReason!,
+      if (selectedReason == 'Other')
+        'customReason': _customReasonController.text.trim(),
+    };
+
+    Navigator.of(context).pop(result);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
+        children: [
+          Icon(Icons.assignment_return, color: AppColors.warning),
+          const SizedBox(width: 8),
+          const Text('Request Return'),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.info.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: AppColors.info.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: AppColors.info, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Return requests are reviewed within 1-2 business days. If approved, you will receive return shipping instructions.',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.info,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Please tell us why you want to return this order:',
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.onSurface.withValues(alpha: 0.7),
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (errorMessage != null) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.error.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppColors.error.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline, color: AppColors.error, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        errorMessage!,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.error,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+            ...returnReasons.map((reason) {
+              return RadioListTile<String>(
+                title: Text(reason, style: AppTextStyles.bodyMedium),
+                value: reason,
+                groupValue: selectedReason,
+                activeColor: AppColors.primary,
+                onChanged: (value) {
+                  setState(() {
+                    selectedReason = value;
+                    errorMessage = null; // Clear error when selection changes
+                  });
+                },
+                contentPadding: EdgeInsets.zero,
+                visualDensity: const VisualDensity(
+                  horizontal: -4,
+                  vertical: -4,
+                ),
+              );
+            }),
+            if (selectedReason == 'Other') ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: _customReasonController,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: 'Please describe the issue with your order...',
+                  hintStyle: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.onSurface.withValues(alpha: 0.5),
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppColors.primary),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppColors.primary, width: 2),
+                  ),
+                  filled: true,
+                  fillColor: AppColors.background,
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(
+            'Cancel',
+            style: TextStyle(color: AppColors.onSurface.withValues(alpha: 0.6)),
+          ),
+        ),
+        ElevatedButton(
+          onPressed: _handleReturn,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.warning,
+            foregroundColor: AppColors.onPrimary,
+          ),
+          child: const Text('Submit Request'),
         ),
       ],
     );

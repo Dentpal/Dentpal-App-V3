@@ -1,0 +1,48 @@
+{
+  "rules": {
+    "users": {
+      ".indexOn": ["role"],
+      "$userId": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid == $userId"
+      }
+    },
+
+    "chatRooms": {
+      ".indexOn": ["lastActivity", "isSupportChat", "supportRequested"],
+
+      "$chatRoomId": {
+        ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() == 'customer_support' || data.child('user1Id').val() == auth.uid || data.child('user2Id').val() == auth.uid || data.child('sellerId').val() == auth.uid || data.child('csrId').val() == auth.uid)",
+
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() == 'customer_support' || !data.exists() || data.child('user1Id').val() == auth.uid || data.child('user2Id').val() == auth.uid || data.child('sellerId').val() == auth.uid || data.child('csrId').val() == auth.uid)",
+
+        "messages": {
+          ".indexOn": ["timestamp", "senderId", "receiverId"],
+
+          "$messageId": {
+            ".validate": "newData.child('senderId').val() == auth.uid || newData.child('senderId').val() == 'system' || root.child('users').child(auth.uid).child('role').val() == 'customer_support'"
+          }
+        }
+      }
+    },
+
+    "chats": {
+      ".indexOn": ["createdAt", "updatedAt"],
+      "$chatId": {
+        ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() == 'customer_support' || data.child('users').child(auth.uid).exists())",
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() == 'customer_support' || data.child('users').child(auth.uid).exists() || !data.exists())",
+
+        "messages": {
+          ".indexOn": ["timestamp"]
+        },
+
+        "users": {
+          "$userId": {
+            ".read": "auth != null",
+            ".write": "auth != null && auth.uid == $userId"
+          }
+        }
+      }
+    }
+  }
+}

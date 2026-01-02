@@ -10,10 +10,16 @@ enum OrderStatus {
   to_ship,
   shipping,
   delivered,
+  completed,
   cancelled,
   refunded,
   payment_failed,
-  expired
+  expired,
+  failed_delivery,
+  return_requested,
+  return_approved,
+  return_rejected,
+  returned
 }
 
 enum PaymentStatus {
@@ -596,6 +602,8 @@ extension OrderStatusExtension on OrderStatus {
       case OrderStatus.shipping:
         return 'Shipping';
       case OrderStatus.delivered:
+        return 'Delivered';
+      case OrderStatus.completed:
         return 'Completed';
       case OrderStatus.cancelled:
         return 'Cancelled';
@@ -605,6 +613,16 @@ extension OrderStatusExtension on OrderStatus {
         return 'Payment Failed';
       case OrderStatus.expired:
         return 'Expired Payment';
+      case OrderStatus.failed_delivery:
+        return 'Failed Delivery';
+      case OrderStatus.return_requested:
+        return 'Return Requested';
+      case OrderStatus.return_approved:
+        return 'Return Approved';
+      case OrderStatus.return_rejected:
+        return 'Return Rejected';
+      case OrderStatus.returned:
+        return 'Returned';
     }
   }
 
@@ -619,6 +637,8 @@ extension OrderStatusExtension on OrderStatus {
       case OrderStatus.shipping:
         return 'Order has been shipped and is on its way';
       case OrderStatus.delivered:
+        return 'Order has been delivered';
+      case OrderStatus.completed:
         return 'Order has been completed successfully';
       case OrderStatus.cancelled:
         return 'Order has been cancelled';
@@ -628,6 +648,16 @@ extension OrderStatusExtension on OrderStatus {
         return 'Payment failed for this order';
       case OrderStatus.expired:
         return 'Payment expired due to timeout';
+      case OrderStatus.failed_delivery:
+        return 'Delivery attempt failed';
+      case OrderStatus.return_requested:
+        return 'Return has been requested by the customer';
+      case OrderStatus.return_approved:
+        return 'Return request has been approved';
+      case OrderStatus.return_rejected:
+        return 'Return request has been rejected';
+      case OrderStatus.returned:
+        return 'Order has been returned';
     }
   }
 }
