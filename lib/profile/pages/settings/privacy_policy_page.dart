@@ -89,8 +89,9 @@ class _PrivacyPolicyPageState extends State<PrivacyPolicyPage> {
           ? const Center(child: CircularProgressIndicator())
           : LayoutBuilder(
               builder: (context, constraints) {
-                final isWideWeb = kIsWeb && constraints.maxWidth > 900; // BREAKPOINT
-                
+                final isWideWeb =
+                    kIsWeb && constraints.maxWidth > 900; // BREAKPOINT
+
                 final content = SingleChildScrollView(
                   padding: const EdgeInsets.all(16.0),
                   child: Container(
@@ -118,12 +119,14 @@ class _PrivacyPolicyPageState extends State<PrivacyPolicyPage> {
                   // Web wide: centered with max width
                   return Center(
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 1200), // MAX_WIDTH
+                      constraints: const BoxConstraints(
+                        maxWidth: 1200,
+                      ), // MAX_WIDTH
                       child: content,
                     ),
                   );
                 }
-                
+
                 // Mobile and narrow web: full width
                 return content;
               },
@@ -267,7 +270,10 @@ class _PrivacyPolicyPageState extends State<PrivacyPolicyPage> {
 
         _buildSectionTitle('6. Purpose of Personal Data Collection'),
         _buildDataTable([
-          ['Account & Verification', 'Create, maintain, verify accounts, prevent fraud'],
+          [
+            'Account & Verification',
+            'Create, maintain, verify accounts, prevent fraud',
+          ],
           ['Transactions', 'Process orders, payments, refunds, delivery'],
           ['Customer Support', 'Respond to inquiries, resolve disputes'],
           ['Marketing', 'Send promotions, surveys (with opt-out)'],
@@ -278,7 +284,9 @@ class _PrivacyPolicyPageState extends State<PrivacyPolicyPage> {
 
         _buildSectionTitle('7. Data Security and Retention'),
         _buildSubSectionTitle('7.1 Security Measures'),
-        _buildParagraph('DentPal uses administrative, technical, and physical safeguards, including:'),
+        _buildParagraph(
+          'DentPal uses administrative, technical, and physical safeguards, including:',
+        ),
         _buildBulletList([
           'Encryption of sensitive data',
           'Access controls and regular audits',
@@ -449,7 +457,9 @@ class _PrivacyPolicyPageState extends State<PrivacyPolicyPage> {
 
         _buildSectionTitle('3. Types of Data Collected'),
         _buildSubSectionTitle('3.1 Personal Data'),
-        _buildParagraph('The personal data that DentPal may collect includes but is not limited to:'),
+        _buildParagraph(
+          'The personal data that DentPal may collect includes but is not limited to:',
+        ),
         _buildBulletList([
           'Name',
           'Email address',
@@ -470,7 +480,9 @@ class _PrivacyPolicyPageState extends State<PrivacyPolicyPage> {
           'Aggregate data on content the User engages with',
         ]),
         _buildSubSectionTitle('3.2 Additional Merchant Data'),
-        _buildParagraph('Additional data collected from merchants includes but is not limited to:'),
+        _buildParagraph(
+          'Additional data collected from merchants includes but is not limited to:',
+        ),
         _buildBulletList([
           'Company Name',
           'Address',
@@ -493,7 +505,9 @@ class _PrivacyPolicyPageState extends State<PrivacyPolicyPage> {
         _buildParagraph(
           'You agree to submit accurate information and notify DentPal of any changes. DentPal may request documentation to verify data.',
         ),
-        _buildSubSectionTitle('3.4 Social Media / Business Account Integration'),
+        _buildSubSectionTitle(
+          '3.4 Social Media / Business Account Integration',
+        ),
         _buildParagraph(
           'If you link social media or business accounts, DentPal may access information shared with those platforms, subject to their policies.',
         ),
@@ -549,18 +563,29 @@ class _PrivacyPolicyPageState extends State<PrivacyPolicyPage> {
 
         _buildSectionTitle('6. Purpose of Data Collection'),
         _buildDataTable([
-          ['Account & Verification', 'Create, maintain, verify accounts, prevent fraud'],
-          ['Transactions & Orders', 'Process payments, fulfill orders, manage refunds, logistics'],
+          [
+            'Account & Verification',
+            'Create, maintain, verify accounts, prevent fraud',
+          ],
+          [
+            'Transactions & Orders',
+            'Process payments, fulfill orders, manage refunds, logistics',
+          ],
           ['Customer Support', 'Respond to inquiries, resolve disputes'],
           ['Marketing', 'Send promotions, surveys (with opt-out)'],
-          ['Analytics', 'Improve app, analyze merchant performance, research trends'],
+          [
+            'Analytics',
+            'Improve app, analyze merchant performance, research trends',
+          ],
           ['Legal & Compliance', 'Comply with laws, audits, investigations'],
           ['Business Continuity', 'Hosting, backups, corporate transactions'],
         ]),
 
         _buildSectionTitle('7. Data Security and Retention'),
         _buildSubSectionTitle('7.1 Security Measures'),
-        _buildParagraph('DentPal uses administrative, technical, and physical safeguards, including:'),
+        _buildParagraph(
+          'DentPal uses administrative, technical, and physical safeguards, including:',
+        ),
         _buildBulletList([
           'Encryption of sensitive data',
           'Access controls and regular audits',
@@ -741,9 +766,7 @@ class _PrivacyPolicyPageState extends State<PrivacyPolicyPage> {
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Container(
         decoration: BoxDecoration(
-          border: Border.all(
-            color: AppColors.onSurface.withValues(alpha: 0.2),
-          ),
+          border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.2)),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Column(

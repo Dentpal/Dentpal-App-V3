@@ -4,7 +4,8 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import 'package:firebase_database/firebase_database.dart' as rtdb;
+import 'dart:async';
 import '../models/product_model.dart';
 import '../services/product_service.dart';
 import '../services/user_service.dart';
@@ -74,9 +75,11 @@ class _ProductListingPageState extends State<ProductListingPage>
 
   bool _isSeller = false;
   String _userFirstName = 'User';
-  
-  // Active banner image URL loaded from Firestore/Storage
-  String? _bannerImageUrl;
+
+  // Active banner images for slideshow
+  List<Map<String, dynamic>> _activeBanners = [];
+  int _currentBannerIndex = 0;
+  Timer? _bannerTimer;
 
   // Mapping between category names and IDs for filtering
   Map<String, String> _categoryNameToId = {};
@@ -112,99 +115,153 @@ class _ProductListingPageState extends State<ProductListingPage>
     );
   }
 
-  // Fetch active banner image from Firestore collection 'BannerImages'
-  // Fallback to Firebase Storage folder 'BannerImages' (latest or isActive metadata)
+  // Fetch active banner images from Firebase Realtime Database
+  // Supports multiple banners with slideshow functionality
   Future<void> _loadActiveBanner() async {
     try {
-      String? url;
-      // Try Firestore first (if you maintain an active doc)
-      try {
-        final query = await FirebaseFirestore.instance
-            .collection('BannerImages')
-            .where('isActive', isEqualTo: true)
-            .limit(1)
-            .get();
-        if (query.docs.isNotEmpty) {
-          final data = query.docs.first.data();
-          url = (data['url'] ?? data['imageUrl']) as String?;
-        }
-      } catch (e) {
-        AppLogger.d('Firestore banner lookup failed (will fallback to Storage): $e');
+      final databaseRef = rtdb.FirebaseDatabase.instance.ref('Banner');
+      final snapshot = await databaseRef.get();
+
+      if (!snapshot.exists) {
+        AppLogger.d('No banners found in Realtime Database');
+        return;
       }
 
-      // Fallback to Storage if no Firestore URL found
-      url ??= await _loadActiveBannerFromStorage();
+      final bannersData = snapshot.value as Map<dynamic, dynamic>?;
+      if (bannersData == null) {
+        AppLogger.d('Banner data is null');
+        return;
+      }
 
-      if (mounted && url != null && url.isNotEmpty) {
+      // Parse and filter active banners
+      List<Map<String, dynamic>> activeBanners = [];
+      final now = DateTime.now();
+
+      bannersData.forEach((key, value) {
+        if (value is Map) {
+          final bannerMap = Map<String, dynamic>.from(value);
+          final isActive = bannerMap['isActive'] == true;
+
+          // Check if banner is within the active date range
+          bool isWithinDateRange = true;
+          if (bannerMap['startTime'] != null && bannerMap['endTime'] != null) {
+            try {
+              final startTime = DateTime.parse(bannerMap['startTime']);
+              final endTime = DateTime.parse(
+                bannerMap['endTime'],
+              ).add(const Duration(days: 1)); // Include end date
+              isWithinDateRange =
+                  now.isAfter(startTime) && now.isBefore(endTime);
+            } catch (e) {
+              AppLogger.d('Error parsing banner dates: $e');
+            }
+          }
+
+          if (isActive && isWithinDateRange) {
+            bannerMap['id'] = key; // Store the banner ID
+            activeBanners.add(bannerMap);
+          }
+        }
+      });
+
+      if (activeBanners.isEmpty) {
+        AppLogger.d('No active banners found');
+        return;
+      }
+
+      // Sort by priority (lower number = higher priority)
+      activeBanners.sort((a, b) {
+        final aPriority = a['priority'] ?? 999;
+        final bPriority = b['priority'] ?? 999;
+        return aPriority.compareTo(bPriority);
+      });
+
+      if (mounted) {
         setState(() {
-          _bannerImageUrl = url;
+          _activeBanners = activeBanners;
+          _currentBannerIndex = 0;
         });
-        AppLogger.d('Active banner loaded: $_bannerImageUrl');
-      } else {
-        AppLogger.d('No active banner found (Firestore/Storage)');
+
+        // Start slideshow if there are multiple banners
+        if (_activeBanners.length > 1) {
+          _startBannerSlideshow();
+        }
+
+        // Increment impressions for the first banner
+        if (_activeBanners.isNotEmpty) {
+          _incrementBannerImpression(_activeBanners[0]['id']);
+        }
+
+        AppLogger.d('Loaded ${_activeBanners.length} active banners');
       }
     } catch (e) {
       AppLogger.d('Error loading active banner: $e');
     }
   }
 
-  Future<String?> _loadActiveBannerFromStorage() async {
+  // Start automatic slideshow for banners
+  void _startBannerSlideshow() {
+    _bannerTimer?.cancel(); // Cancel any existing timer
+    _bannerTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (!mounted || _activeBanners.isEmpty) {
+        timer.cancel();
+        return;
+      }
+
+      setState(() {
+        _currentBannerIndex = (_currentBannerIndex + 1) % _activeBanners.length;
+      });
+
+      // Increment impressions for the current banner
+      if (_currentBannerIndex < _activeBanners.length) {
+        _incrementBannerImpression(_activeBanners[_currentBannerIndex]['id']);
+      }
+    });
+  }
+
+  // Increment banner impression count in Realtime Database
+  Future<void> _incrementBannerImpression(String bannerId) async {
     try {
-      final storage = FirebaseStorage.instance;
-      final dirRef = storage.ref().child('BannerImages');
-      final result = await dirRef.listAll();
-      if (result.items.isEmpty) return null;
-
-      // Collect metadata
-      final List<Map<String, dynamic>> metas = [];
-      for (final item in result.items) {
-        try {
-          final meta = await item.getMetadata();
-          metas.add({'ref': item, 'meta': meta});
-        } catch (e) {
-          AppLogger.d('Failed to get metadata for ${item.fullPath}: $e');
-        }
-      }
-
-      // 1) Prefer file with custom metadata isActive == true
-      Map<String, dynamic>? activeEntry;
-      for (final m in metas) {
-        final meta = m['meta'] as FullMetadata;
-        final isActive = meta.customMetadata?['isActive']?.toLowerCase() == 'true';
-        if (isActive) {
-          activeEntry = m;
-          break;
-        }
-      }
-
-      Reference selectedRef;
-      if (activeEntry != null) {
-        selectedRef = activeEntry['ref'] as Reference;
-      } else if (metas.isNotEmpty) {
-        // 2) Otherwise, pick the most recently created file
-        metas.sort((a, b) {
-          final aMeta = a['meta'] as FullMetadata;
-          final bMeta = b['meta'] as FullMetadata;
-          final aTime = aMeta.timeCreated ?? DateTime.fromMillisecondsSinceEpoch(0);
-          final bTime = bMeta.timeCreated ?? DateTime.fromMillisecondsSinceEpoch(0);
-          return bTime.compareTo(aTime); // newest first
-        });
-        selectedRef = metas.first['ref'] as Reference;
-      } else {
-        // 3) Fallback: first item
-        selectedRef = result.items.first;
-      }
-
-      final downloadUrl = await selectedRef.getDownloadURL();
-      return downloadUrl;
+      final bannerRef = rtdb.FirebaseDatabase.instance.ref(
+        'Banner/$bannerId/impressions',
+      );
+      await bannerRef.runTransaction((Object? currentValue) {
+        return rtdb.Transaction.success((currentValue as int? ?? 0) + 1);
+      });
     } catch (e) {
-      AppLogger.d('Storage banner load error: $e');
-      return null;
+      AppLogger.d('Error incrementing banner impression: $e');
+    }
+  }
+
+  // Increment banner click count in Realtime Database
+  Future<void> _incrementBannerClick(String bannerId) async {
+    try {
+      final bannerRef = rtdb.FirebaseDatabase.instance.ref(
+        'Banner/$bannerId/clicks',
+      );
+      await bannerRef.runTransaction((Object? currentValue) {
+        return rtdb.Transaction.success((currentValue as int? ?? 0) + 1);
+      });
+
+      // Also increment usage count
+      final usageRef = rtdb.FirebaseDatabase.instance.ref(
+        'Banner/$bannerId/usageCount',
+      );
+      await usageRef.runTransaction((Object? currentValue) {
+        return rtdb.Transaction.success((currentValue as int? ?? 0) + 1);
+      });
+
+      AppLogger.d('Banner click tracked for banner: $bannerId');
+    } catch (e) {
+      AppLogger.d('Error incrementing banner click: $e');
     }
   }
 
   @override
   void dispose() {
+    // Cancel banner timer to prevent memory leaks
+    _bannerTimer?.cancel();
+
     // Remove scroll listener to prevent memory leaks
     _scrollController.removeListener(_scrollListener);
 
@@ -1433,144 +1490,210 @@ class _ProductListingPageState extends State<ProductListingPage>
                   child: Column(
                     children: [
                       const SizedBox(height: 8),
-                      Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 16),
-                        height: MediaQuery.of(context).size.width > 800
-                            ? 300
-                            : 180,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(24),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.primary.withValues(alpha: 0.2),
-                              blurRadius: 20,
-                              offset: const Offset(0, 8),
-                            ),
-                          ],
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(24),
-                          child: Stack(
-                            children: [
-                              CachedNetworkImage(
-                                imageUrl:
-                                    _bannerImageUrl ??
-                                    'https://placehold.co/600x400',
-                                fit: BoxFit.cover,
-                                width: double.infinity,
-                                height: MediaQuery.of(context).size.width > 800
-                                    ? 300
-                                    : 180,
-                                placeholder: (context, url) => Container(
-                                  height:
-                                      MediaQuery.of(context).size.width > 800
-                                      ? 300
-                                      : 180,
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        AppColors.primary.withValues(
-                                          alpha: 0.1,
-                                        ),
-                                        AppColors.accent.withValues(alpha: 0.1),
-                                      ],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                    ),
-                                  ),
-                                  child: const Center(
-                                    child: CircularProgressIndicator(),
-                                  ),
-                                ),
-                                errorWidget: (context, url, error) => Container(
-                                  height:
-                                      MediaQuery.of(context).size.width > 800
-                                      ? 300
-                                      : 180,
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        AppColors.primary.withValues(
-                                          alpha: 0.1,
-                                        ),
-                                        AppColors.accent.withValues(alpha: 0.1),
-                                      ],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                    ),
-                                  ),
-                                  child: const Center(
-                                    child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Icon(
-                                          Icons.image_not_supported,
-                                          color: Colors.grey,
-                                          size: 40,
-                                        ),
-                                        SizedBox(height: 8),
-                                        Text(
-                                          'Banner image unavailable',
-                                          style: TextStyle(
-                                            color: Colors.grey,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                cacheManager: ProductImageCacheManager.instance,
-                              ),
-                              // Gradient overlay for better text readability
-                              Container(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      Colors.transparent,
-                                      Colors.black.withValues(alpha: 0.3),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              // Badge overlay
-                              Positioned(
-                                top: 16,
-                                right: 16,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.accent,
-                                    borderRadius: BorderRadius.circular(16),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withValues(
-                                          alpha: 0.2,
-                                        ),
-                                        blurRadius: 4,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
-                                  ),
-                                  child: Text(
-                                    'Featured',
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
+                      // Banner Slideshow
+                      if (_activeBanners.isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 16),
+                          height: MediaQuery.of(context).size.width > 800
+                              ? 300
+                              : 180,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(24),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.primary.withValues(alpha: 0.2),
+                                blurRadius: 20,
+                                offset: const Offset(0, 8),
                               ),
                             ],
                           ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(24),
+                            child: Stack(
+                              children: [
+                                // Banner Image
+                                GestureDetector(
+                                  onTap: () {
+                                    if (_activeBanners.isNotEmpty &&
+                                        _currentBannerIndex <
+                                            _activeBanners.length) {
+                                      final banner =
+                                          _activeBanners[_currentBannerIndex];
+                                      _incrementBannerClick(
+                                        banner['name'] ?? '',
+                                      );
+                                      // Handle navigation based on targetScreen if needed
+                                    }
+                                  },
+                                  child: AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 500),
+                                    child: CachedNetworkImage(
+                                      key: ValueKey(_currentBannerIndex),
+                                      imageUrl:
+                                          _activeBanners[_currentBannerIndex]['imageURL'] ??
+                                          'https://placehold.co/600x400',
+                                      fit: BoxFit.cover,
+                                      width: double.infinity,
+                                      height:
+                                          MediaQuery.of(context).size.width >
+                                              800
+                                          ? 300
+                                          : 180,
+                                      placeholder: (context, url) => Container(
+                                        height:
+                                            MediaQuery.of(context).size.width >
+                                                800
+                                            ? 300
+                                            : 180,
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            colors: [
+                                              AppColors.primary.withValues(
+                                                alpha: 0.1,
+                                              ),
+                                              AppColors.accent.withValues(
+                                                alpha: 0.1,
+                                              ),
+                                            ],
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                          ),
+                                        ),
+                                        child: const Center(
+                                          child: CircularProgressIndicator(),
+                                        ),
+                                      ),
+                                      errorWidget: (context, url, error) =>
+                                          Container(
+                                            height:
+                                                MediaQuery.of(
+                                                      context,
+                                                    ).size.width >
+                                                    800
+                                                ? 300
+                                                : 180,
+                                            decoration: BoxDecoration(
+                                              gradient: LinearGradient(
+                                                colors: [
+                                                  AppColors.primary.withValues(
+                                                    alpha: 0.1,
+                                                  ),
+                                                  AppColors.accent.withValues(
+                                                    alpha: 0.1,
+                                                  ),
+                                                ],
+                                                begin: Alignment.topLeft,
+                                                end: Alignment.bottomRight,
+                                              ),
+                                            ),
+                                            child: const Center(
+                                              child: Column(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: [
+                                                  Icon(
+                                                    Icons.image_not_supported,
+                                                    color: Colors.grey,
+                                                    size: 40,
+                                                  ),
+                                                  SizedBox(height: 8),
+                                                  Text(
+                                                    'Banner image unavailable',
+                                                    style: TextStyle(
+                                                      color: Colors.grey,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                      cacheManager:
+                                          ProductImageCacheManager.instance,
+                                    ),
+                                  ),
+                                ),
+                                // Gradient overlay for better text readability
+                                Container(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Colors.transparent,
+                                        Colors.black.withValues(alpha: 0.3),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                // Badge overlay
+                                Positioned(
+                                  top: 16,
+                                  right: 16,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.accent,
+                                      borderRadius: BorderRadius.circular(16),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withValues(
+                                            alpha: 0.2,
+                                          ),
+                                          blurRadius: 4,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Text(
+                                      'Featured',
+                                      style: AppTextStyles.bodySmall.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                // Slideshow indicators
+                                if (_activeBanners.length > 1)
+                                  Positioned(
+                                    bottom: 12,
+                                    left: 0,
+                                    right: 0,
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: List.generate(
+                                        _activeBanners.length,
+                                        (index) => Container(
+                                          margin: const EdgeInsets.symmetric(
+                                            horizontal: 4,
+                                          ),
+                                          width: index == _currentBannerIndex
+                                              ? 24
+                                              : 8,
+                                          height: 8,
+                                          decoration: BoxDecoration(
+                                            color: index == _currentBannerIndex
+                                                ? Colors.white
+                                                : Colors.white.withValues(
+                                                    alpha: 0.5,
+                                                  ),
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
                         ),
-                      ),
 
                       // Modern Categories Section
                       const SizedBox(height: 20),

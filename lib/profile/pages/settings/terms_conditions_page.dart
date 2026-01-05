@@ -74,7 +74,11 @@ class _TermsConditionsPageState extends State<TermsConditionsPage> {
         ),
         title: Row(
           children: [
-            Icon(Icons.description_outlined, color: AppColors.primary, size: 24),
+            Icon(
+              Icons.description_outlined,
+              color: AppColors.primary,
+              size: 24,
+            ),
             const SizedBox(width: 8),
             Text(
               'Terms & Conditions',
@@ -89,8 +93,9 @@ class _TermsConditionsPageState extends State<TermsConditionsPage> {
           ? const Center(child: CircularProgressIndicator())
           : LayoutBuilder(
               builder: (context, constraints) {
-                final isWideWeb = kIsWeb && constraints.maxWidth > 900; // BREAKPOINT
-                
+                final isWideWeb =
+                    kIsWeb && constraints.maxWidth > 900; // BREAKPOINT
+
                 final content = SingleChildScrollView(
                   padding: const EdgeInsets.all(16.0),
                   child: Container(
@@ -118,12 +123,14 @@ class _TermsConditionsPageState extends State<TermsConditionsPage> {
                   // Web wide: centered with max width
                   return Center(
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 1200), // MAX_WIDTH
+                      constraints: const BoxConstraints(
+                        maxWidth: 1200,
+                      ), // MAX_WIDTH
                       child: content,
                     ),
                   );
                 }
-                
+
                 // Mobile and narrow web: full width
                 return content;
               },
@@ -161,21 +168,27 @@ class _TermsConditionsPageState extends State<TermsConditionsPage> {
         _buildParagraph(
           'DentPal reserves the right to change, modify, suspend, or discontinue all or any part of the DentPal mobile application or its services at any time, with or without notice, as permitted by Philippine law. DentPal may release certain features or services in a beta or trial version, which may not function in the same way as the final version. DentPal shall not be held liable for any errors, disruptions, or limitations in such cases.',
         ),
-        _buildSubSectionTitle('1.5 Account Refusal, Acceptance, and Age Requirement'),
+        _buildSubSectionTitle(
+          '1.5 Account Refusal, Acceptance, and Age Requirement',
+        ),
         _buildParagraph(
           'DentPal reserves the right to refuse access to the application or to deny the creation of an account for any reason. If you are under the minimum legal age required to enter into an agreement in the Philippines, you must obtain permission from a parent or legal guardian to create an account.',
         ),
 
         _buildSectionTitle('2. Privacy'),
         _buildSubSectionTitle('2.1 User Privacy and Consent'),
-        _buildParagraph('Your privacy is important to us. By using DentPal, you:'),
+        _buildParagraph(
+          'Your privacy is important to us. By using DentPal, you:',
+        ),
         _buildBulletList([
           'Consent to collection, use, and sharing of your data as described in the Privacy Policy',
           'Acknowledge that User Information is jointly owned by you and DentPal',
           'Agree not to disclose User Information to third parties without DentPal\'s consent, except where required by law',
         ]),
         _buildSubSectionTitle('2.2 Sharing of Data with Third-Party Partners'),
-        _buildParagraph('User Information may be shared with trusted third-party service providers for:'),
+        _buildParagraph(
+          'User Information may be shared with trusted third-party service providers for:',
+        ),
         _buildBulletList([
           'Payment processing',
           'Order fulfillment and delivery',
@@ -211,8 +224,12 @@ class _TermsConditionsPageState extends State<TermsConditionsPage> {
           'Immediately notify DentPal of any unauthorized use of your Account',
           'Ensure that your Account information is accurate and up-to-date',
         ]),
-        _buildSubSectionTitle('5.3 DentPal\'s Right to Suspend or Terminate Accounts'),
-        _buildParagraph('Grounds for account suspension or termination may include:'),
+        _buildSubSectionTitle(
+          '5.3 DentPal\'s Right to Suspend or Terminate Accounts',
+        ),
+        _buildParagraph(
+          'Grounds for account suspension or termination may include:',
+        ),
         _buildBulletList([
           'Extended periods of inactivity',
           'Violation of these Terms of Service',
@@ -269,7 +286,9 @@ class _TermsConditionsPageState extends State<TermsConditionsPage> {
           'If you believe an account user is violating these Terms of Service, please contact support@dentpal.shop.',
         ),
 
-        _buildSectionTitle('8. Reporting Intellectual Property Rights Infringement'),
+        _buildSectionTitle(
+          '8. Reporting Intellectual Property Rights Infringement',
+        ),
         _buildParagraph(
           'DentPal does not allow account users to upload, submit, or share content that violates the intellectual property rights of brands or other IPR owners.',
         ),
@@ -425,7 +444,9 @@ class _TermsConditionsPageState extends State<TermsConditionsPage> {
           'Welcome to DentPal, powered by R&R Newtech Dental Corporation (referred to as "DentPal," "we," "us," or "our"). Please read these Terms of Service carefully before using the DentPal Merchant Portal so that you understand your legal rights and obligations as a merchant. By accessing or using the Merchant Portal, you agree to be bound by these Terms of Service.',
         ),
         _buildSubSectionTitle('1.2 Scope of Services'),
-        _buildParagraph('The DentPal Merchant Portal provides a platform for merchants to list, manage, and sell dental products and equipment. DentPal\'s services include:'),
+        _buildParagraph(
+          'The DentPal Merchant Portal provides a platform for merchants to list, manage, and sell dental products and equipment. DentPal\'s services include:',
+        ),
         _buildBulletList([
           'Tools to create, update, and manage product listings',
           'Order management, including tracking, fulfillment, and shipping coordination',
@@ -445,28 +466,36 @@ class _TermsConditionsPageState extends State<TermsConditionsPage> {
         _buildParagraph(
           'DentPal reserves the right to change, modify, suspend, or discontinue all or any part of the DentPal Merchant Portal or its services at any time, with or without notice, in accordance with Philippine law.',
         ),
-        _buildSubSectionTitle('1.5 Account Refusal, Acceptance, and Age Requirement'),
+        _buildSubSectionTitle(
+          '1.5 Account Refusal, Acceptance, and Age Requirement',
+        ),
         _buildParagraph(
           'DentPal reserves the right to refuse access to the Merchant Portal or to deny the creation of an account for any reason. If you are under the minimum legal age required to enter into an agreement in the Philippines, you must obtain permission from a parent or legal guardian.',
         ),
 
         _buildSectionTitle('2. Privacy'),
         _buildSubSectionTitle('2.1 User Privacy and Consent'),
-        _buildParagraph('By using DentPal or providing information on the platform, you:'),
+        _buildParagraph(
+          'By using DentPal or providing information on the platform, you:',
+        ),
         _buildBulletList([
           'Consent to DentPal\'s collection, use, disclosure, and processing of your Content, personal data, and User Information',
           'Acknowledge that proprietary rights to your User Information are jointly owned by you and DentPal',
           'Agree not to disclose your User Information to any third party without DentPal\'s prior written consent',
         ]),
         _buildSubSectionTitle('2.2 Sharing of Data with Third-Party Partners'),
-        _buildParagraph('User Information may be shared with trusted third-party service providers for:'),
+        _buildParagraph(
+          'User Information may be shared with trusted third-party service providers for:',
+        ),
         _buildBulletList([
           'Payment processing',
           'Order fulfillment and delivery',
           'Platform support services',
         ]),
         _buildSubSectionTitle('2.3 Handling of Other Users\' Personal Data'),
-        _buildParagraph('If you obtain personal data of another account user through DentPal, you agree to:'),
+        _buildParagraph(
+          'If you obtain personal data of another account user through DentPal, you agree to:',
+        ),
         _buildBulletList([
           'Comply with all applicable personal data protection laws',
           'Allow the account user to request removal of their data from your records',
@@ -501,7 +530,9 @@ class _TermsConditionsPageState extends State<TermsConditionsPage> {
           'Immediately notify DentPal of any unauthorized use of your Merchant Account',
           'Ensure that your Merchant Account information is accurate and up-to-date',
         ]),
-        _buildSubSectionTitle('5.3 DentPal\'s Right to Suspend or Terminate Merchant Accounts'),
+        _buildSubSectionTitle(
+          '5.3 DentPal\'s Right to Suspend or Terminate Merchant Accounts',
+        ),
         _buildParagraph('Grounds for suspension or termination may include:'),
         _buildBulletList([
           'Extended periods of inactivity',
@@ -561,7 +592,9 @@ class _TermsConditionsPageState extends State<TermsConditionsPage> {
           'If you believe another merchant or account user is violating these Terms of Service, please contact DentPal at support@dentpal.shop.',
         ),
 
-        _buildSectionTitle('8. Reporting Intellectual Property Rights Infringement'),
+        _buildSectionTitle(
+          '8. Reporting Intellectual Property Rights Infringement',
+        ),
         _buildSubSectionTitle('8.1 Respect for Intellectual Property'),
         _buildParagraph(
           'Merchants may not upload, submit, or share content, product listings, or other materials that infringe on the intellectual property rights of brands, manufacturers, or other rights holders.',
@@ -669,7 +702,9 @@ class _TermsConditionsPageState extends State<TermsConditionsPage> {
           'Merchants set the price of products at their own discretion. Product prices and shipping charges must include all applicable taxes, tariffs, and fees.',
         ),
         _buildSubSectionTitle('13.3 Invoicing'),
-        _buildParagraph('Merchants shall issue invoices to Account users as required.'),
+        _buildParagraph(
+          'Merchants shall issue invoices to Account users as required.',
+        ),
         _buildSubSectionTitle('13.4 Taxes and Duties'),
         _buildParagraph(
           'Merchants are responsible for all taxes, customs, and duties associated with products sold.',
@@ -728,7 +763,9 @@ class _TermsConditionsPageState extends State<TermsConditionsPage> {
         ),
 
         _buildSectionTitle('19. Representations and Warranties'),
-        _buildParagraph('By using the DentPal Merchant Portal, you represent and warrant that:'),
+        _buildParagraph(
+          'By using the DentPal Merchant Portal, you represent and warrant that:',
+        ),
         _buildBulletList([
           'You have the legal capacity and authority to operate as a merchant',
           'You will use DentPal for lawful commercial purposes only',
@@ -856,9 +893,7 @@ class _TermsConditionsPageState extends State<TermsConditionsPage> {
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Container(
         decoration: BoxDecoration(
-          border: Border.all(
-            color: AppColors.onSurface.withValues(alpha: 0.2),
-          ),
+          border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.2)),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Column(

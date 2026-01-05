@@ -176,10 +176,9 @@ class _ChangePasswordStandalonePageState
               child: ElevatedButton(
                 onPressed: () {
                   Navigator.of(context).pop();
-                  Navigator.of(context).pushNamedAndRemoveUntil(
-                    '/login',
-                    (route) => false,
-                  );
+                  Navigator.of(
+                    context,
+                  ).pushNamedAndRemoveUntil('/login', (route) => false);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
@@ -207,10 +206,9 @@ class _ChangePasswordStandalonePageState
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.close, color: AppColors.onSurface),
-          onPressed: () => Navigator.of(context).pushNamedAndRemoveUntil(
-            '/',
-            (route) => false,
-          ),
+          onPressed: () => Navigator.of(
+            context,
+          ).pushNamedAndRemoveUntil('/', (route) => false),
         ),
       ),
       body: LayoutBuilder(
@@ -393,10 +391,9 @@ class _ChangePasswordStandalonePageState
             ),
             const SizedBox(height: 30),
             ElevatedButton(
-              onPressed: () => Navigator.of(context).pushNamedAndRemoveUntil(
-                '/',
-                (route) => false,
-              ),
+              onPressed: () => Navigator.of(
+                context,
+              ).pushNamedAndRemoveUntil('/', (route) => false),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: AppColors.onPrimary,
@@ -454,8 +451,9 @@ class _ChangePasswordStandalonePageState
               decoration: BoxDecoration(
                 color: AppColors.error.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
-                border:
-                    Border.all(color: AppColors.error.withValues(alpha: 0.3)),
+                border: Border.all(
+                  color: AppColors.error.withValues(alpha: 0.3),
+                ),
               ),
               child: Row(
                 children: [
@@ -505,23 +503,15 @@ class _ChangePasswordStandalonePageState
               ),
               errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(
-                  color: AppColors.error,
-                  width: 2,
-                ),
+                borderSide: const BorderSide(color: AppColors.error, width: 2),
               ),
               focusedErrorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(
-                  color: AppColors.error,
-                  width: 2,
-                ),
+                borderSide: const BorderSide(color: AppColors.error, width: 2),
               ),
               suffixIcon: IconButton(
                 icon: Icon(
-                  _obscureNewPassword
-                      ? Icons.visibility_off
-                      : Icons.visibility,
+                  _obscureNewPassword ? Icons.visibility_off : Icons.visibility,
                   color: AppColors.grey600,
                 ),
                 onPressed: () {
@@ -581,17 +571,11 @@ class _ChangePasswordStandalonePageState
               ),
               errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(
-                  color: AppColors.error,
-                  width: 2,
-                ),
+                borderSide: const BorderSide(color: AppColors.error, width: 2),
               ),
               focusedErrorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(
-                  color: AppColors.error,
-                  width: 2,
-                ),
+                borderSide: const BorderSide(color: AppColors.error, width: 2),
               ),
               suffixIcon: IconButton(
                 icon: Icon(
@@ -642,14 +626,22 @@ class _ChangePasswordStandalonePageState
                 ),
                 const SizedBox(height: 8),
                 _buildPasswordRequirement(
-                    'At least 8 characters', _hasMinLength),
+                  'At least 8 characters',
+                  _hasMinLength,
+                ),
                 _buildPasswordRequirement(
-                    'At least 1 uppercase letter', _hasUppercase),
+                  'At least 1 uppercase letter',
+                  _hasUppercase,
+                ),
                 _buildPasswordRequirement(
-                    'At least 1 lowercase letter', _hasLowercase),
+                  'At least 1 lowercase letter',
+                  _hasLowercase,
+                ),
                 _buildPasswordRequirement('At least 1 number', _hasNumber),
                 _buildPasswordRequirement(
-                    'At least 1 special character', _hasSpecialCharacter),
+                  'At least 1 special character',
+                  _hasSpecialCharacter,
+                ),
               ],
             ),
           ),
