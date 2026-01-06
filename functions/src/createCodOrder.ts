@@ -330,14 +330,23 @@ export const createCodOrder = onRequest(
           cartValue: number;
           isFallbackShipping: boolean;
           shippingError?: string;
+          platformFeePercentage?: number;
         }
         
         const sellerShippingPromises: Promise<SellerShippingData>[] = Object.entries(itemsBySeller).map(async ([sellerId, sellerItems]) => {
-          // Get seller address
+          // Get seller address and name from User collection
           const sellerDoc = await db.collection('User').doc(sellerId).get();
           const sellerData = sellerDoc.data();
           const sellerAddress = `${sellerData?.address?.city || 'Makati'}, ${sellerData?.address?.state || 'Metro Manila'}`;
           const sellerName = sellerData?.displayName || sellerItems[0]?.sellerName || 'Unknown Seller';
+          
+          // Get custom platform fee percentage from Seller collection
+          const sellerProfileDoc = await db.collection('Seller').doc(sellerId).get();
+          const sellerProfileData = sellerProfileDoc.data();
+          const platformFeePercentage = sellerProfileData?.Platform_fee_percentage;
+          if (platformFeePercentage !== undefined) {
+            console.log(`Seller ${sellerId} has custom platform fee: ${platformFeePercentage}%`);
+          }
           
           // Calculate cart value for this seller's items
           const sellerCartValue = sellerItems.reduce((sum, item) => sum + item.total, 0);
@@ -359,6 +368,7 @@ export const createCodOrder = onRequest(
             shippingCost: shippingCost,
             cartValue: sellerCartValue,
             isFallbackShipping: false,
+            platformFeePercentage
           };
         });
         
@@ -432,6 +442,7 @@ export const createCodOrder = onRequest(
             totalChargedToBuyer: s.totalChargedToBuyer,
             paymentProcessingFee: 0, // No processing fee for COD
             platformFee: s.platformFee,
+            platformFeePercentage: s.platformFeePercentage,
             totalSellerFees: s.platformFee + s.sellerShippingCharge,
             netPayoutToSeller: s.cartValue - (s.platformFee + s.sellerShippingCharge),
           })),

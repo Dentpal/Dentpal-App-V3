@@ -542,15 +542,24 @@ export const createCheckoutSession = onRequest(
           cartValue: number;
           isFallbackShipping: boolean; // Track if fallback shipping was used
           shippingError?: string; // Store error message if JRS API failed
+          platformFeePercentage?: number; // Custom platform fee percentage for this seller
         }
         
         const sellerShippingPromises: Promise<SellerShippingData>[] = Object.entries(itemsBySeller).map(async ([sellerId, sellerItems]) => {
-          // Get seller address and name
+          // Get seller address and name from User collection
           const sellerDoc = await db.collection('User').doc(sellerId).get();
           const sellerData = sellerDoc.data();
           // Format seller address - handle both object {city, state} and string formats
           const sellerAddress = formatSellerAddress(sellerData?.address);
           const sellerName = sellerData?.displayName || sellerItems[0]?.sellerName || 'Unknown Seller';
+          
+          // Get custom platform fee percentage from Seller collection
+          const sellerProfileDoc = await db.collection('Seller').doc(sellerId).get();
+          const sellerProfileData = sellerProfileDoc.data();
+          const platformFeePercentage = sellerProfileData?.Platform_fee_percentage;
+          if (platformFeePercentage !== undefined) {
+            console.log(`Seller ${sellerId} has custom platform fee: ${platformFeePercentage}%`);
+          }
           
           // Calculate cart value for this seller's items
           const sellerCartValue = sellerItems.reduce((sum, item) => sum + item.total, 0);
@@ -583,7 +592,8 @@ export const createCheckoutSession = onRequest(
               shippingCost: DEFAULT_FALLBACK_SHIPPING_COST,
               cartValue: sellerCartValue,
               isFallbackShipping: true,
-              shippingError: 'No items have required dimensions for shipping calculation'
+              shippingError: 'No items have required dimensions for shipping calculation',
+              platformFeePercentage
             };
           }
           
@@ -618,7 +628,8 @@ export const createCheckoutSession = onRequest(
             shippingCost: shippingResult.shippingCost,
             cartValue: sellerCartValue,
             isFallbackShipping: shippingResult.isFallback,
-            shippingError: shippingResult.error
+            shippingError: shippingResult.error,
+            platformFeePercentage
           };
         });
         
@@ -728,6 +739,7 @@ export const createCheckoutSession = onRequest(
             totalChargedToBuyer: s.totalChargedToBuyer,
             paymentProcessingFee: s.paymentProcessingFee,
             platformFee: s.platformFee,
+            platformFeePercentage: s.platformFeePercentage,
             totalSellerFees: s.totalSellerFees,
             netPayoutToSeller: s.netPayoutToSeller,
           })),

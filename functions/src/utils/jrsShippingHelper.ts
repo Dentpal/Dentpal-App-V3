@@ -115,7 +115,8 @@ export interface SellerFeeBreakdown {
   shippingSplitRule: 'buyer_pays_full' | 'split_50_50';
   totalChargedToBuyer: number; // Cart value + buyer's shipping portion
   paymentProcessingFee: number; // Based on buyer's total for this seller
-  platformFee: number; // 8.88% of this seller's cart value
+  platformFee: number; // Custom % or default 8.88% of this seller's cart value
+  platformFeePercentage: number; // The actual percentage used for this seller
   totalSellerFees: number;
   netPayoutToSeller: number;
 }
@@ -181,12 +182,14 @@ export function calculatePaymentProcessingFee(totalChargedToBuyer: number, payme
 }
 
 /**
- * Calculate platform fee (8.88% of cart value ONLY, excluding shipping)
+ * Calculate platform fee (default 8.88% of cart value ONLY, excluding shipping)
  * @param cartValue - Subtotal/cart value (excluding shipping)
+ * @param customPercentage - Optional custom platform fee percentage (overrides default)
  * @returns Platform fee amount
  */
-export function calculatePlatformFee(cartValue: number): number {
-  return (cartValue * PLATFORM_FEE_PERCENTAGE) / 100;
+export function calculatePlatformFee(cartValue: number, customPercentage?: number): number {
+  const percentage = customPercentage !== undefined ? customPercentage : PLATFORM_FEE_PERCENTAGE;
+  return (cartValue * percentage) / 100;
 }
 
 /**
@@ -211,12 +214,14 @@ export function calculateNetPayout(
  * @param cartValue - Subtotal/cart value (excluding shipping)
  * @param shippingCost - Total shipping cost
  * @param paymentMethod - Payment method to calculate processing fee
+ * @param customPlatformFeePercentage - Optional custom platform fee percentage
  * @returns Complete breakdown of charges and fees
  */
 export function calculateCompleteBreakdown(
   cartValue: number,
   shippingCost: number,
-  paymentMethod: string = 'card'
+  paymentMethod: string = 'card',
+  customPlatformFeePercentage?: number
 ): {
   // Shipping allocation
   buyerShippingCharge: number;
@@ -254,7 +259,7 @@ export function calculateCompleteBreakdown(
   
   // Calculate seller fees
   const paymentProcessingFee = calculatePaymentProcessingFee(totalChargedToBuyer, paymentMethod);
-  const platformFee = calculatePlatformFee(cartValue);
+  const platformFee = calculatePlatformFee(cartValue, customPlatformFeePercentage);
   const totalSellerFees = paymentProcessingFee + platformFee + sellerShippingCharge;
   
   // Calculate net payout
@@ -303,7 +308,7 @@ export function calculateCompleteBreakdown(
  * 
  * Seller Fees:
  * - Payment Processing Fee: Based on totalChargedToBuyer (seller's cart + buyer's shipping portion)
- * - Platform Fee: 8.88% of seller's cart value
+ * - Platform Fee: Custom percentage from seller's account or default 8.88% of seller's cart value
  * - Seller's Shipping Charge: 50% of shipping (only if split rule applies)
  * 
  * Net Payout = Cart Value - Payment Fee - Platform Fee - Seller Shipping
@@ -314,6 +319,7 @@ export function calculateMultiSellerBreakdown(
     sellerName: string;
     cartValue: number;
     shippingCost: number;
+    platformFeePercentage?: number; // Custom platform fee percentage for this seller
   }>,
   paymentMethod: string = 'card'
 ): MultiSellerBreakdown {
@@ -343,7 +349,9 @@ export function calculateMultiSellerBreakdown(
     
     // Calculate seller fees based on THIS seller's totals
     const paymentProcessingFee = calculatePaymentProcessingFee(totalChargedToBuyer, paymentMethod);
-    const platformFee = calculatePlatformFee(seller.cartValue);
+    // Use seller's custom platform fee percentage if available, otherwise use default
+    const platformFeePercentage = seller.platformFeePercentage !== undefined ? seller.platformFeePercentage : PLATFORM_FEE_PERCENTAGE;
+    const platformFee = calculatePlatformFee(seller.cartValue, seller.platformFeePercentage);
     const totalSellerFees = paymentProcessingFee + platformFee + sellerShippingCharge;
     
     // Calculate net payout for this seller
@@ -360,6 +368,7 @@ export function calculateMultiSellerBreakdown(
       totalChargedToBuyer,
       paymentProcessingFee,
       platformFee,
+      platformFeePercentage,
       totalSellerFees,
       netPayoutToSeller
     });
@@ -373,6 +382,7 @@ export function calculateMultiSellerBreakdown(
       totalChargedToBuyer,
       paymentProcessingFee,
       platformFee,
+      platformFeePercentage,
       totalSellerFees,
       netPayoutToSeller
     });

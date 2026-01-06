@@ -6,7 +6,8 @@ import * as logger from 'firebase-functions/logger';
 import { 
   calculatePaymentProcessingFee, 
   calculatePlatformFee,
-  calculateNetPayout
+  calculateNetPayout,
+  calculateMultiSellerBreakdown
 } from './utils/jrsShippingHelper';
 
 // Initialize Firebase Admin if not already initialized
@@ -218,18 +219,87 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
     }
 
     // Recalculate fees based on actual payment method used
+    // For multi-seller orders, we need to recalculate per-seller breakdowns
     const subtotal = orderData?.summary?.subtotal || 0;
     const sellerShippingCharge = orderData?.summary?.sellerShippingCharge || 0;
     const buyerShippingCharge = orderData?.summary?.buyerShippingCharge || 0;
     const totalChargedToBuyer = subtotal + buyerShippingCharge;
     
-    // Calculate actual fees based on payment method
-    const paymentProcessingFee = calculatePaymentProcessingFee(totalChargedToBuyer, paymentMethod);
-    const platformFee = calculatePlatformFee(subtotal);
-    const totalSellerFees = paymentProcessingFee + platformFee + sellerShippingCharge;
-    const netPayoutToSeller = calculateNetPayout(subtotal, paymentProcessingFee, platformFee, sellerShippingCharge);
+    let paymentProcessingFee: number;
+    let platformFee: number;
+    let totalSellerFees: number;
+    let netPayoutToSeller: number;
+    let updatedSellerFeeBreakdowns: any[] | undefined;
     
-    logger.info('Recalculated fees with actual payment method', {
+    // Check if this is a multi-seller order with existing breakdowns
+    const existingSellerBreakdowns = orderData?.sellerFeeBreakdowns;
+    
+    if (existingSellerBreakdowns && Array.isArray(existingSellerBreakdowns) && existingSellerBreakdowns.length > 0) {
+      // Multi-seller order: recalculate per-seller fees with actual payment method
+      logger.info('Recalculating multi-seller fees with actual payment method', {
+        orderId,
+        paymentMethod,
+        sellerCount: existingSellerBreakdowns.length
+      });
+      
+      // Reconstruct seller data with custom platform fee percentages
+      const sellersData = existingSellerBreakdowns.map(breakdown => ({
+        sellerId: breakdown.sellerId,
+        sellerName: breakdown.sellerName,
+        cartValue: breakdown.cartValue,
+        shippingCost: breakdown.shippingCost,
+        platformFeePercentage: breakdown.platformFeePercentage // Include custom platform fee percentage
+      }));
+      
+      // Recalculate with actual payment method
+      const multiSellerBreakdown = calculateMultiSellerBreakdown(sellersData, paymentMethod);
+      
+      // Use totals from multi-seller breakdown
+      paymentProcessingFee = multiSellerBreakdown.totalPaymentProcessingFee;
+      platformFee = multiSellerBreakdown.totalPlatformFee;
+      totalSellerFees = multiSellerBreakdown.totalSellerFees;
+      netPayoutToSeller = multiSellerBreakdown.totalNetPayoutToSellers;
+      
+      // Update seller fee breakdowns with recalculated values
+      updatedSellerFeeBreakdowns = multiSellerBreakdown.sellerBreakdowns.map(s => ({
+        sellerId: s.sellerId,
+        sellerName: s.sellerName,
+        cartValue: s.cartValue,
+        shippingCost: s.shippingCost,
+        buyerShippingCharge: s.buyerShippingCharge,
+        sellerShippingCharge: s.sellerShippingCharge,
+        shippingSplitRule: s.shippingSplitRule,
+        totalChargedToBuyer: s.totalChargedToBuyer,
+        paymentProcessingFee: s.paymentProcessingFee,
+        platformFee: s.platformFee,
+        platformFeePercentage: s.platformFeePercentage,
+        totalSellerFees: s.totalSellerFees,
+        netPayoutToSeller: s.netPayoutToSeller,
+      }));
+      
+      logger.info('Multi-seller fees recalculated', {
+        orderId,
+        paymentMethod,
+        totalPaymentProcessingFee: paymentProcessingFee,
+        totalPlatformFee: platformFee,
+        totalSellerFees,
+        netPayoutToSeller
+      });
+    } else {
+      // Single-seller order: use simple calculation
+      logger.info('Recalculating single-seller fees with actual payment method', {
+        orderId,
+        paymentMethod,
+        subtotal
+      });
+      
+      paymentProcessingFee = calculatePaymentProcessingFee(totalChargedToBuyer, paymentMethod);
+      platformFee = calculatePlatformFee(subtotal); // Single seller, no custom fee in old orders
+      totalSellerFees = paymentProcessingFee + platformFee + sellerShippingCharge;
+      netPayoutToSeller = calculateNetPayout(subtotal, paymentProcessingFee, platformFee, sellerShippingCharge);
+    }
+    
+    logger.info('Fees recalculated with actual payment method', {
       orderId,
       paymentMethod,
       subtotal,
@@ -315,6 +385,15 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
         note: `Payment ${finalStatus} via ${paymentMethod}`,
       }),
     };
+    
+    // If we have updated seller fee breakdowns (multi-seller order), include them
+    if (updatedSellerFeeBreakdowns) {
+      updateData.sellerFeeBreakdowns = updatedSellerFeeBreakdowns;
+      logger.info('Updating seller fee breakdowns with recalculated values', {
+        orderId,
+        sellerCount: updatedSellerFeeBreakdowns.length
+      });
+    }
 
     // Use update instead of set with merge to ensure clean updates
     await orderRef.update(updateData);

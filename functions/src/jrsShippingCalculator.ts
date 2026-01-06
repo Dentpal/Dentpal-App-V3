@@ -73,6 +73,7 @@ interface SellerShippingCalculation {
   items: CartItemData[];
   shippingCost: number;
   cartValue: number;
+  platformFeePercentage?: number;
 }
 
 const verifyAuthToken = async (authorizationHeader: string | undefined): Promise<DecodedIdToken> => {
@@ -347,11 +348,19 @@ export const calculateJRSShipping = onCall(
 
       // Calculate shipping cost for each seller in parallel
       const sellerShippingPromises = Object.entries(itemsBySeller).map(async ([sellerId, sellerItems]) => {
-        // Get seller info and address
+        // Get seller info and address from User collection
         const sellerDoc = await db.collection('User').doc(sellerId).get();
         const sellerData = sellerDoc.data();
         const sellerAddress = sellerData?.address || 'Makati, Metro Manila';
         const sellerName = sellerData?.displayName || 'Unknown Seller';
+        
+        // Get custom platform fee percentage from Seller collection
+        const sellerProfileDoc = await db.collection('Seller').doc(sellerId).get();
+        const sellerProfileData = sellerProfileDoc.data();
+        const platformFeePercentage = sellerProfileData?.Platform_fee_percentage;
+        if (platformFeePercentage !== undefined) {
+          logger.info(`Seller ${sellerId} has custom platform fee: ${platformFeePercentage}%`);
+        }
 
         logger.info(`Calculating shipping for seller ${sellerId}:`, {
           sellerAddress,
@@ -376,7 +385,8 @@ export const calculateJRSShipping = onCall(
           sellerAddress,
           items: sellerItems,
           shippingCost: sellerShippingCost,
-          cartValue: sellerCartValue
+          cartValue: sellerCartValue,
+          platformFeePercentage
         } as SellerShippingCalculation;
       });
 
@@ -395,7 +405,8 @@ export const calculateJRSShipping = onCall(
           sellerId: seller.sellerId,
           sellerName: seller.sellerName,
           cartValue: seller.cartValue,
-          shippingCost: seller.shippingCost
+          shippingCost: seller.shippingCost,
+          platformFeePercentage: seller.platformFeePercentage
         })),
         paymentMethod
       );
