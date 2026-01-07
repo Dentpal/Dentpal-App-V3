@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/product_model.dart';
 import '../services/product_service.dart';
 import '../services/user_service.dart';
@@ -71,12 +74,16 @@ class _ProductListingPageState extends State<ProductListingPage>
   bool _hasMore = true;
   final int _pageSize = 15;
   final ScrollController _scrollController = ScrollController();
+  final PageController _bannerPageController = PageController();
+  Timer? _bannerAutoScrollTimer;
 
   bool _isSeller = false;
   String _userFirstName = 'User';
   
-  // Active banner image URL loaded from Firestore/Storage
-  String? _bannerImageUrl;
+  // Active banner image URLs and target URLs loaded from Realtime Database
+  List<String> _bannerImageUrls = [];
+  List<String?> _bannerTargetUrls = [];
+  int _currentBannerIndex = 0;
 
   // Mapping between category names and IDs for filtering
   Map<String, String> _categoryNameToId = {};
@@ -98,7 +105,7 @@ class _ProductListingPageState extends State<ProductListingPage>
     _loadFirstPage();
     _checkSellerStatus();
     _loadUserName();
-    _loadActiveBanner(); // Load active banner image (Firestore -> Storage fallback)
+    _loadActiveBanner(); // Load active banner image from Realtime Database
 
     // Add scroll listener for pagination
     _scrollController.addListener(_scrollListener);
@@ -112,94 +119,85 @@ class _ProductListingPageState extends State<ProductListingPage>
     );
   }
 
-  // Fetch active banner image from Firestore collection 'BannerImages'
-  // Fallback to Firebase Storage folder 'BannerImages' (latest or isActive metadata)
+  // Fetch all active banner images from Firebase Realtime Database
   Future<void> _loadActiveBanner() async {
     try {
-      String? url;
-      // Try Firestore first (if you maintain an active doc)
-      try {
-        final query = await FirebaseFirestore.instance
-            .collection('BannerImages')
-            .where('isActive', isEqualTo: true)
-            .limit(1)
-            .get();
-        if (query.docs.isNotEmpty) {
-          final data = query.docs.first.data();
-          url = (data['url'] ?? data['imageUrl']) as String?;
-        }
-      } catch (e) {
-        AppLogger.d('Firestore banner lookup failed (will fallback to Storage): $e');
+      final databaseUrl = 'https://dentpal-161e5-default-rtdb.asia-southeast1.firebasedatabase.app';
+      final database = FirebaseDatabase.instanceFor(
+        app: Firebase.app(),
+        databaseURL: databaseUrl,
+      );
+      final bannersRef = database.ref('Banner');
+      final snapshot = await bannersRef.get();
+      if (!snapshot.exists) {
+        AppLogger.d('No banners found in Realtime Database');
+        return;
       }
-
-      // Fallback to Storage if no Firestore URL found
-      url ??= await _loadActiveBannerFromStorage();
-
-      if (mounted && url != null && url.isNotEmpty) {
+      List<String> activeBannerUrls = [];
+      List<String?> activeBannerTargetUrls = [];
+      final bannersData = snapshot.value as Map<dynamic, dynamic>?;
+      if (bannersData != null) {
+        for (final entry in bannersData.entries) {
+          final bannerData = entry.value as Map<dynamic, dynamic>?;
+          if (bannerData != null) {
+            final isActive = bannerData['isActive'] == true;
+            if (isActive) {
+              final bannerUrl = bannerData['imageURL'] as String? ?? bannerData['imageUrl'] as String?;
+              if (bannerUrl != null && bannerUrl.isNotEmpty) {
+                activeBannerUrls.add(bannerUrl);
+                final targetUrl = bannerData['url'] as String?;
+                activeBannerTargetUrls.add(targetUrl);
+              }
+            }
+          }
+        }
+      }
+      if (mounted && activeBannerUrls.isNotEmpty) {
         setState(() {
-          _bannerImageUrl = url;
+          _bannerImageUrls = activeBannerUrls;
+          _bannerTargetUrls = activeBannerTargetUrls;
         });
-        AppLogger.d('Active banner loaded: $_bannerImageUrl');
+        AppLogger.d('${activeBannerUrls.length} active banners loaded from Realtime Database');
+        _startBannerAutoScroll();
       } else {
-        AppLogger.d('No active banner found (Firestore/Storage)');
+        AppLogger.d('No active banners found in Realtime Database');
       }
     } catch (e) {
-      AppLogger.d('Error loading active banner: $e');
+      AppLogger.d('Error loading active banners from Realtime Database: $e');
     }
   }
 
-  Future<String?> _loadActiveBannerFromStorage() async {
-    try {
-      final storage = FirebaseStorage.instance;
-      final dirRef = storage.ref().child('BannerImages');
-      final result = await dirRef.listAll();
-      if (result.items.isEmpty) return null;
-
-      // Collect metadata
-      final List<Map<String, dynamic>> metas = [];
-      for (final item in result.items) {
+  // Handle banner click and open URL
+  Future<void> _onBannerTap(int index) async {
+    if (index < _bannerTargetUrls.length) {
+      final targetUrl = _bannerTargetUrls[index];
+      if (targetUrl != null && targetUrl.isNotEmpty) {
         try {
-          final meta = await item.getMetadata();
-          metas.add({'ref': item, 'meta': meta});
+          final uri = Uri.parse(targetUrl);
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          }
         } catch (e) {
-          AppLogger.d('Failed to get metadata for ${item.fullPath}: $e');
+          AppLogger.d('Error launching banner URL: $e');
         }
       }
+    }
+  }
 
-      // 1) Prefer file with custom metadata isActive == true
-      Map<String, dynamic>? activeEntry;
-      for (final m in metas) {
-        final meta = m['meta'] as FullMetadata;
-        final isActive = meta.customMetadata?['isActive']?.toLowerCase() == 'true';
-        if (isActive) {
-          activeEntry = m;
-          break;
+  // Start auto-scrolling banners every 5 seconds
+  void _startBannerAutoScroll() {
+    _bannerAutoScrollTimer?.cancel();
+    if (_bannerImageUrls.length > 1) {
+      _bannerAutoScrollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+        if (mounted && _bannerPageController.hasClients) {
+          final nextPage = (_currentBannerIndex + 1) % _bannerImageUrls.length;
+          _bannerPageController.animateToPage(
+            nextPage,
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeInOut,
+          );
         }
-      }
-
-      Reference selectedRef;
-      if (activeEntry != null) {
-        selectedRef = activeEntry['ref'] as Reference;
-      } else if (metas.isNotEmpty) {
-        // 2) Otherwise, pick the most recently created file
-        metas.sort((a, b) {
-          final aMeta = a['meta'] as FullMetadata;
-          final bMeta = b['meta'] as FullMetadata;
-          final aTime = aMeta.timeCreated ?? DateTime.fromMillisecondsSinceEpoch(0);
-          final bTime = bMeta.timeCreated ?? DateTime.fromMillisecondsSinceEpoch(0);
-          return bTime.compareTo(aTime); // newest first
-        });
-        selectedRef = metas.first['ref'] as Reference;
-      } else {
-        // 3) Fallback: first item
-        selectedRef = result.items.first;
-      }
-
-      final downloadUrl = await selectedRef.getDownloadURL();
-      return downloadUrl;
-    } catch (e) {
-      AppLogger.d('Storage banner load error: $e');
-      return null;
+      });
     }
   }
 
@@ -207,6 +205,8 @@ class _ProductListingPageState extends State<ProductListingPage>
   void dispose() {
     // Remove scroll listener to prevent memory leaks
     _scrollController.removeListener(_scrollListener);
+    _bannerAutoScrollTimer?.cancel();
+    _bannerPageController.dispose();
 
     AppLogger.d("ProductListingPage dispose called");
     super.dispose();
@@ -1433,144 +1433,128 @@ class _ProductListingPageState extends State<ProductListingPage>
                   child: Column(
                     children: [
                       const SizedBox(height: 8),
-                      Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 16),
-                        height: MediaQuery.of(context).size.width > 800
-                            ? 300
-                            : 180,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(24),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.primary.withValues(alpha: 0.2),
-                              blurRadius: 20,
-                              offset: const Offset(0, 8),
-                            ),
-                          ],
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(24),
-                          child: Stack(
-                            children: [
-                              CachedNetworkImage(
-                                imageUrl:
-                                    _bannerImageUrl ??
-                                    'https://placehold.co/600x400',
-                                fit: BoxFit.cover,
-                                width: double.infinity,
-                                height: MediaQuery.of(context).size.width > 800
-                                    ? 300
-                                    : 180,
-                                placeholder: (context, url) => Container(
-                                  height:
-                                      MediaQuery.of(context).size.width > 800
-                                      ? 300
-                                      : 180,
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        AppColors.primary.withValues(
-                                          alpha: 0.1,
-                                        ),
-                                        AppColors.accent.withValues(alpha: 0.1),
-                                      ],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                    ),
-                                  ),
-                                  child: const Center(
-                                    child: CircularProgressIndicator(),
-                                  ),
-                                ),
-                                errorWidget: (context, url, error) => Container(
-                                  height:
-                                      MediaQuery.of(context).size.width > 800
-                                      ? 300
-                                      : 180,
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        AppColors.primary.withValues(
-                                          alpha: 0.1,
-                                        ),
-                                        AppColors.accent.withValues(alpha: 0.1),
-                                      ],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                    ),
-                                  ),
-                                  child: const Center(
-                                    child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Icon(
-                                          Icons.image_not_supported,
-                                          color: Colors.grey,
-                                          size: 40,
-                                        ),
-                                        SizedBox(height: 8),
-                                        Text(
-                                          'Banner image unavailable',
-                                          style: TextStyle(
-                                            color: Colors.grey,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                cacheManager: ProductImageCacheManager.instance,
-                              ),
-                              // Gradient overlay for better text readability
-                              Container(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      Colors.transparent,
-                                      Colors.black.withValues(alpha: 0.3),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              // Badge overlay
-                              Positioned(
-                                top: 16,
-                                right: 16,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.accent,
-                                    borderRadius: BorderRadius.circular(16),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withValues(
-                                          alpha: 0.2,
-                                        ),
-                                        blurRadius: 4,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
-                                  ),
-                                  child: Text(
-                                    'Featured',
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
+                      // Banner Slideshow
+                      if (_bannerImageUrls.isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 16),
+                          height: MediaQuery.of(context).size.width > 800 ? 300 : 180,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(24),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.primary.withValues(alpha: 0.2),
+                                blurRadius: 20,
+                                offset: const Offset(0, 8),
                               ),
                             ],
                           ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(24),
+                            child: Stack(
+                              children: [
+                                SizedBox(
+                                  height: MediaQuery.of(context).size.width > 800 ? 300 : 180,
+                                  child: PageView.builder(
+                                    controller: _bannerPageController,
+                                    physics: const BouncingScrollPhysics(),
+                                    onPageChanged: (index) {
+                                      setState(() {
+                                        _currentBannerIndex = index;
+                                      });
+                                      _startBannerAutoScroll();
+                                    },
+                                    itemCount: _bannerImageUrls.length,
+                                    itemBuilder: (context, index) {
+                                      return GestureDetector(
+                                        onTap: () => _onBannerTap(index),
+                                        child: CachedNetworkImage(
+                                          imageUrl: _bannerImageUrls[index],
+                                          fit: BoxFit.cover,
+                                          width: double.infinity,
+                                          placeholder: (context, url) => Container(
+                                            decoration: BoxDecoration(
+                                              gradient: LinearGradient(
+                                                colors: [
+                                                  AppColors.primary.withValues(alpha: 0.1),
+                                                  AppColors.accent.withValues(alpha: 0.1),
+                                                ],
+                                                begin: Alignment.topLeft,
+                                                end: Alignment.bottomRight,
+                                              ),
+                                            ),
+                                            child: const Center(
+                                              child: CircularProgressIndicator(),
+                                            ),
+                                          ),
+                                          errorWidget: (context, url, error) => Container(
+                                            decoration: BoxDecoration(
+                                              gradient: LinearGradient(
+                                                colors: [
+                                                  AppColors.primary.withValues(alpha: 0.1),
+                                                  AppColors.accent.withValues(alpha: 0.1),
+                                                ],
+                                                begin: Alignment.topLeft,
+                                                end: Alignment.bottomRight,
+                                              ),
+                                            ),
+                                            child: const Center(
+                                              child: Icon(
+                                                Icons.image_not_supported,
+                                                color: Colors.grey,
+                                                size: 40,
+                                              ),
+                                            ),
+                                          ),
+                                          cacheManager: ProductImageCacheManager.instance,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                // Gradient overlay for better text readability
+                                IgnorePointer(
+                                  child: Container(
+                                    height: MediaQuery.of(context).size.width > 800 ? 300 : 180,
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [
+                                          Colors.transparent,
+                                          Colors.black.withValues(alpha: 0.3),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                // Banner indicator dots
+                                if (_bannerImageUrls.length > 1)
+                                  Positioned(
+                                    bottom: 16,
+                                    left: 0,
+                                    right: 0,
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: List.generate(_bannerImageUrls.length, (index) {
+                                        return AnimatedContainer(
+                                          duration: const Duration(milliseconds: 300),
+                                          margin: const EdgeInsets.symmetric(horizontal: 4),
+                                          width: _currentBannerIndex == index ? 16 : 8,
+                                          height: 8,
+                                          decoration: BoxDecoration(
+                                            color: _currentBannerIndex == index
+                                                ? AppColors.primary
+                                                : AppColors.primary.withOpacity(0.3),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                        );
+                                      }),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
                         ),
-                      ),
 
                       // Modern Categories Section
                       const SizedBox(height: 20),
