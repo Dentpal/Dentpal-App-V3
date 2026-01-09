@@ -40,6 +40,10 @@ class _StorePageState extends State<StorePage>
   List<Category> _sellerCategories = [];
   List<SubCategory> _sellerSubCategories = [];
   bool _isLoadingCategories = false;
+  String? _selectedCategoryId;
+  String? _selectedSubCategoryId;
+  List<Product> _categoryFilteredProducts = [];
+  Map<String, List<SubCategory>> _subCategoriesByCategory = {};
 
   final List<String> _productFilters = [
     'Popular',
@@ -284,8 +288,9 @@ class _StorePageState extends State<StorePage>
         }
       }
 
-      // Load subcategories
+      // Load subcategories and group them by category
       _sellerSubCategories = [];
+      _subCategoriesByCategory = {};
       if (subCategoryIds.isNotEmpty) {
         try {
           _sellerSubCategories = await _categoryService.getSubCategoriesByIds(
@@ -294,6 +299,14 @@ class _StorePageState extends State<StorePage>
           AppLogger.d(
             'StorePage: Loaded ${_sellerSubCategories.length} subcategories',
           );
+          
+          // Group subcategories by their parent category
+          for (var subCategory in _sellerSubCategories) {
+            if (!_subCategoriesByCategory.containsKey(subCategory.categoryId)) {
+              _subCategoriesByCategory[subCategory.categoryId] = [];
+            }
+            _subCategoriesByCategory[subCategory.categoryId]!.add(subCategory);
+          }
         } catch (e) {
           AppLogger.d('StorePage: Error loading subcategories: $e');
         }
@@ -475,14 +488,6 @@ class _StorePageState extends State<StorePage>
             'Address',
             _storeData['address'] ?? 'Not available',
           ),
-          if (_storeData['contactEmail']?.toString().isNotEmpty == true) ...[
-            const SizedBox(height: 12),
-            _buildInfoRow(Icons.email, 'Email', _storeData['contactEmail']),
-          ],
-          if (_storeData['contactNumber']?.toString().isNotEmpty == true) ...[
-            const SizedBox(height: 12),
-            _buildInfoRow(Icons.phone, 'Phone', _storeData['contactNumber']),
-          ],
         ],
       ),
     );
@@ -751,129 +756,255 @@ class _StorePageState extends State<StorePage>
       return _buildEmptyCategoriesState();
     }
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (_sellerCategories.isNotEmpty) ...[
-            Text(
-              'Categories',
-              style: AppTextStyles.titleMedium.copyWith(
-                fontWeight: FontWeight.bold,
-                color: AppColors.onSurface,
-              ),
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Show categories if no category is selected
+              if (_selectedCategoryId == null) ...[
+                Text(
+                  'Categories',
+                  style: AppTextStyles.titleMedium.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ..._sellerCategories.map(
+                  (category) => _buildCategoryItem(category),
+                ),
+              ],
+              // Show subcategories when category is selected
+              if (_selectedCategoryId != null && _selectedSubCategoryId == null) ...[
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back),
+                      onPressed: () {
+                        setState(() {
+                          _selectedCategoryId = null;
+                        });
+                      },
+                    ),
+                    Text(
+                      'Subcategories',
+                      style: AppTextStyles.titleMedium.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (_subCategoriesByCategory[_selectedCategoryId]?.isNotEmpty == true) ...[
+                  ..._subCategoriesByCategory[_selectedCategoryId]!.map(
+                    (subCategory) => _buildSubCategoryItem(subCategory),
+                  ),
+                ] else ...[
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'No subcategories found',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.onSurface.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ],
+          ),
+        ),
+        // Show products when subcategory is selected
+        if (_selectedSubCategoryId != null && _categoryFilteredProducts.isNotEmpty) ...[
+          const Divider(height: 32),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () {
+                    setState(() {
+                      _selectedSubCategoryId = null;
+                      _categoryFilteredProducts = [];
+                    });
+                  },
+                ),
+                Expanded(
+                  child: Text(
+                    'Products (${_categoryFilteredProducts.length})',
+                    style: AppTextStyles.titleMedium.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.onSurface,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            ..._sellerCategories.map(
-              (category) => _buildCategoryItem(category),
-            ),
-            const SizedBox(height: 24),
-          ],
-          if (_sellerSubCategories.isNotEmpty) ...[
-            Text(
-              'Subcategories',
-              style: AppTextStyles.titleMedium.copyWith(
-                fontWeight: FontWeight.bold,
-                color: AppColors.onSurface,
-              ),
-            ),
-            const SizedBox(height: 12),
-            ..._sellerSubCategories.map(
-              (subCategory) => _buildSubCategoryItem(subCategory),
-            ),
-          ],
+          ),
+          _buildCategoryFilteredProductGrid(),
         ],
-      ),
+      ],
     );
   }
 
   Widget _buildCategoryItem(Category category) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.1)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
+    final isSelected = _selectedCategoryId == category.categoryId;
+    final productsInCategory = _allSellerProducts
+        .where((product) => product.categoryId == category.categoryId)
+        .length;
+    final subCategoriesCount = _subCategoriesByCategory[category.categoryId]?.length ?? 0;
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedCategoryId = category.categoryId;
+          _selectedSubCategoryId = null;
+          _categoryFilteredProducts = [];
+        });
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppColors.primary.withValues(alpha: 0.15)
+              : AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected
+                ? AppColors.primary
+                : AppColors.onSurface.withValues(alpha: 0.1),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.category,
+                size: 20,
+                color: isSelected ? AppColors.primary : AppColors.primary,
+              ),
             ),
-            child: const Icon(
-              Icons.category,
-              size: 20,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    category.categoryName,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.onSurface,
+                      fontWeight:
+                          isSelected ? FontWeight.w600 : FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '$productsInCategory product${productsInCategory != 1 ? 's' : ''} • $subCategoriesCount subcategor${subCategoriesCount != 1 ? 'ies' : 'y'}',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.onSurface.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.keyboard_arrow_right,
               color: AppColors.primary,
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              category.categoryName,
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.onSurface,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              '${category.clickCounter}',
-              style: AppTextStyles.bodySmall.copyWith(
-                color: AppColors.primary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildSubCategoryItem(SubCategory subCategory) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.1)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: AppColors.secondary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(
-              Icons.subdirectory_arrow_right,
-              size: 20,
-              color: AppColors.secondary,
-            ),
+    final isSelected = _selectedSubCategoryId == subCategory.subCategoryId;
+    final productsInSubCategory = _allSellerProducts
+        .where((product) => product.subCategoryId == subCategory.subCategoryId)
+        .length;
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedSubCategoryId = subCategory.subCategoryId;
+          _categoryFilteredProducts = _allSellerProducts
+              .where((product) =>
+                  product.subCategoryId == subCategory.subCategoryId)
+              .toList();
+        });
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppColors.secondary.withValues(alpha: 0.15)
+              : AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected
+                ? AppColors.secondary
+                : AppColors.onSurface.withValues(alpha: 0.1),
+            width: isSelected ? 2 : 1,
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              subCategory.subCategoryName,
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.onSurface,
-                fontWeight: FontWeight.w500,
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.secondary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.subdirectory_arrow_right,
+                size: 20,
+                color: isSelected ? AppColors.secondary : AppColors.secondary,
               ),
             ),
-          ),
-        ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    subCategory.subCategoryName,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.onSurface,
+                      fontWeight:
+                          isSelected ? FontWeight.w600 : FontWeight.w500,
+                    ),
+                  ),
+                  if (productsInSubCategory > 0) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '$productsInSubCategory product${productsInSubCategory != 1 ? 's' : ''}',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.onSurface.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Icon(
+              Icons.keyboard_arrow_right,
+              color: AppColors.secondary,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -915,6 +1046,35 @@ class _StorePageState extends State<StorePage>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryFilteredProductGrid() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: _getResponsiveCrossAxisCount(context),
+          childAspectRatio: _getResponsiveAspectRatio(context),
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+        ),
+        itemCount: _categoryFilteredProducts.length,
+        itemBuilder: (context, index) {
+          final product = _categoryFilteredProducts[index];
+          return ProductCard(
+            product: product,
+            onTap: () {
+              NavigationUtils.navigateToProductDetail(
+                context,
+                product.productId,
+              );
+            },
+          );
+        },
       ),
     );
   }
