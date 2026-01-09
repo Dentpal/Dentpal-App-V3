@@ -750,6 +750,7 @@ class ChatService {
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) return;
 
+      // First, update any unread messages in the messages collection
       final messagesRef = _database.ref('chatRooms/$chatRoomId/messages');
       final snapshot = await messagesRef
           .orderByChild('receiverId')
@@ -768,6 +769,27 @@ class ChatService {
 
         if (updates.isNotEmpty) {
           await messagesRef.update(updates);
+        }
+      }
+
+      // Always check and update the lastMessage.isRead in the chat room if needed
+      final chatRoomRef = _database.ref('chatRooms/$chatRoomId');
+      final chatRoomSnapshot = await chatRoomRef.get();
+
+      if (chatRoomSnapshot.exists) {
+        final chatRoomData = chatRoomSnapshot.value as Map<dynamic, dynamic>;
+        final lastMessage = chatRoomData['lastMessage'];
+
+        // Update lastMessage.isRead if it's unread and for the current user
+        if (lastMessage != null &&
+            lastMessage['receiverId'] == currentUser.uid &&
+            lastMessage['isRead'] != true) {
+          await chatRoomRef.update({
+            'lastMessage/isRead': true,
+          });
+          AppLogger.d(
+            'Updated lastMessage.isRead for chat room $chatRoomId',
+          );
         }
       }
     } catch (e) {
