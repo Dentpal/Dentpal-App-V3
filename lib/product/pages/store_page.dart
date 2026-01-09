@@ -475,14 +475,6 @@ class _StorePageState extends State<StorePage>
             'Address',
             _storeData['address'] ?? 'Not available',
           ),
-          if (_storeData['contactEmail']?.toString().isNotEmpty == true) ...[
-            const SizedBox(height: 12),
-            _buildInfoRow(Icons.email, 'Email', _storeData['contactEmail']),
-          ],
-          if (_storeData['contactNumber']?.toString().isNotEmpty == true) ...[
-            const SizedBox(height: 12),
-            _buildInfoRow(Icons.phone, 'Phone', _storeData['contactNumber']),
-          ],
         ],
       ),
     );
