@@ -175,7 +175,12 @@ class _ProductListingPageState extends State<ProductListingPage>
         try {
           final uri = Uri.parse(targetUrl);
           if (await canLaunchUrl(uri)) {
-            await launchUrl(uri, mode: LaunchMode.externalApplication);
+            // Use webOnlyWindowName: '_self' to open in the same tab on web
+            await launchUrl(
+              uri,
+              mode: LaunchMode.platformDefault,
+              webOnlyWindowName: '_self',
+            );
           }
         } catch (e) {
           AppLogger.d('Error launching banner URL: $e');
