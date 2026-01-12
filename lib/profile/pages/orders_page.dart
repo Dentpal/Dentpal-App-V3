@@ -23,7 +23,8 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
   List<order_model.Order> filteredOrders = [];
   bool isLoading = true;
   String? error;
-  order_model.OrderStatus? selectedFilter;
+  String? selectedTabFilter; // Changed from OrderStatus to String for grouped tabs
+  order_model.OrderStatus? selectedProcessingSubFilter; // Sub-filter for Processing tab
   TabController? _tabController;
   final TextEditingController _searchController = TextEditingController();
   String searchQuery = '';
@@ -31,23 +32,42 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
   // Add stream subscription for real-time updates
   late Stream<List<order_model.Order>> _ordersStream;
 
-  final List<order_model.OrderStatus> filterOptions = [
-    order_model.OrderStatus.pending,
-    order_model.OrderStatus.confirmed,
-    order_model.OrderStatus.to_ship,
-    order_model.OrderStatus.shipping,
-    order_model.OrderStatus.delivered,
-    order_model.OrderStatus.completed,
-    order_model.OrderStatus.return_requested,
-    order_model.OrderStatus.cancelled,
-    order_model.OrderStatus.expired,
+  // Define grouped tab filters
+  final Map<String, List<order_model.OrderStatus>> tabGroups = {
+    'processing': [
+      order_model.OrderStatus.pending,
+      order_model.OrderStatus.confirmed,
+      order_model.OrderStatus.to_ship,
+    ],
+    'shipping': [
+      order_model.OrderStatus.shipping,
+    ],
+    'delivered': [
+      order_model.OrderStatus.delivered,
+      order_model.OrderStatus.completed,
+    ],
+    'returns_cancellations': [
+      order_model.OrderStatus.return_requested,
+      order_model.OrderStatus.return_approved,
+      order_model.OrderStatus.return_rejected,
+      order_model.OrderStatus.returned,
+      order_model.OrderStatus.cancelled,
+    ],
+  };
+
+  // Tab labels for display
+  final List<String> tabLabels = [
+    'Processing',
+    'Shipping',
+    'Delivered',
+    'Returns & Cancellations',
   ];
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(
-      length: filterOptions.length + 1,
+      length: tabLabels.length,
       vsync: this,
     );
     _initializeOrdersStream();
@@ -99,17 +119,20 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
   void _applyFilter() {
     List<order_model.Order> result = orders;
 
-    // Apply status filter
-    if (selectedFilter != null) {
-      if (selectedFilter == order_model.OrderStatus.to_ship) {
-        // Include to_pack, to_arrangement, to_handover in processing filter
-        result = result
-            .where((order) => order.status == order_model.OrderStatus.to_ship)
-            .toList();
-      } else {
-        result = result
-            .where((order) => order.status == selectedFilter)
-            .toList();
+    // Apply tab group filter
+    if (selectedTabFilter != null) {
+      final statusesInGroup = tabGroups[selectedTabFilter];
+      if (statusesInGroup != null) {
+        // If Processing tab is selected and has a sub-filter, apply it
+        if (selectedTabFilter == 'processing' && selectedProcessingSubFilter != null) {
+          result = result
+              .where((order) => order.status == selectedProcessingSubFilter)
+              .toList();
+        } else {
+          result = result
+              .where((order) => statusesInGroup.contains(order.status))
+              .toList();
+        }
       }
     }
 
@@ -131,9 +154,18 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     filteredOrders = result;
   }
 
-  void _onFilterChanged(order_model.OrderStatus? status) {
+  void _onFilterChanged(String? tabKey) {
     setState(() {
-      selectedFilter = status;
+      selectedTabFilter = tabKey;
+      // Reset sub-filter when changing main tabs
+      selectedProcessingSubFilter = null;
+      _applyFilter();
+    });
+  }
+
+  void _onProcessingSubFilterChanged(order_model.OrderStatus? status) {
+    setState(() {
+      selectedProcessingSubFilter = status;
       _applyFilter();
     });
   }
@@ -255,29 +287,53 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                   labelPadding: const EdgeInsets.symmetric(
                     horizontal: 5,
                   ), // added to give more space when fixed
-                  tabs: [
-                    Tab(text: 'All (${orders.length})'),
-                    ...filterOptions.map((status) {
-                      final count = orders
-                          .where((order) => order.status == status)
+                  tabs: tabLabels.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final label = entry.value;
+                    
+                    int count;
+                    if (index == 0) {
+                      // All tab
+                      count = orders.length;
+                    } else {
+                      // Get the tab key from tabGroups
+                      final tabKey = tabGroups.keys.elementAt(index - 1);
+                      final statusesInGroup = tabGroups[tabKey]!;
+                      count = orders
+                          .where((order) => statusesInGroup.contains(order.status))
                           .length;
-                      // Shorten labels for wide web to avoid clipping
-                      final baseLabel = _formatStatus(status);
-                      final shortLabel = isWideWeb
-                          ? _shortenStatus(baseLabel)
-                          : baseLabel;
-                      return Tab(text: '$shortLabel ($count)');
-                    }),
-                  ],
+                    }
+                    
+                    return Tab(text: '$label ($count)');
+                  }).toList(),
                   onTap: (index) {
                     if (index == 0) {
                       _onFilterChanged(null);
                     } else {
-                      _onFilterChanged(filterOptions[index - 1]);
+                      final tabKey = tabGroups.keys.elementAt(index - 1);
+                      _onFilterChanged(tabKey);
                     }
                   },
                 ),
               ),
+              // Processing sub-tabs (show only when Processing tab is selected)
+              if (selectedTabFilter == 'processing')
+                Container(
+                  color: AppColors.background,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _buildProcessingSubTab('Pending', order_model.OrderStatus.pending),
+                        const SizedBox(width: 8),
+                        _buildProcessingSubTab('Confirmed', order_model.OrderStatus.confirmed),
+                        const SizedBox(width: 8),
+                        _buildProcessingSubTab('In Progress', order_model.OrderStatus.to_ship),
+                      ],
+                    ),
+                  ),
+                ),
               // Orders content
               Expanded(
                 child: RefreshIndicator(
@@ -862,6 +918,36 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildProcessingSubTab(String label, order_model.OrderStatus status) {
+    final isSelected = selectedProcessingSubFilter == status;
+    
+    // Count orders for this sub-status
+    final count = orders.where((order) => order.status == status).length;
+
+    return InkWell(
+      onTap: () => _onProcessingSubFilterChanged(status),
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary : AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.2),
+            width: 1,
+          ),
+        ),
+        child: Text(
+          '$label ($count)',
+          style: AppTextStyles.bodySmall.copyWith(
+            color: isSelected ? AppColors.onPrimary : AppColors.onSurface,
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+          ),
+        ),
       ),
     );
   }
