@@ -20,6 +20,7 @@ import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/utils/navigation_utils.dart';
 import 'cart_page.dart';
 import 'product_search_page.dart';
+import 'product_detail_page.dart';
 import '../../login_page.dart';
 import 'package:flutter/services.dart';
 import '../../profile/pages/profile_page.dart';
@@ -169,21 +170,58 @@ class _ProductListingPageState extends State<ProductListingPage>
 
   // Handle banner click and open URL
   Future<void> _onBannerTap(int index) async {
+    AppLogger.d('Banner tapped at index: $index');
     if (index < _bannerTargetUrls.length) {
       final targetUrl = _bannerTargetUrls[index];
+      AppLogger.d('Target URL: $targetUrl');
       if (targetUrl != null && targetUrl.isNotEmpty) {
         try {
+          // Check if it's a product URL (contains /product/)
+          if (targetUrl.contains('/product/')) {
+            // Extract product ID from URL
+            final uri = Uri.parse(targetUrl);
+            final pathSegments = uri.fragment.isNotEmpty 
+                ? uri.fragment.split('/') 
+                : uri.pathSegments;
+            
+            // Find the product ID (comes after 'product')
+            final productIndex = pathSegments.indexOf('product');
+            if (productIndex != -1 && productIndex < pathSegments.length - 1) {
+              final productId = pathSegments[productIndex + 1];
+              AppLogger.d('Navigating to product detail page with ID: $productId');
+              
+              // Navigate to product detail page within the app
+              if (mounted) {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => ProductDetailPage(productId: productId),
+                  ),
+                );
+              }
+              return;
+            }
+          }
+          
+          // If not a product URL, launch externally
           final uri = Uri.parse(targetUrl);
-          if (await canLaunchUrl(uri)) {
-            // Use webOnlyWindowName: '_self' to open in the same tab on web
+          await launchUrl(
+            uri,
+            mode: LaunchMode.externalApplication,
+          );
+          AppLogger.d('Successfully launched URL externally: $targetUrl');
+        } catch (e) {
+          AppLogger.d('Error launching banner URL: $e');
+          // Try alternative launch mode if first attempt fails
+          try {
+            final uri = Uri.parse(targetUrl);
             await launchUrl(
               uri,
               mode: LaunchMode.platformDefault,
-              webOnlyWindowName: '_self',
             );
+            AppLogger.d('Successfully launched URL with platformDefault mode: $targetUrl');
+          } catch (e2) {
+            AppLogger.d('Error with platformDefault mode: $e2');
           }
-        } catch (e) {
-          AppLogger.d('Error launching banner URL: $e');
         }
       }
     }
@@ -1471,7 +1509,11 @@ class _ProductListingPageState extends State<ProductListingPage>
                                     itemCount: _bannerImageUrls.length,
                                     itemBuilder: (context, index) {
                                       return GestureDetector(
-                                        onTap: () => _onBannerTap(index),
+                                        behavior: HitTestBehavior.opaque,
+                                        onTap: () {
+                                          AppLogger.d('Banner GestureDetector tapped at index: $index');
+                                          _onBannerTap(index);
+                                        },
                                         child: CachedNetworkImage(
                                           imageUrl: _bannerImageUrls[index],
                                           fit: BoxFit.cover,
