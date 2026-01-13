@@ -57,6 +57,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
 
   // Tab labels for display
   final List<String> tabLabels = [
+    'All',
     'Processing',
     'Shipping',
     'Delivered',
@@ -316,24 +317,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                   },
                 ),
               ),
-              // Processing sub-tabs (show only when Processing tab is selected)
-              if (selectedTabFilter == 'processing')
-                Container(
-                  color: AppColors.background,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        _buildProcessingSubTab('Pending', order_model.OrderStatus.pending),
-                        const SizedBox(width: 8),
-                        _buildProcessingSubTab('Confirmed', order_model.OrderStatus.confirmed),
-                        const SizedBox(width: 8),
-                        _buildProcessingSubTab('In Progress', order_model.OrderStatus.to_ship),
-                      ],
-                    ),
-                  ),
-                ),
+              // Processing sub-tabs removed
               // Orders content
               Expanded(
                 child: RefreshIndicator(
