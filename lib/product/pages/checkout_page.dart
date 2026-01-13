@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/gestures.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/utils/navigation_utils.dart';
@@ -11,6 +12,7 @@ import '../services/cart_service.dart';
 import '../widgets/address_selection_widget.dart';
 import 'paymongo_webview_page.dart';
 import '../../profile/models/shipping_address.dart';
+import '../../profile/services/platform_policies_service.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 
@@ -647,6 +649,30 @@ class _CheckoutPageState extends State<CheckoutPage> {
             child: Text('Continue Shopping', style: AppTextStyles.buttonMedium),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showTermsAndConditions(BuildContext context) async {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext dialogContext) => _PolicyDialog(
+        title: 'Terms and Conditions',
+        icon: Icons.description_outlined,
+        fetchContent: () => PlatformPoliciesService.getTermsAndConditions(),
+      ),
+    );
+  }
+
+  void _showPrivacyPolicy(BuildContext context) async {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext dialogContext) => _PolicyDialog(
+        title: 'Privacy Policy',
+        icon: Icons.shield_outlined,
+        fetchContent: () => PlatformPoliciesService.getPrivacyPolicy(),
       ),
     );
   }
@@ -1408,6 +1434,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
                             color: AppColors.primary,
                             decoration: TextDecoration.underline,
                           ),
+                          recognizer: TapGestureRecognizer()
+                            ..onTap = () => _showTermsAndConditions(context),
                         ),
                         TextSpan(
                           text: ' and ',
@@ -1419,6 +1447,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
                             color: AppColors.primary,
                             decoration: TextDecoration.underline,
                           ),
+                          recognizer: TapGestureRecognizer()
+                            ..onTap = () => _showPrivacyPolicy(context),
                         ),
                       ],
                     ),
@@ -2129,5 +2159,178 @@ class _CheckoutPageState extends State<CheckoutPage> {
         (route) => route.settings.name == '/', // Clear stack until home
       );
     }
+  }
+}
+
+class _PolicyDialog extends StatefulWidget {
+  final String title;
+  final IconData icon;
+  final Future<String?> Function() fetchContent;
+
+  const _PolicyDialog({
+    required this.title,
+    required this.icon,
+    required this.fetchContent,
+  });
+
+  @override
+  State<_PolicyDialog> createState() => _PolicyDialogState();
+}
+
+class _PolicyDialogState extends State<_PolicyDialog> {
+  String? _content;
+  bool _isLoading = true;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadContent();
+  }
+
+  Future<void> _loadContent() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+
+      final content = await widget.fetchContent();
+
+      if (mounted) {
+        setState(() {
+          _content = content;
+          _isLoading = false;
+
+          if (content == null) {
+            _errorMessage = '${widget.title} not available at the moment.';
+          }
+        });
+      }
+    } catch (e) {
+      AppLogger.d('Error loading ${widget.title}: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Failed to load ${widget.title}. Please try again later.';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: AppColors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Container(
+        constraints: BoxConstraints(
+          maxWidth: kIsWeb ? 700 : double.infinity,
+          maxHeight: MediaQuery.of(context).size.height * 0.8,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.1),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  topRight: Radius.circular(20),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(widget.icon, color: AppColors.primary, size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      widget.title,
+                      style: AppTextStyles.titleLarge.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close, color: AppColors.onSurface),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+            ),
+            
+            // Content
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _errorMessage != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24.0),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.error_outline,
+                                  size: 48,
+                                  color: AppColors.error,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  _errorMessage!,
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    color: AppColors.onSurface.withValues(alpha: 0.7),
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 16),
+                                TextButton(
+                                  onPressed: _loadContent,
+                                  child: const Text('Retry'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : SingleChildScrollView(
+                          padding: const EdgeInsets.all(20.0),
+                          child: SelectableText(
+                            _content ?? '',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              height: 1.6,
+                            ),
+                          ),
+                        ),
+            ),
+            
+            // Footer
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(
+                    color: AppColors.onSurface.withValues(alpha: 0.1),
+                  ),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                    ),
+                    child: const Text('Close'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
