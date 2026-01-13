@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dentpal/product/pages/product_detail_page.dart';
 import 'package:flutter/foundation.dart' show kIsWeb; // Added for web detection
+import 'package:image_picker/image_picker.dart';
 
 class ChatDetailPage extends StatefulWidget {
   final String chatRoomId;
@@ -31,9 +32,14 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   final UserService _userService = UserService();
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final ImagePicker _imagePicker = ImagePicker();
   bool _isLoading = false;
   bool _isCurrentUserCsr = false;
   ChatRoom? _chatRoom;
+  
+  // Image upload state
+  bool _isUploadingImage = false;
+  double _uploadProgress = 0.0;
 
   @override
   void initState() {
@@ -173,6 +179,95 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     }
   }
 
+  Future<void> _pickAndSendImage() async {
+    if (_isLoading) return;
+
+    try {
+      // Pick image from gallery
+      final XFile? pickedFile = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1280,
+        maxHeight: 1280,
+        imageQuality: 85,
+      );
+
+      if (pickedFile == null) return;
+
+      // Read image as bytes (works on both mobile and web)
+      final imageBytes = await pickedFile.readAsBytes();
+
+      // Show uploading state
+      setState(() {
+        _isUploadingImage = true;
+        _uploadProgress = 0.0;
+      });
+
+      // Scroll to bottom to show the upload preview
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToBottom();
+      });
+
+      // Upload image to Firebase Storage with progress
+      final imageUrl = await _chatService.uploadChatImage(
+        imageBytes: imageBytes,
+        chatRoomId: widget.chatRoomId,
+        fileName: pickedFile.name,
+        onProgress: (progress) {
+          if (mounted) {
+            setState(() {
+              _uploadProgress = progress;
+            });
+          }
+        },
+      );
+
+      // Hide uploading state before sending message
+      setState(() {
+        _isUploadingImage = false;
+        _uploadProgress = 0.0;
+      });
+
+      // Send message with image
+      await _chatService.sendMessage(
+        chatRoomId: widget.chatRoomId,
+        receiverId: widget.otherUserId,
+        message: '📷 Image',
+        imageUrl: imageUrl,
+        messageType: 'image',
+      );
+
+      // Scroll to bottom after sending image
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToBottom();
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Image sent successfully'),
+            backgroundColor: AppColors.success,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      // Hide uploading state on error
+      setState(() {
+        _isUploadingImage = false;
+        _uploadProgress = 0.0;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to send image: ${e.toString()}'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -304,8 +399,13 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                     return ListView.builder(
                       controller: _scrollController,
                       padding: const EdgeInsets.all(16),
-                      itemCount: messages.length,
+                      itemCount: messages.length + (_isUploadingImage ? 1 : 0),
                       itemBuilder: (context, index) {
+                        // Show upload preview as the last item
+                        if (_isUploadingImage && index == messages.length) {
+                          return _buildUploadingImagePreview();
+                        }
+
                         final message = messages[index];
                         final isMe =
                             message.senderId ==
@@ -437,45 +537,72 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                           message.productName != null)
                         _buildProductCard(message),
 
-                      // Message text with read indicator
-                      Padding(
-                        padding: EdgeInsets.all(
-                          message.productId != null ? 8 : 12,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              message.message,
-                              style: AppTextStyles.bodyMedium.copyWith(
-                                color: isMe
-                                    ? AppColors.onPrimary
-                                    : AppColors.onSurface,
-                                height: 1.4,
+                      // Image message
+                      if (message.messageType == 'image' && message.imageUrl != null)
+                        _buildImageMessage(message, isMe),
+
+                      // Message text with read indicator (skip for image-only messages)
+                      if (message.messageType != 'image' || message.message != '📷 Image')
+                        Padding(
+                          padding: EdgeInsets.all(
+                            message.productId != null ? 8 : 12,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                message.message,
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  color: isMe
+                                      ? AppColors.onPrimary
+                                      : AppColors.onSurface,
+                                  height: 1.4,
+                                ),
                               ),
-                            ),
-                            if (isMe) ...[
-                              const SizedBox(height: 4),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  Text(
-                                    _formatMessageTime(message.timestamp),
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color: AppColors.onPrimary.withValues(
-                                        alpha: 0.7,
+                              if (isMe) ...[
+                                const SizedBox(height: 4),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      _formatMessageTime(message.timestamp),
+                                      style: AppTextStyles.bodySmall.copyWith(
+                                        color: AppColors.onPrimary.withValues(
+                                          alpha: 0.7,
+                                        ),
+                                        fontSize: 10,
                                       ),
-                                      fontSize: 10,
                                     ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  _buildReadIndicator(message.isRead),
-                                ],
-                              ),
+                                    const SizedBox(width: 4),
+                                    _buildReadIndicator(message.isRead),
+                                  ],
+                                ),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
-                      ),
+
+                      // Time and read indicator for image-only messages
+                      if (message.messageType == 'image' && message.message == '📷 Image' && isMe)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              Text(
+                                _formatMessageTime(message.timestamp),
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: AppColors.onPrimary.withValues(
+                                    alpha: 0.7,
+                                  ),
+                                  fontSize: 10,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              _buildReadIndicator(message.isRead),
+                            ],
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -491,6 +618,189 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
               child: Icon(Icons.person, size: 20, color: AppColors.secondary),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildImageMessage(ChatMessage message, bool isMe) {
+    return GestureDetector(
+      onTap: () {
+        // Open image in full screen
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => _FullScreenImage(imageUrl: message.imageUrl!),
+          ),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.all(8),
+        constraints: const BoxConstraints(
+          maxWidth: 250,
+          maxHeight: 250,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: CachedNetworkImage(
+            imageUrl: message.imageUrl!,
+            fit: BoxFit.cover,
+            placeholder: (context, url) => Container(
+              color: AppColors.onSurface.withValues(alpha: 0.1),
+              child: const Center(
+                child: CircularProgressIndicator(),
+              ),
+            ),
+            errorWidget: (context, url, error) => Container(
+              color: AppColors.onSurface.withValues(alpha: 0.1),
+              child: Icon(
+                Icons.broken_image,
+                color: AppColors.onSurface.withValues(alpha: 0.3),
+                size: 48,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUploadingImagePreview() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // Image preview container with fixed width
+          Container(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.75,
+            ),
+            decoration: BoxDecoration(
+              color: AppColors.primary,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+                bottomLeft: Radius.circular(16),
+                bottomRight: Radius.circular(4),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.onSurface.withValues(alpha: 0.1),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Image preview with loading overlay
+                Container(
+                  margin: const EdgeInsets.all(8),
+                  width: 200,
+                  height: 200,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Blurred preview
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          width: 200,
+                          height: 200,
+                          color: AppColors.onPrimary.withValues(alpha: 0.2),
+                          child: const Icon(
+                            Icons.image,
+                            size: 48,
+                            color: AppColors.onPrimary,
+                          ),
+                        ),
+                      ),
+                      
+                      // Loading overlay
+                      Container(
+                        width: 200,
+                        height: 200,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            // Circular progress indicator
+                            SizedBox(
+                              width: 50,
+                              height: 50,
+                              child: CircularProgressIndicator(
+                                value: _uploadProgress,
+                                strokeWidth: 3,
+                                backgroundColor: Colors.white.withValues(alpha: 0.3),
+                                valueColor: const AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            // Progress percentage
+                            Text(
+                              '${(_uploadProgress * 100).toInt()}%',
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Uploading...',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: Colors.white.withValues(alpha: 0.8),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // Timestamp
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Text(
+                        _formatMessageTime(DateTime.now()),
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.onPrimary.withValues(alpha: 0.7),
+                          fontSize: 10,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.access_time,
+                        size: 14,
+                        color: AppColors.onPrimary.withValues(alpha: 0.6),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          const SizedBox(width: 8),
+          
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: AppColors.secondary.withValues(alpha: 0.1),
+            child: Icon(Icons.person, size: 20, color: AppColors.secondary),
+          ),
         ],
       ),
     );
@@ -708,6 +1018,20 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
               ),
             Row(
               children: [
+                // Image picker button
+                IconButton(
+                  icon: Icon(
+                    Icons.image,
+                    color: canCsrMessage
+                        ? AppColors.primary
+                        : AppColors.primary.withValues(alpha: 0.5),
+                  ),
+                  onPressed: (_isLoading || !canCsrMessage) ? null : _pickAndSendImage,
+                  tooltip: 'Send image',
+                ),
+
+                const SizedBox(width: 4),
+
                 Expanded(
                   child: TextField(
                     controller: _messageController,
@@ -1145,5 +1469,46 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     } else {
       return DateFormat('MMM d, y h:mm a').format(timestamp);
     }
+  }
+}
+
+// Full screen image viewer
+class _FullScreenImage extends StatelessWidget {
+  final String imageUrl;
+
+  const _FullScreenImage({required this.imageUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        iconTheme: const IconThemeData(color: Colors.white),
+        elevation: 0,
+      ),
+      body: Center(
+        child: InteractiveViewer(
+          minScale: 0.5,
+          maxScale: 4.0,
+          child: CachedNetworkImage(
+            imageUrl: imageUrl,
+            fit: BoxFit.contain,
+            placeholder: (context, url) => const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            ),
+            errorWidget: (context, url, error) => const Center(
+              child: Icon(
+                Icons.broken_image,
+                color: Colors.white,
+                size: 64,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

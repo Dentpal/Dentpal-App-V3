@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:dentpal/utils/app_logger.dart';
+import 'package:dentpal/utils/navigation_utils.dart';
 import '../models/cart_model.dart';
 import '../services/cart_service.dart';
 import '../widgets/seller_group_widget.dart';
@@ -985,6 +986,12 @@ class _CartPageState extends State<CartPage>
             onRemoveItem: _onRemoveItem,
             onToggleItemSelection: _onToggleItemSelection,
             onToggleGroupSelection: _onToggleGroupSelection,
+            onSellerNameTap: () {
+              NavigationUtils.navigateToStore(
+                context,
+                sellerGroup.sellerId,
+              );
+            },
           ),
         );
       },
@@ -1209,6 +1216,12 @@ class _CartPageState extends State<CartPage>
                     onRemoveItem: _onRemoveItem,
                     onToggleItemSelection: _onToggleItemSelection,
                     onToggleGroupSelection: _onToggleGroupSelection,
+                    onSellerNameTap: () {
+                      NavigationUtils.navigateToStore(
+                        context,
+                        sellerGroup.sellerId,
+                      );
+                    },
                   );
                 }, childCount: sellerGroups.length),
               ),
@@ -1233,6 +1246,12 @@ class _CartPageState extends State<CartPage>
             onRemoveItem: _onRemoveItem,
             onToggleItemSelection: _onToggleItemSelection,
             onToggleGroupSelection: _onToggleGroupSelection,
+            onSellerNameTap: () {
+              NavigationUtils.navigateToStore(
+                context,
+                sellerGroup.sellerId,
+              );
+            },
           );
         },
       ),

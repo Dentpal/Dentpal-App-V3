@@ -52,6 +52,31 @@ class NavigationUtils {
     return DeepLinkService.generateCustomSchemeLink(productId);
   }
   
+  /// Navigate to store page with proper URL updating for web
+  static void navigateToStore(BuildContext context, String sellerId, {Map<String, dynamic>? sellerData}) {
+    // Update URL for web deep linking
+    updateUrl('/store/$sellerId');
+    
+    // Navigate to store page
+    Navigator.pushNamed(
+      context, 
+      '/store/$sellerId',
+      arguments: {'sellerData': sellerData},
+    );
+  }
+  
+  /// Get shareable URL for a store
+  static String getStoreShareUrl(String sellerId) {
+    // Generate the universal deep link that works for both web and native app
+    return DeepLinkService.generateStoreLink(sellerId);
+  }
+  
+  /// Generate full shareable URL for a store with domain (for social media sharing)
+  static String getFullStoreShareUrl(String sellerId, {String? baseUrl}) {
+    // Use the deep link service to generate proper links
+    return DeepLinkService.generateStoreLink(sellerId, customDomain: baseUrl);
+  }
+  
   /// Update URL for current page (for web deep linking)
   static void updatePageUrl(String path) {
     updateUrl(path); // Call the web_utils updateUrl function

@@ -68,14 +68,18 @@ class DeepLinkService {
 
     try {
       String? productId;
+      String? sellerId;
       bool isResetPassword = false;
       String? oobCode; // Firebase out-of-band code for password reset
 
       // Handle different URL formats:
       // https://dentpal-store.web.app/#/product/ABC123
+      // https://dentpal-store.web.app/#/store/XYZ789
       // https://dentpal-store-sandbox-testing.web.app/#/product/ABC123
+      // https://dentpal-store-sandbox-testing.web.app/#/store/XYZ789
       // https://dentpal-store.web.app/#/reset-password?oobCode=XXX
       // dentpal://product/ABC123
+      // dentpal://store/XYZ789
       // dentpal://reset-password?oobCode=XXX
 
       if (uri.scheme == 'https' || uri.scheme == 'http') {
@@ -87,7 +91,7 @@ class DeepLinkService {
         ];
 
         if (supportedHosts.contains(uri.host)) {
-          // Web URL format with fragment: https://domain/#/reset-password or https://domain/#/product/ABC123
+          // Web URL format with fragment: https://domain/#/reset-password or https://domain/#/product/ABC123 or https://domain/#/store/XYZ789
           if (uri.fragment.isNotEmpty) {
             final fragment = uri.fragment;
             // Parse fragment for reset-password
@@ -99,18 +103,22 @@ class DeepLinkService {
               oobCode = fragmentUri.queryParameters['oobCode'];
             } else if (fragment.startsWith('/product/')) {
               productId = fragment.substring('/product/'.length);
+            } else if (fragment.startsWith('/store/')) {
+              sellerId = fragment.substring('/store/'.length);
             }
           }
-          // Alternative path format: https://domain/reset-password or https://domain/product/ABC123
+          // Alternative path format: https://domain/reset-password or https://domain/product/ABC123 or https://domain/store/XYZ789
           else if (uri.path.startsWith('/reset-password')) {
             isResetPassword = true;
             oobCode = uri.queryParameters['oobCode'];
           } else if (uri.path.startsWith('/product/')) {
             productId = uri.path.substring('/product/'.length);
+          } else if (uri.path.startsWith('/store/')) {
+            sellerId = uri.path.substring('/store/'.length);
           }
         }
       } else if (uri.scheme == 'dentpal') {
-        // Custom scheme format: dentpal://reset-password?oobCode=XXX or dentpal://product/ABC123
+        // Custom scheme format: dentpal://reset-password?oobCode=XXX or dentpal://product/ABC123 or dentpal://store/XYZ789
         if (uri.host == 'reset-password') {
           isResetPassword = true;
           oobCode = uri.queryParameters['oobCode'];
@@ -122,6 +130,10 @@ class DeepLinkService {
           productId = uri.pathSegments.first;
         } else if (uri.path.startsWith('/product/')) {
           productId = uri.path.substring('/product/'.length);
+        } else if (uri.host == 'store' && uri.pathSegments.isNotEmpty) {
+          sellerId = uri.pathSegments.first;
+        } else if (uri.path.startsWith('/store/')) {
+          sellerId = uri.path.substring('/store/'.length);
         }
       }
 
@@ -137,8 +149,11 @@ class DeepLinkService {
       if (productId != null && productId.isNotEmpty) {
         AppLogger.d('Extracted product ID: $productId');
         _navigateToProduct(productId);
+      } else if (sellerId != null && sellerId.isNotEmpty) {
+        AppLogger.d('Extracted seller ID: $sellerId');
+        _navigateToStore(sellerId);
       } else {
-        AppLogger.d('Could not extract product ID from: $uri');
+        AppLogger.d('Could not extract product ID or seller ID from: $uri');
         // Don't navigate to home for unrecognized links - they might be for other services
         AppLogger.d('Unrecognized deep link format, ignoring navigation');
       }
@@ -208,6 +223,16 @@ class DeepLinkService {
     }
   }
 
+  /// Navigate to store page
+  static void _navigateToStore(String sellerId) {
+    if (_navigatorKey?.currentState != null) {
+      AppLogger.d('Navigating to store: $sellerId');
+      _navigatorKey!.currentState!.pushNamed('/store/$sellerId');
+    } else {
+      AppLogger.d('Navigator not available for store navigation');
+    }
+  }
+
   /// Navigate to reset password page
   /// For web: navigates to ChangePasswordStandalonePage
   /// For mobile: navigates to ResetPasswordPage with oobCode
@@ -249,6 +274,28 @@ class DeepLinkService {
   /// Generate custom scheme link for a product (for native app sharing)
   static String generateCustomSchemeLink(String productId) {
     return 'dentpal://product/$productId';
+  }
+  
+  /// Generate shareable deep link for a store
+  static String generateStoreLink(
+    String sellerId, {
+    String? customDomain,
+    bool useSandbox = false,
+  }) {
+    String domain;
+    if (customDomain != null) {
+      domain = customDomain;
+    } else if (useSandbox) {
+      domain = 'https://dentpal-store-sandbox-testing.web.app';
+    } else {
+      domain = 'https://dentpal-store.web.app';
+    }
+    return '$domain/#/store/$sellerId';
+  }
+  
+  /// Generate custom scheme link for a store (for native app sharing)
+  static String generateStoreCustomSchemeLink(String sellerId) {
+    return 'dentpal://store/$sellerId';
   }
 
   /// Generate shareable deep link for reset password

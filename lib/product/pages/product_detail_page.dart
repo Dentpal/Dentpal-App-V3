@@ -15,13 +15,11 @@ import '../widgets/loading_overlay.dart';
 import '../utils/cart_feedback.dart';
 import 'cart_page.dart';
 import 'edit_product_page.dart';
-import 'store_page.dart';
 import '../../login_page.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/utils/navigation_utils.dart';
 import 'package:dentpal/services/chat_service.dart';
 import 'package:dentpal/profile/pages/chat_detail_page.dart';
-
 
 class ProductDetailPage extends StatefulWidget {
   final String productId;
@@ -1922,14 +1920,10 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                               child: InkWell(
                                 borderRadius: BorderRadius.circular(12),
                                 onTap: () {
-                                  Navigator.push(
+                                  NavigationUtils.navigateToStore(
                                     context,
-                                    MaterialPageRoute(
-                                      builder: (context) => StorePage(
-                                        sellerId: product.sellerId,
-                                        sellerData: sellerData,
-                                      ),
-                                    ),
+                                    product.sellerId,
+                                    sellerData: sellerData,
                                   );
                                 },
                                 child: Container(

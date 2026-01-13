@@ -423,7 +423,7 @@ class JRSShippingResult {
   final double shippingCost;
   final double buyerShippingCharge; // What buyer actually pays after split
   final double sellerShippingCharge; // What seller pays after split
-  final String shippingSplitRule; // 'buyer_pays_full' or 'split_50_50'
+  final String shippingSplitRule; // 'buyer_pays_full' or 'seller_pays_full'
   final String message;
   final String? error;
 

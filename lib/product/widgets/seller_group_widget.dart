@@ -10,6 +10,7 @@ class SellerGroupWidget extends StatelessWidget {
   final Function(CartItem) onRemoveItem;
   final Function(CartItem, bool) onToggleItemSelection;
   final Function(SellerGroup) onToggleGroupSelection;
+  final VoidCallback? onSellerNameTap;
 
   const SellerGroupWidget({
     super.key,
@@ -18,6 +19,7 @@ class SellerGroupWidget extends StatelessWidget {
     required this.onRemoveItem,
     required this.onToggleItemSelection,
     required this.onToggleGroupSelection,
+    this.onSellerNameTap,
   });
 
   @override
@@ -116,10 +118,17 @@ class SellerGroupWidget extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  sellerGroup.sellerName,
-                  style: AppTextStyles.titleMedium.copyWith(
-                    fontWeight: FontWeight.w600,
+                GestureDetector(
+                  onTap: onSellerNameTap,
+                  child: Text(
+                    sellerGroup.sellerName,
+                    style: AppTextStyles.titleMedium.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: onSellerNameTap != null
+                          ? AppColors.primary
+                          : AppColors.onSurface,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 Text(

@@ -2,7 +2,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:dentpal/utils/app_logger.dart';
+import 'dart:typed_data';
+import 'package:image/image.dart' as img;
 
 /// Exception thrown when a CSR tries to lock a chat that is already locked by another CSR
 class ChatLockConflictException implements Exception {
@@ -84,6 +87,8 @@ class ChatMessage {
   final String? productId;
   final String? productName;
   final String? productImage;
+  final String? imageUrl; // URL to image in Firebase Storage
+  final String messageType; // 'text' or 'image'
 
   ChatMessage({
     required this.id,
@@ -97,6 +102,8 @@ class ChatMessage {
     this.productId,
     this.productName,
     this.productImage,
+    this.imageUrl,
+    this.messageType = 'text',
   });
 
   factory ChatMessage.fromMap(String id, Map<dynamic, dynamic> data) {
@@ -112,6 +119,8 @@ class ChatMessage {
       productId: data['productId'],
       productName: data['productName'],
       productImage: data['productImage'],
+      imageUrl: data['imageUrl'],
+      messageType: data['messageType'] ?? 'text',
     );
   }
 
@@ -127,6 +136,8 @@ class ChatMessage {
       'productId': productId,
       'productName': productName,
       'productImage': productImage,
+      'imageUrl': imageUrl,
+      'messageType': messageType,
     };
   }
 }
@@ -363,6 +374,7 @@ class ChatService {
 
   late final FirebaseDatabase _database;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseStorage _storage = FirebaseStorage.instance;
 
   ChatService._internal() {
     _database = FirebaseDatabase.instanceFor(
@@ -601,6 +613,87 @@ class ChatService {
     }
   }
 
+  // Compress and upload image to Firebase Storage
+  Future<String> uploadChatImage({
+    required Uint8List imageBytes,
+    required String chatRoomId,
+    String? fileName,
+    void Function(double progress)? onProgress,
+  }) async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        throw Exception('User not authenticated');
+      }
+
+      // Decode the image
+      img.Image? image = img.decodeImage(imageBytes);
+
+      if (image == null) {
+        throw Exception('Failed to decode image');
+      }
+
+      // Report progress: 10% - image decoded
+      onProgress?.call(0.1);
+
+      // Compress to max 720p (1280x720)
+      final maxDimension = 1280;
+      if (image.width > maxDimension || image.height > maxDimension) {
+        if (image.width > image.height) {
+          image = img.copyResize(
+            image,
+            width: maxDimension,
+            interpolation: img.Interpolation.linear,
+          );
+        } else {
+          image = img.copyResize(
+            image,
+            height: maxDimension,
+            interpolation: img.Interpolation.linear,
+          );
+        }
+      }
+
+      // Report progress: 30% - image resized
+      onProgress?.call(0.3);
+
+      // Encode as JPEG with quality 85
+      final compressedBytes = img.encodeJpg(image, quality: 85);
+
+      // Report progress: 50% - image compressed
+      onProgress?.call(0.5);
+
+      // Create unique filename
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final finalFileName = fileName ?? '${currentUser.uid}_$timestamp.jpg';
+      final storageRef = _storage.ref().child('chat_images/$chatRoomId/$finalFileName');
+
+      // Upload to Firebase Storage
+      final uploadTask = storageRef.putData(
+        Uint8List.fromList(compressedBytes),
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+
+      // Listen to upload progress
+      uploadTask.snapshotEvents.listen((taskSnapshot) {
+        final progress = 0.5 + (taskSnapshot.bytesTransferred / taskSnapshot.totalBytes) * 0.5;
+        onProgress?.call(progress);
+      });
+
+      final snapshot = await uploadTask;
+      final downloadUrl = await snapshot.ref.getDownloadURL();
+
+      // Report progress: 100% - complete
+      onProgress?.call(1.0);
+
+      AppLogger.d('Image uploaded successfully: $downloadUrl');
+      return downloadUrl;
+    } catch (e) {
+      AppLogger.d('Error uploading chat image: $e');
+      throw Exception('Failed to upload image: $e');
+    }
+  }
+
   // Send a message
   Future<void> sendMessage({
     required String chatRoomId,
@@ -609,6 +702,8 @@ class ChatService {
     String? productId,
     String? productName,
     String? productImage,
+    String? imageUrl,
+    String messageType = 'text',
   }) async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
@@ -661,6 +756,8 @@ class ChatService {
         productId: productId,
         productName: productName,
         productImage: productImage,
+        imageUrl: imageUrl,
+        messageType: messageType,
       );
 
       // Add message to messages collection
@@ -962,6 +1059,8 @@ class ChatService {
     required String senderName,
     String? senderAvatar,
     required String message,
+    String? imageUrl,
+    String messageType = 'text',
   }) async {
     final messageId = _database
         .ref('chatRooms/$chatRoomId/messages')
@@ -980,6 +1079,8 @@ class ChatService {
       timestamp: DateTime.now(),
       senderName: senderName,
       senderAvatar: senderAvatar,
+      imageUrl: imageUrl,
+      messageType: messageType,
     );
 
     // Add message to messages collection
@@ -1001,6 +1102,8 @@ class ChatService {
     bool isFromCsr = false,
     String? csrId,
     String? csrName,
+    String? imageUrl,
+    String messageType = 'text',
   }) async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
@@ -1034,6 +1137,8 @@ class ChatService {
         senderName: isFromCsr ? (csrName ?? senderName) : senderName,
         senderAvatar: senderAvatar,
         message: message,
+        imageUrl: imageUrl,
+        messageType: messageType,
       );
 
       AppLogger.d('Support message sent successfully');

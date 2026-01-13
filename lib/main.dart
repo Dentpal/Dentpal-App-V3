@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dentpal/product/products_module.dart';
 import 'package:dentpal/product/pages/edit_product_page.dart';
+import 'package:dentpal/product/pages/store_page.dart';
 import 'package:dentpal/profile/pages/seller_listings_page.dart';
 import 'package:dentpal/auth_wrapper.dart';
 import 'package:dentpal/home_page.dart';
@@ -78,6 +79,21 @@ class MyApp extends StatelessWidget {
           return MaterialPageRoute(
             settings: settings,
             builder: (context) => ProductDetailPage(productId: productId),
+          );
+        }
+
+        // Handle dynamic store routes
+        if (settings.name?.startsWith('/store/') ?? false) {
+          final sellerId = settings.name!.split('/')[2];
+          final args = settings.arguments as Map<String, dynamic>?;
+          final sellerData = args?['sellerData'] as Map<String, dynamic>?;
+          
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => StorePage(
+              sellerId: sellerId,
+              sellerData: sellerData,
+            ),
           );
         }
 
@@ -160,6 +176,10 @@ class MyApp extends StatelessWidget {
       }
       // For product detail routes
       if (currentPath.startsWith('/product/')) {
+        return currentPath;
+      }
+      // For store routes
+      if (currentPath.startsWith('/store/')) {
         return currentPath;
       }
     }

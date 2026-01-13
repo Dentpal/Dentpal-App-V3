@@ -659,7 +659,7 @@ export const createCheckoutSession = onRequest(
         // 
         // Fee Calculation Rules:
         // - Shipping Split: If seller's shipping > 10% of seller's cart value → Buyer pays 100%
-        //                   If seller's shipping ≤ 10% of seller's cart value → Split 50/50
+        //                   If seller's shipping ≤ 10% of seller's cart value → Seller pays 100%
         // - Payment Fee: Based on buyer's total for this seller (cart + buyer's shipping portion)
         // - Platform Fee: 8.88% of this seller's cart value
         // - Net Payout: Cart Value - Payment Fee - Platform Fee - Seller's Shipping
@@ -790,8 +790,8 @@ export const createCheckoutSession = onRequest(
           if (shippingSplitRule === 'per_seller') {
             // Multi-seller with different rules
             shippingDescription = `Shipping for ${sellerIds.length} sellers. Your portion: ₱${buyerShippingCharge.toFixed(2)}`;
-          } else if (shippingSplitRule === 'split_50_50') {
-            shippingDescription = `Buyer's half of shipping (Seller pays: ₱${sellerShippingCharge.toFixed(2)}). Total shipping: ₱${shippingCost.toFixed(2)}`;
+          } else if (shippingSplitRule === 'seller_pays_full') {
+            shippingDescription = `Shipping covered by seller (Shipping ≤ 10% of cart value)`;
           } else {
             shippingDescription = `Full shipping cost (Shipping > 10% of cart value)`;
           }

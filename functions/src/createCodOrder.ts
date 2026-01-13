@@ -384,7 +384,7 @@ export const createCodOrder = onRequest(
         
         // Determine overall shipping split rule based on seller breakdowns
         const shippingSplitRules = multiSellerBreakdown.sellerBreakdowns.map(s => s.shippingSplitRule);
-        const shippingSplitRule = shippingSplitRules.includes('split_50_50') ? 'split_50_50' : 
+        const shippingSplitRule = shippingSplitRules.includes('seller_pays_full') ? 'seller_pays_full' : 
                                   (shippingSplitRules.length > 1 ? 'per_seller' : shippingSplitRules[0] || 'buyer_pays_full');
 
         // Calculate fees (COD typically has no payment processing fee, but keep platform fee)

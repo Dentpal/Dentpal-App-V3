@@ -112,7 +112,7 @@ export interface SellerFeeBreakdown {
   shippingCost: number;
   buyerShippingCharge: number;
   sellerShippingCharge: number;
-  shippingSplitRule: 'buyer_pays_full' | 'split_50_50';
+  shippingSplitRule: 'buyer_pays_full' | 'seller_pays_full';
   totalChargedToBuyer: number; // Cart value + buyer's shipping portion
   paymentProcessingFee: number; // Based on buyer's total for this seller
   platformFee: number; // Custom % or default 8.88% of this seller's cart value
@@ -226,7 +226,7 @@ export function calculateCompleteBreakdown(
   // Shipping allocation
   buyerShippingCharge: number;
   sellerShippingCharge: number;
-  shippingSplitRule: 'buyer_pays_full' | 'split_50_50';
+  shippingSplitRule: 'buyer_pays_full' | 'seller_pays_full';
   
   // Buyer charges
   totalChargedToBuyer: number;
@@ -239,16 +239,16 @@ export function calculateCompleteBreakdown(
 } {
   // Determine shipping split rule
   const movThreshold = cartValue * 0.1; // 10% of cart value
-  const shippingSplitRule: 'buyer_pays_full' | 'split_50_50' = 
-    shippingCost > movThreshold ? 'buyer_pays_full' : 'split_50_50';
+  const shippingSplitRule: 'buyer_pays_full' | 'seller_pays_full' = 
+    shippingCost > movThreshold ? 'buyer_pays_full' : 'seller_pays_full';
   
   // Calculate shipping allocation
   let buyerShippingCharge: number;
   let sellerShippingCharge: number;
   
-  if (shippingSplitRule === 'split_50_50') {
-    buyerShippingCharge = shippingCost * 0.5;
-    sellerShippingCharge = shippingCost * 0.5;
+  if (shippingSplitRule === 'seller_pays_full') {
+    buyerShippingCharge = 0;
+    sellerShippingCharge = shippingCost;
   } else {
     buyerShippingCharge = shippingCost;
     sellerShippingCharge = 0;
@@ -304,12 +304,12 @@ export function calculateCompleteBreakdown(
  * 
  * Shipping Split:
  * - If seller's shipping > 10% of seller's cart value: Buyer pays 100% of shipping
- * - If seller's shipping ≤ 10% of seller's cart value: Split 50/50 between buyer and seller
+ * - If seller's shipping ≤ 10% of seller's cart value: Seller pays 100% of shipping
  * 
  * Seller Fees:
  * - Payment Processing Fee: Based on totalChargedToBuyer (seller's cart + buyer's shipping portion)
  * - Platform Fee: Custom percentage from seller's account or default 8.88% of seller's cart value
- * - Seller's Shipping Charge: 50% of shipping (only if split rule applies)
+ * - Seller's Shipping Charge: 100% of shipping (only if seller_pays_full rule applies)
  * 
  * Net Payout = Cart Value - Payment Fee - Platform Fee - Seller Shipping
  */
@@ -329,16 +329,16 @@ export function calculateMultiSellerBreakdown(
   for (const seller of sellers) {
     // Determine shipping split rule based on THIS seller's values
     const movThreshold = seller.cartValue * 0.1; // 10% of THIS seller's cart value
-    const shippingSplitRule: 'buyer_pays_full' | 'split_50_50' = 
-      seller.shippingCost > movThreshold ? 'buyer_pays_full' : 'split_50_50';
+    const shippingSplitRule: 'buyer_pays_full' | 'seller_pays_full' = 
+      seller.shippingCost > movThreshold ? 'buyer_pays_full' : 'seller_pays_full';
     
     // Calculate shipping allocation for this seller
     let buyerShippingCharge: number;
     let sellerShippingCharge: number;
     
-    if (shippingSplitRule === 'split_50_50') {
-      buyerShippingCharge = seller.shippingCost * 0.5;
-      sellerShippingCharge = seller.shippingCost * 0.5;
+    if (shippingSplitRule === 'seller_pays_full') {
+      buyerShippingCharge = 0;
+      sellerShippingCharge = seller.shippingCost;
     } else {
       buyerShippingCharge = seller.shippingCost;
       sellerShippingCharge = 0;

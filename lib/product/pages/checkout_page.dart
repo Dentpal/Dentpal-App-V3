@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:dentpal/utils/app_logger.dart';
+import 'package:dentpal/utils/navigation_utils.dart';
 import '../models/cart_model.dart';
 import '../models/order_model.dart';
 import '../models/paymongo_model.dart';
@@ -37,8 +38,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
   String? _orderNotes;
   bool _isProcessing = false;
   bool _termsAccepted = false;
-  double? _calculatedShippingCost; // Dynamic shipping cost
-  bool _isCalculatingShipping = false;
+  
+  // Per-seller shipping costs
+  Map<String, double> _sellerShippingCosts = {}; // sellerId -> shipping cost
+  bool _isCalculatingShipping = false; // Track if shipping calculation is in progress
   
   final TextEditingController _notesController = TextEditingController();
 
@@ -188,50 +191,69 @@ class _CheckoutPageState extends State<CheckoutPage> {
     AppLogger.d('All cart items validated successfully');
   }
 
-  /// Calculate shipping cost when address is selected
+  /// Calculate shipping cost when address is selected - per seller
   Future<void> _calculateShippingCost() async {
     if (_selectedAddress == null) return;
     
     setState(() {
       _isCalculatingShipping = true;
-      _calculatedShippingCost = null; // Reset previous calculation
+      _sellerShippingCosts.clear(); // Reset previous calculations
     });
 
     try {
-      AppLogger.d('Calculating shipping cost for checkout');
+      AppLogger.d('Calculating per-seller shipping costs for checkout');
       
-      final shippingCost = await _checkoutService.calculateShippingCost(
-        items: widget.cartItems,
-        address: _selectedAddress!,
-      );
+      // Group cart items by seller
+      final Map<String, List<CartItem>> sellerGroups = {};
+      for (final item in widget.cartItems) {
+        final sellerId = item.sellerId ?? 'unknown';
+        if (!sellerGroups.containsKey(sellerId)) {
+          sellerGroups[sellerId] = [];
+        }
+        sellerGroups[sellerId]!.add(item);
+      }
+      
+      // Calculate shipping for each seller separately
+      for (final entry in sellerGroups.entries) {
+        final sellerId = entry.key;
+        final sellerItems = entry.value;
+        
+        try {
+          final shippingCost = await _checkoutService.calculateShippingCost(
+            items: sellerItems,
+            address: _selectedAddress!,
+          );
+          
+          _sellerShippingCosts[sellerId] = shippingCost;
+          AppLogger.d('Seller $sellerId shipping cost: ₱$shippingCost');
+        } catch (e) {
+          AppLogger.d('Error calculating shipping for seller $sellerId: $e');
+          // Set to null to indicate calculation failed for this seller
+          _sellerShippingCosts[sellerId] = 0.0;
+        }
+      }
       
       setState(() {
-        _calculatedShippingCost = shippingCost;
         _isCalculatingShipping = false;
       });
       
-      AppLogger.d('Shipping cost calculated: ₱$shippingCost');
+      final totalShipping = _sellerShippingCosts.values.fold(0.0, (sum, cost) => sum + cost);
+      AppLogger.d('Total shipping cost calculated: ₱$totalShipping across ${_sellerShippingCosts.length} sellers');
       
     } catch (e) {
-      AppLogger.d('Error calculating shipping cost: $e');
+      AppLogger.d('Error calculating shipping costs: $e');
       
       setState(() {
-        _calculatedShippingCost = null; // Don't show any specific amount
         _isCalculatingShipping = false;
+        _sellerShippingCosts.clear();
       });
-      
-      // Optionally show a toast or message that shipping will be calculated at checkout
-      // This is better than showing a potentially incorrect fallback amount
     }
   }
 
-  /// Get buyer's portion of shipping cost.
-  /// NOTE: The shipping cost from the service is already the buyer's portion
-  /// (the split logic is applied in the backend JRS API).
+  /// Get total buyer's portion of shipping cost across all sellers
   double _calculateBuyerShippingPortion() {
-    // The _calculatedShippingCost already contains only the buyer's portion
-    // as calculated by the backend JRS API with the split logic applied
-    return _calculatedShippingCost ?? 0.0;
+    if (_sellerShippingCosts.isEmpty) return 0.0;
+    return _sellerShippingCosts.values.fold(0.0, (sum, cost) => sum + cost);
   }
 
   /// Calculate total including only buyer's shipping portion
@@ -239,77 +261,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
     final subtotal = widget.cartSummary.selectedItemsTotal;
     final buyerShippingPortion = _calculateBuyerShippingPortion();
     return subtotal + buyerShippingPortion;
-  }
-  
-  /// Check if total is estimated (shipping not yet calculated)
-  bool _isTotalEstimated() {
-    return _calculatedShippingCost == null && !_isCalculatingShipping;
-  }
-
-    /// Build shipping row with loading state and buyer-friendly display
-  Widget _buildShippingRow() {
-    if (_isCalculatingShipping) {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text('Shipping Fee', style: AppTextStyles.bodyMedium),
-          Row(
-            children: [
-              SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text('Calculating...', style: AppTextStyles.bodySmall),
-            ],
-          ),
-        ],
-      );
-    }
-
-    final shippingCost = _calculatedShippingCost ?? 0.0;
-    
-    // Show that final shipping cost will be calculated at checkout if calculation failed
-    if (_calculatedShippingCost == null) {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text('Shipping Fee', style: AppTextStyles.bodyMedium),
-          Text(
-            'Calculated at checkout',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.primary,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-        ],
-      );
-    }
-
-    // Display buyer's shipping portion only
-    // Note: shippingCost here is already the buyer's portion (split applied by backend)
-    if (shippingCost > 0) {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text('Shipping Fee', style: AppTextStyles.bodyMedium),
-          Text(
-            '₱${shippingCost.toStringAsFixed(2)}',
-            style: AppTextStyles.bodyMedium.copyWith(
-              fontWeight: FontWeight.w600,
-              fontFamily: 'Roboto',
-            ),
-          ),
-        ],
-      );
-    }
-    
-    // Free shipping
-    return _buildSummaryRow('Shipping Fee', 0.0);
   }
 
   Future<void> _navigateToPaymongoCheckout(CreateOrderResponse orderResponse) async {
@@ -893,34 +844,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Items (${widget.cartSummary.selectedItemsCount})',
-                  style: AppTextStyles.titleSmall.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 12),
                 
-                ...widget.cartItems.map((item) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _buildOrderItem(item),
-                )),
-
-                const Divider(),
-                const SizedBox(height: 8),
-
-                // Summary rows
-                _buildSummaryRow('Subtotal', widget.cartSummary.selectedItemsTotal),
-                const SizedBox(height: 8),
-                _buildShippingRow(),
-                const SizedBox(height: 8),
-                const Divider(),
-                const SizedBox(height: 8),
-                _buildSummaryRow(
-                  'Total',
-                  _calculateTotalWithShipping(),
-                  isTotal: true,
-                ),
+                ..._buildGroupedSellerItems(),
               ],
             ),
           ),
@@ -992,54 +917,237 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
-  Widget _buildSummaryRow(String label, double amount, {bool isTotal = false}) {
-    // Check if this is a shipping fee label
-    final isShippingFee = label == 'Shipping' || label == 'Shipping Fee';
+  /// Group cart items by seller and build seller sections
+  List<Widget> _buildGroupedSellerItems() {
+    // Group items by seller
+    final Map<String, List<CartItem>> sellerGroups = {};
     
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: isTotal
-                  ? AppTextStyles.titleMedium.copyWith(fontWeight: FontWeight.w700)
-                  : AppTextStyles.bodyMedium,
-            ),
-            // Show estimation note for total when shipping is not calculated
-            if (isTotal && _isTotalEstimated())
-              Text(
-                '(excluding shipping)',
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.onSurface.withValues(alpha: 0.6),
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-          ],
-        ),
-        Text(
-          amount == 0 && isShippingFee
-              ? 'Free'
-              : '₱${amount.toStringAsFixed(2)}',
-          style: isTotal
-              ? AppTextStyles.titleMedium.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.primary,
-                  fontFamily: amount == 0 && isShippingFee ? null : 'Roboto',
-                )
-              : AppTextStyles.bodyMedium.copyWith(
-                  fontWeight: FontWeight.w600,
-                  fontFamily: amount == 0 && isShippingFee ? null : 'Roboto',
-                  color: amount == 0 && isShippingFee ? AppColors.success : null,
-                ),
-        ),
-      ],
-    );
+    for (final item in widget.cartItems) {
+      final sellerId = item.sellerId ?? 'unknown';
+      if (!sellerGroups.containsKey(sellerId)) {
+        sellerGroups[sellerId] = [];
+      }
+      sellerGroups[sellerId]!.add(item);
+    }
+
+    // Build widgets for each seller group
+    final List<Widget> widgets = [];
+    
+    sellerGroups.forEach((sellerId, items) {
+      // Get seller name from first item
+      final sellerName = items.first.sellerName ?? 'Unknown Seller';
+      
+      widgets.add(_buildSellerGroup(sellerId, sellerName, items));
+      widgets.add(const SizedBox(height: 16));
+    });
+
+    return widgets;
   }
 
-
+  /// Build a seller group with clickable seller name and their products
+  Widget _buildSellerGroup(String sellerId, String sellerName, List<CartItem> items) {
+    // Calculate seller's subtotal
+    final sellerSubtotal = items.fold<double>(
+      0.0,
+      (sum, item) => sum + ((item.productPrice ?? 0) * item.quantity),
+    );
+    
+    // Get shipping cost for this seller
+    final sellerShipping = _sellerShippingCosts[sellerId] ?? 0.0;
+    
+    // Calculate free shipping threshold (10% of cart value)
+    final freeShippingThreshold = sellerSubtotal * 0.10;
+    
+    // Determine who pays shipping based on 10% rule
+    final buyerPaysShipping = sellerShipping > freeShippingThreshold;
+    
+    // Calculate how much to add to cart to reach free shipping
+    // If shipping > threshold, buyer needs to add enough to make shipping < new threshold
+    // New threshold after adding X = (subtotal + X) * 0.10
+    // We want: shipping <= (subtotal + X) * 0.10
+    // Solving: X >= (shipping / 0.10) - subtotal
+    final amountToAddForFreeShipping = buyerPaysShipping
+        ? ((sellerShipping / 0.10) - sellerSubtotal).clamp(0.0, double.infinity)
+        : 0.0;
+    
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.grey50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppColors.onSurface.withValues(alpha: 0.1),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Seller header
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.store, size: 12, color: AppColors.primary),
+                    const SizedBox(width: 4),
+                    Text(
+                      'SELLER',
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          
+          // Clickable seller name
+          GestureDetector(
+            onTap: () {
+              NavigationUtils.navigateToStore(
+                context,
+                sellerId,
+                sellerData: {'storeName': sellerName},
+              );
+            },
+            child: Text(
+              sellerName,
+              style: AppTextStyles.bodyMedium.copyWith(
+                fontWeight: FontWeight.w600,
+                color: AppColors.primary,
+              ),
+            ),
+          ),
+          
+          const SizedBox(height: 4),
+          Text(
+            '${items.length} item${items.length != 1 ? 's' : ''}',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.onSurface.withValues(alpha: 0.6),
+            ),
+          ),
+          
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          const SizedBox(height: 12),
+          
+          // Products for this seller
+          ...items.map((item) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _buildOrderItem(item),
+          )),
+          
+          // Seller subtotal and shipping
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: AppColors.onSurface.withValues(alpha: 0.1),
+              ),
+            ),
+            child: Column(
+              children: [
+                // Subtotal row
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Subtotal',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.onSurface.withValues(alpha: 0.7),
+                      ),
+                    ),
+                    Text(
+                      '₱${sellerSubtotal.toStringAsFixed(2)}',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'Roboto',
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                
+                // Shipping row
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Shipping',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.onSurface.withValues(alpha: 0.7),
+                      ),
+                    ),
+                    _isCalculatingShipping
+                        ? Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Calculating...',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: AppColors.onSurface.withValues(alpha: 0.6),
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ],
+                          )
+                        : Text(
+                            buyerPaysShipping 
+                                ? '₱${sellerShipping.toStringAsFixed(2)}'
+                                : 'FREE',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              fontWeight: FontWeight.w600,
+                              fontFamily: buyerPaysShipping ? 'Roboto' : null,
+                              color: buyerPaysShipping ? null : AppColors.success,
+                            ),
+                          ),
+                  ],
+                ),
+                
+                // Free shipping indicator text
+                if (!_isCalculatingShipping && buyerPaysShipping && amountToAddForFreeShipping > 0) ...[
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      'Add ₱${amountToAddForFreeShipping.toStringAsFixed(2)} more to get FREE Shipping!',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.success,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildShippingSection() {
     return AddressSelectionWidget(
@@ -1352,6 +1460,76 @@ class _CheckoutPageState extends State<CheckoutPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Subtotal row
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Subtotal',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+                Text(
+                  '₱${widget.cartSummary.selectedItemsTotal.toStringAsFixed(2)}',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'Roboto',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            
+            // Shipping row
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Shipping',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+                _isCalculatingShipping
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Calculating...',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.onSurface.withValues(alpha: 0.6),
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Text(
+                        _calculateBuyerShippingPortion() > 0
+                            ? '₱${_calculateBuyerShippingPortion().toStringAsFixed(2)}'
+                            : 'FREE',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w600,
+                          fontFamily: _calculateBuyerShippingPortion() > 0 ? 'Roboto' : null,
+                          color: _calculateBuyerShippingPortion() > 0 ? null : AppColors.success,
+                        ),
+                      ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            const SizedBox(height: 12),
+            
+            // Total row
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -1438,6 +1616,76 @@ class _CheckoutPageState extends State<CheckoutPage> {
       ),
       child: Column(
         children: [
+          // Subtotal row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Subtotal',
+                style: AppTextStyles.bodyLarge.copyWith(
+                  color: AppColors.onSurface.withValues(alpha: 0.7),
+                ),
+              ),
+              Text(
+                '₱${widget.cartSummary.selectedItemsTotal.toStringAsFixed(2)}',
+                style: AppTextStyles.bodyLarge.copyWith(
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Roboto',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          
+          // Shipping row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Shipping',
+                style: AppTextStyles.bodyLarge.copyWith(
+                  color: AppColors.onSurface.withValues(alpha: 0.7),
+                ),
+              ),
+              _isCalculatingShipping
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Calculating...',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.onSurface.withValues(alpha: 0.6),
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Text(
+                      _calculateBuyerShippingPortion() > 0
+                          ? '₱${_calculateBuyerShippingPortion().toStringAsFixed(2)}'
+                          : 'FREE',
+                      style: AppTextStyles.bodyLarge.copyWith(
+                        fontWeight: FontWeight.w600,
+                        fontFamily: _calculateBuyerShippingPortion() > 0 ? 'Roboto' : null,
+                        color: _calculateBuyerShippingPortion() > 0 ? null : AppColors.success,
+                      ),
+                    ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+          
+          // Total row
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [

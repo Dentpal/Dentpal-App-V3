@@ -61,6 +61,9 @@ class _StorePageState extends State<StorePage>
       setState(() {}); // Rebuild when tab changes
     });
     _loadStoreData();
+    
+    // Update URL for deep linking support
+    NavigationUtils.updatePageUrl('/store/${widget.sellerId}');
   }
 
   @override

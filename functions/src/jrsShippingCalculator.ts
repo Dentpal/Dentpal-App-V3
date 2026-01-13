@@ -31,7 +31,7 @@ interface JRSShippingResponse {
     sellerFeeBreakdowns?: SellerFeeBreakdown[];
     sellerShippingCharge?: number;
     buyerShippingCharge?: number;
-    shippingSplitRule?: 'buyer_pays_full' | 'split_50_50' | 'per_seller';
+    shippingSplitRule?: 'buyer_pays_full' | 'seller_pays_full' | 'per_seller';
     // Fee breakdown (totals across all sellers)
     totalChargedToBuyer?: number;
     paymentProcessingFee?: number;
