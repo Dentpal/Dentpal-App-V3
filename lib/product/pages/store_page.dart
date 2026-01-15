@@ -56,7 +56,18 @@ class _StorePageState extends State<StorePage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    // Check for initialTab in sellerData and set appropriate index
+    int initialIndex = 0; // Default to 'Shop' tab
+    if (widget.sellerData != null && widget.sellerData!['initialTab'] != null) {
+      final String initialTab = widget.sellerData!['initialTab'] as String;
+      if (initialTab == 'products') {
+        initialIndex = 1; // Products tab
+      } else if (initialTab == 'categories') {
+        initialIndex = 2; // Categories tab
+      }
+    }
+    
+    _tabController = TabController(length: 3, vsync: this, initialIndex: initialIndex);
     _tabController.addListener(() {
       setState(() {}); // Rebuild when tab changes
     });
@@ -217,7 +228,6 @@ class _StorePageState extends State<StorePage>
         filtered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
         break;
       case 'Top Sales':
-        // TODO: Implement sales counter logic
         filtered.sort((a, b) => b.clickCounter.compareTo(a.clickCounter));
         break;
       case 'Price (Low to High)':

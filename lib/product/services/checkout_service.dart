@@ -154,7 +154,8 @@ class CheckoutService {
   }
 
   // Calculate shipping cost using JRS Express for checkout
-  Future<double> calculateShippingCost({
+  // Returns a Map with 'buyerCost' and 'totalCost'
+  Future<Map<String, double>> calculateShippingCostDetailed({
     required List<CartItem> items,
     required ShippingAddress address,
   }) async {
@@ -174,6 +175,7 @@ class CheckoutService {
         sellerItemsMap[sellerId]!.add(item);
       }
       
+      double totalBuyerCost = 0.0;
       double totalShippingCost = 0.0;
       
       // Calculate shipping for each seller separately
@@ -186,32 +188,53 @@ class CheckoutService {
           final cartService = CartService();
           final recipientAddress = '${address.city}, ${address.state}';
           
-          final shippingCost = await cartService.calculateShippingCostWithAddress(
+          final result = await cartService.calculateShippingCostWithAddress(
             sellerId: sellerId,
             items: sellerItems,
             recipientAddress: recipientAddress,
           );
           
-          totalShippingCost += shippingCost;
+          totalBuyerCost += result.buyerShippingCharge;
+          totalShippingCost += result.shippingCost;
           
-          AppLogger.d('Seller $sellerId buyer shipping portion: ₱$shippingCost');
+          AppLogger.d('Seller $sellerId - Full: ₱${result.shippingCost}, Buyer pays: ₱${result.buyerShippingCharge}');
           
         } catch (e) {
           AppLogger.d('Error calculating shipping for seller $sellerId: $e');
-          // Fallback to default shipping cost (₱250) when JRS API fails
-          // This matches the backend fallback in jrsShippingHelper.ts
-          totalShippingCost += JRSShippingService.defaultFallbackShippingCost;
+          // Fallback to default shipping cost when JRS API fails
+          final fallbackCost = JRSShippingService.defaultFallbackShippingCost;
+          totalBuyerCost += fallbackCost;
+          totalShippingCost += fallbackCost;
         }
       }
       
-      AppLogger.d('Total buyer shipping cost (all sellers): ₱$totalShippingCost');
-      return totalShippingCost;
+      AppLogger.d('Total shipping - Full: ₱$totalShippingCost, Buyer pays: ₱$totalBuyerCost');
+      return {
+        'buyerCost': totalBuyerCost,
+        'totalCost': totalShippingCost,
+      };
 
     } catch (e) {
       AppLogger.d('Error calculating shipping cost: $e');
-      // Default shipping cost per seller when calculation fails
-      return JRSShippingService.defaultFallbackShippingCost;
+      // Default shipping cost when calculation fails
+      final fallback = JRSShippingService.defaultFallbackShippingCost;
+      return {
+        'buyerCost': fallback,
+        'totalCost': fallback,
+      };
     }
+  }
+
+  // Legacy method for backward compatibility - returns only buyer's portion
+  Future<double> calculateShippingCost({
+    required List<CartItem> items,
+    required ShippingAddress address,
+  }) async {
+    final result = await calculateShippingCostDetailed(
+      items: items,
+      address: address,
+    );
+    return result['buyerCost'] ?? 0.0;
   }
 
   // Validate checkout data before creating order

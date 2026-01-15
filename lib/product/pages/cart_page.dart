@@ -990,6 +990,7 @@ class _CartPageState extends State<CartPage>
               NavigationUtils.navigateToStore(
                 context,
                 sellerGroup.sellerId,
+                sellerData: {'initialTab': 'products'},
               );
             },
           ),
@@ -1220,6 +1221,7 @@ class _CartPageState extends State<CartPage>
                       NavigationUtils.navigateToStore(
                         context,
                         sellerGroup.sellerId,
+                        sellerData: {'initialTab': 'products'},
                       );
                     },
                   );
@@ -1250,6 +1252,7 @@ class _CartPageState extends State<CartPage>
               NavigationUtils.navigateToStore(
                 context,
                 sellerGroup.sellerId,
+                sellerData: {'initialTab': 'products'},
               );
             },
           );

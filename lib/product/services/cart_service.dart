@@ -494,7 +494,8 @@ class CartService {
   }
   
   // Calculate shipping cost with actual recipient address (for checkout)
-  Future<double> calculateShippingCostWithAddress({
+  // Returns full JRSShippingResult with both total cost and buyer's portion
+  Future<JRSShippingResult> calculateShippingCostWithAddress({
     required String sellerId,
     required List<CartItem> items,
     required String recipientAddress,
@@ -506,7 +507,13 @@ class CartService {
       AppLogger.d('   Items: ${items.length}');
 
       if (items.isEmpty) {
-        return 0.0;
+        return JRSShippingResult(
+          success: true,
+          shippingCost: 0.0,
+          buyerShippingCharge: 0.0,
+          sellerShippingCharge: 0.0,
+          message: 'No items to ship',
+        );
       }
 
       // Get seller's shipping address
@@ -570,12 +577,12 @@ class CartService {
       AppLogger.d('JRS shipping result: $result');
 
       if (result.success) {
-        // Return buyer's portion of shipping (already calculated by backend with split logic)
+        // Return the full JRS result with both total cost and buyer's portion
         AppLogger.d('JRS shipping: full=₱${result.shippingCost}, buyerPays=₱${result.buyerShippingCharge}');
-        return result.buyerShippingCharge;
+        return result;
       } else {
         AppLogger.d('JRS calculation failed, using fallback: ${result.message}');
-        return result.buyerShippingCharge; // Still return the buyer's portion from fallback
+        return result; // Return the full fallback result
       }
 
     } catch (e) {
@@ -586,11 +593,25 @@ class CartService {
       
       // Free shipping if order value exceeds ₱1000
       if (totalValue >= 1000.0) {
-        return 0.0;
+        return JRSShippingResult(
+          success: true,
+          shippingCost: 50.0, // Estimated cost
+          buyerShippingCharge: 0.0, // Free for buyer
+          sellerShippingCharge: 50.0, // Seller pays
+          shippingSplitRule: 'seller_pays_full',
+          message: 'Free shipping (fallback)',
+        );
       }
       
       // Default shipping cost
-      return 50.0;
+      return JRSShippingResult(
+        success: true,
+        shippingCost: 50.0,
+        buyerShippingCharge: 50.0,
+        sellerShippingCharge: 0.0,
+        shippingSplitRule: 'buyer_pays_full',
+        message: 'Default shipping (fallback)',
+      );
     }
   }
 }

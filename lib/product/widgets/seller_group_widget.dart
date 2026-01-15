@@ -89,48 +89,45 @@ class SellerGroupWidget extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.store, size: 14, color: AppColors.primary),
-                          const SizedBox(width: 4),
-                          Text(
-                            'SELLER',
-                            style: AppTextStyles.labelSmall.copyWith(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
                 GestureDetector(
                   onTap: onSellerNameTap,
-                  child: Text(
-                    sellerGroup.sellerName,
-                    style: AppTextStyles.titleMedium.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: onSellerNameTap != null
-                          ? AppColors.primary
-                          : AppColors.onSurface,
-                    ),
-                    overflow: TextOverflow.ellipsis,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Seller',
+                        style: AppTextStyles.titleMedium.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: onSellerNameTap != null
+                              ? AppColors.primary
+                              : AppColors.onSurface,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          sellerGroup.sellerName,
+                          style: AppTextStyles.titleMedium.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: onSellerNameTap != null
+                                ? AppColors.primary
+                                : AppColors.onSurface,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (onSellerNameTap != null) ...[
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.chevron_right,
+                          size: 20,
+                          color: AppColors.primary,
+                        ),
+                      ],
+                    ],
                   ),
                 ),
+                const SizedBox(height: 4),
                 Text(
                   '${sellerGroup.items.length} item${sellerGroup.items.length != 1 ? 's' : ''}',
                   style: AppTextStyles.bodySmall.copyWith(

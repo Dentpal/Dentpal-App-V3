@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:dentpal/utils/app_logger.dart';
-import 'package:dentpal/utils/navigation_utils.dart';
 import '../models/cart_model.dart';
 import '../models/order_model.dart';
 import '../models/paymongo_model.dart';
@@ -42,7 +41,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
   bool _termsAccepted = false;
   
   // Per-seller shipping costs
-  Map<String, double> _sellerShippingCosts = {}; // sellerId -> shipping cost
+  Map<String, double> _sellerShippingCosts = {}; // sellerId -> buyer's portion of shipping cost
+  Map<String, double> _sellerTotalShippingCosts = {}; // sellerId -> total shipping cost (for display)
   bool _isCalculatingShipping = false; // Track if shipping calculation is in progress
   
   final TextEditingController _notesController = TextEditingController();
@@ -200,6 +200,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     setState(() {
       _isCalculatingShipping = true;
       _sellerShippingCosts.clear(); // Reset previous calculations
+      _sellerTotalShippingCosts.clear(); // Reset total shipping costs
     });
 
     try {
@@ -215,23 +216,31 @@ class _CheckoutPageState extends State<CheckoutPage> {
         sellerGroups[sellerId]!.add(item);
       }
       
-      // Calculate shipping for each seller separately
+      // Calculate shipping for each seller separately using the detailed method
       for (final entry in sellerGroups.entries) {
         final sellerId = entry.key;
         final sellerItems = entry.value;
         
         try {
-          final shippingCost = await _checkoutService.calculateShippingCost(
+          // Use the new detailed calculation that returns both values from JRS
+          final shippingDetails = await _checkoutService.calculateShippingCostDetailed(
             items: sellerItems,
             address: _selectedAddress!,
           );
           
-          _sellerShippingCosts[sellerId] = shippingCost;
-          AppLogger.d('Seller $sellerId shipping cost: ₱$shippingCost');
+          // Store both the buyer's portion and the total from JRS
+          final buyerCost = shippingDetails['buyerCost'] ?? 0.0;
+          final totalCost = shippingDetails['totalCost'] ?? 0.0;
+          
+          _sellerShippingCosts[sellerId] = buyerCost;
+          _sellerTotalShippingCosts[sellerId] = totalCost;
+          
+          AppLogger.d('Seller $sellerId - Total from JRS: ₱$totalCost, Buyer pays: ₱$buyerCost');
         } catch (e) {
           AppLogger.d('Error calculating shipping for seller $sellerId: $e');
-          // Set to null to indicate calculation failed for this seller
+          // Set to 0 to indicate calculation failed for this seller
           _sellerShippingCosts[sellerId] = 0.0;
+          _sellerTotalShippingCosts[sellerId] = 0.0;
         }
       }
       
@@ -240,7 +249,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
       });
       
       final totalShipping = _sellerShippingCosts.values.fold(0.0, (sum, cost) => sum + cost);
-      AppLogger.d('Total shipping cost calculated: ₱$totalShipping across ${_sellerShippingCosts.length} sellers');
+      final totalShippingFull = _sellerTotalShippingCosts.values.fold(0.0, (sum, cost) => sum + cost);
+      AppLogger.d('Total shipping - Full: ₱$totalShippingFull, Buyer pays: ₱$totalShipping across ${_sellerShippingCosts.length} sellers');
       
     } catch (e) {
       AppLogger.d('Error calculating shipping costs: $e');
@@ -248,6 +258,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
       setState(() {
         _isCalculatingShipping = false;
         _sellerShippingCosts.clear();
+        _sellerTotalShippingCosts.clear();
       });
     }
   }
@@ -256,6 +267,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
   double _calculateBuyerShippingPortion() {
     if (_sellerShippingCosts.isEmpty) return 0.0;
     return _sellerShippingCosts.values.fold(0.0, (sum, cost) => sum + cost);
+  }
+
+  /// Get total shipping cost (including seller's portion) across all sellers
+  double _calculateTotalShippingCost() {
+    if (_sellerTotalShippingCosts.isEmpty) return 0.0;
+    return _sellerTotalShippingCosts.values.fold(0.0, (sum, cost) => sum + cost);
   }
 
   /// Calculate total including only buyer's shipping portion
@@ -978,22 +995,25 @@ class _CheckoutPageState extends State<CheckoutPage> {
       (sum, item) => sum + ((item.productPrice ?? 0) * item.quantity),
     );
     
-    // Get shipping cost for this seller
-    final sellerShipping = _sellerShippingCosts[sellerId] ?? 0.0;
+    // Get buyer's portion of shipping cost
+    final buyerShippingCost = _sellerShippingCosts[sellerId] ?? 0.0;
     
-    // Calculate free shipping threshold (10% of cart value)
-    final freeShippingThreshold = sellerSubtotal * 0.10;
+    // Get total shipping cost (for display when free)
+    final totalShippingCost = _sellerTotalShippingCosts[sellerId] ?? 0.0;
     
-    // Determine who pays shipping based on 10% rule
-    final buyerPaysShipping = sellerShipping > freeShippingThreshold;
+    // Determine if shipping is free for buyer
+    final shippingIsFree = buyerShippingCost == 0.0 && totalShippingCost > 0.0;
+    
+    // Determine who pays shipping based on buyer's portion
+    final buyerPaysShipping = buyerShippingCost > 0.0;
+    
+    // Debug logging
+    AppLogger.d('Seller: $sellerName, Subtotal: $sellerSubtotal, Total Shipping: $totalShippingCost, Buyer Pays: $buyerShippingCost, Free: $shippingIsFree');
     
     // Calculate how much to add to cart to reach free shipping
-    // If shipping > threshold, buyer needs to add enough to make shipping < new threshold
-    // New threshold after adding X = (subtotal + X) * 0.10
-    // We want: shipping <= (subtotal + X) * 0.10
-    // Solving: X >= (shipping / 0.10) - subtotal
+    // Only show this if buyer is currently paying for shipping
     final amountToAddForFreeShipping = buyerPaysShipping
-        ? ((sellerShipping / 0.10) - sellerSubtotal).clamp(0.0, double.infinity)
+        ? ((buyerShippingCost / 0.10) - sellerSubtotal).clamp(0.0, double.infinity)
         : 0.0;
     
     return Container(
@@ -1008,7 +1028,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Seller header
+          // Seller header with inline name
           Row(
             children: [
               Container(
@@ -1023,7 +1043,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     Icon(Icons.store, size: 12, color: AppColors.primary),
                     const SizedBox(width: 4),
                     Text(
-                      'SELLER',
+                      'Seller',
                       style: AppTextStyles.labelSmall.copyWith(
                         color: AppColors.primary,
                         fontWeight: FontWeight.w600,
@@ -1033,26 +1053,18 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   ],
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          
-          // Clickable seller name
-          GestureDetector(
-            onTap: () {
-              NavigationUtils.navigateToStore(
-                context,
-                sellerId,
-                sellerData: {'storeName': sellerName},
-              );
-            },
-            child: Text(
-              sellerName,
-              style: AppTextStyles.bodyMedium.copyWith(
-                fontWeight: FontWeight.w600,
-                color: AppColors.primary,
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  sellerName,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.onSurface,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-            ),
+            ],
           ),
           
           const SizedBox(height: 4),
@@ -1139,30 +1151,63 @@ class _CheckoutPageState extends State<CheckoutPage> {
                               ),
                             ],
                           )
-                        : Text(
-                            buyerPaysShipping 
-                                ? '₱${sellerShipping.toStringAsFixed(2)}'
-                                : 'FREE',
-                            style: AppTextStyles.bodyMedium.copyWith(
-                              fontWeight: FontWeight.w600,
-                              fontFamily: buyerPaysShipping ? 'Roboto' : null,
-                              color: buyerPaysShipping ? null : AppColors.success,
-                            ),
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (shippingIsFree && totalShippingCost >= 0.01) ...[
+                                // Show crossed out original price when shipping is free
+                                Text(
+                                  '₱${totalShippingCost.toStringAsFixed(2)}',
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    fontFamily: 'Roboto',
+                                    decoration: TextDecoration.lineThrough,
+                                    decorationColor: AppColors.error,
+                                    decorationThickness: 2,
+                                    color: AppColors.onSurface.withValues(alpha: 0.5),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                              ],
+                              Text(
+                                buyerPaysShipping 
+                                    ? '₱${buyerShippingCost.toStringAsFixed(2)}'
+                                    : 'FREE',
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  fontFamily: buyerPaysShipping ? 'Roboto' : null,
+                                  color: buyerPaysShipping ? null : AppColors.success,
+                                ),
+                              ),
+                            ],
                           ),
                   ],
                 ),
                 
-                // Free shipping indicator text
+                // Free shipping indicator text with green background
                 if (!_isCalculatingShipping && buyerPaysShipping && amountToAddForFreeShipping > 0) ...[
-                  const SizedBox(height: 6),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      'Add ₱${amountToAddForFreeShipping.toStringAsFixed(2)} more to get FREE Shipping!',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.success,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 11,
+                  const SizedBox(height: 8),
+                  Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: AppColors.success.withValues(alpha: 0.3),
+                          width: 1,
+                        ),
+                      ),
+                      child: Text(
+                        'Add ₱${amountToAddForFreeShipping.toStringAsFixed(2)} more to get FREE Shipping!',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.success,
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'Roboto',
+                          fontSize: 12,
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ),
@@ -1543,15 +1588,34 @@ class _CheckoutPageState extends State<CheckoutPage> {
                           ),
                         ],
                       )
-                    : Text(
-                        _calculateBuyerShippingPortion() > 0
-                            ? '₱${_calculateBuyerShippingPortion().toStringAsFixed(2)}'
-                            : 'FREE',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          fontWeight: FontWeight.w600,
-                          fontFamily: _calculateBuyerShippingPortion() > 0 ? 'Roboto' : null,
-                          color: _calculateBuyerShippingPortion() > 0 ? null : AppColors.success,
-                        ),
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_calculateTotalShippingCost() > 0 && _calculateBuyerShippingPortion() < _calculateTotalShippingCost()) ...[
+                            // Show crossed out total shipping when some/all is free
+                            Text(
+                              '₱${_calculateTotalShippingCost().toStringAsFixed(2)}',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                fontFamily: 'Roboto',
+                                decoration: TextDecoration.lineThrough,
+                                decorationColor: AppColors.error,
+                                decorationThickness: 2,
+                                color: AppColors.onSurface.withValues(alpha: 0.5),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                          ],
+                          Text(
+                            _calculateBuyerShippingPortion() > 0
+                                ? '₱${_calculateBuyerShippingPortion().toStringAsFixed(2)}'
+                                : 'FREE',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              fontWeight: FontWeight.w600,
+                              fontFamily: _calculateBuyerShippingPortion() > 0 ? 'Roboto' : null,
+                              color: _calculateBuyerShippingPortion() > 0 ? null : AppColors.success,
+                            ),
+                          ),
+                        ],
                       ),
               ],
             ),
@@ -1699,15 +1763,34 @@ class _CheckoutPageState extends State<CheckoutPage> {
                         ),
                       ],
                     )
-                  : Text(
-                      _calculateBuyerShippingPortion() > 0
-                          ? '₱${_calculateBuyerShippingPortion().toStringAsFixed(2)}'
-                          : 'FREE',
-                      style: AppTextStyles.bodyLarge.copyWith(
-                        fontWeight: FontWeight.w600,
-                        fontFamily: _calculateBuyerShippingPortion() > 0 ? 'Roboto' : null,
-                        color: _calculateBuyerShippingPortion() > 0 ? null : AppColors.success,
-                      ),
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_calculateTotalShippingCost() > 0 && _calculateBuyerShippingPortion() < _calculateTotalShippingCost()) ...[
+                          // Show crossed out total shipping when some/all is free
+                          Text(
+                            '₱${_calculateTotalShippingCost().toStringAsFixed(2)}',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              fontFamily: 'Roboto',
+                              decoration: TextDecoration.lineThrough,
+                              decorationColor: AppColors.error,
+                              decorationThickness: 2,
+                              color: AppColors.onSurface.withValues(alpha: 0.5),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        Text(
+                          _calculateBuyerShippingPortion() > 0
+                              ? '₱${_calculateBuyerShippingPortion().toStringAsFixed(2)}'
+                              : 'FREE',
+                          style: AppTextStyles.bodyLarge.copyWith(
+                            fontWeight: FontWeight.w600,
+                            fontFamily: _calculateBuyerShippingPortion() > 0 ? 'Roboto' : null,
+                            color: _calculateBuyerShippingPortion() > 0 ? null : AppColors.success,
+                          ),
+                        ),
+                      ],
                     ),
             ],
           ),
