@@ -94,7 +94,8 @@ class _StorePageState extends State<StorePage>
       );
 
       // Load store/seller data
-      if (widget.sellerData != null) {
+      // Check if sellerData contains actual store information (not just initialTab)
+      if (widget.sellerData != null && widget.sellerData!.containsKey('shopName')) {
         _storeData = widget.sellerData!;
         AppLogger.d(
           'StorePage: Using provided seller data: ${_storeData['shopName']}',
