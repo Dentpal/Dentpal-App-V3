@@ -411,30 +411,60 @@ class ChatService {
       String? user2Avatar = user2Doc.data()?['photoURL'];
 
       // Check if users are sellers to get shop names and seller avatars
+      // Check Seller collection directly instead of relying on role in User collection
+      // This handles cases where sellers only have Seller documents
       String? user1ShopName;
       String? user2ShopName;
 
-      if (user1Doc.data()?['role'] == 'seller') {
-        final sellerDoc = await _firestore
-            .collection('Seller')
-            .doc(user1Id)
-            .get();
-        user1ShopName = sellerDoc.data()?['shopName'];
+      // Check if user1 is a seller by looking up Seller collection
+      final seller1Doc = await _firestore
+          .collection('Seller')
+          .doc(user1Id)
+          .get();
+      if (seller1Doc.exists) {
+        final data = seller1Doc.data() as Map<String, dynamic>;
+        
+        // Extract shop name from nested structure: vendor.company.storeName
+        final vendor = (data['vendor'] is Map)
+            ? data['vendor'] as Map<String, dynamic>
+            : const {};
+        final company = (vendor['company'] is Map)
+            ? vendor['company'] as Map<String, dynamic>
+            : const {};
+        
+        user1ShopName = (company['storeName'] as String?) ??
+            (data['storeName'] as String?) ??
+            (data['shopName'] as String?);
+        
         // Use seller's photoURL if available, otherwise keep user's photoURL
-        String? sellerPhotoURL = sellerDoc.data()?['photoURL'];
+        String? sellerPhotoURL = data['photoURL'];
         if (sellerPhotoURL != null && sellerPhotoURL.isNotEmpty) {
           user1Avatar = sellerPhotoURL;
         }
       }
 
-      if (user2Doc.data()?['role'] == 'seller') {
-        final sellerDoc = await _firestore
-            .collection('Seller')
-            .doc(user2Id)
-            .get();
-        user2ShopName = sellerDoc.data()?['shopName'];
+      // Check if user2 is a seller by looking up Seller collection
+      final seller2Doc = await _firestore
+          .collection('Seller')
+          .doc(user2Id)
+          .get();
+      if (seller2Doc.exists) {
+        final data = seller2Doc.data() as Map<String, dynamic>;
+        
+        // Extract shop name from nested structure: vendor.company.storeName
+        final vendor = (data['vendor'] is Map)
+            ? data['vendor'] as Map<String, dynamic>
+            : const {};
+        final company = (vendor['company'] is Map)
+            ? vendor['company'] as Map<String, dynamic>
+            : const {};
+        
+        user2ShopName = (company['storeName'] as String?) ??
+            (data['storeName'] as String?) ??
+            (data['shopName'] as String?);
+        
         // Use seller's photoURL if available, otherwise keep user's photoURL
-        String? sellerPhotoURL = sellerDoc.data()?['photoURL'];
+        String? sellerPhotoURL = data['photoURL'];
         if (sellerPhotoURL != null && sellerPhotoURL.isNotEmpty) {
           user2Avatar = sellerPhotoURL;
         }
@@ -531,33 +561,62 @@ class ChatService {
         String? otherUserAvatar = otherUserDoc.data()?['photoURL'];
 
         // Check if users are sellers to get shop names and seller avatars
+        // Check Seller collection directly instead of relying on role in User collection
         String? currentUserShopName;
         String? otherUserShopName;
         String? sellerId;
 
-        if (currentUserDoc.data()?['role'] == 'seller') {
-          final sellerDoc = await _firestore
-              .collection('Seller')
-              .doc(currentUser.uid)
-              .get();
-          currentUserShopName = sellerDoc.data()?['shopName'];
+        // Check if current user is a seller by looking up Seller collection
+        final currentUserSellerDoc = await _firestore
+            .collection('Seller')
+            .doc(currentUser.uid)
+            .get();
+        if (currentUserSellerDoc.exists) {
+          final data = currentUserSellerDoc.data() as Map<String, dynamic>;
+          
+          // Extract shop name from nested structure: vendor.company.storeName
+          final vendor = (data['vendor'] is Map)
+              ? data['vendor'] as Map<String, dynamic>
+              : const {};
+          final company = (vendor['company'] is Map)
+              ? vendor['company'] as Map<String, dynamic>
+              : const {};
+          
+          currentUserShopName = (company['storeName'] as String?) ??
+              (data['storeName'] as String?) ??
+              (data['shopName'] as String?);
+          
           sellerId = currentUser.uid;
           // Use seller's photoURL if available, otherwise keep user's photoURL
-          String? sellerPhotoURL = sellerDoc.data()?['photoURL'];
+          String? sellerPhotoURL = data['photoURL'];
           if (sellerPhotoURL != null && sellerPhotoURL.isNotEmpty) {
             currentUserAvatar = sellerPhotoURL;
           }
         }
 
-        if (otherUserDoc.data()?['role'] == 'seller') {
-          final sellerDoc = await _firestore
-              .collection('Seller')
-              .doc(otherUserId)
-              .get();
-          otherUserShopName = sellerDoc.data()?['shopName'];
+        // Check if other user is a seller by looking up Seller collection
+        final otherUserSellerDoc = await _firestore
+            .collection('Seller')
+            .doc(otherUserId)
+            .get();
+        if (otherUserSellerDoc.exists) {
+          final data = otherUserSellerDoc.data() as Map<String, dynamic>;
+          
+          // Extract shop name from nested structure: vendor.company.storeName
+          final vendor = (data['vendor'] is Map)
+              ? data['vendor'] as Map<String, dynamic>
+              : const {};
+          final company = (vendor['company'] is Map)
+              ? vendor['company'] as Map<String, dynamic>
+              : const {};
+          
+          otherUserShopName = (company['storeName'] as String?) ??
+              (data['storeName'] as String?) ??
+              (data['shopName'] as String?);
+          
           sellerId = otherUserId;
           // Use seller's photoURL if available, otherwise keep user's photoURL
-          String? sellerPhotoURL = sellerDoc.data()?['photoURL'];
+          String? sellerPhotoURL = data['photoURL'];
           if (sellerPhotoURL != null && sellerPhotoURL.isNotEmpty) {
             otherUserAvatar = sellerPhotoURL;
           }
@@ -823,11 +882,24 @@ class ChatService {
               !chatRoom.isDeletedFor(currentUser.uid)) {
             chatRooms.add(chatRoom);
 
-            // Check if chat room needs user data update (if names are still "User")
-            if (chatRoom.user1Name == 'User' ||
+            // Check if chat room needs user data update (if names are still "User" or shop names are missing)
+            bool needsUpdate = chatRoom.user1Name == 'User' ||
                 chatRoom.user2Name == 'User' ||
                 chatRoom.user1Name.isEmpty ||
-                chatRoom.user2Name.isEmpty) {
+                chatRoom.user2Name.isEmpty;
+            
+            // Also check if shop names need updating for sellers
+            // This handles cases where shop names were never set or are outdated
+            if (!needsUpdate) {
+              // Check if user1ShopName or user2ShopName should exist but doesn't
+              // We'll trigger update if shop names are missing, this will refresh them
+              if ((chatRoom.user1ShopName == null || chatRoom.user1ShopName!.isEmpty) ||
+                  (chatRoom.user2ShopName == null || chatRoom.user2ShopName!.isEmpty)) {
+                needsUpdate = true;
+              }
+            }
+            
+            if (needsUpdate) {
               // Update chat room data in the background
               updateChatRoomUserData(key, chatRoom.user1Id, chatRoom.user2Id);
             }
@@ -1323,6 +1395,25 @@ class ChatService {
           // Include dedicated support chats OR chats where support was requested
           if (chatRoom.isSupportChat || chatRoom.supportRequested) {
             supportChats.add(chatRoom);
+            
+            // Check if chat room needs user data update (names or shop names)
+            bool needsUpdate = chatRoom.user1Name == 'User' ||
+                chatRoom.user2Name == 'User' ||
+                chatRoom.user1Name.isEmpty ||
+                chatRoom.user2Name.isEmpty;
+            
+            // Also check if shop names need updating for sellers
+            if (!needsUpdate) {
+              if ((chatRoom.user1ShopName == null || chatRoom.user1ShopName!.isEmpty) ||
+                  (chatRoom.user2ShopName == null || chatRoom.user2ShopName!.isEmpty)) {
+                needsUpdate = true;
+              }
+            }
+            
+            if (needsUpdate) {
+              // Update chat room data in the background
+              updateChatRoomUserData(key, chatRoom.user1Id, chatRoom.user2Id);
+            }
           }
         });
       }

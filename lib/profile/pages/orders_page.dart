@@ -44,6 +44,8 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     ],
     'delivered': [
       order_model.OrderStatus.delivered,
+    ],
+    'completed': [
       order_model.OrderStatus.completed,
     ],
     'returns_cancellations': [
@@ -61,6 +63,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     'Processing',
     'Shipping',
     'Delivered',
+    'Completed',
     'Returns & Cancellations',
   ];
 
@@ -160,13 +163,6 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
       selectedTabFilter = tabKey;
       // Reset sub-filter when changing main tabs
       selectedProcessingSubFilter = null;
-      _applyFilter();
-    });
-  }
-
-  void _onProcessingSubFilterChanged(order_model.OrderStatus? status) {
-    setState(() {
-      selectedProcessingSubFilter = status;
       _applyFilter();
     });
   }
@@ -593,7 +589,65 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                     child: const Text('View Details'),
                   ),
                   const SizedBox(width: 12),
-                  if (_canCancelOrder(order))
+                  // Delivered status: Request Return or Complete Order
+                  if (order.status == order_model.OrderStatus.delivered) ...[
+                    if (OrderService.isEligibleForReturn(order)['eligible'] == true)
+                      ElevatedButton(
+                        onPressed: () => _requestReturn(order),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.warning,
+                          foregroundColor: AppColors.onPrimary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text('Request Return'),
+                      )
+                    else
+                      ElevatedButton(
+                        onPressed: () => _completeOrder(order),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.success,
+                          foregroundColor: AppColors.onPrimary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text('Complete Order'),
+                      ),
+                  ]
+                  // Completed status: Add Review
+                  else if (order.status == order_model.OrderStatus.completed)
+                    ElevatedButton(
+                      onPressed: () => _addReview(order),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: AppColors.onPrimary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Add Review'),
+                    )
+                  // Return/Cancelled statuses: Reorder
+                  else if (order.status == order_model.OrderStatus.return_requested ||
+                      order.status == order_model.OrderStatus.return_approved ||
+                      order.status == order_model.OrderStatus.return_rejected ||
+                      order.status == order_model.OrderStatus.returned ||
+                      order.status == order_model.OrderStatus.cancelled)
+                    ElevatedButton(
+                      onPressed: () => _reorderItems(order),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: AppColors.onPrimary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Reorder'),
+                    )
+                  // Processing statuses: Cancel Order
+                  else if (_canCancelOrder(order))
                     ElevatedButton(
                       onPressed: () => _cancelOrder(order),
                       style: ElevatedButton.styleFrom(
@@ -605,6 +659,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                       ),
                       child: const Text('Cancel Order'),
                     )
+                  // Pending payment: Resume Payment
                   else if (_canResumePayment(order))
                     ElevatedButton(
                       onPressed: () => _resumePayment(order),
@@ -616,18 +671,6 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                         ),
                       ),
                       child: const Text('Resume Payment'),
-                    )
-                  else if (_canReorder(order.status))
-                    ElevatedButton(
-                      onPressed: () => _reorderItems(order),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: AppColors.onPrimary,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text('Reorder'),
                     ),
                 ] else ...[
                   // Mobile layout - buttons expanded
@@ -645,7 +688,73 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  if (_canCancelOrder(order))
+                  // Delivered status: Request Return or Complete Order
+                  if (order.status == order_model.OrderStatus.delivered) ...[
+                    if (OrderService.isEligibleForReturn(order)['eligible'] == true)
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => _requestReturn(order),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.warning,
+                            foregroundColor: AppColors.onPrimary,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text('Return'),
+                        ),
+                      )
+                    else
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => _completeOrder(order),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.success,
+                            foregroundColor: AppColors.onPrimary,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text('Complete'),
+                        ),
+                      ),
+                  ]
+                  // Completed status: Add Review
+                  else if (order.status == order_model.OrderStatus.completed)
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => _addReview(order),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: AppColors.onPrimary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text('Add Review'),
+                      ),
+                    )
+                  // Return/Cancelled statuses: Reorder
+                  else if (order.status == order_model.OrderStatus.return_requested ||
+                      order.status == order_model.OrderStatus.return_approved ||
+                      order.status == order_model.OrderStatus.return_rejected ||
+                      order.status == order_model.OrderStatus.returned ||
+                      order.status == order_model.OrderStatus.cancelled)
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => _reorderItems(order),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: AppColors.onPrimary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text('Reorder'),
+                      ),
+                    )
+                  // Processing statuses: Cancel Order
+                  else if (_canCancelOrder(order))
                     Expanded(
                       child: ElevatedButton(
                         onPressed: () => _cancelOrder(order),
@@ -659,6 +768,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                         child: const Text('Cancel Order'),
                       ),
                     )
+                  // Pending payment: Resume Payment
                   else if (_canResumePayment(order))
                     Expanded(
                       child: ElevatedButton(
@@ -671,20 +781,6 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                           ),
                         ),
                         child: const Text('Resume Payment'),
-                      ),
-                    )
-                  else if (_canReorder(order.status))
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () => _reorderItems(order),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: AppColors.onPrimary,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text('Reorder'),
                       ),
                     ),
                 ],
@@ -906,36 +1002,6 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildProcessingSubTab(String label, order_model.OrderStatus status) {
-    final isSelected = selectedProcessingSubFilter == status;
-    
-    // Count orders for this sub-status
-    final count = orders.where((order) => order.status == status).length;
-
-    return InkWell(
-      onTap: () => _onProcessingSubFilterChanged(status),
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? AppColors.primary : AppColors.surface,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.2),
-            width: 1,
-          ),
-        ),
-        child: Text(
-          '$label ($count)',
-          style: AppTextStyles.bodySmall.copyWith(
-            color: isSelected ? AppColors.onPrimary : AppColors.onSurface,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-          ),
-        ),
-      ),
-    );
-  }
-
   String _formatStatus(order_model.OrderStatus status) {
     switch (status) {
       case order_model.OrderStatus.pending:
@@ -984,16 +1050,6 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     } else {
       return '${date.day}/${date.month}/${date.year}';
     }
-  }
-
-  bool _canReorder(order_model.OrderStatus status) {
-    return status == order_model.OrderStatus.delivered ||
-        status == order_model.OrderStatus.completed ||
-        status == order_model.OrderStatus.expired ||
-        status == order_model.OrderStatus.return_requested ||
-        status == order_model.OrderStatus.return_approved ||
-        status == order_model.OrderStatus.return_rejected ||
-        status == order_model.OrderStatus.returned;
   }
 
   bool _canCancelOrder(order_model.Order order) {
@@ -1279,42 +1335,125 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     }
   }
 
-  String _shortenStatus(String status) {
-    // Shorten status text for wide web view to prevent truncation
-    switch (status) {
-      case 'Pending Payment':
-        return 'Pending';
-      case 'Confirmed Payment':
-        return 'Confirmed';
-      case 'Processing':
-        return 'In Progress';
-      case 'Shipped':
-        return 'On the Way';
-      case 'Delivered':
-        return 'Delivered';
-      case 'Completed':
-        return 'Completed';
-      case 'Cancelled':
-        return 'Cancelled';
-      case 'Refunded':
-        return 'Refunded';
-      case 'Payment Failed':
-        return 'Failed';
-      case 'Expired Payment':
-        return 'Expired';
-      case 'Failed Delivery':
-        return 'Failed';
-      case 'Returns':
-        return 'Returns';
-      case 'Return Approved':
-        return 'Return OK';
-      case 'Return Rejected':
-        return 'Return Denied';
-      case 'Returned':
-        return 'Returned';
-      default:
-        return status;
+  void _completeOrder(order_model.Order order) async {
+    // Confirm completion
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.check_circle_outline, color: AppColors.success),
+            const SizedBox(width: 8),
+            Text('Complete Order'),
+          ],
+        ),
+        content: Text(
+          'Mark this order as completed? This will deduct the stock count for these items.',
+          style: AppTextStyles.bodyMedium,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.onSurface.withValues(alpha: 0.6)),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.success,
+              foregroundColor: AppColors.onPrimary,
+            ),
+            child: Text('Complete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    if (!context.mounted) return;
+
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    bool success = false;
+
+    try {
+      await OrderService.markOrderComplete(order.orderId);
+      success = true;
+    } catch (e) {
+      AppLogger.d('Error completing order: $e');
+      success = false;
+    } finally {
+      // Always dismiss the loading dialog
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+
+      // Handle post-dialog actions only when mounted
+      if (mounted) {
+        if (success) {
+          // Show success message
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Order completed successfully'),
+              backgroundColor: AppColors.success,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+
+          // Refresh orders
+          _refreshOrders();
+        } else {
+          // Show error message
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to complete order. Please try again.'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+      }
     }
+  }
+
+  void _requestReturn(order_model.Order order) async {
+    // Check eligibility
+    final eligibility = OrderService.isEligibleForReturn(order);
+    if (eligibility['eligible'] != true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(eligibility['reason'] ?? 'Cannot request return for this order'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    // Navigate to order details page which has the return request functionality
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => OrderDetailsPage(order: order)),
+    );
+  }
+
+  void _addReview(order_model.Order order) async {
+    // Show message that this feature is coming soon
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Add Review feature coming soon!'),
+        backgroundColor: AppColors.info,
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 }
 

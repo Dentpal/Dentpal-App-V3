@@ -108,7 +108,27 @@ class CartService {
         try {
           DocumentSnapshot sellerDoc = await _firestore.collection('Seller').doc(sellerId).get();
           if (sellerDoc.exists) {
-            sellersMap[sellerId] = sellerDoc.data() as Map<String, dynamic>;
+            final data = sellerDoc.data() as Map<String, dynamic>;
+            
+            // Extract shop name from nested structure: vendor.company.storeName
+            final vendor = (data['vendor'] is Map)
+                ? data['vendor'] as Map<String, dynamic>
+                : const {};
+            final company = (vendor['company'] is Map)
+                ? vendor['company'] as Map<String, dynamic>
+                : const {};
+            
+            final String storeName =
+                (company['storeName'] as String?) ??
+                (data['storeName'] as String?) ??
+                (data['shopName'] as String?) ??
+                'Unknown Seller';
+            
+            // Create a modified data map with the extracted shop name
+            final modifiedData = Map<String, dynamic>.from(data);
+            modifiedData['shopName'] = storeName;
+            
+            sellersMap[sellerId] = modifiedData;
           }
         } catch (e) {
           AppLogger.d('Error fetching seller $sellerId: $e');
@@ -375,7 +395,19 @@ class CartService {
               .get();
           if (sellerDoc.exists) {
             final sellerData = sellerDoc.data() as Map<String, dynamic>;
-            cartItem.sellerName = sellerData['shopName'] ?? 'Unknown Seller';
+            
+            // Extract shop name from nested structure: vendor.company.storeName
+            final vendor = (sellerData['vendor'] is Map)
+                ? sellerData['vendor'] as Map<String, dynamic>
+                : const {};
+            final company = (vendor['company'] is Map)
+                ? vendor['company'] as Map<String, dynamic>
+                : const {};
+            
+            cartItem.sellerName = (company['storeName'] as String?) ??
+                (sellerData['storeName'] as String?) ??
+                (sellerData['shopName'] as String?) ??
+                'Unknown Seller';
             
             // Get seller's shipping address - handle both Map and String formats
             try {

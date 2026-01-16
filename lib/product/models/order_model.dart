@@ -462,9 +462,21 @@ class PaymongoData {
       // Parse paymentMethod enum (supports both 'method' and 'paymentMethod' keys for backward compatibility)
       final methodValue = map['paymentMethod'] ?? map['method'];
       AppLogger.d('PaymongoData.fromMap - paymentMethod value: $methodValue (type: ${methodValue.runtimeType})');
+      
+      // Normalize the method value to handle both snake_case and camelCase
+      String normalizedMethodValue = (methodValue?.toString() ?? 'card')
+          .toLowerCase()
+          .replaceAll('_', '');
+      
       final paymentMethod = PaymentMethod.values.firstWhere(
-        (e) => e.toString().split('.').last == (methodValue?.toString() ?? 'card'),
-        orElse: () => PaymentMethod.card,
+        (e) {
+          final enumName = e.toString().split('.').last.toLowerCase();
+          return enumName == normalizedMethodValue;
+        },
+        orElse: () {
+          AppLogger.d('PaymongoData.fromMap - Could not match payment method "$methodValue", defaulting to card');
+          return PaymentMethod.card;
+        },
       );
 
       // Parse paymentStatus enum (supports both 'status' and 'paymentStatus' keys for backward compatibility)

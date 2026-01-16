@@ -910,51 +910,46 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
   Widget _buildActionButtons(BuildContext context) {
     final returnEligibility = _canRequestReturn();
     final canRequestReturn = returnEligibility['eligible'] == true;
+    final status = widget.order.status;
 
     return Column(
       children: [
-        if (_canCancelOrder())
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () => _cancelOrder(context),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.error,
-                foregroundColor: AppColors.onPrimary,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+        // DELIVERED STATUS
+        if (status == order_model.OrderStatus.delivered) ...[
+          // Request Return button (if eligible)
+          if (canRequestReturn)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => _requestReturn(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.warning,
+                  foregroundColor: AppColors.onPrimary,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.assignment_return, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Request Return (${returnEligibility['daysRemaining']} days left)',
+                    ),
+                  ],
                 ),
               ),
-              child: const Text('Cancel Order'),
             ),
-          ),
-        if (_canCancelOrder()) const SizedBox(height: 12),
-        if (_canResumePayment())
+          if (canRequestReturn) const SizedBox(height: 12),
+          // Complete Order button
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: () => _resumePayment(context),
+              onPressed: () => _completeOrder(context),
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.warning,
-                foregroundColor: AppColors.onPrimary,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: const Text('Resume Payment'),
-            ),
-          ),
-        if (_canResumePayment()) const SizedBox(height: 12),
-        // Request Return button for delivered orders within 7 days
-        if (canRequestReturn)
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () => _requestReturn(context),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.warning,
+                backgroundColor: AppColors.success,
                 foregroundColor: AppColors.onPrimary,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
@@ -964,17 +959,98 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.assignment_return, size: 20),
+                  const Icon(Icons.check_circle_outline, size: 20),
                   const SizedBox(width: 8),
-                  Text(
-                    'Request Return (${returnEligibility['daysRemaining']} days left)',
-                  ),
+                  const Text('Complete Order'),
                 ],
               ),
             ),
           ),
-        if (canRequestReturn) const SizedBox(height: 12),
-        if (_canReorder())
+          const SizedBox(height: 12),
+          // Contact Seller button
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () => _contactSeller(context),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: AppColors.primary),
+                foregroundColor: AppColors.primary,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text('Contact Seller'),
+            ),
+          ),
+        ]
+        // COMPLETED STATUS
+        else if (status == order_model.OrderStatus.completed) ...[
+          // Add Review button
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => _addReview(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.onPrimary,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.star_outline, size: 20),
+                  const SizedBox(width: 8),
+                  const Text('Add Review'),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Reorder button
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () => _reorderItems(context),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: AppColors.primary),
+                foregroundColor: AppColors.primary,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text('Reorder Items'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Contact Seller button
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () => _contactSeller(context),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: AppColors.primary),
+                foregroundColor: AppColors.primary,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text('Contact Seller'),
+            ),
+          ),
+        ]
+        // RETURN/CANCELLATION STATUSES
+        else if (status == order_model.OrderStatus.return_requested ||
+            status == order_model.OrderStatus.return_approved ||
+            status == order_model.OrderStatus.return_rejected ||
+            status == order_model.OrderStatus.returned ||
+            status == order_model.OrderStatus.cancelled) ...[
+          // Reorder button
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
@@ -990,22 +1066,76 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
               child: const Text('Reorder Items'),
             ),
           ),
-        if (_canReorder()) const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton(
-            onPressed: () => _contactSeller(context),
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(color: AppColors.primary),
-              foregroundColor: AppColors.primary,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+          const SizedBox(height: 12),
+          // Contact Seller button
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () => _contactSeller(context),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: AppColors.primary),
+                foregroundColor: AppColors.primary,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text('Contact Seller'),
+            ),
+          ),
+        ]
+        // PROCESSING/PENDING STATUSES
+        else ...[
+          if (_canCancelOrder())
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => _cancelOrder(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.error,
+                  foregroundColor: AppColors.onPrimary,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text('Cancel Order'),
               ),
             ),
-            child: const Text('Contact Seller'),
+          if (_canCancelOrder()) const SizedBox(height: 12),
+          if (_canResumePayment())
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => _resumePayment(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.warning,
+                  foregroundColor: AppColors.onPrimary,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text('Resume Payment'),
+              ),
+            ),
+          if (_canResumePayment()) const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () => _contactSeller(context),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: AppColors.primary),
+                foregroundColor: AppColors.primary,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text('Contact Seller'),
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -1341,13 +1471,6 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     }
   }
 
-  bool _canReorder() {
-    return widget.order.status == order_model.OrderStatus.confirmed ||
-        widget.order.status == order_model.OrderStatus.delivered ||
-        widget.order.status == order_model.OrderStatus.completed ||
-        widget.order.status == order_model.OrderStatus.expired;
-  }
-
   bool _canCancelOrder() {
     // Can cancel if order is pending, confirmed, or to_ship (not yet shipping)
     return widget.order.status == order_model.OrderStatus.pending ||
@@ -1654,7 +1777,6 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
           sellerData?['fullName'] ??
           sellerData?['displayName'] ??
           'Seller';
-      final sellerShopName = sellerData?['shopName'];
 
       // Format order date
       final orderDate = DateFormat(
@@ -1783,6 +1905,110 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         );
       }
     }
+  }
+
+  void _completeOrder(BuildContext context) async {
+    // Confirm completion
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.check_circle_outline, color: AppColors.success),
+            const SizedBox(width: 8),
+            Text('Complete Order'),
+          ],
+        ),
+        content: Text(
+          'Mark this order as completed? This will deduct the stock count for these items and cannot be undone.',
+          style: AppTextStyles.bodyMedium,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.onSurface.withValues(alpha: 0.6)),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.success,
+              foregroundColor: AppColors.onPrimary,
+            ),
+            child: Text('Complete Order'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    if (!context.mounted) return;
+
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      await OrderService.markOrderComplete(widget.order.orderId);
+
+      // Close loading dialog
+      if (context.mounted) {
+        Navigator.of(context).pop();
+
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Order completed successfully. Stock has been deducted.'),
+            backgroundColor: AppColors.success,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+
+        // Navigate back to orders page
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      AppLogger.d('Error completing order: $e');
+
+      // Close loading dialog if still open
+      if (context.mounted) {
+        Navigator.of(context).pop();
+
+        // Show error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to complete order. Please try again.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  void _addReview(BuildContext context) async {
+    // Show message that this feature is coming soon
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.star_outline, color: AppColors.onPrimary),
+            const SizedBox(width: 8),
+            Text('Add Review feature coming soon!'),
+          ],
+        ),
+        backgroundColor: AppColors.info,
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 }
 

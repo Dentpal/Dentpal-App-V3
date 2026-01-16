@@ -362,18 +362,22 @@ class OrderService {
 
       AppLogger.d('Marking order as complete: $orderId');
 
-      // Update order status locally in Firestore
-      await _firestore.collection('Order').doc(orderId).update({
-        'status': 'completed',
-        'updatedAt': FieldValue.serverTimestamp(),
-        'statusHistory': FieldValue.arrayUnion([
-          {
-            'status': 'completed',
-            'timestamp': DateTime.now(),
-            'note': 'Order marked as complete by customer',
-          }
-        ]),
-      });
+      // Call the Cloud Function to complete the order and deduct stock
+      final response = await http.post(
+        Uri.parse('https://asia-southeast1-dentpal-161e5.cloudfunctions.net/completeOrder'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'orderId': orderId,
+        }),
+      );
+
+      if (response.statusCode != 200) {
+        final errorData = jsonDecode(response.body);
+        throw Exception(errorData['error'] ?? 'Failed to complete order');
+      }
 
       AppLogger.d('Order marked as complete successfully');
     } catch (e) {

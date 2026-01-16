@@ -22,6 +22,9 @@ export { cancelOrder } from './cancelOrder';
 // Export the request return function
 export { requestReturn } from './requestReturn';
 
+// Export the complete order function
+export { completeOrder } from './completeOrder';
+
 // Export the auto-complete orders scheduled function
 export { autoCompleteOrders } from './autoCompleteOrders';
 
