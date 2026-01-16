@@ -8,6 +8,13 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Load keystore properties
+val keystorePropertiesFile = rootProject.file("key.properties")
+val keystoreProperties = java.util.Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+}
+
 android {
     namespace = "com.rrnewtech.dentpal"
     compileSdk = flutter.compileSdkVersion
@@ -30,10 +37,21 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            if (keystorePropertiesFile.exists()) {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+            }
+        }
+    }
+
     buildTypes {
         getByName("release") {
-            // Signing config for release (replace with your own if available)
-            signingConfig = signingConfigs.getByName("debug")
+            // Use release signing config
+            signingConfig = signingConfigs.getByName("release")
 
             // Enable minification and resource shrinking
             isMinifyEnabled = true

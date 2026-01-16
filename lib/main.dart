@@ -13,12 +13,21 @@ import 'package:dentpal/core/app_theme/app_theme.dart';
 import 'package:dentpal/services/deep_link_service.dart';
 import 'package:dentpal/reset_password_page.dart';
 import 'package:dentpal/change_password_standalone_page.dart';
+import 'package:dentpal/public_privacy_policy_page.dart';
+import 'package:dentpal/public_terms_of_service_page.dart';
 import 'firebase_options.dart';
 import 'package:dentpal/utils/web_utils.dart';
 import 'package:dentpal/utils/app_logger.dart';
+import 'package:flutter_web_plugins/url_strategy.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Use path-based URL strategy for clean URLs without hash (#)
+  // This enables URLs like /privacy-policy instead of /#/privacy-policy
+  if (kIsWeb) {
+    usePathUrlStrategy();
+  }
 
   // Check if Firebase is already initialized
   try {
@@ -71,6 +80,8 @@ class MyApp extends StatelessWidget {
         '/cart': (context) => const CartPage(),
         '/add-product': (context) => const AddProductPage(),
         '/seller-listings': (context) => const SellerListingsPage(),
+        '/privacy-policy': (context) => const PublicPrivacyPolicyPage(),
+        '/terms-of-service': (context) => const PublicTermsOfServicePage(),
       },
       onGenerateRoute: (settings) {
         // Handle dynamic product routes

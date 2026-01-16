@@ -70,6 +70,8 @@ class DeepLinkService {
       String? productId;
       String? sellerId;
       bool isResetPassword = false;
+      bool isPrivacyPolicy = false;
+      bool isTermsOfService = false;
       String? oobCode; // Firebase out-of-band code for password reset
 
       // Handle different URL formats:
@@ -78,9 +80,13 @@ class DeepLinkService {
       // https://dentpal-store-sandbox-testing.web.app/#/product/ABC123
       // https://dentpal-store-sandbox-testing.web.app/#/store/XYZ789
       // https://dentpal-store.web.app/#/reset-password?oobCode=XXX
+      // https://dentpal-store.web.app/#/privacy-policy
+      // https://dentpal-store.web.app/#/terms-of-service
       // dentpal://product/ABC123
       // dentpal://store/XYZ789
       // dentpal://reset-password?oobCode=XXX
+      // dentpal://privacy-policy
+      // dentpal://terms-of-service
 
       if (uri.scheme == 'https' || uri.scheme == 'http') {
         // Support both production and sandbox domains
@@ -101,6 +107,10 @@ class DeepLinkService {
               // Fragment format: /reset-password?oobCode=XXX
               final fragmentUri = Uri.parse('https://temp.com$fragment');
               oobCode = fragmentUri.queryParameters['oobCode'];
+            } else if (fragment == '/privacy-policy' || fragment.startsWith('/privacy-policy')) {
+              isPrivacyPolicy = true;
+            } else if (fragment == '/terms-of-service' || fragment.startsWith('/terms-of-service')) {
+              isTermsOfService = true;
             } else if (fragment.startsWith('/product/')) {
               productId = fragment.substring('/product/'.length);
             } else if (fragment.startsWith('/store/')) {
@@ -111,6 +121,10 @@ class DeepLinkService {
           else if (uri.path.startsWith('/reset-password')) {
             isResetPassword = true;
             oobCode = uri.queryParameters['oobCode'];
+          } else if (uri.path == '/privacy-policy' || uri.path.startsWith('/privacy-policy')) {
+            isPrivacyPolicy = true;
+          } else if (uri.path == '/terms-of-service' || uri.path.startsWith('/terms-of-service')) {
+            isTermsOfService = true;
           } else if (uri.path.startsWith('/product/')) {
             productId = uri.path.substring('/product/'.length);
           } else if (uri.path.startsWith('/store/')) {
@@ -126,6 +140,10 @@ class DeepLinkService {
             uri.path.startsWith('/reset-password')) {
           isResetPassword = true;
           oobCode = uri.queryParameters['oobCode'];
+        } else if (uri.host == 'privacy-policy' || uri.path == '/privacy-policy') {
+          isPrivacyPolicy = true;
+        } else if (uri.host == 'terms-of-service' || uri.path == '/terms-of-service') {
+          isTermsOfService = true;
         } else if (uri.host == 'product' && uri.pathSegments.isNotEmpty) {
           productId = uri.pathSegments.first;
         } else if (uri.path.startsWith('/product/')) {
@@ -143,6 +161,20 @@ class DeepLinkService {
           'Reset password deep link detected, oobCode: ${oobCode != null ? "present" : "not present"}',
         );
         _navigateToResetPassword(oobCode);
+        return;
+      }
+
+      // Handle privacy policy navigation
+      if (isPrivacyPolicy) {
+        AppLogger.d('Privacy policy deep link detected');
+        _navigateToPrivacyPolicy();
+        return;
+      }
+
+      // Handle terms of service navigation
+      if (isTermsOfService) {
+        AppLogger.d('Terms of service deep link detected');
+        _navigateToTermsOfService();
         return;
       }
 
@@ -248,6 +280,26 @@ class DeepLinkService {
     }
   }
 
+  /// Navigate to privacy policy page
+  static void _navigateToPrivacyPolicy() {
+    if (_navigatorKey?.currentState != null) {
+      AppLogger.d('Navigating to privacy policy page');
+      _navigatorKey!.currentState!.pushNamed('/privacy-policy');
+    } else {
+      AppLogger.d('Navigator not available for privacy policy navigation');
+    }
+  }
+
+  /// Navigate to terms of service page
+  static void _navigateToTermsOfService() {
+    if (_navigatorKey?.currentState != null) {
+      AppLogger.d('Navigating to terms of service page');
+      _navigatorKey!.currentState!.pushNamed('/terms-of-service');
+    } else {
+      AppLogger.d('Navigator not available for terms of service navigation');
+    }
+  }
+
   /// Clean up resources
   static void dispose() {
     _linkSubscription?.cancel();
@@ -320,5 +372,47 @@ class DeepLinkService {
   static String generateResetPasswordCustomSchemeLink({String? oobCode}) {
     final queryString = oobCode != null ? '?oobCode=$oobCode' : '';
     return 'dentpal://reset-password$queryString';
+  }
+
+  /// Generate shareable deep link for privacy policy
+  static String generatePrivacyPolicyLink({
+    String? customDomain,
+    bool useSandbox = false,
+  }) {
+    String domain;
+    if (customDomain != null) {
+      domain = customDomain;
+    } else if (useSandbox) {
+      domain = 'https://dentpal-store-sandbox-testing.web.app';
+    } else {
+      domain = 'https://dentpal-store.web.app';
+    }
+    return '$domain/#/privacy-policy';
+  }
+
+  /// Generate custom scheme link for privacy policy (for native app)
+  static String generatePrivacyPolicyCustomSchemeLink() {
+    return 'dentpal://privacy-policy';
+  }
+
+  /// Generate shareable deep link for terms of service
+  static String generateTermsOfServiceLink({
+    String? customDomain,
+    bool useSandbox = false,
+  }) {
+    String domain;
+    if (customDomain != null) {
+      domain = customDomain;
+    } else if (useSandbox) {
+      domain = 'https://dentpal-store-sandbox-testing.web.app';
+    } else {
+      domain = 'https://dentpal-store.web.app';
+    }
+    return '$domain/#/terms-of-service';
+  }
+
+  /// Generate custom scheme link for terms of service (for native app)
+  static String generateTermsOfServiceCustomSchemeLink() {
+    return 'dentpal://terms-of-service';
   }
 }

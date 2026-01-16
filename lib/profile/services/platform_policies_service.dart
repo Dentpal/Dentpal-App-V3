@@ -96,6 +96,52 @@ class PlatformPoliciesService {
     }
   }
 
+  /// Fetch User Privacy Policy from Firebase Storage
+  /// Looks for document in platform_policies collection with type: 'user-privacy-policy'
+  /// and downloads content from the downloadUrl
+  static Future<String?> getUserPrivacyPolicy() async {
+    try {
+      AppLogger.d('Fetching User Privacy Policy from Firebase...');
+      
+      final querySnapshot = await _firestore
+          .collection('platform_policies')
+          .where('type', isEqualTo: 'user-privacy-policy')
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isNotEmpty) {
+        final doc = querySnapshot.docs.first;
+        final downloadUrl = doc.data()['downloadUrl'] as String?;
+        
+        if (downloadUrl != null && downloadUrl.isNotEmpty) {
+          AppLogger.d('Found download URL, downloading content...');
+          
+          // Download content from Firebase Storage
+          final response = await http.get(Uri.parse(downloadUrl))
+              .timeout(const Duration(seconds: 30));
+          
+          if (response.statusCode == 200) {
+            final content = response.body;
+            AppLogger.d('Successfully fetched User Privacy Policy from Storage');
+            return content;
+          } else {
+            AppLogger.d('Failed to download from Storage. Status: ${response.statusCode}');
+            return null;
+          }
+        } else {
+          AppLogger.d('Download URL is empty or null');
+          return null;
+        }
+      } else {
+        AppLogger.d('No User Privacy Policy document found');
+        return null;
+      }
+    } catch (e) {
+      AppLogger.d('Error fetching User Privacy Policy: $e');
+      return null;
+    }
+  }
+
   /// Stream Terms and Conditions download URL from Firebase for real-time updates
   /// Note: You'll need to manually fetch content when URL changes
   static Stream<String?> streamTermsAndConditionsUrl() {
@@ -119,6 +165,23 @@ class PlatformPoliciesService {
     return _firestore
         .collection('platform_policies')
         .where('type', isEqualTo: 'privacy-policy')
+        .limit(1)
+        .snapshots()
+        .map((snapshot) {
+      if (snapshot.docs.isNotEmpty) {
+        final doc = snapshot.docs.first;
+        return doc.data()['downloadUrl'] as String?;
+      }
+      return null;
+    });
+  }
+
+  /// Stream User Privacy Policy download URL from Firebase for real-time updates
+  /// Note: You'll need to manually fetch content when URL changes
+  static Stream<String?> streamUserPrivacyPolicyUrl() {
+    return _firestore
+        .collection('platform_policies')
+        .where('type', isEqualTo: 'user-privacy-policy')
         .limit(1)
         .snapshots()
         .map((snapshot) {

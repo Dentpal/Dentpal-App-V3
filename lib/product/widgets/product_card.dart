@@ -53,7 +53,7 @@ class ProductCard extends StatelessWidget {
           children: [
             // Product Image
             AspectRatio(
-              aspectRatio: 1.3,
+              aspectRatio: 1.1,
               child: ClipRRect(
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(16),
@@ -77,7 +77,7 @@ class ProductCard extends StatelessWidget {
                       color: AppColors.onSurface,
                       fontSize: 13,
                     ),
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
@@ -122,10 +122,11 @@ class ProductCard extends StatelessWidget {
           ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
             // Product Image
             SizedBox(
-              height: 140,
+              height: 120,
               width: double.infinity,
               child: ClipRRect(
                 borderRadius: const BorderRadius.only(
@@ -137,9 +138,10 @@ class ProductCard extends StatelessWidget {
             ),
             // Product Details
             Padding(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   // Product Name
                   Text(
@@ -149,7 +151,7 @@ class ProductCard extends StatelessWidget {
                       color: AppColors.onSurface,
                       fontSize: 16,
                     ),
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 6),

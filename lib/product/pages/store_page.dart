@@ -1115,9 +1115,9 @@ class _StorePageState extends State<StorePage>
     final screenWidth = MediaQuery.of(context).size.width;
 
     if (screenWidth >= 1200) {
-      return 0.85; // Slightly taller cards for large desktop
+      return 0.80; // Slightly taller cards for large desktop
     } else if (screenWidth >= 900) {
-      return 0.8; // Desktop screens
+      return 0.75; // Desktop screens (increased height for 2-line product names)
     } else if (screenWidth >= 600) {
       return 0.78; // Tablet screens
     } else {

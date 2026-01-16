@@ -30,7 +30,7 @@ class _PrivacyPolicyPageState extends State<PrivacyPolicyPage> {
         _errorMessage = null;
       });
 
-      final content = await PlatformPoliciesService.getPrivacyPolicy();
+      final content = await PlatformPoliciesService.getUserPrivacyPolicy();
 
       if (mounted) {
         setState(() {
