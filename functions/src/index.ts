@@ -30,3 +30,6 @@ export { autoCompleteOrders } from './autoCompleteOrders';
 
 // Export the retry pending refunds scheduled function
 export { retryPendingRefunds } from './retryPendingRefunds';
+
+// Export the migration function for confirmed orders
+export { migrateConfirmedOrders } from './migrateConfirmedOrders';

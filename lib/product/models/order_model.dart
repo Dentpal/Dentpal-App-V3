@@ -369,6 +369,29 @@ class ShippingInfo {
   });
 
   factory ShippingInfo.fromMap(Map<String, dynamic> map) {
+    // Extract tracking ID - check multiple possible locations
+    String? trackingId = map['trackingId'];
+    
+    // If not at top level, check in JRS data structure
+    if (trackingId == null || trackingId.isEmpty) {
+      final jrsData = map['jrs'] as Map<String, dynamic>?;
+      if (jrsData != null) {
+        // First check jrs.trackingId
+        trackingId = jrsData['trackingId'];
+        
+        // If not found, check in JRS response
+        if (trackingId == null || trackingId.isEmpty) {
+          final response = jrsData['response'] as Map<String, dynamic>?;
+          if (response != null) {
+            final shippingDto = response['ShippingRequestEntityDto'] as Map<String, dynamic>?;
+            if (shippingDto != null) {
+              trackingId = shippingDto['TrackingId'];
+            }
+          }
+        }
+      }
+    }
+    
     return ShippingInfo(
       addressId: map['addressId'] ?? '',
       fullName: map['fullName'] ?? '',
@@ -380,7 +403,7 @@ class ShippingInfo {
       country: map['country'] ?? '',
       phoneNumber: map['phoneNumber'] ?? '',
       notes: map['notes'],
-      trackingId: map['trackingId'],
+      trackingId: trackingId,
     );
   }
 

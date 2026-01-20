@@ -312,7 +312,8 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
 
     // For active status with a payment method, treat as paid
     const finalStatus = (status === 'active' && paymentMethodUsed) ? 'paid' : status;
-    const orderStatus = finalStatus === 'paid' ? 'confirmed' : 'pending';
+    // Skip confirmed status - move directly to to_ship after payment
+    const orderStatus = finalStatus === 'paid' ? 'to_ship' : 'pending';
 
     // Get both payment ID and payment intent ID
     // Payment ID (pay_xxx) is used for refunds - CRITICAL for refund processing
@@ -372,15 +373,14 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
       calculatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
 
-    // Prepare update object - update entire objects atomically
-    const updateData: any = {
-      status: orderStatus,
+    // First update: Record payment confirmation with fees and payout
+    const firstUpdate: any = {
       paymongo: updatedPaymongo,
       fees: updatedFees,
       payout: updatedPayout,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       statusHistory: admin.firestore.FieldValue.arrayUnion({
-        status: orderStatus,
+        status: 'confirmed',
         timestamp: new Date(),
         note: `Payment ${finalStatus} via ${paymentMethod}`,
       }),
@@ -388,15 +388,37 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
     
     // If we have updated seller fee breakdowns (multi-seller order), include them
     if (updatedSellerFeeBreakdowns) {
-      updateData.sellerFeeBreakdowns = updatedSellerFeeBreakdowns;
+      firstUpdate.sellerFeeBreakdowns = updatedSellerFeeBreakdowns;
       logger.info('Updating seller fee breakdowns with recalculated values', {
         orderId,
         sellerCount: updatedSellerFeeBreakdowns.length
       });
     }
 
-    // Use update instead of set with merge to ensure clean updates
-    await orderRef.update(updateData);
+    // Execute first update - payment confirmation
+    await orderRef.update(firstUpdate);
+    
+    logger.info('Payment confirmation recorded', { orderId });
+
+    // Small delay to ensure distinct timestamps
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Second update: Move to to_ship status and set fulfillment stage
+    const secondUpdate: any = {
+      status: orderStatus,
+      fulfillmentStage: 'to-pack',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      statusHistory: admin.firestore.FieldValue.arrayUnion({
+        status: 'to_ship',
+        timestamp: new Date(),
+        note: 'Order confirmed and ready to be processed',
+      }),
+    };
+
+    // Execute second update - move to to_ship
+    await orderRef.update(secondUpdate);
+    
+    logger.info('Order moved to to_ship status with to-pack fulfillment stage', { orderId });
 
     logger.info('Order payment processed successfully', { 
       orderId, 
