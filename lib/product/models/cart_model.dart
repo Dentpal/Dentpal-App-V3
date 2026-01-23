@@ -187,4 +187,33 @@ class CartSummary {
   List<SellerGroup> get sellersWithSelectedItems => sellerGroups
       .where((group) => group.hasSelectedItems)
       .toList();
+
+  // Check if any selected items have insufficient stock
+  bool get hasInsufficientStock {
+    for (var group in sellerGroups) {
+      for (var item in group.items) {
+        if (item.isSelected && 
+            item.availableStock != null && 
+            item.quantity > item.availableStock!) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  // Get list of selected items with insufficient stock
+  List<CartItem> get itemsWithInsufficientStock {
+    final List<CartItem> insufficientItems = [];
+    for (var group in sellerGroups) {
+      for (var item in group.items) {
+        if (item.isSelected && 
+            item.availableStock != null && 
+            item.quantity > item.availableStock!) {
+          insufficientItems.add(item);
+        }
+      }
+    }
+    return insufficientItems;
+  }
 }

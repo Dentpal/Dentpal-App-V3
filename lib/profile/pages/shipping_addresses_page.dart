@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb; // Added for web detection
 import '../models/shipping_address.dart';
 import '../services/address_service.dart';
+import '../services/geocoding_validator_service.dart';
 import '../widgets/address_map_widget.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
@@ -555,6 +556,9 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
   bool _isDefault = false;
   bool _isLoading = false;
   bool _isAutoFilling = false; // Track when auto-fill is in progress
+  bool _isValidatingAddress = false; // Track address validation
+  AutovalidateMode _autovalidateMode =
+      AutovalidateMode.disabled; // Track validation mode
   double? _latitude;
   double? _longitude;
 
@@ -724,9 +728,89 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
   }
 
   Future<void> _saveAddress() async {
+    // Enable autovalidation after first submit attempt
+    if (_autovalidateMode != AutovalidateMode.always) {
+      setState(() {
+        _autovalidateMode = AutovalidateMode.always;
+      });
+    }
+
     if (!_formKey.currentState!.validate()) return;
 
+    // Check if location is pinned
+    if (_latitude == null || _longitude == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Please pin your exact location on the map before saving',
+          ),
+          backgroundColor: AppColors.error,
+          duration: const Duration(seconds: 3),
+          action: SnackBarAction(
+            label: 'OK',
+            textColor: Colors.white,
+            onPressed: () {},
+          ),
+        ),
+      );
+      return;
+    }
+
+    // Validate address with Google Maps before saving
     setState(() {
+      _isValidatingAddress = true;
+    });
+
+    try {
+      // Validate the address components with geocoding
+      final validationResult = await GeocodingValidatorService.validateAddress(
+        city: _cityController.text.trim(),
+        state: _stateController.text.trim(),
+        postalCode: _postalCodeController.text.trim(),
+      );
+
+      if (!validationResult['isValid']) {
+        setState(() {
+          _isValidatingAddress = false;
+        });
+
+        // Show error dialog with suggestion if available
+        final shouldContinue = await _showValidationErrorDialog(
+          validationResult['message'],
+          suggestion: validationResult['suggestion'],
+          resolvedCity: validationResult['resolvedCity'],
+          resolvedState: validationResult['resolvedState'],
+          resolvedPostal: validationResult['resolvedPostal'],
+        );
+
+        if (!shouldContinue) return;
+      } else {
+        // Update coordinates if validation was successful
+        if (validationResult['latitude'] != null &&
+            validationResult['longitude'] != null) {
+          _latitude = validationResult['latitude'];
+          _longitude = validationResult['longitude'];
+        }
+      }
+    } catch (e) {
+      setState(() {
+        _isValidatingAddress = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Unable to validate address: $e'),
+            backgroundColor: AppColors.error,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() {
+      _isValidatingAddress = false;
       _isLoading = true;
     });
 
@@ -806,6 +890,149 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
     }
   }
 
+  Future<bool> _showValidationErrorDialog(
+    String message, {
+    String? suggestion,
+    String? resolvedCity,
+    String? resolvedState,
+    String? resolvedPostal,
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: AppColors.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.warning_outlined,
+                    color: AppColors.error,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Address Validation',
+                    style: AppTextStyles.titleMedium.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  message,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.onSurface.withValues(alpha: 0.8),
+                  ),
+                ),
+                if (suggestion != null) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: AppColors.primary.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.lightbulb_outline,
+                              size: 18,
+                              color: AppColors.primary,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Suggestion:',
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(suggestion, style: AppTextStyles.bodyMedium),
+                        if (resolvedCity != null && resolvedState != null) ...[
+                          const SizedBox(height: 12),
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              // Auto-fill with suggested values
+                              if (resolvedCity.isNotEmpty) {
+                                _cityController.text = resolvedCity;
+                              }
+                              if (resolvedState.isNotEmpty) {
+                                _stateController.text = resolvedState;
+                              }
+                              if (resolvedPostal != null &&
+                                  resolvedPostal.isNotEmpty) {
+                                _postalCodeController.text = resolvedPostal;
+                              }
+                              Navigator.of(
+                                context,
+                              ).pop(false); // Close dialog, don't save yet
+                            },
+                            icon: const Icon(Icons.auto_fix_high, size: 18),
+                            label: const Text('Use Suggestion'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: AppColors.onPrimary,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.onSurface.withValues(alpha: 0.6),
+                ),
+                child: Text('Edit Address', style: AppTextStyles.buttonMedium),
+              ),
+              if (suggestion == null)
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.error,
+                    foregroundColor: AppColors.onPrimary,
+                    elevation: 0,
+                  ),
+                  child: Text('Save Anyway', style: AppTextStyles.buttonMedium),
+                ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -839,9 +1066,40 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
           final isWideWeb = kIsWeb && constraints.maxWidth > 800; // BREAKPOINT
           final formContent = Form(
             key: _formKey,
+            autovalidateMode: _autovalidateMode,
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                // Info banner about address validation
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: AppColors.primary,
+                        size: 24,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'City, Province, and Postal Code will be validated using Google Maps to ensure accurate delivery.',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.onSurface.withValues(alpha: 0.8),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
                 _buildTextField(
                   controller: _fullNameController,
                   label: 'Full Name',
@@ -874,6 +1132,7 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
                         controller: _cityController,
                         label: 'City',
                         icon: Icons.location_city_outlined,
+                        helperText: 'Must be a valid city in the Philippines',
                         validator: (value) =>
                             (value == null || value.trim().isEmpty)
                             ? 'City is required'
@@ -888,6 +1147,7 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
                         label: 'Postal Code',
                         icon: Icons.markunread_mailbox_outlined,
                         keyboardType: TextInputType.number,
+                        helperText: 'Valid PH postal code',
                         validator: (value) =>
                             (value == null || value.trim().isEmpty)
                             ? 'Postal code is required'
@@ -901,6 +1161,7 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
                   controller: _stateController,
                   label: 'State/Province',
                   icon: Icons.map_outlined,
+                  helperText: 'Must be a valid province in the Philippines',
                   validator: (value) => (value == null || value.trim().isEmpty)
                       ? 'State/Province is required'
                       : null,
@@ -910,6 +1171,9 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
                   controller: _countryController,
                   label: 'Country',
                   icon: Icons.public_outlined,
+                  enabled:
+                      false, // Disable editing since we only support Philippines
+                  helperText: 'Currently only Philippines is supported',
                   validator: (value) => (value == null || value.trim().isEmpty)
                       ? 'Country is required'
                       : null,
@@ -941,25 +1205,60 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
                       children: [
                         Icon(
                           Icons.location_on,
-                          color: AppColors.primary,
+                          color: AppColors.error,
                           size: 20,
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          'Pin your exact location',
+                          'Pin your exact location *',
                           style: AppTextStyles.bodyLarge.copyWith(
                             fontWeight: FontWeight.w600,
+                            color: AppColors.error,
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Tap on the map to pin your exact location for better delivery accuracy',
+                      'Required: Tap on the map to pin your exact location for accurate delivery',
                       style: AppTextStyles.bodySmall.copyWith(
                         color: AppColors.onSurface.withValues(alpha: 0.7),
                       ),
                     ),
+                    if (_latitude != null && _longitude != null) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.success.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: AppColors.success.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.check_circle,
+                              color: AppColors.success,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Location pinned',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.success,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     AddressMapWidget(
                       address:
@@ -1046,7 +1345,9 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
                 SizedBox(
                   height: 56,
                   child: ElevatedButton(
-                    onPressed: _isLoading ? null : _saveAddress,
+                    onPressed: (_isLoading || _isValidatingAddress)
+                        ? null
+                        : _saveAddress,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       foregroundColor: AppColors.onPrimary,
@@ -1055,14 +1356,26 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
                         borderRadius: BorderRadius.circular(16),
                       ),
                     ),
-                    child: _isLoading
-                        ? SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: AppColors.onPrimary,
-                            ),
+                    child: (_isLoading || _isValidatingAddress)
+                        ? Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppColors.onPrimary,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                _isValidatingAddress
+                                    ? 'Validating Address...'
+                                    : 'Saving...',
+                                style: AppTextStyles.buttonLarge,
+                              ),
+                            ],
                           )
                         : Text(
                             _isEditing ? 'Update Address' : 'Add Address',
@@ -1096,13 +1409,18 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
     String? Function(String?)? validator,
     TextInputType? keyboardType,
     int? maxLines,
+    String? helperText,
+    bool enabled = true,
   }) {
     return TextFormField(
       controller: controller,
       validator: validator,
       keyboardType: keyboardType,
       maxLines: maxLines ?? 1,
-      style: AppTextStyles.bodyMedium,
+      enabled: enabled,
+      style: AppTextStyles.bodyMedium.copyWith(
+        color: enabled ? null : AppColors.onSurface.withValues(alpha: 0.5),
+      ),
       inputFormatters: label.contains('Phone')
           ? [
               // Only allow digits and basic formatting for phone
@@ -1112,7 +1430,19 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
           : null,
       decoration: InputDecoration(
         labelText: label,
-        prefixIcon: Icon(icon, color: AppColors.primary),
+        helperText: helperText,
+        helperMaxLines: 2,
+        errorMaxLines: 2,
+        helperStyle: AppTextStyles.bodySmall.copyWith(
+          color: AppColors.primary.withValues(alpha: 0.7),
+        ),
+        errorStyle: AppTextStyles.bodySmall.copyWith(color: AppColors.error),
+        prefixIcon: Icon(
+          icon,
+          color: enabled
+              ? AppColors.primary
+              : AppColors.onSurface.withValues(alpha: 0.3),
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(
@@ -1125,6 +1455,12 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
             color: AppColors.onSurface.withValues(alpha: 0.2),
           ),
         ),
+        disabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(
+            color: AppColors.onSurface.withValues(alpha: 0.1),
+          ),
+        ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: AppColors.primary, width: 2),
@@ -1133,8 +1469,14 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: AppColors.error, width: 2),
         ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: AppColors.error, width: 2),
+        ),
         filled: true,
-        fillColor: AppColors.surface,
+        fillColor: enabled
+            ? AppColors.surface
+            : AppColors.surface.withValues(alpha: 0.5),
         labelStyle: AppTextStyles.bodyMedium.copyWith(
           color: AppColors.onSurface.withValues(alpha: 0.7),
         ),
