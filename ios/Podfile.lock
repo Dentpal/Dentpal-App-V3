@@ -1220,6 +1220,9 @@ PODS:
   - Firebase/Functions (12.4.0):
     - Firebase/CoreOnly
     - FirebaseFunctions (~> 12.4.0)
+  - Firebase/Messaging (12.4.0):
+    - Firebase/CoreOnly
+    - FirebaseMessaging (~> 12.4.0)
   - Firebase/Storage (12.4.0):
     - Firebase/CoreOnly
     - FirebaseStorage (~> 12.4.0)
@@ -1232,6 +1235,10 @@ PODS:
     - Flutter
   - firebase_database (12.0.3):
     - Firebase/Database (= 12.4.0)
+    - firebase_core
+    - Flutter
+  - firebase_messaging (16.0.3):
+    - Firebase/Messaging (= 12.4.0)
     - firebase_core
     - Flutter
   - firebase_storage (13.0.3):
@@ -1291,6 +1298,20 @@ PODS:
     - FirebaseMessagingInterop (~> 12.4.0)
     - FirebaseSharedSwift (~> 12.4.0)
     - GTMSessionFetcher/Core (< 6.0, >= 3.4)
+  - FirebaseInstallations (12.4.0):
+    - FirebaseCore (~> 12.4.0)
+    - GoogleUtilities/Environment (~> 8.1)
+    - GoogleUtilities/UserDefaults (~> 8.1)
+    - PromisesObjC (~> 2.4)
+  - FirebaseMessaging (12.4.0):
+    - FirebaseCore (~> 12.4.0)
+    - FirebaseInstallations (~> 12.4.0)
+    - GoogleDataTransport (~> 10.1)
+    - GoogleUtilities/AppDelegateSwizzler (~> 8.1)
+    - GoogleUtilities/Environment (~> 8.1)
+    - GoogleUtilities/Reachability (~> 8.1)
+    - GoogleUtilities/UserDefaults (~> 8.1)
+    - nanopb (~> 3.30910.0)
   - FirebaseMessagingInterop (12.4.0)
   - FirebaseSharedSwift (12.4.0)
   - FirebaseStorage (12.4.0):
@@ -1301,6 +1322,8 @@ PODS:
     - GoogleUtilities/Environment (~> 8.1)
     - GTMSessionFetcher/Core (< 6.0, >= 3.4)
   - Flutter (1.0.0)
+  - flutter_local_notifications (0.0.1):
+    - Flutter
   - geocoding_ios (1.0.5):
     - Flutter
   - geolocator_apple (1.2.0):
@@ -1551,8 +1574,10 @@ DEPENDENCIES:
   - firebase_auth (from `.symlinks/plugins/firebase_auth/ios`)
   - firebase_core (from `.symlinks/plugins/firebase_core/ios`)
   - firebase_database (from `.symlinks/plugins/firebase_database/ios`)
+  - firebase_messaging (from `.symlinks/plugins/firebase_messaging/ios`)
   - firebase_storage (from `.symlinks/plugins/firebase_storage/ios`)
   - Flutter (from `Flutter`)
+  - flutter_local_notifications (from `.symlinks/plugins/flutter_local_notifications/ios`)
   - geocoding_ios (from `.symlinks/plugins/geocoding_ios/ios`)
   - geolocator_apple (from `.symlinks/plugins/geolocator_apple/darwin`)
   - google_maps_flutter_ios (from `.symlinks/plugins/google_maps_flutter_ios/ios`)
@@ -1587,6 +1612,8 @@ SPEC REPOS:
     - FirebaseFirestore
     - FirebaseFirestoreInternal
     - FirebaseFunctions
+    - FirebaseInstallations
+    - FirebaseMessaging
     - FirebaseMessagingInterop
     - FirebaseSharedSwift
     - FirebaseStorage
@@ -1628,10 +1655,14 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/firebase_core/ios"
   firebase_database:
     :path: ".symlinks/plugins/firebase_database/ios"
+  firebase_messaging:
+    :path: ".symlinks/plugins/firebase_messaging/ios"
   firebase_storage:
     :path: ".symlinks/plugins/firebase_storage/ios"
   Flutter:
     :path: Flutter
+  flutter_local_notifications:
+    :path: ".symlinks/plugins/flutter_local_notifications/ios"
   geocoding_ios:
     :path: ".symlinks/plugins/geocoding_ios/ios"
   geolocator_apple:
@@ -1680,6 +1711,7 @@ SPEC CHECKSUMS:
   firebase_auth: c2b8be95d602d4e8a9148fae72333ef78e69cc20
   firebase_core: 744984dbbed8b3036abf34f0b98d80f130a7e464
   firebase_database: 1a97f66efbcf238d1107aa0160aa9942478b38d3
+  firebase_messaging: 82c70650c426a0a14873e1acdb9ec2b443c4e8b4
   firebase_storage: 0ba617a05b24aec050395e4d5d3773c0d7518a15
   FirebaseAppCheckInterop: f734c802f21fe1da0837708f0f9a27218c8a4ed0
   FirebaseAuth: 4a2aed737c84114a9d9b33d11ae1b147d6b94889
@@ -1691,10 +1723,13 @@ SPEC CHECKSUMS:
   FirebaseFirestore: 2a6183381cf7679b1bb000eb76a8e3178e25dee2
   FirebaseFirestoreInternal: 6577a27cd5dc3722b900042527f86d4ea1626134
   FirebaseFunctions: 9b6439272c887dfc15439b95cf56ddda95722bc7
+  FirebaseInstallations: ae9f4902cb5bf1d0c5eaa31ec1f4e5495a0714e2
+  FirebaseMessaging: d33971b7bb252745ea6cd31ab190d1a1df4b8ed5
   FirebaseMessagingInterop: c1454390729ce3c91c184cffd0c347369d7cc48a
   FirebaseSharedSwift: 93426a1de92f19e1199fac5295a4f8df16458daa
   FirebaseStorage: 20d6b56fb8a40ebaa03d6a2889fe33dac64adb73
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  flutter_local_notifications: 395056b3175ba4f08480a7c5de30cd36d69827e4
   geocoding_ios: 33776c9ebb98d037b5e025bb0e7537f6dd19646e
   geolocator_apple: ab36aa0e8b7d7a2d7639b3b4e48308394e8cef5e
   Google-Maps-iOS-Utils: 0a484b05ed21d88c9f9ebbacb007956edd508a96

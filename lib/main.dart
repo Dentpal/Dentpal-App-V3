@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dentpal/product/products_module.dart';
 import 'package:dentpal/product/pages/edit_product_page.dart';
@@ -11,6 +12,8 @@ import 'package:dentpal/home_page.dart';
 import 'package:dentpal/login_page.dart';
 import 'package:dentpal/core/app_theme/app_theme.dart';
 import 'package:dentpal/services/deep_link_service.dart';
+import 'package:dentpal/services/notification_service.dart';
+import 'package:dentpal/services/in_app_notification_widget.dart';
 import 'package:dentpal/reset_password_page.dart';
 import 'package:dentpal/change_password_standalone_page.dart';
 import 'package:dentpal/public_privacy_policy_page.dart';
@@ -50,6 +53,23 @@ void main() async {
     cacheSizeBytes: 100 * 1024 * 1024, // 100 MB
   );
 
+  // Initialize notification service (only for mobile platforms)
+  if (!kIsWeb) {
+    print('=== MAIN.DART: Initializing notification service for MOBILE ===');
+    AppLogger.i('Initializing notification service for mobile...');
+    // Register background message handler
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    
+    // Initialize notification service
+    print('=== Calling NotificationService().initialize()...');
+    await NotificationService().initialize();
+    print('=== NotificationService().initialize() completed!');
+    AppLogger.i('Notification service initialized');
+  } else {
+    print('=== MAIN.DART: Skipping notification service (WEB) ===');
+    AppLogger.i('Skipping notification service (running on web)');
+  }
+
   runApp(const MyApp());
 }
 
@@ -65,7 +85,7 @@ class MyApp extends StatelessWidget {
     // Initialize deep link service
     DeepLinkService.initialize(navigatorKey);
 
-    return MaterialApp(
+    final materialApp = MaterialApp(
       title: 'DentPal',
       theme: AppTheme.lightTheme,
       navigatorKey: navigatorKey,
@@ -164,6 +184,16 @@ class MyApp extends StatelessWidget {
       },
       debugShowCheckedModeBanner: false,
     );
+
+    // Wrap with InAppNotificationWrapper only for mobile platforms
+    if (!kIsWeb) {
+      return InAppNotificationWrapper(
+        notificationStream: NotificationService().messageStream,
+        child: materialApp,
+      );
+    }
+
+    return materialApp;
   }
 
   // Helper method to get product for editing

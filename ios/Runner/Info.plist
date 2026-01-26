@@ -90,5 +90,16 @@
 	<!-- ML Kit configuration for better performance -->
 	<key>FIREBASE_ML_VISION_FACE_MODEL</key>
 	<string>1</string>
+	
+	<!-- Firebase App Delegate Proxy - Enable for automatic notification handling -->
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<true/>
+	
+	<!-- Background Modes for Remote Notifications -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+		<string>fetch</string>
+	</array>
 </dict>
 </plist>

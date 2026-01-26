@@ -28,6 +28,15 @@ export { completeOrder } from './completeOrder';
 // Export the auto-complete orders scheduled function
 export { autoCompleteOrders } from './autoCompleteOrders';
 
+// Export notification functions
+export {
+  notifySellerOnNewOrder,
+  notifyBuyerOnOrderStatusChange,
+  notifyOnNewMessage,
+  sendPromotionalNotification,
+  cleanupFCMTokenOnUserDelete
+} from './notifications';
+
 // Export the retry pending refunds scheduled function
 export { retryPendingRefunds } from './retryPendingRefunds';
 

@@ -256,6 +256,7 @@ class _LoginPageState extends State<LoginPage> {
           } catch (e) {
             AppLogger.d('Failed to clear cache: $e');
           }
+          
           // Navigate to the home page after successful login
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (context) => const HomePage()),
