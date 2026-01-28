@@ -76,12 +76,15 @@ void main() async {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // Global navigator key for deep link navigation
+  // Global navigator key for deep link navigation AND notification navigation
   static final GlobalKey<NavigatorState> navigatorKey =
       GlobalKey<NavigatorState>();
 
   @override
   Widget build(BuildContext context) {
+    // Set the navigator key in NotificationService for push notification navigation
+    NotificationService.setNavigatorKey(navigatorKey);
+    
     // Initialize deep link service
     DeepLinkService.initialize(navigatorKey);
 

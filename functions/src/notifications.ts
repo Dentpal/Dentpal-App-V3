@@ -87,6 +87,19 @@ export const notifySellerOnNewOrder = onDocumentCreated(
 
       await messaging.send(message);
       console.log(`Notification sent to seller: ${sellerId} for order: ${orderId}`);
+
+      // Save notification to user's subcollection
+      await db.collection('User').doc(sellerId).collection('user_notifications').add({
+        title: 'New Order Received!',
+        body: `${buyerName} placed an order worth ₱${totalAmount.toFixed(2)}`,
+        type: 'order',
+        data: {
+          orderId: orderId,
+          action: 'view_order',
+        },
+        read: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
     } catch (error) {
       console.error('Error sending notification:', error);
     }
@@ -269,6 +282,20 @@ export const notifyBuyerOnOrderStatusChange = onDocumentUpdated(
 
       await messaging.send(message);
       console.log(`Status update notification sent to buyer: ${actualBuyerId}`);
+
+      // Save notification to user's subcollection
+      await db.collection('User').doc(actualBuyerId).collection('user_notifications').add({
+        title,
+        body,
+        type: 'order',
+        data: {
+          orderId: orderId,
+          status,
+          action: 'view_order',
+        },
+        read: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
     } catch (error) {
       console.error('Error sending notification:', error);
     }
@@ -352,6 +379,20 @@ export const notifyOnNewMessage = onDocumentCreated(
 
       await messaging.send(fcmMessage);
       console.log(`Message notification sent to: ${receiverId}`);
+
+      // Save notification to user's subcollection
+      await db.collection('User').doc(receiverId).collection('user_notifications').add({
+        title: senderName,
+        body: text.substring(0, 100),
+        type: 'message',
+        data: {
+          chatId,
+          senderId,
+          action: 'open_chat',
+        },
+        read: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
     } catch (error) {
       console.error('Error sending message notification:', error);
     }

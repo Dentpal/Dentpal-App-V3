@@ -32,44 +32,70 @@ class JRSTrackingService {
       final data = result.data;
 
       AppLogger.d('JRS tracking raw response: $data');
+      AppLogger.d('JRS tracking response type: ${data.runtimeType}');
 
-      if (data['success'] == true) {
-        final trackingData = data['data'] as Map<String, dynamic>?;
+      // Handle the response data with proper type casting
+      if (data is Map) {
+        final responseMap = Map<String, dynamic>.from(data);
         
-        if (trackingData != null) {
-          return JRSTrackingResult(
-            success: true,
-            trackingId: trackingData['trackingId'] ?? trackingId,
-            status: trackingData['status'] ?? 'Unknown',
-            location: trackingData['location'],
-            timestamp: trackingData['timestamp'],
-            events: (trackingData['events'] as List<dynamic>?)
-                ?.map((e) => TrackingEvent.fromMap(e as Map<String, dynamic>))
-                .toList() ?? [],
-            message: 'Package tracking retrieved successfully',
-          );
+        if (responseMap['success'] == true) {
+          final trackingDataRaw = responseMap['data'];
+          
+          if (trackingDataRaw != null) {
+            // Safely cast the tracking data
+            final trackingData = trackingDataRaw is Map 
+                ? Map<String, dynamic>.from(trackingDataRaw)
+                : <String, dynamic>{};
+            
+            // Safely extract events
+            final eventsRaw = trackingData['events'];
+            final events = <TrackingEvent>[];
+            
+            if (eventsRaw is List) {
+              for (var eventItem in eventsRaw) {
+                if (eventItem is Map) {
+                  final eventMap = Map<String, dynamic>.from(eventItem);
+                  events.add(TrackingEvent.fromMap(eventMap));
+                }
+              }
+            }
+            
+            return JRSTrackingResult(
+              success: true,
+              trackingId: trackingData['trackingId']?.toString() ?? trackingId,
+              status: trackingData['status']?.toString() ?? 'Unknown',
+              location: trackingData['location']?.toString(),
+              timestamp: trackingData['timestamp']?.toString(),
+              events: events,
+              message: 'Package tracking retrieved successfully',
+            );
+          } else {
+            return JRSTrackingResult(
+              success: false,
+              trackingId: trackingId,
+              status: 'Unknown',
+              message: 'No tracking data available',
+              error: 'Empty response data',
+              events: [],
+            );
+          }
         } else {
+          final errorMessage = responseMap['error']?.toString() 
+              ?? responseMap['message']?.toString() 
+              ?? 'Failed to track package';
+          AppLogger.d('JRS tracking failed: $errorMessage');
+          
           return JRSTrackingResult(
             success: false,
             trackingId: trackingId,
             status: 'Unknown',
-            message: 'No tracking data available',
-            error: 'Empty response data',
+            message: errorMessage,
+            error: errorMessage,
             events: [],
           );
         }
       } else {
-        final errorMessage = data['error'] ?? data['message'] ?? 'Failed to track package';
-        AppLogger.d('JRS tracking failed: $errorMessage');
-        
-        return JRSTrackingResult(
-          success: false,
-          trackingId: trackingId,
-          status: 'Unknown',
-          message: errorMessage,
-          error: errorMessage,
-          events: [],
-        );
+        throw Exception('Invalid response format from tracking service');
       }
 
     } catch (e) {

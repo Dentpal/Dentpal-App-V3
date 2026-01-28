@@ -7,6 +7,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:dentpal/utils/app_logger.dart';
+import 'package:dentpal/product/models/order_model.dart' as order_model;
+import 'package:dentpal/profile/pages/order_details_page.dart';
 
 /// Background message handler must be a top-level function
 @pragma('vm:entry-point')
@@ -23,6 +25,15 @@ class NotificationService {
   final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
+
+  // Navigation key for global navigation (set from main.dart)
+  static GlobalKey<NavigatorState>? _navigatorKey;
+  static GlobalKey<NavigatorState>? get navigatorKey => _navigatorKey;
+  
+  /// Set the navigator key from main.dart
+  static void setNavigatorKey(GlobalKey<NavigatorState> key) {
+    _navigatorKey = key;
+  }
 
   // Stream controller for in-app notifications
   final StreamController<RemoteMessage> _messageStreamController =
@@ -126,7 +137,31 @@ class NotificationService {
   /// Handle notification tap
   void _onNotificationTapped(NotificationResponse response) {
     AppLogger.i('Notification tapped: ${response.payload}');
-    // TODO: Navigate to appropriate screen based on payload
+    
+    if (response.payload != null) {
+      try {
+        // Parse the payload (it's a string representation of the data map)
+        final payloadStr = response.payload!;
+        AppLogger.i('Parsing notification payload: $payloadStr');
+        
+        // Extract orderId from the payload string
+        // The payload format is like: "{type: order, orderId: ABC123, status: shipping, action: view_order}"
+        final orderIdMatch = RegExp(r'orderId:\s*([^,}]+)').firstMatch(payloadStr);
+        final typeMatch = RegExp(r'type:\s*([^,}]+)').firstMatch(payloadStr);
+        
+        if (typeMatch != null && orderIdMatch != null) {
+          final type = typeMatch.group(1)?.trim();
+          final orderId = orderIdMatch.group(1)?.trim();
+          
+          if (type == 'order' && orderId != null) {
+            AppLogger.i('Navigating to order: $orderId');
+            _navigateToOrder(orderId);
+          }
+        }
+      } catch (e) {
+        AppLogger.e('Error parsing notification payload: $e');
+      }
+    }
   }
 
   /// Get FCM token
@@ -225,12 +260,18 @@ class NotificationService {
       iOS: iosDetails,
     );
 
+    // Create a properly formatted payload with orderId for easy parsing
+    String payload = '';
+    if (message.data.containsKey('orderId')) {
+      payload = 'type: ${message.data['type']}, orderId: ${message.data['orderId']}';
+    }
+
     await _localNotifications.show(
       notification.hashCode,
       notification.title,
       notification.body,
       details,
-      payload: message.data.toString(),
+      payload: payload.isNotEmpty ? payload : null,
     );
   }
 
@@ -238,14 +279,18 @@ class NotificationService {
   void _handleNotificationNavigation(RemoteMessage message) {
     final data = message.data;
     
-    // Example: Navigate based on notification type
+    AppLogger.i('Handling notification navigation with data: $data');
+    
+    // Navigate based on notification type
     if (data.containsKey('type')) {
       final type = data['type'];
       switch (type) {
         case 'order':
           final orderId = data['orderId'];
-          AppLogger.i('Navigate to order: $orderId');
-          // TODO: Navigate to order details
+          if (orderId != null) {
+            AppLogger.i('Navigate to order: $orderId');
+            _navigateToOrder(orderId);
+          }
           break;
         case 'message':
           final chatId = data['chatId'];
@@ -255,6 +300,84 @@ class NotificationService {
         default:
           AppLogger.i('Unknown notification type: $type');
       }
+    }
+  }
+
+  /// Navigate to order details page
+  Future<void> _navigateToOrder(String orderId) async {
+    try {
+      if (_navigatorKey == null) {
+        AppLogger.e('Navigator key is null, cannot navigate');
+        return;
+      }
+
+      final context = _navigatorKey?.currentContext;
+      if (context == null) {
+        AppLogger.e('Navigator context is null, cannot navigate');
+        return;
+      }
+
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
+
+      // Fetch the order details from Firestore
+      final orderDoc = await FirebaseFirestore.instance
+          .collection('Order')
+          .doc(orderId)
+          .get();
+
+      // Close loading dialog
+      final currentContext = _navigatorKey?.currentContext;
+      if (currentContext != null) {
+        Navigator.of(currentContext).pop();
+      }
+
+      if (orderDoc.exists) {
+        // Convert to Order model using fromFirestore
+        final order = order_model.Order.fromFirestore(orderDoc);
+        
+        // Navigate to order details page
+        final navContext = _navigatorKey?.currentContext;
+        if (navContext != null) {
+          Navigator.of(navContext).push(
+            MaterialPageRoute(
+              builder: (context) => OrderDetailsPage(order: order),
+            ),
+          );
+        }
+      } else {
+        AppLogger.e('Order not found: $orderId');
+        _showErrorSnackBar('Order not found');
+      }
+    } catch (e) {
+      AppLogger.e('Error navigating to order: $e');
+      // Close loading dialog if still open
+      final currentContext = _navigatorKey?.currentContext;
+      if (currentContext != null) {
+        Navigator.of(currentContext).pop();
+      }
+      _showErrorSnackBar('Failed to load order details');
+    }
+  }
+
+  /// Show error snackbar
+  void _showErrorSnackBar(String message) {
+    final context = _navigatorKey?.currentContext;
+    if (context != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
     }
   }
 

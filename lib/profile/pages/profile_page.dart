@@ -11,6 +11,7 @@ import 'orders_page.dart';
 //import 'seller_listings_page.dart';
 import 'chats_page.dart';
 import 'settings/settings_page.dart';
+import 'settings/notifications_page.dart';
 import 'package:dentpal/utils/app_logger.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -320,6 +321,19 @@ class _ProfilePageState extends State<ProfilePage> {
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (context) => const SettingsPage(),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildDivider(),
+                  _buildProfileOption(
+                    context,
+                    'Notifications',
+                    Icons.notifications_outlined,
+                    () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => const NotificationsPage(),
                         ),
                       );
                     },
