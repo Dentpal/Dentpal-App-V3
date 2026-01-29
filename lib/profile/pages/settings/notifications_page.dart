@@ -7,6 +7,7 @@ import '../../../core/app_theme/app_text_styles.dart';
 import '../../../utils/app_logger.dart';
 import '../../../product/models/order_model.dart' as order_model;
 import '../order_details_page.dart';
+import '../chat_detail_page.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
@@ -194,11 +195,47 @@ class _NotificationsPageState extends State<NotificationsPage> {
         }
       }
     } else if (type == 'message' && data != null) {
-      final chatId = data['chatId'] as String?;
-      if (chatId != null) {
-        AppLogger.i('Navigate to chat: $chatId');
-        // TODO: Navigate to chat page
-        // Navigator.push(context, MaterialPageRoute(builder: (context) => ChatPage(chatId: chatId)));
+      final chatRoomId = data['chatRoomId'] as String? ?? data['chatId'] as String?;
+      final otherUserId = data['otherUserId'] as String? ?? data['senderId'] as String?;
+      final otherUserName = data['otherUserName'] as String?;
+      
+      if (chatRoomId != null && otherUserId != null) {
+        AppLogger.i('Navigate to chat: $chatRoomId');
+        
+        // Get other user's details if not in data
+        String displayName = otherUserName ?? 'User';
+        String? shopName;
+        
+        if (otherUserName == null || otherUserName.isEmpty) {
+          try {
+            final userDoc = await FirebaseFirestore.instance
+                .collection('User')
+                .doc(otherUserId)
+                .get();
+            
+            if (userDoc.exists) {
+              final userData = userDoc.data();
+              displayName = userData?['displayName'] ?? userData?['fullName'] ?? 'User';
+              shopName = userData?['shopName'];
+            }
+          } catch (e) {
+            AppLogger.e('Error fetching user data: $e');
+          }
+        }
+        
+        if (!mounted) return;
+        
+        // Navigate to chat detail page
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => ChatDetailPage(
+              chatRoomId: chatRoomId,
+              otherUserId: otherUserId,
+              otherUserName: displayName,
+              otherUserShopName: shopName,
+            ),
+          ),
+        );
       }
     }
   }

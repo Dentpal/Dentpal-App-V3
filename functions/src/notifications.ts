@@ -1,13 +1,17 @@
 import {onDocumentCreated, onDocumentUpdated, onDocumentDeleted} from 'firebase-functions/v2/firestore';
 import {onCall, HttpsError} from 'firebase-functions/v2/https';
+import {onValueCreated} from 'firebase-functions/v2/database';
 import * as admin from 'firebase-admin';
 
 // Initialize Firebase Admin (if not already initialized)
 if (admin.apps.length === 0) {
-  admin.initializeApp();
+  admin.initializeApp({
+    databaseURL: 'https://dentpal-161e5-default-rtdb.asia-southeast1.firebasedatabase.app',
+  });
 }
 
 const db = admin.firestore();
+const rtdb = admin.database();
 const messaging = admin.messaging();
 
 /**
@@ -304,22 +308,43 @@ export const notifyBuyerOnOrderStatusChange = onDocumentUpdated(
 
 /**
  * Send notification when a new message is received in chat
+ * Listens to Realtime Database: chatRooms/{chatRoomId}/messages/{messageId}
  */
-export const notifyOnNewMessage = onDocumentCreated(
+export const notifyOnNewMessage = onValueCreated(
   {
-    document: 'chats/{chatId}/messages/{messageId}',
+    ref: 'chatRooms/{chatRoomId}/messages/{messageId}',
     region: 'asia-southeast1',
+    instance: 'dentpal-161e5-default-rtdb',
   },
   async (event) => {
-    const snap = event.data;
-    if (!snap) return;
+    const message = event.data.val();
+    if (!message) {
+      console.log('No message data found in event');
+      return;
+    }
     
-    const message = snap.data();
-    const { senderId, receiverId, text } = message;
-    const chatId = event.params.chatId;
+    console.log('Message data received:', JSON.stringify(message));
+    
+    const { senderId, receiverId, message: text, messageType } = message;
+    const chatRoomId = event.params.chatRoomId;
+    
+    console.log(`Processing message in chat ${chatRoomId} from ${senderId} to ${receiverId}`);
+
+    // Don't send notification if message is from system or no text
+    if (!senderId || !receiverId || !text) {
+      console.log('Skipping notification - missing required fields');
+      return;
+    }
+
+    // Don't send notification to sender
+    const currentUserId = senderId;
+    if (currentUserId === receiverId) {
+      console.log('Skipping notification - sender is receiver');
+      return;
+    }
 
     try {
-      // Get receiver's FCM token
+      // Get receiver's FCM token from Firestore
       const receiverDoc = await db.collection('User').doc(receiverId).get();
       const receiverData = receiverDoc.data();
       const fcmToken = receiverData?.fcmToken;
@@ -329,65 +354,117 @@ export const notifyOnNewMessage = onDocumentCreated(
         return;
       }
 
-      // Get sender's name
+      // Get sender's name from Firestore
       const senderDoc = await db.collection('User').doc(senderId).get();
-      const senderName = senderDoc.data()?.displayName || 'Someone';
+      const senderData = senderDoc.data();
+      
+      // Try multiple possible name fields for different user types:
+      // - Sellers with shopName field (direct shop name)
+      // - Sellers with vendor.company.storeName (vendor structure)
+      // - Regular users with displayName/fullName
+      const senderName = senderData?.shopName || 
+                         senderData?.vendor?.company?.storeName ||
+                         senderData?.vendor?.company?.name ||
+                         senderData?.displayName || 
+                         senderData?.fullName || 
+                         senderData?.name || 
+                         senderData?.firstName || 
+                         senderData?.username ||
+                         'Someone';
+      
+      console.log(`Sender name resolved to: ${senderName} for senderId: ${senderId}`);
 
+      // Get chat room data to retrieve other user info
+      const chatRoomSnapshot = await rtdb.ref(`chatRooms/${chatRoomId}`).once('value');
+      const chatRoomData = chatRoomSnapshot.val();
+      
+      // Determine other user's name and ID for navigation
+      const otherUserId = chatRoomData?.user1Id === receiverId ? chatRoomData?.user2Id : chatRoomData?.user1Id;
+      const otherUserName = chatRoomData?.user1Id === receiverId ? chatRoomData?.user2Name : chatRoomData?.user1Name;
+
+      // Format message body: "[Name] sent: [message]" with max 2 lines
+      let messageBody = text;
+      
+      // Handle image messages
+      if (messageType === 'image') {
+        messageBody = '📷 Photo';
+      }
+      
+      // Truncate to approximately 2 lines (about 80-100 characters)
+      const maxLength = 90;
+      if (messageBody.length > maxLength) {
+        messageBody = messageBody.substring(0, maxLength).trim() + '...';
+      }
+
+      // Format: "sent: [message]"
+      const notificationBody = `sent: ${messageBody}`;
+
+      // Create a short hash for iOS collapse ID (max 64 bytes)
+      // Use only first 32 chars of chatRoomId to stay well under 64 bytes limit
+      const shortChatId = chatRoomId.substring(0, 32);
+      
       // Send notification
       const fcmMessage = {
         token: fcmToken,
         notification: {
           title: senderName,
-          body: text.substring(0, 100), // Truncate long messages
+          body: notificationBody,
         },
         data: {
           type: 'message',
-          chatId,
-          senderId,
+          chatRoomId: chatRoomId,
+          chatId: chatRoomId, // Keep for backward compatibility
+          senderId: senderId,
+          otherUserId: otherUserId || senderId,
+          otherUserName: otherUserName || senderName,
           action: 'open_chat',
         },
         android: {
           priority: 'high' as const,
-          collapseKey: `chat_${chatId}`, // Consolidate messages from same chat
+          collapseKey: `chat_${shortChatId}`, // Consolidate messages from same chat
           notification: {
             channelId: 'dentpal_channel',
             sound: 'default',
-            tag: `chat_${chatId}`, // Replace previous messages from same chat
+            tag: `chat_${shortChatId}`, // Replace previous messages from same chat
             notificationCount: 1,
           },
         },
         apns: {
           headers: {
             'apns-priority': '10',
-            'apns-collapse-id': `chat_${chatId}`, // iOS consolidation
+            // Use short chat ID to ensure under 64 bytes (chat_ = 5 bytes + 32 = 37 bytes max)
+            'apns-collapse-id': `chat_${shortChatId}`,
           },
           payload: {
             aps: {
               alert: {
                 title: senderName,
-                body: text.substring(0, 100),
+                body: notificationBody,
               },
               sound: 'default',
               badge: 1,
               'content-available': 1,
               'mutable-content': 1,
-              'thread-id': `chat_${chatId}`, // iOS grouping by chat
+              'thread-id': `chat_${shortChatId}`,
             },
           },
         },
       };
 
       await messaging.send(fcmMessage);
-      console.log(`Message notification sent to: ${receiverId}`);
+      console.log(`Message notification sent to: ${receiverId} for chat: ${chatRoomId}`);
 
       // Save notification to user's subcollection
       await db.collection('User').doc(receiverId).collection('user_notifications').add({
         title: senderName,
-        body: text.substring(0, 100),
+        body: notificationBody,
         type: 'message',
         data: {
-          chatId,
-          senderId,
+          chatRoomId: chatRoomId,
+          chatId: chatRoomId,
+          senderId: senderId,
+          otherUserId: otherUserId || senderId,
+          otherUserName: otherUserName || senderName,
           action: 'open_chat',
         },
         read: false,

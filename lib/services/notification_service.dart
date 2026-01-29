@@ -9,6 +9,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/product/models/order_model.dart' as order_model;
 import 'package:dentpal/profile/pages/order_details_page.dart';
+import 'package:dentpal/profile/pages/chat_detail_page.dart';
 
 /// Background message handler must be a top-level function
 @pragma('vm:entry-point')
@@ -144,18 +145,32 @@ class NotificationService {
         final payloadStr = response.payload!;
         AppLogger.i('Parsing notification payload: $payloadStr');
         
-        // Extract orderId from the payload string
-        // The payload format is like: "{type: order, orderId: ABC123, status: shipping, action: view_order}"
+        // Extract data from the payload string
+        // Format: "type: order, orderId: ABC123" or "type: message, chatRoomId: X, otherUserId: Y, otherUserName: Z"
         final orderIdMatch = RegExp(r'orderId:\s*([^,}]+)').firstMatch(payloadStr);
         final typeMatch = RegExp(r'type:\s*([^,}]+)').firstMatch(payloadStr);
+        final chatRoomIdMatch = RegExp(r'chatRoomId:\s*([^,}]+)').firstMatch(payloadStr);
+        final otherUserIdMatch = RegExp(r'otherUserId:\s*([^,}]+)').firstMatch(payloadStr);
+        final otherUserNameMatch = RegExp(r'otherUserName:\s*([^,}]+)').firstMatch(payloadStr);
         
-        if (typeMatch != null && orderIdMatch != null) {
+        if (typeMatch != null) {
           final type = typeMatch.group(1)?.trim();
-          final orderId = orderIdMatch.group(1)?.trim();
           
-          if (type == 'order' && orderId != null) {
-            AppLogger.i('Navigating to order: $orderId');
-            _navigateToOrder(orderId);
+          if (type == 'order' && orderIdMatch != null) {
+            final orderId = orderIdMatch.group(1)?.trim();
+            if (orderId != null) {
+              AppLogger.i('Navigating to order: $orderId');
+              _navigateToOrder(orderId);
+            }
+          } else if (type == 'message' && chatRoomIdMatch != null && otherUserIdMatch != null) {
+            final chatRoomId = chatRoomIdMatch.group(1)?.trim();
+            final otherUserId = otherUserIdMatch.group(1)?.trim();
+            final otherUserName = otherUserNameMatch?.group(1)?.trim();
+            
+            if (chatRoomId != null && otherUserId != null) {
+              AppLogger.i('Navigating to chat: $chatRoomId');
+              _navigateToChat(chatRoomId, otherUserId, otherUserName);
+            }
           }
         }
       } catch (e) {
@@ -260,10 +275,17 @@ class NotificationService {
       iOS: iosDetails,
     );
 
-    // Create a properly formatted payload with orderId for easy parsing
+    // Create a properly formatted payload for easy parsing
     String payload = '';
-    if (message.data.containsKey('orderId')) {
-      payload = 'type: ${message.data['type']}, orderId: ${message.data['orderId']}';
+    final type = message.data['type'];
+    
+    if (type == 'order' && message.data.containsKey('orderId')) {
+      payload = 'type: order, orderId: ${message.data['orderId']}';
+    } else if (type == 'message' && message.data.containsKey('chatRoomId')) {
+      final chatRoomId = message.data['chatRoomId'] ?? message.data['chatId'];
+      final otherUserId = message.data['otherUserId'] ?? message.data['senderId'];
+      final otherUserName = message.data['otherUserName'] ?? '';
+      payload = 'type: message, chatRoomId: $chatRoomId, otherUserId: $otherUserId, otherUserName: $otherUserName';
     }
 
     await _localNotifications.show(
@@ -293,9 +315,15 @@ class NotificationService {
           }
           break;
         case 'message':
-          final chatId = data['chatId'];
-          AppLogger.i('Navigate to chat: $chatId');
-          // TODO: Navigate to chat
+          final chatRoomId = data['chatRoomId'] ?? data['chatId'];
+          final otherUserId = data['otherUserId'] ?? data['senderId'];
+          final otherUserName = data['otherUserName'];
+          if (chatRoomId != null && otherUserId != null) {
+            AppLogger.i('Navigate to chat: $chatRoomId');
+            _navigateToChat(chatRoomId, otherUserId, otherUserName);
+          } else {
+            AppLogger.e('Missing chat navigation data');
+          }
           break;
         default:
           AppLogger.i('Unknown notification type: $type');
@@ -361,6 +389,61 @@ class NotificationService {
         Navigator.of(currentContext).pop();
       }
       _showErrorSnackBar('Failed to load order details');
+    }
+  }
+
+  /// Navigate to chat detail page
+  Future<void> _navigateToChat(String chatRoomId, String otherUserId, String? otherUserName) async {
+    try {
+      if (_navigatorKey == null) {
+        AppLogger.e('Navigator key is null, cannot navigate to chat');
+        return;
+      }
+
+      final context = _navigatorKey?.currentContext;
+      if (context == null) {
+        AppLogger.e('Navigator context is null, cannot navigate to chat');
+        return;
+      }
+
+      // Get other user's name if not provided
+      String displayName = otherUserName ?? 'User';
+      String? shopName;
+      
+      if (otherUserName == null || otherUserName.isEmpty) {
+        try {
+          final userDoc = await FirebaseFirestore.instance
+              .collection('User')
+              .doc(otherUserId)
+              .get();
+          
+          if (userDoc.exists) {
+            final userData = userDoc.data();
+            displayName = userData?['displayName'] ?? userData?['fullName'] ?? 'User';
+            shopName = userData?['shopName'];
+          }
+        } catch (e) {
+          AppLogger.e('Error fetching user data: $e');
+        }
+      }
+
+      // Navigate to chat detail page
+      final navContext = _navigatorKey?.currentContext;
+      if (navContext != null) {
+        Navigator.of(navContext).push(
+          MaterialPageRoute(
+            builder: (context) => ChatDetailPage(
+              chatRoomId: chatRoomId,
+              otherUserId: otherUserId,
+              otherUserName: displayName,
+              otherUserShopName: shopName,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      AppLogger.e('Error navigating to chat: $e');
+      _showErrorSnackBar('Failed to open chat');
     }
   }
 
