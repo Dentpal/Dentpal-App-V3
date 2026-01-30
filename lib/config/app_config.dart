@@ -24,8 +24,8 @@ class AppConfig {
   static const String companyAddress = 'Unit 1207 Cityland Herrera Tower, Rufino St., cor. Valero St., Salcedo Village, Makati, Philippines, 1227'; // TODO: Update
   
   /// Social Media (if applicable)
-  static const String facebookUrl = 'https://www.facebook.com/rnrnewtechdentalcorp/'; // TODO: Add if available
-  static const String instagramUrl = 'https://www.instagram.com/rrnewtechdentalcorp/'; // TODO: Add if available
+  static const String facebookUrl = 'https://www.facebook.com/rnrnewtechdentalcorp/';
+  static const String instagramUrl = 'https://www.instagram.com/rrnewtechdentalcorp/';
   
   /// Firebase Deep Links
   static const String productionDomain = 'dentpal-store.web.app';

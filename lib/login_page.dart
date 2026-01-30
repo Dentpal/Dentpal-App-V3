@@ -985,67 +985,7 @@ class _LoginPageState extends State<LoginPage> {
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(height: 8),
-                                  Center(
-                                    child: Text(
-                                      'Sign in with',
-                                      style: AppTextStyles.bodyMedium.copyWith(
-                                        color: AppColors.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      GestureDetector(
-                                        onTap: () {
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                'Google Sign In - Coming Soon!',
-                                              ),
-                                              duration: Duration(seconds: 2),
-                                            ),
-                                          );
-                                        },
-                                        child: Container(
-                                          width: 32,
-                                          height: 32,
-                                          child: Image.asset(
-                                            'lib/assets/icons/google-logo.png',
-                                            fit: BoxFit.contain,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 30),
-                                      GestureDetector(
-                                        onTap: () {
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                'Facebook Sign In - Coming Soon!',
-                                              ),
-                                              duration: Duration(seconds: 2),
-                                            ),
-                                          );
-                                        },
-                                        child: Container(
-                                          width: 34,
-                                          height: 34,
-                                          child: Image.asset(
-                                            'lib/assets/icons/facebook-logo.png',
-                                            fit: BoxFit.contain,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 12),
+                                  const SizedBox(height: 24),
                                   Center(
                                     child: kIsWeb
                                         // On web (mobile browser), show download app link

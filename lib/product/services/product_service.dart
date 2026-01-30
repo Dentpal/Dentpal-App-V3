@@ -253,32 +253,7 @@ class ProductService {
         };
       }
 
-      // Check if user exists in the users collection
-      DocumentSnapshot userDoc = await _firestore
-          .collection('User')
-          .doc(userUID)
-          .get();
-
-      if (!userDoc.exists) {
-        return {
-          'isSeller': false,
-          'message': 'User profile not found',
-          'sellerId': null
-        };
-      }
-
-      // Check the role field to see if the user is a seller
-      Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
-      
-      if (userData['role'] != 'seller') {
-        return {
-          'isSeller': false,
-          'message': 'User is not registered as a seller',
-          'sellerId': null
-        };
-      }
-
-      // Check if there's an entry in the Seller collection - use server fetch to bypass cache
+      // Check if there's an entry in the Seller collection first - use server fetch to bypass cache
       DocumentSnapshot sellerDoc = await _firestore
           .collection('Seller')
           .doc(userUID)
@@ -287,21 +262,12 @@ class ProductService {
       if (!sellerDoc.exists) {
         return {
           'isSeller': false,
-          'message': 'Seller profile not setup completely',
+          'message': 'Seller profile not found. Please contact support to set up your seller account.',
           'sellerId': null
         };
       }
 
       Map<String, dynamic> sellerData = sellerDoc.data() as Map<String, dynamic>;
-      
-      // Verify UIDs match between User and Seller collections
-      if (userDoc.id != sellerDoc.id) {
-        return {
-          'isSeller': false,
-          'message': 'UID mismatch between User and Seller collections',
-          'sellerId': null
-        };
-      }
       
       // Check if seller is active (handle both boolean and string values)
       bool isActive = false;
@@ -317,6 +283,31 @@ class ProductService {
           'message': 'Seller account is not active',
           'sellerId': null
         };
+      }
+
+      // Optionally check User collection for role verification (not required)
+      // Some sellers may only have Seller documents without User documents
+      try {
+        DocumentSnapshot userDoc = await _firestore
+            .collection('User')
+            .doc(userUID)
+            .get();
+
+        if (userDoc.exists) {
+          Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+          
+          // If User doc exists, verify role is seller
+          if (userData['role'] != null && userData['role'] != 'seller') {
+            return {
+              'isSeller': false,
+              'message': 'User role mismatch. Please contact support.',
+              'sellerId': null
+            };
+          }
+        }
+      } catch (e) {
+        // If User collection check fails, continue anyway since Seller doc exists
+        AppLogger.d('User collection check failed, but continuing with Seller validation: $e');
       }
 
       return {

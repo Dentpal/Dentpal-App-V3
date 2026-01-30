@@ -57,17 +57,16 @@ class _StorePageState extends State<StorePage>
   void initState() {
     super.initState();
     // Check for initialTab in sellerData and set appropriate index
-    int initialIndex = 0; // Default to 'Shop' tab
+    int initialIndex = 0; // Default to 'Products' tab
     if (widget.sellerData != null && widget.sellerData!['initialTab'] != null) {
       final String initialTab = widget.sellerData!['initialTab'] as String;
-      if (initialTab == 'products') {
-        initialIndex = 1; // Products tab
-      } else if (initialTab == 'categories') {
-        initialIndex = 2; // Categories tab
+      if (initialTab == 'categories') {
+        initialIndex = 1; // Categories tab
       }
+      // 'products' tab is now at index 0 (default)
     }
     
-    _tabController = TabController(length: 3, vsync: this, initialIndex: initialIndex);
+    _tabController = TabController(length: 2, vsync: this, initialIndex: initialIndex);
     _tabController.addListener(() {
       setState(() {}); // Rebuild when tab changes
     });
@@ -555,13 +554,12 @@ class _StorePageState extends State<StorePage>
         indicatorColor: AppColors.primary,
         indicatorWeight: 3,
         onTap: (index) {
-          if (index == 2 && _sellerCategories.isEmpty) {
+          if (index == 1 && _sellerCategories.isEmpty) {
             _loadSellerCategories();
           }
           setState(() {}); // Trigger rebuild to show selected tab content
         },
         tabs: const [
-          Tab(text: 'Shop'),
           Tab(text: 'Products'),
           Tab(text: 'Categories'),
         ],
@@ -572,54 +570,12 @@ class _StorePageState extends State<StorePage>
   Widget _buildTabContent() {
     switch (_tabController.index) {
       case 0:
-        return _buildShopTabContent();
-      case 1:
         return _buildProductsTabContent();
-      case 2:
+      case 1:
         return _buildCategoriesTabContent();
       default:
-        return _buildShopTabContent();
+        return _buildProductsTabContent();
     }
-  }
-
-  Widget _buildShopTabContent() {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      height: 400, // Fixed height for content
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(32),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.construction,
-              size: 64,
-              color: AppColors.primary,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'Shop Coming Soon',
-            style: AppTextStyles.titleLarge.copyWith(
-              fontWeight: FontWeight.bold,
-              color: AppColors.onSurface,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'This section is under development',
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.onSurface.withValues(alpha: 0.7),
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _buildProductsTabContent() {
