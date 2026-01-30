@@ -138,6 +138,16 @@ class _StorePageState extends State<StorePage>
             ? vendor['company'] as Map<String, dynamic>
             : const {};
 
+        // Fetch coverImage and profileImage URLs from vendor
+        String coverImageURL = '';
+        String profileImageURL = '';
+        if (vendor['coverImage'] is Map && vendor['coverImage']['url'] is String) {
+          coverImageURL = vendor['coverImage']['url'] as String;
+        }
+        if (vendor['profileImage'] is Map && vendor['profileImage']['url'] is String) {
+          profileImageURL = vendor['profileImage']['url'] as String;
+        }
+
         // Store name from vendor.company.storeName, fallback to previous keys or default
         final String storeName =
             (company['storeName'] as String?) ??
@@ -168,7 +178,8 @@ class _StorePageState extends State<StorePage>
           'contactEmail': data['contactEmail'] ?? '',
           'contactNumber': data['contactNumber'] ?? '',
           'isActive': data['isActive'] ?? true,
-          'profileImageURL': data['profileImageURL'] ?? '',
+          'profileImageURL': profileImageURL.isNotEmpty ? profileImageURL : (data['profileImageURL'] ?? ''),
+          'coverImageURL': coverImageURL,
         };
       }
     } catch (e) {
@@ -182,6 +193,7 @@ class _StorePageState extends State<StorePage>
       'contactNumber': '',
       'isActive': true,
       'profileImageURL': '',
+      'coverImageURL': '',
     };
   }
 
@@ -380,60 +392,95 @@ class _StorePageState extends State<StorePage>
   }
 
   Widget _buildAppBarHeader() {
+    final coverImageURL = _storeData['coverImageURL'] as String? ?? '';
     return Container(
       height: 250,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
-        ),
-      ),
-      child: SafeArea(
-        top: !kIsWeb, // remove top inset on web to avoid large top margin
-        child: Column(
-          children: [
-            // Back button row
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.9),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: IconButton(
-                      icon: const Icon(
-                        Icons.arrow_back,
-                        color: AppColors.primary,
+      width: double.infinity,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Cover image or fallback gradient
+          if (coverImageURL.isNotEmpty)
+            CachedNetworkImage(
+              imageUrl: coverImageURL,
+              fit: BoxFit.cover,
+              placeholder: (context, url) => Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
+                  ),
+                ),
+              ),
+              errorWidget: (context, url, error) => Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
+                  ),
+                ),
+              ),
+            )
+          else
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
+                ),
+              ),
+            ),
+          // Content
+          SafeArea(
+            top: !kIsWeb,
+            child: Column(
+              children: [
+                // Back button row
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.9),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: IconButton(
+                          icon: const Icon(
+                            Icons.arrow_back,
+                            color: AppColors.primary,
+                          ),
+                          onPressed: () => Navigator.pop(context),
+                        ),
                       ),
-                      onPressed: () => Navigator.pop(context),
-                    ),
+                    ],
                   ),
-                ],
-              ),
-            ),
-            // Store info section
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _buildStoreIcon(),
-                  const SizedBox(height: 16),
-                  Text(
-                    _storeData['shopName'] ?? 'Store Name',
-                    style: AppTextStyles.headlineSmall.copyWith(
-                      color: AppColors.onPrimary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    textAlign: TextAlign.center,
+                ),
+                // Store info section
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _buildStoreIcon(),
+                      const SizedBox(height: 16),
+                      Text(
+                        _storeData['shopName'] ?? 'Store Name',
+                        style: AppTextStyles.headlineSmall.copyWith(
+                          color: AppColors.onPrimary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
