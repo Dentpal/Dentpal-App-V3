@@ -138,14 +138,14 @@ class _StorePageState extends State<StorePage>
             ? vendor['company'] as Map<String, dynamic>
             : const {};
 
-        // Fetch coverImage and profileImage URLs from vendor
+        // Fetch coverImage and profileImage URLs from Seller document root
         String coverImageURL = '';
         String profileImageURL = '';
-        if (vendor['coverImage'] is Map && vendor['coverImage']['url'] is String) {
-          coverImageURL = vendor['coverImage']['url'] as String;
+        if (data['coverImage'] is Map && data['coverImage']['url'] is String) {
+          coverImageURL = data['coverImage']['url'] as String;
         }
-        if (vendor['profileImage'] is Map && vendor['profileImage']['url'] is String) {
-          profileImageURL = vendor['profileImage']['url'] as String;
+        if (data['profileImage'] is Map && data['profileImage']['url'] is String) {
+          profileImageURL = data['profileImage']['url'] as String;
         }
 
         // Store name from vendor.company.storeName, fallback to previous keys or default
