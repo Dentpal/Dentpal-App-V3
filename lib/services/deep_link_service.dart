@@ -72,9 +72,13 @@ class DeepLinkService {
       bool isResetPassword = false;
       bool isPrivacyPolicy = false;
       bool isTermsOfService = false;
+      bool isFirebaseAction = false;
       String? oobCode; // Firebase out-of-band code for password reset
+      String?
+      mode; // Firebase action mode (resetPassword, verifyEmail, recoverEmail)
 
       // Handle different URL formats:
+      // Firebase actions: https://dentpal.shop/?mode=resetPassword&oobCode=XXX
       // https://dentpal-store.web.app/#/product/ABC123
       // https://dentpal-store.web.app/#/store/XYZ789
       // https://dentpal-store-sandbox-testing.web.app/#/product/ABC123
@@ -93,12 +97,23 @@ class DeepLinkService {
         final supportedHosts = [
           'dentpal-store.web.app',
           'dentpal-store-sandbox-testing.web.app',
-          'dentpal.shop'
+          'dentpal.shop',
         ];
 
         if (supportedHosts.contains(uri.host)) {
+          // Check for Firebase action query parameters (new format)
+          // Format: https://dentpal.shop/?mode=resetPassword&oobCode=XXX
+          if (uri.queryParameters.containsKey('mode') &&
+              uri.queryParameters.containsKey('oobCode')) {
+            isFirebaseAction = true;
+            mode = uri.queryParameters['mode'];
+            oobCode = uri.queryParameters['oobCode'];
+            AppLogger.d(
+              'Firebase action detected via query params: mode=$mode',
+            );
+          }
           // Web URL format with fragment: https://domain/#/reset-password or https://domain/#/product/ABC123 or https://domain/#/store/XYZ789
-          if (uri.fragment.isNotEmpty) {
+          else if (uri.fragment.isNotEmpty) {
             final fragment = uri.fragment;
             // Parse fragment for reset-password
             if (fragment.startsWith('/reset-password')) {
@@ -107,9 +122,11 @@ class DeepLinkService {
               // Fragment format: /reset-password?oobCode=XXX
               final fragmentUri = Uri.parse('https://temp.com$fragment');
               oobCode = fragmentUri.queryParameters['oobCode'];
-            } else if (fragment == '/privacy-policy' || fragment.startsWith('/privacy-policy')) {
+            } else if (fragment == '/privacy-policy' ||
+                fragment.startsWith('/privacy-policy')) {
               isPrivacyPolicy = true;
-            } else if (fragment == '/terms-of-service' || fragment.startsWith('/terms-of-service')) {
+            } else if (fragment == '/terms-of-service' ||
+                fragment.startsWith('/terms-of-service')) {
               isTermsOfService = true;
             } else if (fragment.startsWith('/product/')) {
               productId = fragment.substring('/product/'.length);
@@ -121,9 +138,11 @@ class DeepLinkService {
           else if (uri.path.startsWith('/reset-password')) {
             isResetPassword = true;
             oobCode = uri.queryParameters['oobCode'];
-          } else if (uri.path == '/privacy-policy' || uri.path.startsWith('/privacy-policy')) {
+          } else if (uri.path == '/privacy-policy' ||
+              uri.path.startsWith('/privacy-policy')) {
             isPrivacyPolicy = true;
-          } else if (uri.path == '/terms-of-service' || uri.path.startsWith('/terms-of-service')) {
+          } else if (uri.path == '/terms-of-service' ||
+              uri.path.startsWith('/terms-of-service')) {
             isTermsOfService = true;
           } else if (uri.path.startsWith('/product/')) {
             productId = uri.path.substring('/product/'.length);
@@ -140,9 +159,11 @@ class DeepLinkService {
             uri.path.startsWith('/reset-password')) {
           isResetPassword = true;
           oobCode = uri.queryParameters['oobCode'];
-        } else if (uri.host == 'privacy-policy' || uri.path == '/privacy-policy') {
+        } else if (uri.host == 'privacy-policy' ||
+            uri.path == '/privacy-policy') {
           isPrivacyPolicy = true;
-        } else if (uri.host == 'terms-of-service' || uri.path == '/terms-of-service') {
+        } else if (uri.host == 'terms-of-service' ||
+            uri.path == '/terms-of-service') {
           isTermsOfService = true;
         } else if (uri.host == 'product' && uri.pathSegments.isNotEmpty) {
           productId = uri.pathSegments.first;
@@ -155,7 +176,16 @@ class DeepLinkService {
         }
       }
 
-      // Handle reset password navigation
+      // Handle Firebase action navigation (new format: ?mode=resetPassword&oobCode=XXX)
+      if (isFirebaseAction && mode != null && oobCode != null) {
+        AppLogger.d(
+          'Firebase action deep link detected, mode: $mode, oobCode: ${oobCode.isNotEmpty ? "present" : "not present"}',
+        );
+        _navigateToFirebaseAction(mode, oobCode);
+        return;
+      }
+
+      // Handle reset password navigation (legacy format)
       if (isResetPassword) {
         AppLogger.d(
           'Reset password deep link detected, oobCode: ${oobCode != null ? "present" : "not present"}',
@@ -280,6 +310,21 @@ class DeepLinkService {
     }
   }
 
+  /// Navigate to Firebase action handler page (new format)
+  /// Handles resetPassword, verifyEmail, and recoverEmail actions
+  /// Format: ?mode=resetPassword&oobCode=XXX
+  static void _navigateToFirebaseAction(String mode, String oobCode) {
+    if (_navigatorKey?.currentState != null) {
+      AppLogger.d('Navigating to Firebase action handler: mode=$mode');
+      _navigatorKey!.currentState!.pushNamed(
+        '/',
+        arguments: {'mode': mode, 'oobCode': oobCode},
+      );
+    } else {
+      AppLogger.d('Navigator not available for Firebase action navigation');
+    }
+  }
+
   /// Navigate to privacy policy page
   static void _navigateToPrivacyPolicy() {
     if (_navigatorKey?.currentState != null) {
@@ -327,7 +372,7 @@ class DeepLinkService {
   static String generateCustomSchemeLink(String productId) {
     return 'dentpal://product/$productId';
   }
-  
+
   /// Generate shareable deep link for a store
   static String generateStoreLink(
     String sellerId, {
@@ -344,7 +389,7 @@ class DeepLinkService {
     }
     return '$domain/#/store/$sellerId';
   }
-  
+
   /// Generate custom scheme link for a store (for native app sharing)
   static String generateStoreCustomSchemeLink(String sellerId) {
     return 'dentpal://store/$sellerId';

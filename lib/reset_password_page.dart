@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:dentpal/core/app_theme/index.dart';
+import 'package:dentpal/utils/app_logger.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ResetPasswordPage extends StatefulWidget {
   final String oobCode;
@@ -40,10 +42,14 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
       final email = await FirebaseAuth.instance.verifyPasswordResetCode(
         widget.oobCode,
       );
+
       setState(() {
         _userEmail = email;
       });
+
+      AppLogger.d('User email: $email');
     } catch (e) {
+      AppLogger.d('Error verifying reset code: $e');
       setState(() {
         _errorMessage =
             'This password reset link has expired or is invalid. Please request a new one.';
@@ -133,20 +139,29 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
             ),
             const SizedBox(height: 12),
             Text(
-              'You can now log in with your new password.',
+              'Choose where you want to log in:',
               style: AppTextStyles.bodyMedium.copyWith(
                 color: AppColors.grey600,
               ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
+            // Buyer Portal Button
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {
+              child: ElevatedButton.icon(
+                onPressed: () async {
                   Navigator.of(context).pop();
                   Navigator.of(context).pop();
+
+                  // Open dentpal.shop for buyers
+                  final url = Uri.parse('https://dentpal.shop');
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  }
                 },
+                icon: const Icon(Icons.shopping_bag, size: 20),
+                label: Text('Buyer Portal', style: AppTextStyles.buttonLarge),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: AppColors.onPrimary,
@@ -155,7 +170,33 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: Text('Go to Login', style: AppTextStyles.buttonLarge),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Seller Center Button
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  Navigator.of(context).pop();
+
+                  // Open dentpal-site.web.app for sellers
+                  final url = Uri.parse('https://dentpal-site.web.app');
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  }
+                },
+                icon: const Icon(Icons.store, size: 20),
+                label: Text('Seller Center', style: AppTextStyles.buttonLarge),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  side: const BorderSide(color: AppColors.primary, width: 2),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
               ),
             ),
           ],
@@ -176,10 +217,9 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.close, color: AppColors.onSurface),
-          onPressed: () => Navigator.of(context).pushNamedAndRemoveUntil(
-            '/',
-            (route) => false,
-          ),
+          onPressed: () => Navigator.of(
+            context,
+          ).pushNamedAndRemoveUntil('/', (route) => false),
         ),
       ),
       body: Stack(
@@ -231,10 +271,9 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
               ),
               const SizedBox(height: 30),
               ElevatedButton(
-                onPressed: () => Navigator.of(context).pushNamedAndRemoveUntil(
-                  '/',
-                  (route) => false,
-                ),
+                onPressed: () => Navigator.of(
+                  context,
+                ).pushNamedAndRemoveUntil('/', (route) => false),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: AppColors.onPrimary,

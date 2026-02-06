@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:dentpal/core/app_theme/index.dart';
 import 'package:dentpal/utils/app_logger.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Standalone Reset Password Page for Web/Large Screens
 /// This page allows non-authenticated users to reset their password using oobCode from email link
@@ -69,11 +70,14 @@ class _ChangePasswordStandalonePageState
       final email = await FirebaseAuth.instance.verifyPasswordResetCode(
         widget.oobCode,
       );
+
       setState(() {
         _userEmail = email;
       });
+
+      AppLogger.d('User email: $email');
     } catch (e) {
-      AppLogger.d('Error verifying reset code: \$e');
+      AppLogger.d('Error verifying reset code: $e');
       setState(() {
         _errorMessage =
             'This password reset link has expired or is invalid. Please request a new one.';
@@ -164,23 +168,31 @@ class _ChangePasswordStandalonePageState
             ),
             const SizedBox(height: 12),
             Text(
-              'You can now log in with your new password.',
+              'Choose where you want to log in:',
               style: AppTextStyles.bodyMedium.copyWith(
                 color: AppColors.grey600,
               ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
+            // Buyer Portal Button
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {
+              child: ElevatedButton.icon(
+                onPressed: () async {
                   Navigator.of(context).pop();
-                  Navigator.of(context).pushNamedAndRemoveUntil(
-                    '/login',
-                    (route) => false,
-                  );
+                  Navigator.of(
+                    context,
+                  ).pushNamedAndRemoveUntil('/login', (route) => false);
+
+                  // Open dentpal.shop for buyers
+                  final url = Uri.parse('https://dentpal.shop');
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  }
                 },
+                icon: const Icon(Icons.shopping_bag, size: 20),
+                label: Text('Buyer Portal', style: AppTextStyles.buttonLarge),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: AppColors.onPrimary,
@@ -189,7 +201,35 @@ class _ChangePasswordStandalonePageState
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: Text('Go to Login', style: AppTextStyles.buttonLarge),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Seller Center Button
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  Navigator.of(
+                    context,
+                  ).pushNamedAndRemoveUntil('/login', (route) => false);
+
+                  // Open dentpal-site.web.app for sellers
+                  final url = Uri.parse('https://dentpal-site.web.app');
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  }
+                },
+                icon: const Icon(Icons.store, size: 20),
+                label: Text('Seller Center', style: AppTextStyles.buttonLarge),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  side: const BorderSide(color: AppColors.primary, width: 2),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
               ),
             ),
           ],
@@ -207,10 +247,9 @@ class _ChangePasswordStandalonePageState
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.close, color: AppColors.onSurface),
-          onPressed: () => Navigator.of(context).pushNamedAndRemoveUntil(
-            '/',
-            (route) => false,
-          ),
+          onPressed: () => Navigator.of(
+            context,
+          ).pushNamedAndRemoveUntil('/', (route) => false),
         ),
       ),
       body: LayoutBuilder(
@@ -393,10 +432,9 @@ class _ChangePasswordStandalonePageState
             ),
             const SizedBox(height: 30),
             ElevatedButton(
-              onPressed: () => Navigator.of(context).pushNamedAndRemoveUntil(
-                '/',
-                (route) => false,
-              ),
+              onPressed: () => Navigator.of(
+                context,
+              ).pushNamedAndRemoveUntil('/', (route) => false),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: AppColors.onPrimary,
@@ -454,8 +492,9 @@ class _ChangePasswordStandalonePageState
               decoration: BoxDecoration(
                 color: AppColors.error.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
-                border:
-                    Border.all(color: AppColors.error.withValues(alpha: 0.3)),
+                border: Border.all(
+                  color: AppColors.error.withValues(alpha: 0.3),
+                ),
               ),
               child: Row(
                 children: [
@@ -505,23 +544,15 @@ class _ChangePasswordStandalonePageState
               ),
               errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(
-                  color: AppColors.error,
-                  width: 2,
-                ),
+                borderSide: const BorderSide(color: AppColors.error, width: 2),
               ),
               focusedErrorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(
-                  color: AppColors.error,
-                  width: 2,
-                ),
+                borderSide: const BorderSide(color: AppColors.error, width: 2),
               ),
               suffixIcon: IconButton(
                 icon: Icon(
-                  _obscureNewPassword
-                      ? Icons.visibility_off
-                      : Icons.visibility,
+                  _obscureNewPassword ? Icons.visibility_off : Icons.visibility,
                   color: AppColors.grey600,
                 ),
                 onPressed: () {
@@ -581,17 +612,11 @@ class _ChangePasswordStandalonePageState
               ),
               errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(
-                  color: AppColors.error,
-                  width: 2,
-                ),
+                borderSide: const BorderSide(color: AppColors.error, width: 2),
               ),
               focusedErrorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(
-                  color: AppColors.error,
-                  width: 2,
-                ),
+                borderSide: const BorderSide(color: AppColors.error, width: 2),
               ),
               suffixIcon: IconButton(
                 icon: Icon(
@@ -642,14 +667,22 @@ class _ChangePasswordStandalonePageState
                 ),
                 const SizedBox(height: 8),
                 _buildPasswordRequirement(
-                    'At least 8 characters', _hasMinLength),
+                  'At least 8 characters',
+                  _hasMinLength,
+                ),
                 _buildPasswordRequirement(
-                    'At least 1 uppercase letter', _hasUppercase),
+                  'At least 1 uppercase letter',
+                  _hasUppercase,
+                ),
                 _buildPasswordRequirement(
-                    'At least 1 lowercase letter', _hasLowercase),
+                  'At least 1 lowercase letter',
+                  _hasLowercase,
+                ),
                 _buildPasswordRequirement('At least 1 number', _hasNumber),
                 _buildPasswordRequirement(
-                    'At least 1 special character', _hasSpecialCharacter),
+                  'At least 1 special character',
+                  _hasSpecialCharacter,
+                ),
               ],
             ),
           ),

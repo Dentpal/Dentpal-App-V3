@@ -16,6 +16,7 @@ import 'package:dentpal/services/notification_service.dart';
 import 'package:dentpal/services/in_app_notification_widget.dart';
 import 'package:dentpal/reset_password_page.dart';
 import 'package:dentpal/change_password_standalone_page.dart';
+import 'package:dentpal/firebase_action_handler_page.dart';
 import 'package:dentpal/public_privacy_policy_page.dart';
 import 'package:dentpal/public_terms_of_service_page.dart';
 import 'firebase_options.dart';
@@ -59,7 +60,7 @@ void main() async {
     AppLogger.i('Initializing notification service for mobile...');
     // Register background message handler
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-    
+
     // Initialize notification service
     print('=== Calling NotificationService().initialize()...');
     await NotificationService().initialize();
@@ -84,7 +85,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     // Set the navigator key in NotificationService for push notification navigation
     NotificationService.setNavigatorKey(navigatorKey);
-    
+
     // Initialize deep link service
     DeepLinkService.initialize(navigatorKey);
 
@@ -107,6 +108,26 @@ class MyApp extends StatelessWidget {
         '/terms-of-service': (context) => const PublicTermsOfServicePage(),
       },
       onGenerateRoute: (settings) {
+        // Handle Firebase action links (email verification, password reset, email recovery)
+        // These come with query parameters: mode, oobCode, apiKey, continueUrl
+        if (settings.name == '/' && settings.arguments != null) {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final mode = args?['mode'] as String?;
+          final oobCode = args?['oobCode'] as String?;
+
+          if (mode != null && oobCode != null) {
+            return MaterialPageRoute(
+              settings: settings,
+              builder: (context) => FirebaseActionHandlerPage(
+                mode: mode,
+                oobCode: oobCode,
+                apiKey: args?['apiKey'] as String?,
+                continueUrl: args?['continueUrl'] as String?,
+              ),
+            );
+          }
+        }
+
         // Handle dynamic product routes
         if (settings.name?.startsWith('/product/') ?? false) {
           final productId = settings.name!.split('/')[2];
@@ -121,13 +142,11 @@ class MyApp extends StatelessWidget {
           final sellerId = settings.name!.split('/')[2];
           final args = settings.arguments as Map<String, dynamic>?;
           final sellerData = args?['sellerData'] as Map<String, dynamic>?;
-          
+
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) => StorePage(
-              sellerId: sellerId,
-              sellerData: sellerData,
-            ),
+            builder: (context) =>
+                StorePage(sellerId: sellerId, sellerData: sellerData),
           );
         }
 
@@ -141,7 +160,8 @@ class MyApp extends StatelessWidget {
           if (kIsWeb) {
             return MaterialPageRoute(
               settings: settings,
-              builder: (context) => ChangePasswordStandalonePage(oobCode: oobCode ?? ''),
+              builder: (context) =>
+                  ChangePasswordStandalonePage(oobCode: oobCode ?? ''),
             );
           } else {
             return MaterialPageRoute(

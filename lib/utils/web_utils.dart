@@ -5,4 +5,6 @@ import 'web_utils_stub.dart'
 
 String getCurrentPath() => getCurrentPathImpl();
 
+Map<String, String> getUrlQueryParameters() => getQueryParameters();
+
 void updateUrl(String path) => updateUrlImpl(path);

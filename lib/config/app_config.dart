@@ -15,10 +15,10 @@ class AppConfig {
   static const String businessEmail = 'business@dentpal.com';
   
   /// Legal URLs (for Google Play Console and external links)
-  static const String privacyPolicyUrl = 'https://dentpal-store.web.app/privacy-policy';
-  static const String termsOfServiceUrl = 'https://dentpal-store.web.app/terms-of-service';
-  static const String websiteUrl = 'https://dentpal.shop.web.app';
-  
+  static const String privacyPolicyUrl = 'https://dentpal.shop/privacy-policy';
+  static const String termsOfServiceUrl = 'https://dentpal.shop/terms-of-service';
+  static const String websiteUrl = 'https://dentpal.shop';
+
   /// Company Information
   static const String companyName = 'R&R Newtech Dental Corporation';
   static const String companyAddress = 'Unit 1207 Cityland Herrera Tower, Rufino St., cor. Valero St., Salcedo Village, Makati, Philippines, 1227'; // TODO: Update
