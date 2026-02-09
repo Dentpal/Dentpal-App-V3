@@ -259,6 +259,11 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
   // Save user data to Firestore
   Future<void> _saveUserDataToFirestore(User user) async {
     try {
+      // Get the final ID number from the text controller (user may have edited it)
+      final String? registrationNo = _controller.idNumberController.text.trim().isNotEmpty 
+          ? _controller.idNumberController.text.trim() 
+          : _controller.idNumber;
+      
       // Create the user document with user details from controller
       await FirebaseFirestore.instance.collection('User').doc(user.uid).set({
         'displayName': '${_controller.firstName} ${_controller.lastName}',
@@ -271,7 +276,7 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
         'email': _controller.email,
         'gender': _controller.gender,
         'birthdate': _controller.birthdate != null ? Timestamp.fromDate(_controller.birthdate!) : null,
-        'RegistrationNo': _controller.idNumber, // PRC Registration Number from OCR
+        'RegistrationNo': registrationNo, // PRC Registration Number (from OCR or manually edited)
         'specialty': _controller.selectedSpecialties, // List of selected specialties
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),

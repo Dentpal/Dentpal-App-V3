@@ -11,6 +11,11 @@ String getCurrentPathImpl() {
   return html.window.location.pathname ?? '/';
 }
 
+Map<String, String> getQueryParameters() {
+  final uri = Uri.parse(html.window.location.href);
+  return uri.queryParameters;
+}
+
 // Update the URL without reloading the page (for web deep linking)
 void updateUrlImpl(String path) {
   if (path.startsWith('/')) {

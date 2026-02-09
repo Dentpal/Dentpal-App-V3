@@ -205,6 +205,83 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
             ),
           ),
           
+          // ID Number field - only show when ID is verified
+          if (widget.controller.isIdVerified) ...[
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppColors.grey50,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.grey200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.card_membership,
+                        size: 20,
+                        color: AppColors.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'PRC Registration Number',
+                        style: AppTextStyles.labelLarge.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: widget.controller.idNumberController,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      hintText: 'Enter your PRC registration number',
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: AppColors.grey300),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: AppColors.grey300),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: AppColors.primary, width: 2),
+                      ),
+                      prefixIcon: Icon(Icons.numbers, color: AppColors.grey600),
+                      helperText: 'Auto-filled from ID scan. You can edit if incorrect.',
+                      helperMaxLines: 2,
+                      helperStyle: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.grey600,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                    style: AppTextStyles.bodyLarge,
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'PRC registration number is required';
+                      }
+                      if (value.trim().length < 4) {
+                        return 'Please enter a valid registration number';
+                      }
+                      return null;
+                    },
+                    onChanged: (value) {
+                      // Update the idNumber when user edits
+                      widget.controller.idNumber = value.trim();
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+          
           // Specialty selection section - only show when ID is verified
           if (widget.controller.isIdVerified) ...[
             const SizedBox(height: 24),
@@ -300,6 +377,8 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
             // We don't have direct access to image path from result, but we have verification data
             widget.controller.isIdVerified = true;
             widget.controller.idNumber = result.registrationNumber;
+            // Auto-fill the ID number text field
+            widget.controller.idNumberController.text = result.registrationNumber ?? '';
             widget.controller.idVerificationError = null;
             widget.controller.idFaceImage = result.faceImage;
             // Set a placeholder image to show verification was successful
@@ -308,6 +387,7 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
             widget.controller.isIdVerified = false;
             widget.controller.idVerificationError = result.errorMessage;
             widget.controller.idNumber = null;
+            widget.controller.idNumberController.text = '';
             widget.controller.idFaceImage = null;
             _capturedImage = null;
           }
@@ -318,6 +398,7 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
           widget.controller.isIdVerified = false;
           widget.controller.idVerificationError = 'ID verification cancelled. Please try again to complete your registration.';
           widget.controller.idNumber = null;
+          widget.controller.idNumberController.text = '';
           widget.controller.idFaceImage = null;
           _capturedImage = null;
         });
@@ -329,6 +410,7 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
           widget.controller.isIdVerified = false;
           widget.controller.idVerificationError = 'Unable to access camera. Please check permissions and try again.';
           widget.controller.idNumber = null;
+          widget.controller.idNumberController.text = '';
           widget.controller.idFaceImage = null;
           _capturedImage = null;
         });

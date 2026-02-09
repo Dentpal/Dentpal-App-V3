@@ -80,3 +80,14 @@ windows/flutter/generated_plugins.cmake
 
 # Android local properties (do not commit local.properties)
 android/local.properties
+android/.kotlin/sessions/kotlin-compiler-11236251318952871130.salive
+android/.gradle/file-system.probe
+android/.gradle/buildOutputCleanup/outputFiles.bin
+android/.gradle/buildOutputCleanup/buildOutputCleanup.lock
+android/.gradle/8.12/fileHashes/resourceHashesCache.bin
+android/.gradle/8.12/fileHashes/fileHashes.lock
+android/.gradle/8.12/fileHashes/fileHashes.bin
+android/.gradle/8.12/executionHistory/executionHistory.lock
+android/.gradle/8.12/executionHistory/executionHistory.bin
+android/.gradle/8.12/checksums/checksums.lock
+.firebase/hosting.YnVpbGQvd2Vi.cache

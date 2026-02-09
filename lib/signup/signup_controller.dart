@@ -13,6 +13,7 @@ class SignupController {
   
   // ID verification (Step 3)
   String? idNumber; // Registration number from the scanned ID
+  final TextEditingController idNumberController = TextEditingController(); // Editable ID number field
   bool isIdVerified = false;
   String? idVerificationError;
   Uint8List? idFaceImage; // Temporarily store face image from ID
@@ -155,6 +156,7 @@ class SignupController {
     emailController.dispose();
     passwordController.dispose();
     confirmPasswordController.dispose();
+    idNumberController.dispose();
     
     // Clear sensitive data
     idFaceImage = null;
