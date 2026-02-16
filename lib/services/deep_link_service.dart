@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:dentpal/utils/app_logger.dart';
+import 'package:dentpal/utils/signup_state.dart';
 
 /// Service to handle incoming deep links from other apps, browsers, or shares
 class DeepLinkService {
@@ -12,11 +13,17 @@ class DeepLinkService {
   static final AppLinks _appLinks = AppLinks();
   static StreamSubscription<Uri>? _linkSubscription;
   static GlobalKey<NavigatorState>? _navigatorKey;
+  static bool _isInitialized = false;
 
-  /// Initialize deep link handling
+  /// Initialize deep link handling (only runs once)
   static void initialize(GlobalKey<NavigatorState> navigatorKey) {
     _navigatorKey = navigatorKey;
-    _initDeepLinks();
+    // Only initialize listeners once to prevent duplicate deep link handling
+    if (!_isInitialized) {
+      _isInitialized = true;
+      _initDeepLinks();
+      AppLogger.d('DeepLinkService initialized');
+    }
   }
 
   /// Set up deep link listeners
@@ -46,6 +53,11 @@ class DeepLinkService {
     _linkSubscription = _appLinks.uriLinkStream.listen(
       (Uri uri) {
         AppLogger.d('Received deep link: $uri');
+        // Quick check: if in signup flow, skip processing entirely
+        if (SignupState.isInSignupFlow) {
+          AppLogger.d('In signup flow - ignoring incoming deep link');
+          return;
+        }
         _processDeepLink(uri);
       },
       onError: (err) {
@@ -57,6 +69,17 @@ class DeepLinkService {
   /// Process and route deep links
   static void _processDeepLink(Uri uri) {
     AppLogger.d('Processing deep link: $uri');
+    AppLogger.d('  Scheme: ${uri.scheme}');
+    AppLogger.d('  Host: ${uri.host}');
+    AppLogger.d('  Path: ${uri.path}');
+    AppLogger.d('  Query params: ${uri.queryParameters}');
+    AppLogger.d('  Fragment: ${uri.fragment}');
+
+    // If user is in the signup flow, ignore ALL deep links to prevent navigation away
+    if (SignupState.isInSignupFlow) {
+      AppLogger.d('User is in signup flow - ignoring deep link to prevent navigation');
+      return;
+    }
 
     // Check if this is a Firebase auth callback - if so, ignore it and let Firebase handle it
     if (_isFirebaseAuthCallback(uri)) {
@@ -256,6 +279,25 @@ class DeepLinkService {
       AppLogger.d('Detected recaptcha token in query parameters');
       return true;
     }
+    
+    // Check for Firebase phone auth reCAPTCHA callbacks
+    // These often come back with __firebase_request_key parameter
+    if (uri.queryParameters.containsKey('__firebase_request_key')) {
+      AppLogger.d('Detected Firebase phone auth callback with request key');
+      return true;
+    }
+    
+    // Check for any Firebase auth-related paths
+    if (uri.path.contains('/__/auth/') || uri.path.contains('/__/firebase/')) {
+      AppLogger.d('Detected Firebase auth path callback');
+      return true;
+    }
+    
+    // Check for Firebase Dynamic Links domain
+    if (uri.host.contains('page.link') || uri.host.contains('firebasedynamiclinks.googleapis.com')) {
+      AppLogger.d('Detected Firebase Dynamic Links callback');
+      return true;
+    }
 
     // Check for deep_link_id parameter which contains Firebase auth info
     if (uri.queryParameters.containsKey('deep_link_id')) {
@@ -263,10 +305,21 @@ class DeepLinkService {
       if (deepLinkId != null &&
           (deepLinkId.contains('firebaseapp.com') ||
               deepLinkId.contains('authType=verifyApp') ||
-              deepLinkId.contains('recaptchaToken'))) {
+              deepLinkId.contains('recaptchaToken') ||
+              deepLinkId.contains('__firebase_request_key'))) {
         AppLogger.d(
           'Detected Firebase auth callback in deep_link_id parameter',
         );
+        return true;
+      }
+    }
+    
+    // Check fragment for Firebase auth indicators
+    if (uri.fragment.isNotEmpty) {
+      if (uri.fragment.contains('__firebase_request_key') ||
+          uri.fragment.contains('recaptchaToken') ||
+          uri.fragment.contains('authType=verifyApp')) {
+        AppLogger.d('Detected Firebase auth callback in fragment');
         return true;
       }
     }

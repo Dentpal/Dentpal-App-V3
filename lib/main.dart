@@ -22,6 +22,8 @@ import 'package:dentpal/public_terms_of_service_page.dart';
 import 'firebase_options.dart';
 import 'package:dentpal/utils/web_utils.dart';
 import 'package:dentpal/utils/app_logger.dart';
+import 'package:dentpal/utils/signup_state.dart';
+import 'package:dentpal/utils/debug_navigator_observer.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 
 void main() async {
@@ -93,6 +95,7 @@ class MyApp extends StatelessWidget {
       title: 'DentPal',
       theme: AppTheme.lightTheme,
       navigatorKey: navigatorKey,
+      navigatorObservers: [DebugNavigatorObserver()],
       initialRoute: _getInitialRoute(),
       routes: {
         '/': (context) => const HomePage(),
@@ -200,6 +203,13 @@ class MyApp extends StatelessWidget {
         }
 
         // Default to AuthWrapper for unknown routes
+        // But during signup flow, ignore unknown routes to prevent
+        // navigation away from the signup screen (e.g. from reCAPTCHA callback URLs)
+        if (SignupState.isInSignupFlow) {
+          AppLogger.d('onGenerateRoute: Unknown route "${settings.name}" ignored during signup flow');
+          return null;
+        }
+        AppLogger.d('onGenerateRoute: Unknown route "${settings.name}" -> AuthWrapper');
         return MaterialPageRoute(
           settings: settings,
           builder: (context) => const AuthWrapper(),

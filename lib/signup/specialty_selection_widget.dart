@@ -98,6 +98,9 @@ class DentalSpecialties {
     'Corporate Dentistry',
     'Mobile Dentistry',
     'Emergency Dentistry',
+    
+    // Other
+    'Others',
   ];
 }
 
@@ -119,7 +122,6 @@ class SpecialtySelectionWidget extends StatefulWidget {
 
 class _SpecialtySelectionWidgetState extends State<SpecialtySelectionWidget> {
   final TextEditingController _searchController = TextEditingController();
-  final TextEditingController _customSpecialtyController = TextEditingController();
   String _searchQuery = '';
   List<String> _filteredSpecialties = List.from(DentalSpecialties.specialties);
   
@@ -185,56 +187,6 @@ class _SpecialtySelectionWidgetState extends State<SpecialtySelectionWidget> {
             setModalState(() {});
             // Update parent immediately
             widget.onSelectionChanged(List.from(localSelectedSpecialties));
-          }
-          
-          void addLocalCustomSpecialty() {
-            final customSpecialty = _customSpecialtyController.text.trim();
-            
-            if (customSpecialty.isEmpty) {
-              return;
-            }
-            
-            if (localSelectedSpecialties.length >= widget.maxSelections) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Maximum ${widget.maxSelections} specialties can be selected'),
-                  backgroundColor: AppColors.error,
-                  duration: const Duration(seconds: 2),
-                ),
-              );
-              return;
-            }
-            
-            // Check if already exists (case insensitive)
-            final exists = localSelectedSpecialties.any(
-              (s) => s.toLowerCase() == customSpecialty.toLowerCase()
-            ) || DentalSpecialties.specialties.any(
-              (s) => s.toLowerCase() == customSpecialty.toLowerCase()
-            );
-            
-            if (exists) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('This specialty already exists'),
-                  backgroundColor: AppColors.error,
-                  duration: Duration(seconds: 2),
-                ),
-              );
-              return;
-            }
-            
-            localSelectedSpecialties.add(customSpecialty);
-            setModalState(() {});
-            widget.onSelectionChanged(List.from(localSelectedSpecialties));
-            _customSpecialtyController.clear();
-            
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Added custom specialty: $customSpecialty'),
-                backgroundColor: AppColors.success,
-                duration: const Duration(seconds: 2),
-              ),
-            );
           }
           
           return Container(
@@ -351,7 +303,7 @@ class _SpecialtySelectionWidgetState extends State<SpecialtySelectionWidget> {
                   ),
                 ),
                 
-                // Custom specialty input
+                // Done button
                 Container(
                   padding: EdgeInsets.only(
                     left: 16,
@@ -363,67 +315,20 @@ class _SpecialtySelectionWidgetState extends State<SpecialtySelectionWidget> {
                     color: AppColors.grey50,
                     border: Border(top: BorderSide(color: AppColors.grey200)),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Can\'t find your specialty?',
-                        style: AppTextStyles.labelMedium.copyWith(
-                          color: AppColors.grey600,
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: AppColors.onPrimary,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _customSpecialtyController,
-                              decoration: InputDecoration(
-                                hintText: 'Enter custom specialty',
-                                hintStyle: AppTextStyles.inputHint,
-                                filled: true,
-                                fillColor: AppColors.surface,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide.none,
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              ),
-                              textCapitalization: TextCapitalization.words,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          ElevatedButton(
-                            onPressed: addLocalCustomSpecialty,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: AppColors.onPrimary,
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: const Text('Add'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: () => Navigator.pop(context),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: AppColors.onPrimary,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: const Text('Done'),
-                        ),
-                      ),
-                    ],
+                      child: const Text('Done'),
+                    ),
                   ),
                 ),
               ],
@@ -442,7 +347,6 @@ class _SpecialtySelectionWidgetState extends State<SpecialtySelectionWidget> {
   @override
   void dispose() {
     _searchController.dispose();
-    _customSpecialtyController.dispose();
     super.dispose();
   }
 
@@ -513,27 +417,22 @@ class _SpecialtySelectionWidgetState extends State<SpecialtySelectionWidget> {
             spacing: 8,
             runSpacing: 8,
             children: widget.selectedSpecialties.map((specialty) {
-              final isCustom = !DentalSpecialties.specialties.contains(specialty);
               return Chip(
                 label: Text(
                   specialty,
                   style: AppTextStyles.bodySmall.copyWith(
-                    color: isCustom ? AppColors.accent : AppColors.primary,
+                    color: AppColors.primary,
                   ),
                 ),
-                backgroundColor: isCustom 
-                    ? AppColors.accent.withValues(alpha: 0.1)
-                    : AppColors.primary.withValues(alpha: 0.1),
+                backgroundColor: AppColors.primary.withValues(alpha: 0.1),
                 deleteIcon: Icon(
                   Icons.close,
                   size: 16,
-                  color: isCustom ? AppColors.accent : AppColors.primary,
+                  color: AppColors.primary,
                 ),
                 onDeleted: () => _toggleSpecialty(specialty),
                 side: BorderSide(
-                  color: isCustom 
-                      ? AppColors.accent.withValues(alpha: 0.3)
-                      : AppColors.primary.withValues(alpha: 0.3),
+                  color: AppColors.primary.withValues(alpha: 0.3),
                 ),
               );
             }).toList(),

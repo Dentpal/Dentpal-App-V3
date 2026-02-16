@@ -56,11 +56,9 @@
 
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>DentPal requires access to your photo library to upload profile photos, ID images, and product photos for verification purposes.</string>
-	<!-- Permissions for location services -->
+	<!-- Permissions for location services (only when app is in use for delivery address) -->
 	
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>This app needs access to your location to help set your delivery address accurately</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>This app needs access to your location to help set your delivery address accurately</string>
 	
 	<key>CFBundleURLTypes</key>

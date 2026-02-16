@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dentpal/utils/app_logger.dart';
+import 'package:dentpal/utils/signup_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:dentpal/product/pages/product_listing_page.dart';
@@ -34,12 +35,26 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
 
-    _checkUserRole();
+    // Only check user role if not in signup flow
+    if (!SignupState.isInSignupFlow) {
+      _checkUserRole();
+    } else {
+      AppLogger.d('HomePage: Skipping _checkUserRole in initState - user is in signup flow');
+      setState(() {
+        _isLoadingSellerStatus = false;
+      });
+    }
 
     // Listen to auth state changes to refresh user role
     _authSubscription = FirebaseAuth.instance.authStateChanges().listen((
       User? user,
     ) {
+      // Skip auth state changes during signup flow to prevent
+      // unnecessary rebuilds while SignupFlow is on the navigation stack
+      if (SignupState.isInSignupFlow) {
+        AppLogger.d('HomePage: Auth state change ignored - user is in signup flow');
+        return;
+      }
       _checkUserRole();
     });
   }

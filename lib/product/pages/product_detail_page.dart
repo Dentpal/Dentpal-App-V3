@@ -1239,7 +1239,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                     _buildVariationsSection(product),
                     _buildQuantityAndStock(),
                     _buildDescriptionSection(product),
-                    _buildReviewsSection(),
+                    // _buildReviewsSection(), // Hidden: Static/fake data
                     const SizedBox(height: 80), // Bottom padding for fixed button
                   ],
                 ),
@@ -1388,11 +1388,11 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                       
                       const SizedBox(height: 24),
                       
-                      // Row 3: Reviews (Full Width)
-                      SizedBox(
-                        width: double.infinity,
-                        child: _buildReviewsSection(),
-                      ),
+                      // Row 3: Reviews (Full Width) - Hidden: Static/fake data
+                      // SizedBox(
+                      //   width: double.infinity,
+                      //   child: _buildReviewsSection(),
+                      // ),
                     ],
                   ),
                 ),
@@ -1787,40 +1787,13 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _selectedVariation != null && _selectedVariation!.name.isNotEmpty
-                        ? RichText(
-                            text: TextSpan(
-                              children: [
-                                TextSpan(
-                                  text: product.name,
-                                  style: AppTextStyles.headlineSmall.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.onSurface,
-                                  ),
-                                ),
-                                TextSpan(
-                                  text: ' - ',
-                                  style: AppTextStyles.headlineSmall.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.onSurface,
-                                  ),
-                                ),
-                                TextSpan(
-                                  text: _selectedVariation!.name,
-                                  style: AppTextStyles.headlineSmall.copyWith(
-                                    color: AppColors.grey400,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                        : Text(
-                            product.name,
-                            style: AppTextStyles.headlineSmall.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.onSurface,
-                            ),
-                          ),
+                    Text(
+                      product.name,
+                      style: AppTextStyles.headlineSmall.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.onSurface,
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     FutureBuilder<String>(
                       future: _getCategoryName(product.categoryId),
@@ -2017,7 +1990,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           ),
           const SizedBox(height: 16),
           SizedBox(
-            height: 70, // Increased height for better visibility
+            height: 110, // Increased height to accommodate image + label
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               itemCount: product.variations!.length,
@@ -2037,80 +2010,100 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                       _quantityController.text = _quantity.toString();
                     });
                   },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: 70, // Increased width for better visibility
-                    height: 70,
+                  child: Container(
+                    width: 80, // Increased width to accommodate longer names
                     margin: const EdgeInsets.only(right: 12),
-                    decoration: BoxDecoration(
-                      color: isSelected ? AppColors.primary.withValues(alpha: 0.1) : AppColors.surface,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: isSelected ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.2),
-                        width: isSelected ? 2 : 1,
-                      ),
-                      boxShadow: isSelected ? [
-                        BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.2),
-                          blurRadius: 6,
-                          offset: const Offset(0, 1),
-                        ),
-                      ] : [],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(14), // Slightly smaller to account for border
-                      child: SizedBox(
-                        width: 70,
-                        height: 70,
-                        child: variation.imageURL != null && variation.imageURL!.isNotEmpty
-                            ? CachedNetworkImage(
-                                imageUrl: variation.imageURL!,
-                                fit: BoxFit.cover, // Ensures image fills the entire container
-                                width: 70,
-                                height: 70,
-                                filterQuality: FilterQuality.high,
-                                fadeInDuration: const Duration(milliseconds: 200),
-                                placeholder: (context, url) => Container(
-                                  width: 70,
-                                  height: 70,
-                                  color: AppColors.background,
-                                  child: const Center(
-                                    child: SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    ),
-                                  ),
-                                ),
-                                errorWidget: (context, url, error) => Container(
-                                  width: 70,
-                                  height: 70,
-                                  color: AppColors.background,
-                                  child: const Center(
-                                    child: Icon(
-                                      Icons.image_not_supported,
-                                      size: 20,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                                ),
-                                // Optimized cache size for thumbnails
-                                memCacheWidth: 300,
-                                memCacheHeight: 300,
-                              )
-                            : Container(
-                                width: 70,
-                                height: 70,
-                                color: AppColors.background,
-                                child: const Center(
-                                  child: Icon(
-                                    Icons.image_not_supported,
-                                    size: 20,
-                                    color: Colors.grey,
-                                  ),
-                                ),
+                    child: Column(
+                      children: [
+                        // Image container
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          width: 70,
+                          height: 70,
+                          decoration: BoxDecoration(
+                            color: isSelected ? AppColors.primary.withValues(alpha: 0.1) : AppColors.surface,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: isSelected ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.2),
+                              width: isSelected ? 2 : 1,
+                            ),
+                            boxShadow: isSelected ? [
+                              BoxShadow(
+                                color: AppColors.primary.withValues(alpha: 0.2),
+                                blurRadius: 6,
+                                offset: const Offset(0, 1),
                               ),
-                      ),
+                            ] : [],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: SizedBox(
+                              width: 70,
+                              height: 70,
+                              child: variation.imageURL != null && variation.imageURL!.isNotEmpty
+                                  ? CachedNetworkImage(
+                                      imageUrl: variation.imageURL!,
+                                      fit: BoxFit.cover,
+                                      width: 70,
+                                      height: 70,
+                                      filterQuality: FilterQuality.high,
+                                      fadeInDuration: const Duration(milliseconds: 200),
+                                      placeholder: (context, url) => Container(
+                                        width: 70,
+                                        height: 70,
+                                        color: AppColors.background,
+                                        child: const Center(
+                                          child: SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(strokeWidth: 2),
+                                          ),
+                                        ),
+                                      ),
+                                      errorWidget: (context, url, error) => Container(
+                                        width: 70,
+                                        height: 70,
+                                        color: AppColors.background,
+                                        child: const Center(
+                                          child: Icon(
+                                            Icons.image_not_supported,
+                                            size: 20,
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                      ),
+                                      memCacheWidth: 300,
+                                      memCacheHeight: 300,
+                                    )
+                                  : Container(
+                                      width: 70,
+                                      height: 70,
+                                      color: AppColors.background,
+                                      child: const Center(
+                                        child: Icon(
+                                          Icons.image_not_supported,
+                                          size: 20,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ),
+                        // Variation name below image
+                        const SizedBox(height: 6),
+                        Text(
+                          variation.name,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: isSelected ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.7),
+                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                            fontSize: 11,
+                          ),
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
                   ),
                 );
@@ -2484,197 +2477,198 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
     );
   }
 
-  Widget _buildReviewsSection() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(24, 4, 24, 8),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.onSurface.withValues(alpha: 0.1),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.amber.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.star,
-                  color: Colors.amber,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Reviews',
-                style: AppTextStyles.titleMedium.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.onSurface,
-                ),
-              ),
-              const Spacer(),
-              TextButton(
-                onPressed: () {
-                  // TODO: Navigate to reviews page
-                },
-                child: Text(
-                  'See All',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          
-          // Rating summary
-          Row(
-            children: [
-              Text(
-                '4.5',
-                style: AppTextStyles.headlineSmall.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.onSurface,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: List.generate(5, (index) {
-                      return Icon(
-                        index < 4 ? Icons.star : Icons.star_half,
-                        color: Colors.amber,
-                        size: 16,
-                      );
-                    }),
-                  ),
-                  Text(
-                    '24 reviews',
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.onSurface.withValues(alpha: 0.6),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 20),
-          
-          // Sample reviews
-          _buildModernReviewItem(
-            name: 'John Doe',
-            rating: 5,
-            date: '2 weeks ago',
-            comment: 'Great product! Really satisfied with the quality.',
-          ),
-          const SizedBox(height: 16),
-          _buildModernReviewItem(
-            name: 'Jane Smith',
-            rating: 4,
-            date: '1 month ago',
-            comment: 'Good product but shipping took longer than expected.',
-          ),
-        ],
-      ),
-    );
-  }
+  // Hidden: Static/fake review data - uncomment when real reviews are implemented
+  // Widget _buildReviewsSection() {
+  //   return Container(
+  //     margin: const EdgeInsets.fromLTRB(24, 4, 24, 8),
+  //     padding: const EdgeInsets.all(16),
+  //     decoration: BoxDecoration(
+  //       color: AppColors.surface,
+  //       borderRadius: BorderRadius.circular(16),
+  //       border: Border.all(
+  //         color: AppColors.onSurface.withValues(alpha: 0.1),
+  //       ),
+  //     ),
+  //     child: Column(
+  //       crossAxisAlignment: CrossAxisAlignment.start,
+  //       children: [
+  //         Row(
+  //           children: [
+  //             Container(
+  //               padding: const EdgeInsets.all(8),
+  //               decoration: BoxDecoration(
+  //                 color: Colors.amber.withValues(alpha: 0.1),
+  //                 borderRadius: BorderRadius.circular(8),
+  //               ),
+  //               child: const Icon(
+  //                 Icons.star,
+  //                 color: Colors.amber,
+  //                 size: 20,
+  //               ),
+  //             ),
+  //             const SizedBox(width: 12),
+  //             Text(
+  //               'Reviews',
+  //               style: AppTextStyles.titleMedium.copyWith(
+  //                 fontWeight: FontWeight.bold,
+  //                 color: AppColors.onSurface,
+  //               ),
+  //             ),
+  //             const Spacer(),
+  //             TextButton(
+  //               onPressed: () {
+  //                 // TODO: Navigate to reviews page
+  //               },
+  //               child: Text(
+  //                 'See All',
+  //                 style: AppTextStyles.bodySmall.copyWith(
+  //                   color: AppColors.primary,
+  //                   fontWeight: FontWeight.w600,
+  //                 ),
+  //               ),
+  //             ),
+  //           ],
+  //         ),
+  //         const SizedBox(height: 16),
+  //         
+  //         // Rating summary
+  //         Row(
+  //           children: [
+  //             Text(
+  //               '4.5',
+  //               style: AppTextStyles.headlineSmall.copyWith(
+  //                 fontWeight: FontWeight.bold,
+  //                 color: AppColors.onSurface,
+  //               ),
+  //             ),
+  //             const SizedBox(width: 12),
+  //             Column(
+  //               crossAxisAlignment: CrossAxisAlignment.start,
+  //               children: [
+  //                 Row(
+  //                   children: List.generate(5, (index) {
+  //                     return Icon(
+  //                       index < 4 ? Icons.star : Icons.star_half,
+  //                       color: Colors.amber,
+  //                       size: 16,
+  //                     );
+  //                   }),
+  //                 ),
+  //                 Text(
+  //                   '24 reviews',
+  //                   style: AppTextStyles.bodySmall.copyWith(
+  //                     color: AppColors.onSurface.withValues(alpha: 0.6),
+  //                   ),
+  //                 ),
+  //               ],
+  //             ),
+  //           ],
+  //         ),
+  //         
+  //         const SizedBox(height: 20),
+  //         
+  //         // Sample reviews
+  //         _buildModernReviewItem(
+  //           name: 'John Doe',
+  //           rating: 5,
+  //           date: '2 weeks ago',
+  //           comment: 'Great product! Really satisfied with the quality.',
+  //         ),
+  //         const SizedBox(height: 16),
+  //         _buildModernReviewItem(
+  //           name: 'Jane Smith',
+  //           rating: 4,
+  //           date: '1 month ago',
+  //           comment: 'Good product but shipping took longer than expected.',
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
 
-  Widget _buildModernReviewItem({
-    required String name,
-    required int rating,
-    required String date,
-    required String comment,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.background,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(
-                    name[0].toUpperCase(),
-                    style: AppTextStyles.titleSmall.copyWith(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.onSurface,
-                      ),
-                    ),
-                    Row(
-                      children: [
-                        Row(
-                          children: List.generate(5, (index) {
-                            return Icon(
-                              index < rating ? Icons.star : Icons.star_border,
-                              color: Colors.amber,
-                              size: 14,
-                            );
-                          }),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          date,
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.onSurface.withValues(alpha: 0.6),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            comment,
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.onSurface.withValues(alpha: 0.8),
-              height: 1.4,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // Widget _buildModernReviewItem({
+  //   required String name,
+  //   required int rating,
+  //   required String date,
+  //   required String comment,
+  // }) {
+  //   return Container(
+  //     padding: const EdgeInsets.all(16),
+  //     decoration: BoxDecoration(
+  //       color: AppColors.background,
+  //       borderRadius: BorderRadius.circular(12),
+  //     ),
+  //     child: Column(
+  //       crossAxisAlignment: CrossAxisAlignment.start,
+  //       children: [
+  //         Row(
+  //           children: [
+  //             Container(
+  //               width: 36,
+  //               height: 36,
+  //               decoration: BoxDecoration(
+  //                 color: AppColors.primary.withValues(alpha: 0.1),
+  //                 shape: BoxShape.circle,
+  //               ),
+  //               child: Center(
+  //                 child: Text(
+  //                   name[0].toUpperCase(),
+  //                   style: AppTextStyles.titleSmall.copyWith(
+  //                     color: AppColors.primary,
+  //                     fontWeight: FontWeight.bold,
+  //                   ),
+  //                 ),
+  //               ),
+  //             ),
+  //             const SizedBox(width: 12),
+  //             Expanded(
+  //               child: Column(
+  //                 crossAxisAlignment: CrossAxisAlignment.start,
+  //                 children: [
+  //                   Text(
+  //                     name,
+  //                     style: AppTextStyles.bodyMedium.copyWith(
+  //                       fontWeight: FontWeight.w600,
+  //                       color: AppColors.onSurface,
+  //                     ),
+  //                   ),
+  //                   Row(
+  //                     children: [
+  //                       Row(
+  //                         children: List.generate(5, (index) {
+  //                           return Icon(
+  //                             index < rating ? Icons.star : Icons.star_border,
+  //                             color: Colors.amber,
+  //                             size: 14,
+  //                           );
+  //                         }),
+  //                       ),
+  //                       const SizedBox(width: 8),
+  //                       Text(
+  //                         date,
+  //                         style: AppTextStyles.bodySmall.copyWith(
+  //                           color: AppColors.onSurface.withValues(alpha: 0.6),
+  //                         ),
+  //                       ),
+  //                     ],
+  //                   ),
+  //                 ],
+  //               ),
+  //             ),
+  //           ],
+  //         ),
+  //         const SizedBox(height: 12),
+  //         Text(
+  //           comment,
+  //           style: AppTextStyles.bodyMedium.copyWith(
+  //             color: AppColors.onSurface.withValues(alpha: 0.8),
+  //             height: 1.4,
+  //           ),
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
 
   Widget _buildFixedAddToCartButton(Product product) {
     return Positioned(

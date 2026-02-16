@@ -1,12 +1,15 @@
 // ignore_for_file: deprecated_member_use
 
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'signup_controller.dart';
 import 'package:dentpal/login_page.dart';
 import 'package:dentpal/core/app_theme/index.dart';
 import 'package:dentpal/utils/app_logger.dart';
+import 'package:dentpal/utils/signup_state.dart';
 
 class SignupStep5PhoneVerification extends StatefulWidget {
   final SignupController controller;
@@ -25,6 +28,20 @@ class SignupStep5PhoneVerification extends StatefulWidget {
 class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerification> {
   // Quick access to controller
   SignupController get _controller => widget.controller;
+  
+  // UI state management
+  bool _showOtpInput = false;
+  bool _verificationFailed = false;
+  String _errorMessage = '';
+  final TextEditingController _otpController = TextEditingController();
+  final FocusNode _otpFocusNode = FocusNode();
+  
+  @override
+  void dispose() {
+    _otpController.dispose();
+    _otpFocusNode.dispose();
+    super.dispose();
+  }
   
   @override
   Widget build(BuildContext context) {
@@ -54,22 +71,18 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
                   color: AppColors.primary,
                 ),
                 const SizedBox(height: 16),
-                Text(
-                  'Phone Verification',
-                  style: AppTextStyles.headlineSmall.copyWith(
-                    fontWeight: FontWeight.w600,
+                
+                // Conditional rendering based on state
+                if (_controller.isContactNumberVerified) ...[
+                  // Success state
+                  Text(
+                    'Phone Verified!',
+                    style: AppTextStyles.headlineSmall.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.success,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'We\'ll send a verification code to your phone number to ensure account security.',
-                  textAlign: TextAlign.center,
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.grey600,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                if (_controller.isContactNumberVerified)
+                  const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
@@ -96,6 +109,118 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
                       ],
                     ),
                   ),
+                ] else if (_showOtpInput) ...[
+                  // OTP Input state
+                  Text(
+                    'Enter Verification Code',
+                    style: AppTextStyles.headlineSmall.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Enter the 6-digit code sent to ${_controller.formattedPhoneNumber}',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.grey600,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  
+                  // Single OTP text field with letter spacing
+                  TextField(
+                    controller: _otpController,
+                    focusNode: _otpFocusNode,
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.headlineMedium.copyWith(
+                      letterSpacing: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    decoration: InputDecoration(
+                      counterText: '',
+                      hintText: '000000',
+                      hintStyle: AppTextStyles.headlineMedium.copyWith(
+                        letterSpacing: 16,
+                        color: AppColors.grey300,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: AppColors.grey300),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: AppColors.grey300),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: AppColors.primary, width: 2),
+                      ),
+                      filled: true,
+                      fillColor: AppColors.surface,
+                    ),
+                    onChanged: (value) {
+                      if (value.length == 6) {
+                        // Auto-verify when 6 digits entered
+                        _verifyOtp();
+                      }
+                    },
+                  ),
+                  
+                  if (_verificationFailed) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.error.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.error),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.error_outline, color: AppColors.error, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _errorMessage,
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.error,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  
+                  const SizedBox(height: 16),
+                  TextButton(
+                    onPressed: _resendCode,
+                    child: Text(
+                      'Resend Code',
+                      style: AppTextStyles.labelLarge.copyWith(
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                ] else ...[
+                  // Initial state
+                  Text(
+                    'Phone Verification',
+                    style: AppTextStyles.headlineSmall.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'We\'ll send a verification code to your phone number to ensure account security.',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.grey600,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -126,7 +251,7 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
               const SizedBox(width: 16),
               Expanded(
                 child: ElevatedButton(
-                  onPressed: _processSubmission,
+                  onPressed: _showOtpInput ? _verifyOtp : _processSubmission,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: AppColors.onPrimary,
@@ -146,7 +271,9 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
                         )
                       )
                     : Text(
-                        _controller.isContactNumberVerified ? 'Submit' : 'Verify Phone',
+                        _showOtpInput 
+                          ? 'Verify Code' 
+                          : (_controller.isContactNumberVerified ? 'Submit' : 'Verify Phone'),
                         style: AppTextStyles.buttonLarge,
                       ),
                 ),
@@ -169,40 +296,55 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
       _showLoadingOverlay(context, 'Completing registration...');
       
       try {
-        // Create the Firebase auth user account with email and password
-        final UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-          email: _controller.email,
-          password: _controller.password,
-        );
+        User? user;
         
-        // Get the created user
-        final User? user = userCredential.user;
-        if (user == null) {
-          throw Exception('User creation failed');
-        }
-        
-        // Link phone credential to the email account if we have verified a phone
         if (_controller.phoneCredential != null) {
-          try {
-            // Link phone authentication to this account
-            await user.linkWithCredential(_controller.phoneCredential!);
-            AppLogger.d('Successfully linked phone number to account');
-          } catch (linkError) {
-            // If linking fails, we'll still continue with the registration
-            // but log the error for debugging
-            AppLogger.d('Error linking phone credential: $linkError');
-            // We won't throw here to allow the registration to complete
+          // ── SINGLE-ACCOUNT FLOW ──
+          // 1) Sign in with the phone credential (creates one auth account)
+          AppLogger.d('Signing in with phone credential...');
+          final UserCredential phoneUserCredential =
+              await FirebaseAuth.instance.signInWithCredential(_controller.phoneCredential!);
+          user = phoneUserCredential.user;
+          
+          if (user == null) {
+            throw Exception('Phone sign-in returned null user');
+          }
+          AppLogger.d('Signed in with phone - uid: ${user.uid}');
+          
+          // 2) Link email/password to the same account
+          AppLogger.d('Linking email/password to phone account...');
+          final emailCredential = EmailAuthProvider.credential(
+            email: _controller.email,
+            password: _controller.password,
+          );
+          await user.linkWithCredential(emailCredential);
+          AppLogger.d('Email/password linked successfully');
+        } else {
+          // ── FALLBACK: no phone credential (e.g. test flow) ──
+          // Create with email/password directly
+          AppLogger.d('No phone credential - creating email/password account');
+          final UserCredential userCredential =
+              await FirebaseAuth.instance.createUserWithEmailAndPassword(
+            email: _controller.email,
+            password: _controller.password,
+          );
+          user = userCredential.user;
+          
+          if (user == null) {
+            throw Exception('User creation failed');
           }
         }
         
         // Send email verification
         await user.sendEmailVerification();
+        AppLogger.d('Email verification sent');
         
         // Save user data to Firestore
         await _saveUserDataToFirestore(user);
         
         // Sign out the user so they have to verify email before logging in
         await FirebaseAuth.instance.signOut();
+        AppLogger.d('Signed out after registration');
         
         // Remove loading overlay
         if (mounted) {
@@ -211,6 +353,10 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
         
         // Navigate to login page
         if (mounted) {
+          // Clear signup flag before navigating away - signup is complete
+          SignupState.isInSignupFlow = false;
+          AppLogger.d('Registration complete, cleared isInSignupFlow flag');
+          
           Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(builder: (context) => const LoginPage()),
             (route) => false,  // Remove all previous routes
@@ -226,6 +372,8 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
         if (mounted) {
           Navigator.of(context).pop();
         }
+        
+        AppLogger.d('Registration error: $e');
         
         // Show error dialog
         String errorMessage = 'Registration failed. Please try again.';
@@ -243,6 +391,18 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
             case 'operation-not-allowed':
               errorMessage = 'Email/password accounts are not enabled.';
               break;
+            case 'provider-already-linked':
+              errorMessage = 'This email is already linked to another account.';
+              break;
+            case 'credential-already-in-use':
+              errorMessage = 'This phone number is already linked to another account.';
+              break;
+            case 'invalid-verification-code':
+              errorMessage = 'The verification code was invalid. Please go back and verify your phone again.';
+              break;
+            case 'invalid-verification-id':
+              errorMessage = 'Verification session expired. Please go back and verify your phone again.';
+              break;
             default:
               errorMessage = e.message ?? 'Authentication failed.';
           }
@@ -256,6 +416,35 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
     }
   }
   
+  // Upload face verification selfie as profile picture to Firebase Storage
+  Future<String?> _uploadProfileImage(String uid, Uint8List imageBytes) async {
+    try {
+      AppLogger.d('Uploading profile image to UserImages/$uid/displayimage.jpg');
+      
+      final storageRef = FirebaseStorage.instance
+          .ref()
+          .child('UserImages')
+          .child(uid)
+          .child('displayimage.jpg');
+      
+      // Upload the image bytes with JPEG content type
+      final uploadTask = await storageRef.putData(
+        imageBytes,
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+      
+      // Get the download URL
+      final downloadURL = await uploadTask.ref.getDownloadURL();
+      AppLogger.d('Profile image uploaded successfully: $downloadURL');
+      
+      return downloadURL;
+    } catch (e) {
+      AppLogger.d('Error uploading profile image: $e');
+      // Don't fail registration if image upload fails
+      return null;
+    }
+  }
+  
   // Save user data to Firestore
   Future<void> _saveUserDataToFirestore(User user) async {
     try {
@@ -264,10 +453,23 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
           ? _controller.idNumberController.text.trim() 
           : _controller.idNumber;
       
+      // Upload face verification selfie as profile picture
+      String? photoURL;
+      if (_controller.selfieImage != null) {
+        photoURL = await _uploadProfileImage(user.uid, _controller.selfieImage!);
+      }
+      
+      // Update Firebase Auth profile with display name and photo URL
+      await user.updateDisplayName('${_controller.firstName} ${_controller.lastName}');
+      if (photoURL != null) {
+        await user.updatePhotoURL(photoURL);
+        AppLogger.d('Firebase Auth profile updated with photoURL');
+      }
+      
       // Create the user document with user details from controller
       await FirebaseFirestore.instance.collection('User').doc(user.uid).set({
         'displayName': '${_controller.firstName} ${_controller.lastName}',
-        'photoURL': null, // Will be updated when the user adds a profile photo
+        'photoURL': photoURL, // Profile picture from face verification selfie
         'fullName': '${_controller.firstName} ${_controller.lastName}',
         'firstName': _controller.firstName,
         'middleName': '', // No middle name in signup flow
@@ -370,6 +572,100 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
     );
   }
 
+  // Verify OTP code entered by user
+  // This does NOT sign in — it only creates and stores the credential.
+  // The actual sign-in happens in _processSubmission() to avoid creating
+  // a separate phone-only account.
+  Future<void> _verifyOtp() async {
+    final String otpCode = _otpController.text.trim();
+    
+    if (otpCode.length != 6) {
+      setState(() {
+        _verificationFailed = true;
+        _errorMessage = 'Please enter a 6-digit code';
+      });
+      return;
+    }
+    
+    // Check verification ID
+    if (_controller.verificationId == null || _controller.verificationId!.isEmpty) {
+      setState(() {
+        _verificationFailed = true;
+        _errorMessage = 'Verification session expired. Please resend code.';
+      });
+      return;
+    }
+    
+    // Show loading state
+    setState(() {
+      _controller.isVerificationInProgress = true;
+      _verificationFailed = false;
+      _errorMessage = '';
+    });
+    
+    try {
+      AppLogger.d('Creating phone credential from OTP code...');
+      
+      // Check if this is a test verification (simulated flow)
+      final bool isTestVerification =
+          _controller.verificationId!.startsWith('test_verification_id_');
+
+      if (isTestVerification) {
+        // For test phone numbers, skip credential creation.
+        // _processSubmission() will use the email-only fallback path.
+        _controller.phoneCredential = null;
+        AppLogger.d('Test verification detected - skipping credential creation');
+      } else {
+        // Create phone auth credential with verification ID and SMS code.
+        // We do NOT call signInWithCredential here to avoid creating a
+        // phone-only auth account. The credential will be used during
+        // account creation to sign in and then link email/password.
+        final PhoneAuthCredential credential = PhoneAuthProvider.credential(
+          verificationId: _controller.verificationId!,
+          smsCode: otpCode,
+        );
+
+        // Store the credential for use during final account creation
+        _controller.phoneCredential = credential;
+        AppLogger.d('Phone credential created and stored - ready for account creation');
+      }
+      
+      // Update verification status
+      if (mounted) {
+        setState(() {
+          _controller.isContactNumberVerified = true;
+          _controller.isVerificationInProgress = false;
+          _showOtpInput = false; // Hide OTP input
+        });
+      }
+    } catch (e) {
+      AppLogger.d('Unexpected error creating phone credential: $e');
+      if (mounted) {
+        setState(() {
+          _controller.isVerificationInProgress = false;
+          _verificationFailed = true;
+          _errorMessage = 'An error occurred. Please try again.';
+        });
+      }
+    }
+  }
+  
+  // Resend verification code
+  Future<void> _resendCode() async {
+    AppLogger.d('Resending verification code...');
+    
+    // Reset state
+    setState(() {
+      _otpController.clear();
+      _verificationFailed = false;
+      _errorMessage = '';
+      _showOtpInput = false; // Go back to initial state
+    });
+    
+    // Restart verification process
+    await _initiatePhoneVerification();
+  }
+
   // Initiate Firebase phone verification
   Future<void> _initiatePhoneVerification() async {
     if (_controller.isVerificationInProgress) return;
@@ -464,12 +760,15 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
                 _controller.verificationId = verificationId;
                 _controller.resendToken = resendToken; // Store for potential resend
                 _controller.isVerificationInProgress = false;
+                _showOtpInput = true; // Show OTP input section
+                _verificationFailed = false; // Reset error state
+                _errorMessage = '';
               });
-              AppLogger.d('Showing OTP modal...');
-              // Add a small delay to ensure navigation state has settled after reCAPTCHA
-              Future.delayed(const Duration(milliseconds: 500), () {
+              AppLogger.d('Showing OTP input section...');
+              // Focus on the OTP text field after a short delay
+              Future.delayed(const Duration(milliseconds: 300), () {
                 if (mounted) {
-                  _showOtpModal();
+                  _otpFocusNode.requestFocus();
                 }
               });
             }
@@ -504,289 +803,6 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
     }
   }
 
-  void _showOtpModal() {
-    AppLogger.d('_showOtpModal called - checking if modal should be shown');
-    
-    // Check if widget is still mounted and context is valid
-    if (!mounted) {
-      AppLogger.d('Widget not mounted, cannot show OTP modal');
-      return;
-    }
-
-    AppLogger.d('About to show OTP modal...');
-    
-    // Clear previous OTP entries
-    for (var controller in _controller.otpControllers) {
-      controller.clear();
-    }
-
-    final formattedNumber = _controller.formattedPhoneNumber;
-    
-    // Auto-focus the first OTP field after a short delay
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(const Duration(milliseconds: 300), () {
-        if (_controller.otpFocusNodes.isNotEmpty && mounted) {
-          _controller.otpFocusNodes.first.requestFocus();
-        }
-      });
-    });
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) {
-        return Container(
-          height: MediaQuery.of(context).size.height * 0.7,
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(24),
-              topRight: Radius.circular(24),
-            ),
-          ),
-          child: Padding(
-            padding: EdgeInsets.only(
-              left: 30.0,
-              right: 30.0,
-              top: 30.0,
-              bottom: MediaQuery.of(context).viewInsets.bottom + 30.0, // Add keyboard padding
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                // Handle bar
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.grey300,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                
-                // Icon
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(40),
-                  ),
-                  child: Icon(
-                    Icons.sms,
-                    size: 40,
-                    color: AppColors.primary,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                
-                Text(
-                  'Enter Verification Code',
-                  style: AppTextStyles.headlineSmall.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Please enter the 6-digit code we sent to\n$formattedNumber',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.grey600,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                SizedBox(height: MediaQuery.of(context).viewInsets.bottom > 0 ? 16 : 32),
-                
-                // OTP Input fields
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: List.generate(6, (index) {
-                    return Container(
-                      width: 50,
-                      height: 50,
-                      decoration: BoxDecoration(
-                        color: AppColors.grey50,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.grey200),
-                      ),
-                      child: TextFormField(
-                        controller: _controller.otpControllers[index],
-                        focusNode: _controller.otpFocusNodes[index],
-                        keyboardType: TextInputType.number,
-                        textAlign: TextAlign.center,
-                        maxLength: 1,
-                        style: AppTextStyles.headlineSmall.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                        decoration: const InputDecoration(
-                          border: InputBorder.none,
-                          counterText: '',
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                        onChanged: (value) {
-                          if (value.isNotEmpty && index < 5) {
-                            _controller.otpFocusNodes[index + 1].requestFocus();
-                          }
-                          if (value.isEmpty && index > 0) {
-                            _controller.otpFocusNodes[index - 1].requestFocus();
-                          }
-                        },
-                      ),
-                    );
-                  }),
-                ),
-                SizedBox(height: MediaQuery.of(context).viewInsets.bottom > 0 ? 16 : 32),
-                
-                // Verify button
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _controller.isVerificationInProgress ? null : _verifyOtp,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: AppColors.onPrimary,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: _controller.isVerificationInProgress
-                      ? SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            color: AppColors.onPrimary,
-                            strokeWidth: 2.5,
-                          ),
-                        )
-                      : Text(
-                          'Verify Code',
-                          style: AppTextStyles.buttonLarge,
-                        ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                
-                // Resend button
-                TextButton(
-                  onPressed: _controller.isVerificationInProgress ? null : _resendOtp,
-                  child: RichText(
-                    text: TextSpan(
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        fontWeight: FontWeight.w500,
-                        color: Colors.black,
-                      ),
-                      children: [
-                        TextSpan(
-                          text: "Didn't receive the code? ",
-                          style: TextStyle(
-                            color: Colors.black,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        TextSpan(
-                          text: 'Resend',
-                          style: TextStyle(
-                            color: AppColors.accent,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  // Resend OTP method
-  Future<void> _resendOtp() async {
-    if (mounted) {
-      setState(() {
-        _controller.isVerificationInProgress = true;
-      });
-    }
-
-    final formattedNumber = _controller.formattedPhoneNumber;
-
-    try {
-      AppLogger.d('Attempting to resend OTP to $formattedNumber');
-      
-      await FirebaseAuth.instance.verifyPhoneNumber(
-        phoneNumber: formattedNumber,
-        forceResendingToken: _controller.resendToken,
-        verificationCompleted: (PhoneAuthCredential credential) async {
-          if (mounted) {
-            setState(() {
-              _controller.isContactNumberVerified = true;
-              _controller.isVerificationInProgress = false;
-              _controller.phoneCredential = credential;
-            });
-            Navigator.of(context).pop(); // Close OTP modal
-            _showVerificationResult(true, 'Your phone number has been automatically verified!');
-          }
-        },
-        verificationFailed: (FirebaseAuthException e) {
-          AppLogger.d('Resend verification failed: ${e.code} - ${e.message}');
-          if (mounted) {
-            setState(() {
-              _controller.isVerificationInProgress = false;
-            });
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Failed to resend code: ${e.message}')),
-            );
-          }
-        },
-        codeSent: (String verificationId, int? resendToken) {
-          AppLogger.d('Resend successful. New code sent.');
-          if (mounted) {
-            setState(() {
-              _controller.verificationId = verificationId;
-              _controller.resendToken = resendToken;
-              _controller.isVerificationInProgress = false;
-            });
-            
-            // Clear existing OTP inputs
-            for (var controller in _controller.otpControllers) {
-              controller.clear();
-            }
-            
-            // Focus on first OTP field
-            if (_controller.otpFocusNodes.isNotEmpty) {
-              _controller.otpFocusNodes.first.requestFocus();
-            }
-            
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Verification code resent')),
-            );
-          }
-        },
-        codeAutoRetrievalTimeout: (String verificationId) {
-          _controller.verificationId = verificationId;
-        },
-        timeout: const Duration(seconds: 120),
-      );
-    } catch (e) {
-      AppLogger.d('Error resending OTP: $e');
-      if (mounted) {
-        setState(() {
-          _controller.isVerificationInProgress = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error resending code: $e')),
-        );
-      }
-    }
-  }
-
   // Check if phone number is a test number for development
   bool _isTestPhoneNumber(String phoneNumber) {
     // Test phone numbers for development (including your actual number)
@@ -812,91 +828,18 @@ class _SignupStep5PhoneVerificationState extends State<SignupStep5PhoneVerificat
       setState(() {
         _controller.isVerificationInProgress = false;
         _controller.verificationId = 'test_verification_id_${DateTime.now().millisecondsSinceEpoch}';
+        _showOtpInput = true; // Show OTP input section
+        _verificationFailed = false;
+        _errorMessage = '';
       });
       
-      AppLogger.d('Test verification simulated, showing OTP modal');
-      _showOtpModal();
-    }
-  }
-
-  void _verifyOtp() async {
-    final otp = _controller.otpControllers.map((controller) => controller.text).join();
-    
-    if (otp.length != 6) {
-      _showVerificationResult(false, 'Please enter all 6 digits');
-      return;
-    }
-
-    if (_controller.verificationId == null || _controller.verificationId!.isEmpty) {
-      _showVerificationResult(false, 'Verification ID not found. Please try again.');
-      return;
-    }
-
-    if (mounted) {
-      setState(() {
-        _controller.isVerificationInProgress = true;
-      });
-    }
-
-    try {
-      // Check if this is a test verification (verification ID starts with 'test_')
-      if (_controller.verificationId!.startsWith('test_')) {
-        AppLogger.d('Test OTP verification - accepting any 6-digit code');
-        
-        // For test numbers, accept any 6-digit code
-        // Create a mock credential for testing
-        _controller.phoneCredential = null; // We'll handle this in registration
-        
+      AppLogger.d('Test verification simulated, showing OTP input section');
+      // Focus on the OTP text field
+      Future.delayed(const Duration(milliseconds: 300), () {
         if (mounted) {
-          setState(() {
-            _controller.isVerificationInProgress = false;
-            _controller.isContactNumberVerified = true;
-          });
+          _otpFocusNode.requestFocus();
         }
-        
-        // Close OTP modal and show success message
-        Navigator.of(context).pop();
-        _showVerificationResult(true, 'Test phone verification successful! Click Complete Registration to finish your account setup.');
-        return;
-      }
-
-      // Create a PhoneAuthCredential with the code for real verification
-      PhoneAuthCredential credential = PhoneAuthProvider.credential(
-        verificationId: _controller.verificationId!,
-        smsCode: otp,
-      );
-
-      // Just store the credential for later use rather than signing in now
-      _controller.phoneCredential = credential;
-      
-      if (mounted) {
-        setState(() {
-          _controller.isVerificationInProgress = false;
-          _controller.isContactNumberVerified = true;
-        });
-      }
-      
-      // Close OTP modal and show success message
-      Navigator.of(context).pop();
-      _showVerificationResult(true, 'Your phone number has been successfully verified! Click Complete Registration to finish your account setup.');
-      
-    } on FirebaseAuthException catch (e) {
-      if (mounted) {
-        setState(() {
-          _controller.isVerificationInProgress = false;
-        });
-        String errorMessage = 'The OTP you entered is incorrect. Please try again.';
-        if (e.code == 'invalid-verification-code') {
-          errorMessage = 'The OTP you entered is incorrect. Please try again.';
-        } else if (e.code == 'session-expired') {
-          errorMessage = 'The OTP has expired. Please request a new one.';
-        }
-        _showVerificationResult(false, errorMessage);
-      }
-    } catch (e) {
-      if (mounted) {
-        _showVerificationResult(false, 'An error occurred. Please try again.');
-      }
+      });
     }
   }
 

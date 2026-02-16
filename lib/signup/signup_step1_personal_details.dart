@@ -2,6 +2,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'signup_controller.dart';
 import 'package:dentpal/core/app_theme/index.dart';
 
@@ -28,12 +30,41 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
   final FocusNode _lastNameFocus = FocusNode();
   final FocusNode _contactNumberFocus = FocusNode();
   
+  // Track if phone number check is in progress
+  bool _isCheckingPhoneNumber = false;
+  String? _phoneNumberError;
+  
   @override
   void dispose() {
     _firstNameFocus.dispose();
     _lastNameFocus.dispose();
     _contactNumberFocus.dispose();
     super.dispose();
+  }
+  
+  // Check if phone number already exists in UserLookup collection
+  Future<bool> _checkPhoneNumberExists(String phoneNumber) async {
+    if (phoneNumber.isEmpty || !phoneNumber.startsWith('09') || phoneNumber.length != 11) {
+      return false;
+    }
+    
+    try {
+      // Format phone number to international format for checking
+      final formattedNumber = _controller.formatPhoneNumberForFirebase(phoneNumber);
+      
+      // Query UserLookup collection for existing phone number
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('UserLookup')
+          .where('contactNumber', isEqualTo: formattedNumber)
+          .limit(1)
+          .get();
+      
+      return querySnapshot.docs.isNotEmpty;
+    } catch (e) {
+      // If there's an error checking, return false to allow user to proceed
+      // The error will be caught during actual registration
+      return false;
+    }
   }
   
   @override
@@ -172,10 +203,16 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
               keyboardType: TextInputType.phone,
               textInputAction: TextInputAction.done,
               style: AppTextStyles.inputText,
+              maxLength: 11, // Limit to 11 digits
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly, // Only allow digits
+                LengthLimitingTextInputFormatter(11), // Hard limit to 11 characters
+              ],
               onChanged: (value) {
                 // Enable or disable verification button based on input format
                 setState(() {
                   _controller.isVerifyButtonEnabled = value.startsWith('09') && value.length == 11;
+                  _phoneNumberError = null; // Clear error when user types
                 });
               },
               decoration: InputDecoration(
@@ -183,6 +220,7 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
                 hintStyle: AppTextStyles.inputHint,
                 filled: true,
                 fillColor: AppColors.grey50,
+                counterText: '', // Hide the character counter
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
@@ -211,6 +249,10 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
                 }
                 if (!value.startsWith('09') || value.length != 11) {
                   return 'Contact number must start with 09';
+                }
+                // Show cached error if phone number already exists
+                if (_phoneNumberError != null) {
+                  return _phoneNumberError;
                 }
                 return null;
               },
@@ -387,7 +429,7 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: _validateAndProceed,
+                onPressed: _isCheckingPhoneNumber ? null : _validateAndProceed,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: AppColors.onPrimary,
@@ -397,10 +439,19 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
                   ),
                   elevation: 0,
                 ),
-                child: Text(
-                  'Proceed',
-                  style: AppTextStyles.buttonLarge,
-                ),
+                child: _isCheckingPhoneNumber
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(AppColors.onPrimary),
+                        ),
+                      )
+                    : Text(
+                        'Proceed',
+                        style: AppTextStyles.buttonLarge,
+                      ),
               ),
             ),
             const SizedBox(height: 8),
@@ -441,7 +492,7 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
     );
   }
   
-  void _validateAndProceed() {
+  void _validateAndProceed() async {
     final valid = _controller.formKeyStep1.currentState?.validate() ?? false;
     String? genderError;
     String? birthdateError;
@@ -459,6 +510,28 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
     });
     
     if (valid && genderError == null && birthdateError == null) {
+      // Check if phone number already exists in UserLookup
+      setState(() {
+        _isCheckingPhoneNumber = true;
+        _phoneNumberError = null;
+      });
+      
+      final phoneExists = await _checkPhoneNumberExists(_controller.contactNumber);
+      
+      setState(() {
+        _isCheckingPhoneNumber = false;
+      });
+      
+      if (phoneExists) {
+        setState(() {
+          _phoneNumberError = 'This phone number is already registered';
+        });
+        // Trigger validation to show the error
+        _controller.formKeyStep1.currentState?.validate();
+        return;
+      }
+      
+      // All validations passed
       _controller.step1GenderError = null;
       _controller.step1BirthdateError = null;
       widget.onNext();

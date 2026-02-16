@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/utils/web_utils.dart';
+import 'package:dentpal/utils/signup_state.dart';
 import 'package:dentpal/firebase_action_handler_page.dart';
 import 'login_page.dart';
 import 'home_page.dart';
@@ -17,6 +18,7 @@ class AuthWrapper extends StatefulWidget {
 class _AuthWrapperState extends State<AuthWrapper> {
   bool _isCheckingFirebaseAction = true;
   bool _hasFirebaseAction = false;
+  Widget? _cachedScreen; // Cache the screen before signup starts
 
   @override
   void initState() {
@@ -100,12 +102,31 @@ class _AuthWrapperState extends State<AuthWrapper> {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
-        // If the snapshot has user data, then they're already authenticated
+        // Determine what screen should be shown based on auth state
+        Widget screenToShow;
+        
         if (snapshot.hasData && snapshot.data != null) {
-          return const HomePage();
+          screenToShow = const HomePage();
+        } else {
+          screenToShow = const LoginPage();
         }
-        // Otherwise, they're not signed in
-        return const LoginPage();
+        
+        // During signup flow, return the cached screen to prevent any rebuilds
+        if (SignupState.isInSignupFlow) {
+          AppLogger.d('AuthWrapper: Auth state change ignored - user is in signup flow (event: ${snapshot.data?.uid ?? "signed-out"})');
+          // Cache and return the screen (or return the previously cached one)
+          if (_cachedScreen == null) {
+            _cachedScreen = screenToShow;
+          }
+          return _cachedScreen!;
+        }
+        
+        // Log auth state changes for debugging
+        AppLogger.d('AuthWrapper: Auth state change - user: ${snapshot.data?.uid ?? "null"}, showing: ${screenToShow.runtimeType}');
+        
+        // Not in signup, cache the current screen and return it
+        _cachedScreen = screenToShow;
+        return screenToShow;
       },
     );
   }

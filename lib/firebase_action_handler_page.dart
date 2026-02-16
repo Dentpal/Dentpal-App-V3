@@ -5,6 +5,7 @@ import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/reset_password_page.dart';
 import 'package:dentpal/change_password_standalone_page.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:url_launcher/url_launcher.dart';
 
 /// Firebase Action Handler Page
 /// Handles Firebase email action links (password reset, email verification, email change)
@@ -124,19 +125,9 @@ class _FirebaseActionHandlerPageState extends State<FirebaseActionHandlerPage> {
         _isLoading = false;
       });
 
-      // Show success message
+      // Show success message with portal selection
       if (mounted) {
-        _showSuccessDialog(
-          title: 'Email Verified!',
-          message:
-              'Your email has been successfully verified. You can now log in to your account.',
-          actionText: 'Go to Login',
-          onAction: () {
-            Navigator.of(
-              context,
-            ).pushNamedAndRemoveUntil('/login', (route) => false);
-          },
-        );
+        _showEmailVerificationSuccessDialog();
       }
     } on FirebaseAuthException catch (e) {
       String message;
@@ -221,6 +212,120 @@ class _FirebaseActionHandlerPageState extends State<FirebaseActionHandlerPage> {
         _errorMessage = message;
       });
     }
+  }
+
+  /// Show email verification success dialog with portal selection
+  void _showEmailVerificationSuccessDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(40),
+              ),
+              child: const Icon(
+                Icons.check_circle,
+                size: 50,
+                color: Colors.green,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Email Verified!',
+              style: AppTextStyles.headlineSmall.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Your email has been successfully verified. Choose where you want to go:',
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.grey600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            // Buyer Portal Button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  if (kIsWeb) {
+                    // For web, navigate to dentpal.shop
+                    Navigator.of(context).pushNamedAndRemoveUntil(
+                      '/login',
+                      (route) => false,
+                    );
+                  } else {
+                    // For mobile app, go to login page
+                    Navigator.of(context).pushNamedAndRemoveUntil(
+                      '/login',
+                      (route) => false,
+                    );
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: AppColors.onPrimary,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(Icons.shopping_bag, size: 20),
+                label: Text('Buyer Portal', style: AppTextStyles.buttonLarge),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Seller Center Button
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  // Import url_launcher at the top if not already imported
+                  final Uri sellerUrl = Uri.parse('https://dentpal-site.web.app');
+                  try {
+                    // Try to launch the URL
+                    await launchUrl(sellerUrl, mode: LaunchMode.externalApplication);
+                  } catch (e) {
+                    AppLogger.d('Error launching Seller Center URL: $e');
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Unable to open Seller Center. Please visit dentpal-site.web.app manually.'),
+                          backgroundColor: AppColors.error,
+                        ),
+                      );
+                    }
+                  }
+                },
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  side: BorderSide(color: AppColors.primary, width: 2),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(Icons.store, size: 20),
+                label: Text('Seller Center', style: AppTextStyles.buttonLarge),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showSuccessDialog({

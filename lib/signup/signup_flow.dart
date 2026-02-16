@@ -7,6 +7,7 @@ import 'signup_step4_face_verification.dart';
 import 'signup_step5_phone_verification.dart';
 import 'package:dentpal/core/app_theme/index.dart';
 import 'package:dentpal/utils/app_logger.dart';
+import 'package:dentpal/utils/signup_state.dart';
 
 class SignupFlow extends StatefulWidget {
   const SignupFlow({super.key});
@@ -15,10 +16,68 @@ class SignupFlow extends StatefulWidget {
   State<SignupFlow> createState() => _SignupFlowState();
 }
 
-class _SignupFlowState extends State<SignupFlow> {
+class _SignupFlowState extends State<SignupFlow> with WidgetsBindingObserver {
   final SignupController _controller = SignupController();
   final PageController _pageController = PageController();
   int _currentPage = 0;
+  
+  @override
+  void initState() {
+    super.initState();
+    // Set flag to prevent auth state changes from triggering navigation
+    SignupState.isInSignupFlow = true;
+    AppLogger.d('SignupFlow initiated, set isInSignupFlow = true');
+    // Listen for app lifecycle changes (e.g. returning from reCAPTCHA browser)
+    WidgetsBinding.instance.addObserver(this);
+  }
+  
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    AppLogger.d('SignupFlow lifecycle state changed to: $state');
+    if (state == AppLifecycleState.resumed) {
+      // App returned to foreground (e.g. after reCAPTCHA)
+      // Re-assert signup flag to prevent any navigation
+      SignupState.isInSignupFlow = true;
+      AppLogger.d('App resumed during signup flow - re-asserted isInSignupFlow = true');
+      
+      // Verify SignupFlow is still the active route after a short delay
+      // (give Flutter time to process any pending navigation)
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          AppLogger.d('SignupFlow still mounted 500ms after resume - current page: $_currentPage');
+          final route = ModalRoute.of(context);
+          if (route != null) {
+            AppLogger.d('SignupFlow route isCurrent: ${route.isCurrent}, isActive: ${route.isActive}');
+            if (!route.isCurrent && route.isActive) {
+              AppLogger.d('WARNING: SignupFlow is no longer the top route!');
+            }
+          }
+        } else {
+          AppLogger.d('WARNING: SignupFlow NOT mounted 500ms after resume - route was destroyed!');
+        }
+      });
+      
+      // Also check at 1.5s for any delayed navigation that might have been triggered
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        if (mounted) {
+          AppLogger.d('SignupFlow still mounted 1500ms after resume - current page: $_currentPage');
+          final route = ModalRoute.of(context);
+          if (route != null && !route.isCurrent) {
+            AppLogger.d('WARNING: SignupFlow lost top-route status 1500ms after resume!');
+          }
+        } else {
+          AppLogger.d('CRITICAL: SignupFlow NOT mounted 1500ms after resume!');
+        }
+      });
+    } else if (state == AppLifecycleState.paused) {
+      AppLogger.d('SignupFlow: App paused (e.g. going to Safari for reCAPTCHA)');
+    } else if (state == AppLifecycleState.inactive) {
+      AppLogger.d('SignupFlow: App inactive');
+    } else if (state == AppLifecycleState.detached) {
+      AppLogger.d('SignupFlow: App detached - may be terminated!');
+    }
+  }
   
   void nextPage() {
     AppLogger.d('SignupFlow nextPage called - current: $_currentPage');
@@ -47,7 +106,18 @@ class _SignupFlowState extends State<SignupFlow> {
   }
   
   @override
+  void deactivate() {
+    AppLogger.d('SignupFlow DEACTIVATED - route is being removed from the tree');
+    super.deactivate();
+  }
+  
+  @override
   void dispose() {
+    // Remove lifecycle observer
+    WidgetsBinding.instance.removeObserver(this);
+    // Clear the flag when leaving signup
+    SignupState.isInSignupFlow = false;
+    AppLogger.d('SignupFlow DISPOSED, set isInSignupFlow = false');
     _pageController.dispose();
     _controller.dispose();
     super.dispose();
@@ -55,22 +125,38 @@ class _SignupFlowState extends State<SignupFlow> {
   
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(gradient: AppGradients.teal),
-        child: SafeArea(
-          // Don't apply bottom padding to allow content to extend to the bottom edge
-          bottom: false,
-          child: Column(
-            children: [
-              // Top section with step indicator and title
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Step indicator
+    return PopScope(
+      // Prevent accidental back navigation during signup (especially during phone verification)
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        // Only allow going back on the first step
+        if (_currentPage == 0) {
+          SignupState.isInSignupFlow = false;
+          AppLogger.d('SignupFlow: User exited signup from first step');
+          Navigator.of(context).pop();
+        } else {
+          // Go to previous step instead of popping the entire signup flow
+          AppLogger.d('SignupFlow: Back pressed on step $_currentPage - going to previous step');
+          previousPage();
+        }
+      },
+      child: Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(gradient: AppGradients.teal),
+          child: SafeArea(
+            // Don't apply bottom padding to allow content to extend to the bottom edge
+            bottom: false,
+            child: Column(
+              children: [
+                // Top section with step indicator and title
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Step indicator
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
@@ -163,6 +249,7 @@ class _SignupFlowState extends State<SignupFlow> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb; // Added for web detection
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/shipping_address.dart';
 import '../services/address_service.dart';
 import '../services/geocoding_validator_service.dart';
@@ -571,12 +573,58 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
       _populateFields();
     } else {
       _countryController.text = 'Philippines'; // Default country
+      _prefillUserName(); // Pre-fill user's name when adding new address
     }
 
     // Add listeners to update map when address fields change
     _addressLine1Controller.addListener(_updateMapAddress);
     _cityController.addListener(_updateMapAddress);
     _stateController.addListener(_updateMapAddress);
+  }
+
+  Future<void> _prefillUserName() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      // Try to get name from Firebase Auth displayName first
+      String? userName = user.displayName;
+
+      // If displayName is empty, try to get from Firestore User collection
+      if (userName == null || userName.trim().isEmpty) {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('User') // Changed from 'users' to 'User' (capital U)
+            .doc(user.uid)
+            .get();
+
+        if (userDoc.exists) {
+          final userData = userDoc.data();
+          AppLogger.d('User data from Firestore: $userData');
+          
+          // Try different possible field names for full name
+          userName = userData?['fullName'] ??
+              userData?['displayName'] ??
+              userData?['name'];
+          
+          AppLogger.d('Extracted userName: $userName');
+        } else {
+          AppLogger.d('User document does not exist in Firestore');
+        }
+      }
+
+      // Set the full name if we found it
+      if (userName != null && userName.trim().isNotEmpty && mounted) {
+        setState(() {
+          _fullNameController.text = userName!;
+        });
+        AppLogger.d('Pre-filled full name with: $userName');
+      } else {
+        AppLogger.d('No valid user name found to pre-fill');
+      }
+    } catch (e) {
+      AppLogger.d('Error pre-filling user name: $e');
+      // Silently fail - user can still enter name manually
+    }
   }
 
   void _updateMapAddress() {

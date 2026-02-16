@@ -38,7 +38,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
   PaymentMethod? _selectedPaymentMethod;
   String? _orderNotes;
   bool _isProcessing = false;
-  bool _termsAccepted = false;
   
   // Per-seller shipping costs
   Map<String, double> _sellerShippingCosts = {}; // sellerId -> buyer's portion of shipping cost
@@ -151,11 +150,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
     if (_selectedPaymentMethod == null) {
       _showErrorDialog('Please select a payment method');
-      return false;
-    }
-
-    if (!_termsAccepted) {
-      _showErrorDialog('Please accept the terms and conditions');
       return false;
     }
 
@@ -1451,58 +1445,59 @@ class _CheckoutPageState extends State<CheckoutPage> {
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Checkbox(
-              value: _termsAccepted,
-              onChanged: (value) {
-                setState(() {
-                  _termsAccepted = value ?? false;
-                });
-              },
-              activeColor: AppColors.primary,
+            Row(
+              children: [
+                Icon(Icons.info_outline, color: AppColors.primary, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Terms and Conditions',
+                  style: AppTextStyles.titleSmall.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            const SizedBox(height: 12),
+            Text.rich(
+              TextSpan(
+                text: 'By placing this order, I agree to the ',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.onSurface.withValues(alpha: 0.8),
+                ),
                 children: [
-                  Text.rich(
-                    TextSpan(
-                      text: 'I agree to the ',
-                      style: AppTextStyles.bodyMedium,
-                      children: [
-                        TextSpan(
-                          text: 'Terms and Conditions',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            color: AppColors.primary,
-                            decoration: TextDecoration.underline,
-                          ),
-                          recognizer: TapGestureRecognizer()
-                            ..onTap = () => _showTermsAndConditions(context),
-                        ),
-                        TextSpan(
-                          text: ' and ',
-                          style: AppTextStyles.bodyMedium,
-                        ),
-                        TextSpan(
-                          text: 'Privacy Policy',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            color: AppColors.primary,
-                            decoration: TextDecoration.underline,
-                          ),
-                          recognizer: TapGestureRecognizer()
-                            ..onTap = () => _showPrivacyPolicy(context),
-                        ),
-                      ],
+                  TextSpan(
+                    text: 'Terms and Conditions',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.primary,
+                      decoration: TextDecoration.underline,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    recognizer: TapGestureRecognizer()
+                      ..onTap = () => _showTermsAndConditions(context),
+                  ),
+                  TextSpan(
+                    text: ' and ',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.onSurface.withValues(alpha: 0.8),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'By placing this order, you acknowledge that you have read and understood our terms.',
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.onSurface.withValues(alpha: 0.6),
+                  TextSpan(
+                    text: 'Privacy Policy',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.primary,
+                      decoration: TextDecoration.underline,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    recognizer: TapGestureRecognizer()
+                      ..onTap = () => _showPrivacyPolicy(context),
+                  ),
+                  TextSpan(
+                    text: '.',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.onSurface.withValues(alpha: 0.8),
                     ),
                   ),
                 ],
