@@ -355,13 +355,6 @@ class _LoginPageState extends State<LoginPage> {
                             child: Center(
                               child: InkWell(
                                 borderRadius: BorderRadius.circular(24),
-                                onTap: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (context) => const HomePage(),
-                                    ),
-                                  );
-                                },
                                 child: Image.asset(
                                   'lib/assets/icons/dentpal_vertical.png',
                                   width: 560,
@@ -714,14 +707,6 @@ class _LoginPageState extends State<LoginPage> {
                             Material(
                               color: Colors.transparent,
                               child: InkWell(
-                                onTap: () {
-                                  Navigator.of(context).pushAndRemoveUntil(
-                                    MaterialPageRoute(
-                                      builder: (context) => const HomePage(),
-                                    ),
-                                    (route) => false,
-                                  );
-                                },
                                 borderRadius: BorderRadius.circular(20),
                                 splashColor: Colors.white.withOpacity(0.2),
                                 highlightColor: Colors.white.withOpacity(0.1),
