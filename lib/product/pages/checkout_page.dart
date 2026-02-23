@@ -931,6 +931,17 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
+              if (item.variationName != null && item.variationName!.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  item.variationName!,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.onSurface.withValues(alpha: 0.6),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
               const SizedBox(height: 4),
               Text(
                 'Qty: ${item.quantity}',

@@ -193,7 +193,13 @@ class _AddressMapWidgetState extends State<AddressMapWidget> {
         throw Exception('Location permissions are permanently denied');
       }
 
-      Position position = await Geolocator.getCurrentPosition();
+      // Get current position with explicit settings for foreground location only
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 10,
+        ),
+      );
       _selectedLocation = LatLng(position.latitude, position.longitude);
       _userHasManuallySetLocation = true; // User used current location button
       widget.onLocationSelected(position.latitude, position.longitude);

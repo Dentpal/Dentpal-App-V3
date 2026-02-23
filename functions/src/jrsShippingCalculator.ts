@@ -10,6 +10,7 @@ import {
   extractShippingCostFromJRS,
   calculateCompleteBreakdown,
   calculateMultiSellerBreakdown,
+  determineProductName,
   SellerFeeBreakdown,
   MultiSellerBreakdown
 } from './utils/jrsShippingHelper';
@@ -27,6 +28,7 @@ interface JRSShippingResponse {
   data: {
     shippingCost?: number;
     totalAmount?: number;
+    productName?: string; // JRS packaging type used for rate calculation
     sellerBreakdown?: SellerShippingCalculation[];
     sellerFeeBreakdowns?: SellerFeeBreakdown[];
     sellerShippingCharge?: number;
@@ -122,6 +124,32 @@ async function handleOldInterface(request: CallableRequest<CalculateShippingRequ
     // Use provided recipientAddress or fallback to formatted sellerAddress
     const formattedRecipientAddress = formatAddress(recipientAddress || sellerAddress);
 
+    // Determine the JRS product/packaging name for logging
+    const shipmentItemsForProductName = cartItems
+      .filter(item => item.length && item.width && item.height && item.weight)
+      .flatMap(item => {
+        const items = [];
+        for (let i = 0; i < item.quantity; i++) {
+          items.push({
+            declaredValue: item.price,
+            length: item.length!,
+            width: item.width!,
+            height: item.height!,
+            weight: item.weight!
+          });
+        }
+        return items;
+      });
+    const resolvedProductName = determineProductName(shipmentItemsForProductName);
+    
+    logger.info(`📦 Old interface - JRS packaging: ${resolvedProductName ?? 'auto (API determines)'}`, {
+      totalWeight: shipmentItemsForProductName.reduce((sum, i) => sum + i.weight, 0),
+      maxWidth: shipmentItemsForProductName.length > 0 ? Math.max(...shipmentItemsForProductName.map(i => i.width)) : 0,
+      maxLength: shipmentItemsForProductName.length > 0 ? Math.max(...shipmentItemsForProductName.map(i => i.length)) : 0,
+      maxHeight: shipmentItemsForProductName.length > 0 ? Math.max(...shipmentItemsForProductName.map(i => i.height)) : 0,
+      itemCount: shipmentItemsForProductName.length
+    });
+
     // Calculate shipping cost using the helper with fallback support
     const shippingResult = await calculateJRSShippingCostWithFallback(
       sellerAddress,
@@ -163,6 +191,7 @@ async function handleOldInterface(request: CallableRequest<CalculateShippingRequ
       data: {
         shippingCost: shippingCost,
         totalAmount: shippingCost,
+        productName: resolvedProductName ?? 'auto',
         sellerShippingCharge: breakdown.sellerShippingCharge,
         buyerShippingCharge: breakdown.buyerShippingCharge,
         shippingSplitRule: breakdown.shippingSplitRule,
@@ -367,6 +396,32 @@ export const calculateJRSShipping = onCall(
           itemCount: sellerItems.length
         });
 
+        // Determine the JRS product/packaging name for this seller's shipment
+        const shipmentItemsForProductName = sellerItems
+          .filter(item => item.length && item.width && item.height && item.weight)
+          .flatMap(item => {
+            const items = [];
+            for (let i = 0; i < item.quantity; i++) {
+              items.push({
+                declaredValue: item.price,
+                length: item.length!,
+                width: item.width!,
+                height: item.height!,
+                weight: item.weight!
+              });
+            }
+            return items;
+          });
+        const resolvedProductName = determineProductName(shipmentItemsForProductName);
+        
+        logger.info(`📦 Seller ${sellerId} (${sellerName}) - JRS packaging: ${resolvedProductName ?? 'auto (API determines)'}`, {
+          totalWeight: shipmentItemsForProductName.reduce((sum, i) => sum + i.weight, 0),
+          maxWidth: shipmentItemsForProductName.length > 0 ? Math.max(...shipmentItemsForProductName.map(i => i.width)) : 0,
+          maxLength: shipmentItemsForProductName.length > 0 ? Math.max(...shipmentItemsForProductName.map(i => i.length)) : 0,
+          maxHeight: shipmentItemsForProductName.length > 0 ? Math.max(...shipmentItemsForProductName.map(i => i.height)) : 0,
+          itemCount: shipmentItemsForProductName.length
+        });
+
         // Calculate shipping cost for this seller's items
         const sellerShippingCost = await calculateJRSShippingCost(
           sellerAddress,
@@ -380,19 +435,27 @@ export const calculateJRSShipping = onCall(
         const sellerCartValue = sellerItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
         return {
-          sellerId,
-          sellerName,
-          sellerAddress,
-          items: sellerItems,
-          shippingCost: sellerShippingCost,
-          cartValue: sellerCartValue,
-          platformFeePercentage
-        } as SellerShippingCalculation;
+          resolvedProductName: resolvedProductName ?? 'auto',
+          result: {
+            sellerId,
+            sellerName,
+            sellerAddress,
+            items: sellerItems,
+            shippingCost: sellerShippingCost,
+            cartValue: sellerCartValue,
+            platformFeePercentage
+          } as SellerShippingCalculation
+        };
       });
 
       // Wait for all seller shipping calculations
-      const sellerShippingResults = await Promise.all(sellerShippingPromises);
+      const sellerShippingResultsWithProduct = await Promise.all(sellerShippingPromises);
+      const sellerShippingResults = sellerShippingResultsWithProduct.map(r => r.result);
+      const resolvedProductNames = sellerShippingResultsWithProduct.map(r => r.resolvedProductName);
       
+      // Use the first seller's product name for the response (most orders are single-seller)
+      const primaryProductName = resolvedProductNames.find(n => n !== undefined) ?? 'auto';
+
       // Calculate total shipping cost
       const totalShippingCost = sellerShippingResults.reduce((total, seller) => total + seller.shippingCost, 0);
 
@@ -439,6 +502,7 @@ export const calculateJRSShipping = onCall(
         data: {
           shippingCost: totalShippingCost,
           totalAmount: totalShippingCost,
+          productName: primaryProductName,
           sellerBreakdown: sellerShippingResults,
           sellerFeeBreakdowns: multiSellerBreakdown.sellerBreakdowns,
           // Use totals from multi-seller breakdown

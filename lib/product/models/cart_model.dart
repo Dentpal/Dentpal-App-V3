@@ -12,6 +12,7 @@ class CartItem {
   double? productPrice;
   int? availableStock;
   String? variationId;
+  String? variationName;
   
   // Seller information
   String? sellerId;
@@ -37,6 +38,7 @@ class CartItem {
     this.productPrice,
     this.availableStock,
     this.variationId,
+    this.variationName,
     this.sellerId,
     this.sellerName,
     this.sellerAddress,

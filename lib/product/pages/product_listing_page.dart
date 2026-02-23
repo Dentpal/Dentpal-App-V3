@@ -12,6 +12,7 @@ import '../models/product_model.dart';
 import '../services/product_service.dart';
 import '../services/user_service.dart';
 import '../services/category_service.dart';
+import '../services/cart_service.dart';
 import '../services/click_tracking_service.dart';
 import '../widgets/product_card.dart';
 import '../../core/app_theme/app_colors.dart';
@@ -64,6 +65,7 @@ class _ProductListingPageState extends State<ProductListingPage>
   final UserService _userService = UserService();
   final CategoryService _categoryService = CategoryService();
   final ClickTrackingService _clickTrackingService = ClickTrackingService();
+  final CartService _cartService = CartService();
   bool _isLoading = false;
   bool _isLoadingMore = false;
   List<String> _selectedCategories = [];
@@ -80,6 +82,10 @@ class _ProductListingPageState extends State<ProductListingPage>
 
   bool _isSeller = false;
   String _userFirstName = 'User';
+  
+  // Cart item count for badge
+  int _cartItemCount = 0;
+  StreamSubscription<int>? _cartCountSubscription;
   
   // Active banner image URLs and target URLs loaded from Realtime Database
   List<String> _bannerImageUrls = [];
@@ -107,6 +113,7 @@ class _ProductListingPageState extends State<ProductListingPage>
     _checkSellerStatus();
     _loadUserName();
     _loadActiveBanner(); // Load active banner image from Realtime Database
+    _listenToCartCount(); // Listen to cart item count for badge
 
     // Add scroll listener for pagination
     _scrollController.addListener(_scrollListener);
@@ -118,6 +125,21 @@ class _ProductListingPageState extends State<ProductListingPage>
     AppLogger.d(
       "ProductListingPage initState called, products: ${_products.length}, timestamp: $_cacheTimestamp",
     );
+  }
+
+  // Listen to cart item count for badge display
+  void _listenToCartCount() {
+    _cartCountSubscription?.cancel();
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      _cartCountSubscription = _cartService.cartItemCountStream().listen((count) {
+        if (mounted) {
+          setState(() {
+            _cartItemCount = count;
+          });
+        }
+      });
+    }
   }
 
   // Fetch all active banner images from Firebase Realtime Database
@@ -250,6 +272,7 @@ class _ProductListingPageState extends State<ProductListingPage>
     _scrollController.removeListener(_scrollListener);
     _bannerAutoScrollTimer?.cancel();
     _bannerPageController.dispose();
+    _cartCountSubscription?.cancel();
 
     AppLogger.d("ProductListingPage dispose called");
     super.dispose();
@@ -1275,10 +1298,40 @@ class _ProductListingPageState extends State<ProductListingPage>
                             },
                             child: Row(
                               children: [
-                                Icon(
-                                  Icons.shopping_cart_outlined,
-                                  color: AppColors.onSurface.withOpacity(0.7),
-                                  size: 22,
+                                Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    Icon(
+                                      Icons.shopping_cart_outlined,
+                                      color: AppColors.onSurface.withOpacity(0.7),
+                                      size: 22,
+                                    ),
+                                    if (_cartItemCount > 0)
+                                      Positioned(
+                                        right: -8,
+                                        top: -6,
+                                        child: Container(
+                                          padding: const EdgeInsets.all(4),
+                                          constraints: const BoxConstraints(
+                                            minWidth: 18,
+                                            minHeight: 18,
+                                          ),
+                                          decoration: const BoxDecoration(
+                                            color: Colors.orange,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: Text(
+                                            _cartItemCount > 99 ? '99+' : '$_cartItemCount',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
@@ -1443,9 +1496,39 @@ class _ProductListingPageState extends State<ProductListingPage>
                             minWidth: 36,
                             minHeight: 36,
                           ),
-                          icon: const Icon(
-                            Icons.shopping_cart,
-                            color: AppColors.onSurface,
+                          icon: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              const Icon(
+                                Icons.shopping_cart,
+                                color: AppColors.onSurface,
+                              ),
+                              if (_cartItemCount > 0)
+                                Positioned(
+                                  right: -8,
+                                  top: -6,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    constraints: const BoxConstraints(
+                                      minWidth: 18,
+                                      minHeight: 18,
+                                    ),
+                                    decoration: const BoxDecoration(
+                                      color: Colors.orange,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Text(
+                                      _cartItemCount > 99 ? '99+' : '$_cartItemCount',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                           onPressed: () {
                             final user = FirebaseAuth.instance.currentUser;

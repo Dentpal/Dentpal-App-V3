@@ -176,9 +176,11 @@ class JRSShippingService {
         final buyerShippingCharge = (responseData?['buyerShippingCharge'] as num?)?.toDouble() ?? shippingCost;
         final sellerShippingCharge = (responseData?['sellerShippingCharge'] as num?)?.toDouble() ?? 0.0;
         final shippingSplitRule = (responseData?['shippingSplitRule'] as String?) ?? 'buyer_pays_full';
+        final productName = responseData?['productName'] as String? ?? 'unknown';
         
         AppLogger.d('JRS shipping cost calculated: ₱$shippingCost (buyer pays: ₱$buyerShippingCharge, rule: $shippingSplitRule)');
         AppLogger.d('[JRS] SUCCESS: ₱$shippingCost (buyer: ₱$buyerShippingCharge, seller: ₱$sellerShippingCharge, rule: $shippingSplitRule)');
+        AppLogger.d('📦 [JRS] Packaging used: $productName');
         
         return JRSShippingResult(
           success: true,

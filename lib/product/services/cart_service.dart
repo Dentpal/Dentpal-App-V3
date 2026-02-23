@@ -24,6 +24,31 @@ class CartService {
     return _firestore.collection('User').doc(userId).collection('Cart');
   }
 
+  // Get the count of items in the cart (lightweight - no product details fetched)
+  Future<int> getCartItemCount() async {
+    try {
+      final cartRef = _getCartRefRequired();
+      final snapshot = await cartRef.get();
+      return snapshot.docs.length;
+    } catch (e) {
+      AppLogger.d('Error getting cart item count: $e');
+      return 0;
+    }
+  }
+
+  // Stream of cart item count for real-time updates
+  Stream<int> cartItemCountStream() {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return Stream.value(0);
+      final cartRef = _firestore.collection('User').doc(user.uid).collection('Cart');
+      return cartRef.snapshots().map((snapshot) => snapshot.docs.length);
+    } catch (e) {
+      AppLogger.d('Error creating cart item count stream: $e');
+      return Stream.value(0);
+    }
+  }
+
   // Add item to cart
   Future<String?> addToCart({
     required String productId, 
@@ -233,6 +258,7 @@ class CartService {
           if (variation != null) {
             item.productPrice = variation.price;
             item.availableStock = variation.stock;
+            item.variationName = variation.name.isNotEmpty ? variation.name : null;
             
             // Set shipping information from variation
             item.weight = variation.weight; // Weight in grams

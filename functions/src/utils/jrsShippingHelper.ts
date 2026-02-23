@@ -145,6 +145,7 @@ interface JRSShippingRequest {
     insurance: boolean;
     valuation: boolean;
     codAmountToCollect: number;
+    productName?: string; // Optional: Specify package type (e.g., "1 Pounder") to bypass automatic selection
     shipperAddressLine1: string;
     recipientAddressLine1: string;
     shipmentItems: ShipmentItem[];
@@ -427,6 +428,120 @@ export function calculateMultiSellerBreakdown(
 }
 
 /**
+ * Determines the JRS product name based on item dimensions and total weight.
+ *
+ * The function finds the **smallest package** whose dimensions can accommodate
+ * all items. Rules are checked from smallest to largest. The first matching
+ * rule wins (i.e. items fit within the package dimension limits).
+ *
+ * Weight is used as a **maximum capacity** check – if the total weight exceeds
+ * the package's max capacity, the next larger package is tried.
+ *
+ * If no rule matches (items too large or too heavy for all packages), returns
+ * undefined so the JRS getRate API can determine the product automatically.
+ *
+ * All dimensions are in centimeters, all weights are in grams.
+ */
+/**
+ * Determine the JRS product name (packaging type) based on shipment weight and dimensions.
+ * 
+ * Rules are checked in order from smallest to largest package.
+ * Weight thresholds are MAXIMUM capacities (the item must weigh at or below the limit).
+ * Dimension checks are orientation-independent (item can be rotated to fit).
+ * If no rule matches, returns undefined so the JRS API determines the product automatically.
+ */
+export function determineProductName(shipmentItems: ShipmentItem[]): string | undefined {
+  if (!shipmentItems || shipmentItems.length === 0) {
+    return undefined;
+  }
+
+  const totalWeight = shipmentItems.reduce((sum, item) => sum + item.weight, 0);
+  
+  // Get the maximum dimensions across all items
+  // For each item, sort its 2D footprint (width × length) so the larger is always "long" and smaller is "short"
+  // This makes the check orientation-independent
+  let maxShort = 0;  // max of the shorter side across all items
+  let maxLong = 0;   // max of the longer side across all items
+  let maxHeight = 0; // max height across all items
+
+  for (const item of shipmentItems) {
+    const dim1 = item.width || 0;
+    const dim2 = item.length || 0;
+    const short = Math.min(dim1, dim2);
+    const long = Math.max(dim1, dim2);
+    const h = item.height || 0;
+
+    maxShort = Math.max(maxShort, short);
+    maxLong = Math.max(maxLong, long);
+    maxHeight = Math.max(maxHeight, h);
+  }
+
+  logger.info('📐 determineProductName input:', {
+    totalWeight,
+    maxShort,
+    maxLong,
+    maxHeight,
+    itemCount: shipmentItems.length
+  });
+
+  // Helper: check if item fits in a 2D envelope/pouch (width × length)
+  // Package dimensions are also sorted so the larger is "long" and smaller is "short"
+  const fitsIn2D = (pkgDim1: number, pkgDim2: number): boolean => {
+    const pkgShort = Math.min(pkgDim1, pkgDim2);
+    const pkgLong = Math.max(pkgDim1, pkgDim2);
+    return maxShort <= pkgShort && maxLong <= pkgLong;
+  };
+
+  // Helper: check if item fits in a 3D box (width × length × height)
+  // All three dimensions are sorted and compared
+  const fitsIn3D = (pkgDim1: number, pkgDim2: number, pkgDim3: number): boolean => {
+    const pkgDims = [pkgDim1, pkgDim2, pkgDim3].sort((a, b) => a - b);
+    const itemDims = [maxShort, maxLong, maxHeight].sort((a, b) => a - b);
+    return itemDims[0] <= pkgDims[0] && itemDims[1] <= pkgDims[1] && itemDims[2] <= pkgDims[2];
+  };
+
+  // Rule 1: Express Letter (max 100g, fits 24.13 × 16.00 cm)
+  if (totalWeight <= 100 && fitsIn2D(24.13, 16.00)) {
+    logger.info('📦 Matched: Express Letter');
+    return 'Express Letter';
+  }
+
+  // Rule 2: 1 Pounder (max 500g, fits 38.10 × 27.94 cm)
+  if (totalWeight <= 500 && fitsIn2D(38.10, 27.94)) {
+    logger.info('📦 Matched: 1 Pounder');
+    return '1 Pounder';
+  }
+
+  // Rule 3: 3 Pounder (max 1500g, fits 45.72 × 35.56 cm)
+  if (totalWeight <= 1500 && fitsIn2D(45.72, 35.56)) {
+    logger.info('📦 Matched: 3 Pounder');
+    return '3 Pounder';
+  }
+
+  // Rule 4: Bulilit Box — checked BEFORE 5 Pounder because it's a specialized small box
+  // (max 2500g, fits 20.32 × 29.21 × 10.16 cm, preferred for fragile items)
+  if (totalWeight <= 2500 && fitsIn3D(20.32, 29.21, 10.16)) {
+    logger.info('📦 Matched: Bulilit Box');
+    return 'Bulilit Box';
+  }
+
+  // Rule 5: 5 Pounder (max 2500g, fits 50.80 × 35.56 cm)
+  if (totalWeight <= 2500 && fitsIn2D(50.80, 35.56)) {
+    logger.info('📦 Matched: 5 Pounder');
+    return '5 Pounder';
+  }
+
+  // No rule matched — let the JRS API determine automatically
+  logger.info('📦 No manual rule matched — API will determine productName automatically', {
+    totalWeight,
+    maxShort,
+    maxLong,
+    maxHeight
+  });
+  return undefined;
+}
+
+/**
  * Calculates JRS shipping cost for given order items between two addresses
  */
 export async function calculateJRSShippingCost(
@@ -478,6 +593,11 @@ export async function calculateJRSShippingCost(
       throw new Error('No items have the required dimensions for shipping calculation');
     }
 
+    // Determine product name based on shipment weight and dimensions.
+    // If no manual rule matches, productName will be undefined and the
+    // JRS API will determine the appropriate product automatically.
+    const productName = determineProductName(shipmentItems);
+
     const jrsRequest: JRSShippingRequest = {
       requestType: 'getrate',
       apiShippingRequest: {
@@ -485,6 +605,7 @@ export async function calculateJRSShippingCost(
         insurance: true,
         valuation: true,
         codAmountToCollect: 0,
+        ...(productName ? { productName } : {}), // Only include productName when manually determined
         shipperAddressLine1: shipperAddress,
         recipientAddressLine1: recipientFormattedAddress,
         shipmentItems
@@ -498,6 +619,7 @@ export async function calculateJRSShippingCost(
       recipientAddressHash: hashAddress(recipientFormattedAddress),
       shipperRegion: maskAddress(shipperAddress),
       recipientRegion: maskAddress(recipientFormattedAddress),
+      productName: productName ?? 'auto (API determines)',
       itemCount: itemSummary.count,
       totalWeight: itemSummary.totalWeight,
       totalDeclaredValue: itemSummary.totalDeclaredValue,

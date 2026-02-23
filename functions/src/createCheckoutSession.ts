@@ -10,6 +10,7 @@ import {
   calculateMultiSellerBreakdown,
   calculatePaymentProcessingFee,
   calculatePlatformFee,
+  determineProductName,
   SellerFeeBreakdown,
   MultiSellerBreakdown
 } from './utils/jrsShippingHelper';
@@ -603,6 +604,25 @@ export const createCheckoutSession = onRequest(
             cartValue: sellerCartValue,
             itemCount: validItems.length,
             originalItemCount: sellerItems.length
+          });
+          
+          // Determine the JRS product/packaging name for this seller's shipment
+          // This converts validItems to ShipmentItem format for the determineProductName function
+          const shipmentItemsForProductName = validItems.map((item: any) => ({
+            declaredValue: item.price,
+            length: item.length,
+            width: item.width,
+            height: item.height,
+            weight: item.weight
+          }));
+          const resolvedProductName = determineProductName(shipmentItemsForProductName);
+          
+          console.log(`📦 Seller ${sellerId} (${sellerName}) - JRS packaging: ${resolvedProductName ?? 'auto (API determines)'}`, {
+            totalWeight: shipmentItemsForProductName.reduce((sum: number, i: any) => sum + i.weight, 0),
+            maxWidth: Math.max(...shipmentItemsForProductName.map((i: any) => i.width)),
+            maxLength: Math.max(...shipmentItemsForProductName.map((i: any) => i.length)),
+            maxHeight: Math.max(...shipmentItemsForProductName.map((i: any) => i.height)),
+            itemCount: shipmentItemsForProductName.length
           });
           
           // Calculate shipping cost for this seller's items with fallback support
