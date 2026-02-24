@@ -136,12 +136,12 @@ class _ProductListingPageState extends State<ProductListingPage>
       _cartCountSubscription?.cancel();
       _cartCountSubscription = null;
 
+      if (!mounted) return;
+
       if (user == null) {
-        if (mounted) {
-          setState(() {
-            _cartItemCount = 0;
-          });
-        }
+        setState(() {
+          _cartItemCount = 0;
+        });
         return;
       }
 

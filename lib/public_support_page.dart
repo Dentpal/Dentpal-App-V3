@@ -61,10 +61,10 @@ class PublicSupportPage extends StatelessWidget {
 
   Widget _buildContentView(BuildContext context) {
     return SingleChildScrollView(
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 800),
-        padding: const EdgeInsets.all(24.0),
-        child: Center(
+      child: Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 800),
+          padding: const EdgeInsets.all(24.0),
           child: Card(
             elevation: 2,
             color: AppColors.surface,
@@ -164,7 +164,7 @@ class PublicSupportPage extends StatelessWidget {
                   _buildInstructionItem(
                     icon: Icons.subject,
                     title: 'Subject',
-                    description: '[issue]',
+                    description: 'A brief title summarising your issue.',
                   ),
                   const SizedBox(height: 12),
                   _buildInstructionItem(

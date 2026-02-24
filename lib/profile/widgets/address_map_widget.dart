@@ -219,10 +219,12 @@ class _AddressMapWidgetState extends State<AddressMapWidget> {
         );
       }
     } on TimeoutException {
-      setState(() {
-        _error =
-            'Unable to determine your location in time. Please check your GPS signal and try again.';
-      });
+      if (mounted) {
+        setState(() {
+          _error =
+              'Unable to determine your location in time. Please check your GPS signal and try again.';
+        });
+      }
     } catch (e) {
       setState(() {
         _error = e.toString();

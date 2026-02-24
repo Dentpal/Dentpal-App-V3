@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/cart_model.dart';
@@ -38,18 +40,25 @@ class CartService {
 
   // Stream of cart item count for real-time updates.
   // Callers are responsible for re-subscribing on auth changes (e.g. via
-  // authStateChanges). Returns a non-completing zero stream when no user is
-  // signed in, and attaches error handling to the Firestore stream so snapshot
-  // failures emit 0 instead of propagating as uncaught errors.
+  // authStateChanges). When no user is signed in, returns a single-value
+  // stream that emits 0 and completes — callers should re-subscribe on the
+  // next auth event. Attaches error handling to the Firestore stream so
+  // snapshot failures emit 0 instead of propagating as uncaught errors.
   Stream<int> cartItemCountStream() {
     try {
       final user = _auth.currentUser;
       if (user == null) return Stream.value(0);
       final cartRef = _firestore.collection('User').doc(user.uid).collection('Cart');
-      return cartRef.snapshots().map((snapshot) => snapshot.docs.length).handleError((error) {
-        AppLogger.d('Error in cart item count stream: $error');
-        return 0;
-      });
+      return cartRef
+          .snapshots()
+          .map((snapshot) => snapshot.docs.length)
+          .transform(StreamTransformer<int, int>.fromHandlers(
+            handleData: (data, sink) => sink.add(data),
+            handleError: (error, stackTrace, sink) {
+              AppLogger.d('Error in cart item count stream: $error');
+              sink.add(0);
+            },
+          ));
     } catch (e) {
       AppLogger.d('Error creating cart item count stream: $e');
       return Stream.value(0);
