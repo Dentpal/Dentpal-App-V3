@@ -146,7 +146,7 @@ async function handleOldInterface(request: CallableRequest<CalculateShippingRequ
       totalWeight: shipmentItemsForProductName.reduce((sum, i) => sum + i.weight, 0),
       maxWidth: shipmentItemsForProductName.length > 0 ? Math.max(...shipmentItemsForProductName.map(i => i.width)) : 0,
       maxLength: shipmentItemsForProductName.length > 0 ? Math.max(...shipmentItemsForProductName.map(i => i.length)) : 0,
-      maxHeight: shipmentItemsForProductName.length > 0 ? Math.max(...shipmentItemsForProductName.map(i => i.height)) : 0,
+      totalHeight: shipmentItemsForProductName.reduce((sum, i) => sum + i.height, 0),
       itemCount: shipmentItemsForProductName.length
     });
 
@@ -418,7 +418,7 @@ export const calculateJRSShipping = onCall(
           totalWeight: shipmentItemsForProductName.reduce((sum, i) => sum + i.weight, 0),
           maxWidth: shipmentItemsForProductName.length > 0 ? Math.max(...shipmentItemsForProductName.map(i => i.width)) : 0,
           maxLength: shipmentItemsForProductName.length > 0 ? Math.max(...shipmentItemsForProductName.map(i => i.length)) : 0,
-          maxHeight: shipmentItemsForProductName.length > 0 ? Math.max(...shipmentItemsForProductName.map(i => i.height)) : 0,
+          totalHeight: shipmentItemsForProductName.reduce((sum, i) => sum + i.height, 0),
           itemCount: shipmentItemsForProductName.length
         });
 

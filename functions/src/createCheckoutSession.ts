@@ -621,7 +621,7 @@ export const createCheckoutSession = onRequest(
             totalWeight: shipmentItemsForProductName.reduce((sum: number, i: any) => sum + i.weight, 0),
             maxWidth: Math.max(...shipmentItemsForProductName.map((i: any) => i.width)),
             maxLength: Math.max(...shipmentItemsForProductName.map((i: any) => i.length)),
-            maxHeight: Math.max(...shipmentItemsForProductName.map((i: any) => i.height)),
+            totalHeight: shipmentItemsForProductName.reduce((sum: number, i: any) => sum + i.height, 0),
             itemCount: shipmentItemsForProductName.length
           });
           

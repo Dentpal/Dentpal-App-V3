@@ -457,12 +457,14 @@ export function determineProductName(shipmentItems: ShipmentItem[]): string | un
 
   const totalWeight = shipmentItems.reduce((sum, item) => sum + item.weight, 0);
   
-  // Get the maximum dimensions across all items
+  // Get the aggregate dimensions across all items
   // For each item, sort its 2D footprint (width × length) so the larger is always "long" and smaller is "short"
   // This makes the check orientation-independent
+  // Footprint (maxShort/maxLong) = largest single-item footprint (items share the same base)
+  // Height (totalHeight) = sum of all item heights (items stack on top of each other)
   let maxShort = 0;  // max of the shorter side across all items
   let maxLong = 0;   // max of the longer side across all items
-  let maxHeight = 0; // max height across all items
+  let totalHeight = 0; // total stacked height across all items
 
   for (const item of shipmentItems) {
     const dim1 = item.width || 0;
@@ -473,14 +475,14 @@ export function determineProductName(shipmentItems: ShipmentItem[]): string | un
 
     maxShort = Math.max(maxShort, short);
     maxLong = Math.max(maxLong, long);
-    maxHeight = Math.max(maxHeight, h);
+    totalHeight += h;
   }
 
   logger.info('📐 determineProductName input:', {
     totalWeight,
     maxShort,
     maxLong,
-    maxHeight,
+    totalHeight,
     itemCount: shipmentItems.length
   });
 
@@ -496,7 +498,7 @@ export function determineProductName(shipmentItems: ShipmentItem[]): string | un
   // All three dimensions are sorted and compared
   const fitsIn3D = (pkgDim1: number, pkgDim2: number, pkgDim3: number): boolean => {
     const pkgDims = [pkgDim1, pkgDim2, pkgDim3].sort((a, b) => a - b);
-    const itemDims = [maxShort, maxLong, maxHeight].sort((a, b) => a - b);
+    const itemDims = [maxShort, maxLong, totalHeight].sort((a, b) => a - b);
     return itemDims[0] <= pkgDims[0] && itemDims[1] <= pkgDims[1] && itemDims[2] <= pkgDims[2];
   };
 
@@ -536,7 +538,7 @@ export function determineProductName(shipmentItems: ShipmentItem[]): string | un
     totalWeight,
     maxShort,
     maxLong,
-    maxHeight
+    totalHeight
   });
   return undefined;
 }
