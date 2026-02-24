@@ -86,6 +86,7 @@ class _ProductListingPageState extends State<ProductListingPage>
   // Cart item count for badge
   int _cartItemCount = 0;
   StreamSubscription<int>? _cartCountSubscription;
+  StreamSubscription<User?>? _authStateSubscription;
   
   // Active banner image URLs and target URLs loaded from Realtime Database
   List<String> _bannerImageUrls = [];
@@ -127,19 +128,34 @@ class _ProductListingPageState extends State<ProductListingPage>
     );
   }
 
-  // Listen to cart item count for badge display
+  // Listen to auth state changes and (re)subscribe to cart count accordingly
   void _listenToCartCount() {
-    _cartCountSubscription?.cancel();
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      _cartCountSubscription = _cartService.cartItemCountStream().listen((count) {
+    _authStateSubscription?.cancel();
+    _authStateSubscription =
+        FirebaseAuth.instance.authStateChanges().listen((user) {
+      _cartCountSubscription?.cancel();
+      _cartCountSubscription = null;
+
+      if (user == null) {
+        if (mounted) {
+          setState(() {
+            _cartItemCount = 0;
+          });
+        }
+        return;
+      }
+
+      _cartCountSubscription =
+          _cartService.cartItemCountStream().listen((count) {
         if (mounted) {
           setState(() {
             _cartItemCount = count;
           });
         }
+      }, onError: (error) {
+        AppLogger.d('Error listening to cart count: $error');
       });
-    }
+    });
   }
 
   // Fetch all active banner images from Firebase Realtime Database
@@ -272,6 +288,7 @@ class _ProductListingPageState extends State<ProductListingPage>
     _scrollController.removeListener(_scrollListener);
     _bannerAutoScrollTimer?.cancel();
     _bannerPageController.dispose();
+    _authStateSubscription?.cancel();
     _cartCountSubscription?.cancel();
 
     AppLogger.d("ProductListingPage dispose called");

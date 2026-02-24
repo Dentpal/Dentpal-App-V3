@@ -36,13 +36,20 @@ class CartService {
     }
   }
 
-  // Stream of cart item count for real-time updates
+  // Stream of cart item count for real-time updates.
+  // Callers are responsible for re-subscribing on auth changes (e.g. via
+  // authStateChanges). Returns a non-completing zero stream when no user is
+  // signed in, and attaches error handling to the Firestore stream so snapshot
+  // failures emit 0 instead of propagating as uncaught errors.
   Stream<int> cartItemCountStream() {
     try {
       final user = _auth.currentUser;
       if (user == null) return Stream.value(0);
       final cartRef = _firestore.collection('User').doc(user.uid).collection('Cart');
-      return cartRef.snapshots().map((snapshot) => snapshot.docs.length);
+      return cartRef.snapshots().map((snapshot) => snapshot.docs.length).handleError((error) {
+        AppLogger.d('Error in cart item count stream: $error');
+        return 0;
+      });
     } catch (e) {
       AppLogger.d('Error creating cart item count stream: $e');
       return Stream.value(0);
@@ -480,6 +487,7 @@ class CartService {
             ProductVariation variation = ProductVariation.fromFirestore(variationDoc);
             cartItem.productPrice = variation.price;
             cartItem.availableStock = variation.stock;
+            cartItem.variationName = variation.name.isNotEmpty ? variation.name : null;
             
             // Set shipping information from variation
             cartItem.weight = variation.weight; // Weight in grams
@@ -509,6 +517,7 @@ class CartService {
             ProductVariation variation = ProductVariation.fromFirestore(variationsSnapshot.docs.first);
             cartItem.productPrice = variation.price;
             cartItem.availableStock = variation.stock;
+            cartItem.variationName = variation.name.isNotEmpty ? variation.name : null;
             
             // Set shipping information from variation
             cartItem.weight = variation.weight; // Weight in grams

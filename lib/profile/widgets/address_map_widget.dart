@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geocoding/geocoding.dart';
@@ -197,7 +199,7 @@ class _AddressMapWidgetState extends State<AddressMapWidget> {
       Position position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
-          distanceFilter: 10,
+          timeLimit: Duration(seconds: 15),
         ),
       );
       _selectedLocation = LatLng(position.latitude, position.longitude);
@@ -216,6 +218,11 @@ class _AddressMapWidgetState extends State<AddressMapWidget> {
           CameraUpdate.newLatLngZoom(_selectedLocation!, 16),
         );
       }
+    } on TimeoutException {
+      setState(() {
+        _error =
+            'Unable to determine your location in time. Please check your GPS signal and try again.';
+      });
     } catch (e) {
       setState(() {
         _error = e.toString();

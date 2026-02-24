@@ -71,13 +71,23 @@ class _HomePageState extends State<HomePage> {
     _cartCountSubscription?.cancel();
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      _cartCountSubscription = _cartService.cartItemCountStream().listen((count) {
-        if (mounted) {
-          setState(() {
-            _cartItemCount = count;
-          });
-        }
-      });
+      _cartCountSubscription = _cartService.cartItemCountStream().listen(
+        (count) {
+          if (mounted) {
+            setState(() {
+              _cartItemCount = count;
+            });
+          }
+        },
+        onError: (error) {
+          print('Error listening to cart count: $error');
+          if (mounted) {
+            setState(() {
+              _cartItemCount = 0;
+            });
+          }
+        },
+      );
     } else {
       if (mounted) {
         setState(() {
@@ -428,7 +438,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                       decoration: const BoxDecoration(
                         color: Colors.orange,
-                        shape: BoxShape.circle,
+                        borderRadius: BorderRadius.all(Radius.circular(9)),
                       ),
                       child: Text(
                         _cartItemCount > 99 ? '99+' : '$_cartItemCount',

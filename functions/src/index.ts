@@ -14,7 +14,7 @@ export { handlePaymongoWebhook, expirePendingOrders } from './paymongoWebhookHan
 export { calculateJRSShipping } from './jrsShippingCalculator';
 
 // Export the JRS shipping test functions (for manual testing)
-export { testJRSShipping, testJRSRawAPI } from './testJRSShipping';
+// export { testJRSShipping, testJRSRawAPI } from './testJRSShipping';
 
 // Export the JRS tracking function
 export { trackJRSShipping } from './trackJRSShipping';

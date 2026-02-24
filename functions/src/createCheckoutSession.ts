@@ -606,23 +606,32 @@ export const createCheckoutSession = onRequest(
             originalItemCount: sellerItems.length
           });
           
-          // Determine the JRS product/packaging name for this seller's shipment
-          // This converts validItems to ShipmentItem format for the determineProductName function
-          const shipmentItemsForProductName = validItems.map((item: any) => ({
-            declaredValue: item.price,
-            length: item.length,
-            width: item.width,
-            height: item.height,
-            weight: item.weight
-          }));
-          const resolvedProductName = determineProductName(shipmentItemsForProductName);
+          // Observability only — preview which packaging rule would match for this
+          // seller's shipment. The actual productName used in the JRS API request is
+          // determined inside calculateJRSShippingCost, so this is not passed onward.
+          // Items are expanded by quantity to match how calculateJRSShippingCost and
+          // determineProductName process them (one ShipmentItem per physical unit).
+          const shipmentItemsForLog: Array<{declaredValue: number; length: number; width: number; height: number; weight: number}> = [];
+          for (const item of validItems) {
+            const qty = (item as any).quantity ?? 1;
+            for (let i = 0; i < qty; i++) {
+              shipmentItemsForLog.push({
+                declaredValue: (item as any).price,
+                length: (item as any).length,
+                width: (item as any).width,
+                height: (item as any).height,
+                weight: (item as any).weight
+              });
+            }
+          }
+          const resolvedProductName = determineProductName(shipmentItemsForLog);
           
           console.log(`📦 Seller ${sellerId} (${sellerName}) - JRS packaging: ${resolvedProductName ?? 'auto (API determines)'}`, {
-            totalWeight: shipmentItemsForProductName.reduce((sum: number, i: any) => sum + i.weight, 0),
-            maxWidth: Math.max(...shipmentItemsForProductName.map((i: any) => i.width)),
-            maxLength: Math.max(...shipmentItemsForProductName.map((i: any) => i.length)),
-            totalHeight: shipmentItemsForProductName.reduce((sum: number, i: any) => sum + i.height, 0),
-            itemCount: shipmentItemsForProductName.length
+            totalWeight: shipmentItemsForLog.reduce((sum: number, i: any) => sum + i.weight, 0),
+            maxWidth: Math.max(...shipmentItemsForLog.map((i: any) => i.width)),
+            maxLength: Math.max(...shipmentItemsForLog.map((i: any) => i.length)),
+            totalHeight: shipmentItemsForLog.reduce((sum: number, i: any) => sum + i.height, 0),
+            itemCount: shipmentItemsForLog.length
           });
           
           // Calculate shipping cost for this seller's items with fallback support
