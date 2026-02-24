@@ -1123,103 +1123,119 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-            // Modern SliverAppBar with product image
+            // Fixed app bar header (separate from image)
             SliverAppBar(
-              expandedHeight: 400,
+              expandedHeight: 60,
               floating: false,
               pinned: true,
               elevation: 0,
               backgroundColor: AppColors.surface,
-              leading: Container(
-                margin: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: .9),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: .1),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
+              automaticallyImplyLeading: false,
+              title: Row(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: IconButton(
-                  icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ),
-              actions: [
-                Container(
-                  margin: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: .9),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: .1),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+                    child: IconButton(
+                      icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
+                      onPressed: () => Navigator.pop(context),
+                    ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Edit button - only show if current user is the seller
-                      if (_isCurrentUserSeller(product)) ...[
+                  const Spacer(),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Edit button - only show if current user is the seller
+                        if (_isCurrentUserSeller(product)) ...[
+                          IconButton(
+                            icon: const Icon(Icons.edit, color: AppColors.primary),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => EditProductPage(product: product),
+                                ),
+                              ).then((_) {
+                                _handleRefresh();
+                              });
+                            },
+                          ),
+                          Container(
+                            width: 1,
+                            height: 24,
+                            color: AppColors.onSurface.withValues(alpha: 0.1),
+                          ),
+                        ],
+                        // Share button
                         IconButton(
-                          icon: const Icon(Icons.edit, color: AppColors.primary),
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => EditProductPage(product: product),
-                              ),
-                            ).then((_) {
-                              // Refresh product data after edit
-                              _handleRefresh();
-                            });
-                          },
+                          icon: const Icon(Icons.share, color: AppColors.onSurface),
+                          onPressed: () => _shareProduct(product),
                         ),
                         Container(
                           width: 1,
                           height: 24,
-                          color: AppColors.onSurface.withValues(alpha: .1),
+                          color: AppColors.onSurface.withValues(alpha: 0.1),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.shopping_cart, color: AppColors.onSurface),
+                          onPressed: () {
+                            final user = FirebaseAuth.instance.currentUser;
+                            if (user == null) {
+                              _showLoginRequiredDialog();
+                            } else {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(builder: (context) => const CartPage()),
+                              );
+                            }
+                          },
                         ),
                       ],
-                      // Share button
-                      IconButton(
-                        icon: const Icon(Icons.share, color: AppColors.onSurface),
-                        onPressed: () => _shareProduct(product),
-                      ),
-                      Container(
-                        width: 1,
-                        height: 24,
-                        color: AppColors.onSurface.withValues(alpha: .1),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.shopping_cart, color: AppColors.onSurface),
-                        onPressed: () {
-                          // Check if user is authenticated before navigating to cart
-                          final user = FirebaseAuth.instance.currentUser;
-                          if (user == null) {
-                            _showLoginRequiredDialog();
-                          } else {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(builder: (context) => const CartPage()),
-                            );
-                          }
-                        },
-                      ),
-                    ],
+                    ),
+                  ),
+                ],
+              ),
+              flexibleSpace: FlexibleSpaceBar(
+                background: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        AppColors.primary.withValues(alpha: 0.05),
+                        AppColors.secondary.withValues(alpha: 0.02),
+                      ],
+                    ),
                   ),
                 ),
-              ],
-              flexibleSpace: FlexibleSpaceBar(
-                background: Hero(
-                  tag: 'product-${product.productId}',
-                  child: _buildProductImageSection(product),
-                ),
+              ),
+            ),
+
+            // Product image as a separate 1:1 square section
+            SliverToBoxAdapter(
+              child: Hero(
+                tag: 'product-${product.productId}',
+                child: _buildProductImageSection(product),
               ),
             ),
             
@@ -1652,121 +1668,123 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           _showFullImagePopup(imageUrl);
         }
       },
-      child: Container(
-        width: double.infinity,
-        height: 400,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.white,
-              Colors.grey.shade50,
-            ],
+      child: AspectRatio(
+        aspectRatio: 1, // 720x720 square
+        child: Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.white,
+                Colors.grey.shade50,
+              ],
+            ),
           ),
-        ),
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                transitionBuilder: (child, animation) {
-                  final offsetAnimation = Tween<Offset>(
-                    begin: _swipeOffset,
-                    end: Offset.zero,
-                  ).animate(animation);
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  transitionBuilder: (child, animation) {
+                    final offsetAnimation = Tween<Offset>(
+                      begin: _swipeOffset,
+                      end: Offset.zero,
+                    ).animate(animation);
 
-                  return SlideTransition(
-                    position: offsetAnimation,
-                    child: FadeTransition(opacity: animation, child: child),
-                  );
-                },
-                child: SizedBox(
-                  key: ValueKey(imageUrl), // important for detecting image change
-                  width: double.infinity,
-                  height: double.infinity,
-                  child: imageUrl.isNotEmpty
-                      ? CachedNetworkImage(
-                          imageUrl: imageUrl,
-                          fit: BoxFit.cover, // Changed from cover to contain for better aspect ratio
-                          filterQuality: FilterQuality.high,
-                          fadeInDuration: const Duration(milliseconds: 300),
-                          fadeOutDuration: const Duration(milliseconds: 100),
-                          placeholder: (context, url) => Container(
-                            color: Colors.white,
-                            child: const Center(
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                    return SlideTransition(
+                      position: offsetAnimation,
+                      child: FadeTransition(opacity: animation, child: child),
+                    );
+                  },
+                  child: SizedBox(
+                    key: ValueKey(imageUrl), // important for detecting image change
+                    width: double.infinity,
+                    height: double.infinity,
+                    child: imageUrl.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: imageUrl,
+                            fit: BoxFit.cover,
+                            filterQuality: FilterQuality.high,
+                            fadeInDuration: const Duration(milliseconds: 300),
+                            fadeOutDuration: const Duration(milliseconds: 100),
+                            placeholder: (context, url) => Container(
+                              color: Colors.white,
+                              child: const Center(
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
                             ),
-                          ),
-                          errorWidget: (context, url, error) => Container(
+                            errorWidget: (context, url, error) => Container(
+                              color: Colors.white,
+                              child: const Center(
+                                child: Icon(Icons.image_not_supported,
+                                    size: 64, color: Colors.grey),
+                              ),
+                            ),
+                            memCacheWidth: 720, // 720p square
+                            memCacheHeight: 720,
+                          )
+                        : Container(
                             color: Colors.white,
                             child: const Center(
                               child: Icon(Icons.image_not_supported,
                                   size: 64, color: Colors.grey),
                             ),
                           ),
-                          memCacheWidth: 800, // Optimized cache size
-                          memCacheHeight: 600,
-                        )
-                      : Container(
-                          color: Colors.white,
-                          child: const Center(
-                            child: Icon(Icons.image_not_supported,
-                                size: 64, color: Colors.grey),
-                          ),
-                        ),
-                ),
-              ),
-            ),
-            Positioned.fill(
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.1),
-                    ],
                   ),
                 ),
               ),
-            ),
-            // Updated variation indicators for mobile
-            if (product.variations != null && product.variations!.length > 1)
-              Positioned(
-                bottom: 16,
-                left: 0,
-                right: 0,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: product.variations!.asMap().entries.map((entry) {
-                    final isSelected = _selectedVariation?.variationId == entry.value.variationId;
-                    final hasImage = entry.value.imageURL != null && entry.value.imageURL!.isNotEmpty;
-
-                    return AnimatedContainer(
-                      duration: const Duration(milliseconds: 250),
-                      margin: const EdgeInsets.symmetric(horizontal: 3),
-                      width: isSelected ? 32 : 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? AppColors.primary
-                            : hasImage 
-                                ? Colors.white.withValues(alpha: 0.7)
-                                : Colors.white.withValues(alpha: 0.3),
-                        borderRadius: BorderRadius.circular(isSelected ? 6 : 50),
-                        border: isSelected ? Border.all(
-                          color: Colors.white,
-                          width: 1,
-                        ) : null,
-                      ),
-                    );
-                  }).toList(),
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        Colors.black.withValues(alpha: 0.1),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-          ],
+              // Updated variation indicators for mobile
+              if (product.variations != null && product.variations!.length > 1)
+                Positioned(
+                  bottom: 16,
+                  left: 0,
+                  right: 0,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: product.variations!.asMap().entries.map((entry) {
+                      final isSelected = _selectedVariation?.variationId == entry.value.variationId;
+                      final hasImage = entry.value.imageURL != null && entry.value.imageURL!.isNotEmpty;
+
+                      return AnimatedContainer(
+                        duration: const Duration(milliseconds: 250),
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        width: isSelected ? 32 : 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? AppColors.primary
+                              : hasImage 
+                                  ? Colors.white.withValues(alpha: 0.7)
+                                  : Colors.white.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(isSelected ? 6 : 50),
+                          border: isSelected ? Border.all(
+                            color: Colors.white,
+                            width: 1,
+                          ) : null,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

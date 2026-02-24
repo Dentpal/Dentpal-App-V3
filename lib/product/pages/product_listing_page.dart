@@ -1580,7 +1580,6 @@ class _ProductListingPageState extends State<ProductListingPage>
                       if (_bannerImageUrls.isNotEmpty)
                         Container(
                           margin: const EdgeInsets.symmetric(horizontal: 16),
-                          height: MediaQuery.of(context).size.width > 800 ? 300 : 180,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(24),
                             boxShadow: [
@@ -1593,11 +1592,11 @@ class _ProductListingPageState extends State<ProductListingPage>
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(24),
-                            child: Stack(
-                              children: [
-                                SizedBox(
-                                  height: MediaQuery.of(context).size.width > 800 ? 300 : 180,
-                                  child: PageView.builder(
+                            child: AspectRatio(
+                              aspectRatio: 8 / 3, // 800x300
+                              child: Stack(
+                                children: [
+                                  PageView.builder(
                                     controller: _bannerPageController,
                                     physics: const BouncingScrollPhysics(),
                                     onPageChanged: (index) {
@@ -1618,6 +1617,8 @@ class _ProductListingPageState extends State<ProductListingPage>
                                           imageUrl: _bannerImageUrls[index],
                                           fit: BoxFit.cover,
                                           width: double.infinity,
+                                          memCacheWidth: 1920,
+                                          memCacheHeight: 720,
                                           placeholder: (context, url) => Container(
                                             decoration: BoxDecoration(
                                               gradient: LinearGradient(
@@ -1657,27 +1658,27 @@ class _ProductListingPageState extends State<ProductListingPage>
                                       );
                                     },
                                   ),
-                                ),
-                                // Gradient overlay for better text readability
-                                IgnorePointer(
-                                  child: Container(
-                                    height: MediaQuery.of(context).size.width > 800 ? 300 : 180,
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        begin: Alignment.topCenter,
-                                        end: Alignment.bottomCenter,
-                                        colors: [
-                                          Colors.transparent,
-                                          Colors.black.withValues(alpha: 0.3),
-                                        ],
+                                  // Gradient overlay for better text readability
+                                  Positioned.fill(
+                                    child: IgnorePointer(
+                                      child: DecoratedBox(
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            begin: Alignment.topCenter,
+                                            end: Alignment.bottomCenter,
+                                            colors: [
+                                              Colors.transparent,
+                                              Colors.black.withValues(alpha: 0.3),
+                                            ],
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                                // Banner indicator dots
-                                if (_bannerImageUrls.length > 1)
-                                  Positioned(
-                                    bottom: 16,
+                                  // Banner indicator dots
+                                  if (_bannerImageUrls.length > 1)
+                                    Positioned(
+                                      bottom: 16,
                                     left: 0,
                                     right: 0,
                                     child: Row(
@@ -1699,6 +1700,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                                     ),
                                   ),
                               ],
+                              ),
                             ),
                           ),
                         ),
