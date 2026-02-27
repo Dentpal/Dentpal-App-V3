@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/cart_model.dart';
@@ -22,6 +24,45 @@ class CartService {
   CollectionReference _getCartRefRequired() {
     final userId = _getCurrentUserIdRequired();
     return _firestore.collection('User').doc(userId).collection('Cart');
+  }
+
+  // Get the count of items in the cart (lightweight - no product details fetched)
+  Future<int> getCartItemCount() async {
+    try {
+      final cartRef = _getCartRefRequired();
+      final snapshot = await cartRef.get();
+      return snapshot.docs.length;
+    } catch (e) {
+      AppLogger.d('Error getting cart item count: $e');
+      return 0;
+    }
+  }
+
+  // Stream of cart item count for real-time updates.
+  // Callers are responsible for re-subscribing on auth changes (e.g. via
+  // authStateChanges). When no user is signed in, returns a single-value
+  // stream that emits 0 and completes — callers should re-subscribe on the
+  // next auth event. Attaches error handling to the Firestore stream so
+  // snapshot failures emit 0 instead of propagating as uncaught errors.
+  Stream<int> cartItemCountStream() {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return Stream.value(0);
+      final cartRef = _firestore.collection('User').doc(user.uid).collection('Cart');
+      return cartRef
+          .snapshots()
+          .map((snapshot) => snapshot.docs.length)
+          .transform(StreamTransformer<int, int>.fromHandlers(
+            handleData: (data, sink) => sink.add(data),
+            handleError: (error, stackTrace, sink) {
+              AppLogger.d('Error in cart item count stream: $error');
+              sink.add(0);
+            },
+          ));
+    } catch (e) {
+      AppLogger.d('Error creating cart item count stream: $e');
+      return Stream.value(0);
+    }
   }
 
   // Add item to cart
@@ -233,6 +274,7 @@ class CartService {
           if (variation != null) {
             item.productPrice = variation.price;
             item.availableStock = variation.stock;
+            item.variationName = variation.name.isNotEmpty ? variation.name : null;
             
             // Set shipping information from variation
             item.weight = variation.weight; // Weight in grams
@@ -454,6 +496,7 @@ class CartService {
             ProductVariation variation = ProductVariation.fromFirestore(variationDoc);
             cartItem.productPrice = variation.price;
             cartItem.availableStock = variation.stock;
+            cartItem.variationName = variation.name.isNotEmpty ? variation.name : null;
             
             // Set shipping information from variation
             cartItem.weight = variation.weight; // Weight in grams
@@ -483,6 +526,7 @@ class CartService {
             ProductVariation variation = ProductVariation.fromFirestore(variationsSnapshot.docs.first);
             cartItem.productPrice = variation.price;
             cartItem.availableStock = variation.stock;
+            cartItem.variationName = variation.name.isNotEmpty ? variation.name : null;
             
             // Set shipping information from variation
             cartItem.weight = variation.weight; // Weight in grams

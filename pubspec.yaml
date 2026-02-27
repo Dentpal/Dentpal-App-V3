@@ -4,7 +4,7 @@ description: "Dentpal - The first dental e-commerce store for dental professiona
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 3.0.0+8
+version: 3.1.0+15
 
 environment:
   sdk: ^3.9.0

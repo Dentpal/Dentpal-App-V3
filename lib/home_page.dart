@@ -11,6 +11,7 @@ import 'package:dentpal/product/pages/cart_page.dart';
 import 'package:dentpal/profile/pages/profile_page.dart';
 import 'package:dentpal/login_page.dart';
 import 'package:dentpal/product/services/user_service.dart';
+import 'package:dentpal/product/services/cart_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'core/app_theme/app_colors.dart';
 import 'core/app_theme/app_text_styles.dart';
@@ -29,7 +30,10 @@ class _HomePageState extends State<HomePage> {
   bool _isCustomerSupport = false;
   bool _isLoadingSellerStatus = true;
   StreamSubscription<User?>? _authSubscription;
+  StreamSubscription<int>? _cartCountSubscription;
   final UserService _userService = UserService();
+  final CartService _cartService = CartService();
+  int _cartItemCount = 0;
 
   @override
   void initState() {
@@ -45,6 +49,9 @@ class _HomePageState extends State<HomePage> {
       });
     }
 
+    // Listen to cart item count changes
+    _listenToCartCount();
+
     // Listen to auth state changes to refresh user role
     _authSubscription = FirebaseAuth.instance.authStateChanges().listen((
       User? user,
@@ -56,12 +63,44 @@ class _HomePageState extends State<HomePage> {
         return;
       }
       _checkUserRole();
+      _listenToCartCount();
     });
+  }
+
+  void _listenToCartCount() {
+    _cartCountSubscription?.cancel();
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      _cartCountSubscription = _cartService.cartItemCountStream().listen(
+        (count) {
+          if (mounted) {
+            setState(() {
+              _cartItemCount = count;
+            });
+          }
+        },
+        onError: (error) {
+          print('Error listening to cart count: $error');
+          if (mounted) {
+            setState(() {
+              _cartItemCount = 0;
+            });
+          }
+        },
+      );
+    } else {
+      if (mounted) {
+        setState(() {
+          _cartItemCount = 0;
+        });
+      }
+    }
   }
 
   @override
   void dispose() {
     _authSubscription?.cancel();
+    _cartCountSubscription?.cancel();
     super.dispose();
   }
 
@@ -380,13 +419,43 @@ class _HomePageState extends State<HomePage> {
     } else {
       // Regular user navigation - Products, Cart, Profile
       return BottomNavigationBar(
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(icon: Icon(Icons.store), label: 'Products'),
+        items: <BottomNavigationBarItem>[
+          const BottomNavigationBarItem(icon: Icon(Icons.store), label: 'Products'),
           BottomNavigationBarItem(
-            icon: Icon(Icons.shopping_cart),
+            icon: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                const Icon(Icons.shopping_cart),
+                if (_cartItemCount > 0)
+                  Positioned(
+                    right: -8,
+                    top: -4,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(
+                        minWidth: 18,
+                        minHeight: 18,
+                      ),
+                      decoration: const BoxDecoration(
+                        color: Colors.orange,
+                        borderRadius: BorderRadius.all(Radius.circular(9)),
+                      ),
+                      child: Text(
+                        _cartItemCount > 99 ? '99+' : '$_cartItemCount',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             label: 'Cart',
           ),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+          const BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],
         currentIndex: _selectedIndex,
         selectedItemColor: Theme.of(context).primaryColor,

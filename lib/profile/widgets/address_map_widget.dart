@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geocoding/geocoding.dart';
@@ -193,7 +195,13 @@ class _AddressMapWidgetState extends State<AddressMapWidget> {
         throw Exception('Location permissions are permanently denied');
       }
 
-      Position position = await Geolocator.getCurrentPosition();
+      // Get current position with explicit settings for foreground location only
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
+        ),
+      );
       _selectedLocation = LatLng(position.latitude, position.longitude);
       _userHasManuallySetLocation = true; // User used current location button
       widget.onLocationSelected(position.latitude, position.longitude);
@@ -209,6 +217,13 @@ class _AddressMapWidgetState extends State<AddressMapWidget> {
         _mapController!.animateCamera(
           CameraUpdate.newLatLngZoom(_selectedLocation!, 16),
         );
+      }
+    } on TimeoutException {
+      if (mounted) {
+        setState(() {
+          _error =
+              'Unable to determine your location in time. Please check your GPS signal and try again.';
+        });
       }
     } catch (e) {
       setState(() {

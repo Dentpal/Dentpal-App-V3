@@ -19,6 +19,7 @@ import 'package:dentpal/change_password_standalone_page.dart';
 import 'package:dentpal/firebase_action_handler_page.dart';
 import 'package:dentpal/public_privacy_policy_page.dart';
 import 'package:dentpal/public_terms_of_service_page.dart';
+import 'package:dentpal/public_support_page.dart';
 import 'firebase_options.dart';
 import 'package:dentpal/utils/web_utils.dart';
 import 'package:dentpal/utils/app_logger.dart';
@@ -110,6 +111,7 @@ class MyApp extends StatelessWidget {
         '/seller-listings': (context) => const SellerListingsPage(),
         '/privacy-policy': (context) => const PublicPrivacyPolicyPage(),
         '/terms-of-service': (context) => const PublicTermsOfServicePage(),
+        '/support-url': (context) => const PublicSupportPage(),
       },
       onGenerateRoute: (settings) {
         // Handle Firebase action links (email verification, password reset, email recovery)

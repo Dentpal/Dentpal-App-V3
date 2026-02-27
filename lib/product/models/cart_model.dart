@@ -1,5 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// Represents a single item in the user's shopping cart.
+///
+/// Core fields ([cartItemId], [productId], [quantity], [addedAt], [variationId],
+/// [variationName], [isSelected]) are persisted to Firestore via [toMap] /
+/// [fromFirestore].  All other fields ([productName], [productImage],
+/// [productPrice], [availableStock], seller and shipping details) are derived
+/// at runtime by enriching the cart item from product / seller documents
+/// (see CartService.getCartItems).
 class CartItem {
   final String cartItemId;
   final String productId;
@@ -12,6 +20,7 @@ class CartItem {
   double? productPrice;
   int? availableStock;
   String? variationId;
+  String? variationName;
   
   // Seller information
   String? sellerId;
@@ -37,6 +46,7 @@ class CartItem {
     this.productPrice,
     this.availableStock,
     this.variationId,
+    this.variationName,
     this.sellerId,
     this.sellerName,
     this.sellerAddress,
@@ -56,6 +66,7 @@ class CartItem {
       quantity: data['quantity'] ?? 1,
       addedAt: (data['addedAt'] as Timestamp).toDate(),
       variationId: data['variationId'],
+      variationName: data['variationName'],
       isSelected: data['isSelected'] ?? true, // Default to selected if not set
     );
   }
@@ -67,6 +78,7 @@ class CartItem {
       'addedAt': Timestamp.fromDate(addedAt),
       'isSelected': isSelected,
       if (variationId != null) 'variationId': variationId,
+      if (variationName != null) 'variationName': variationName,
     };
   }
 

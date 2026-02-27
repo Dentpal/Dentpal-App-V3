@@ -393,8 +393,15 @@ class _StorePageState extends State<StorePage>
 
   Widget _buildAppBarHeader() {
     final coverImageURL = _storeData['coverImageURL'] as String? ?? '';
+    final screenHeight = MediaQuery.of(context).size.height;
+    final screenWidth = MediaQuery.of(context).size.width;
+    // Responsive header height: at least 280, scales with screen size
+    final double headerHeight = (screenHeight * 0.35).clamp(280.0, 400.0);
+    // Responsive store icon size
+    final double iconSize = screenWidth < 380 ? 72 : (screenWidth < 600 ? 88 : 100);
+
     return Container(
-      height: 250,
+      height: headerHeight,
       width: double.infinity,
       child: Stack(
         fit: StackFit.expand,
@@ -440,7 +447,7 @@ class _StorePageState extends State<StorePage>
               children: [
                 // Back button row
                 Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   child: Row(
                     children: [
                       Container(
@@ -461,22 +468,30 @@ class _StorePageState extends State<StorePage>
                 ),
                 // Store info section
                 Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _buildStoreIcon(),
-                      const SizedBox(height: 16),
-                      Text(
-                        _storeData['shopName'] ?? 'Store Name',
-                        style: AppTextStyles.headlineSmall.copyWith(
-                          color: AppColors.onPrimary,
-                          fontWeight: FontWeight.bold,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildStoreIcon(iconSize),
+                        const SizedBox(height: 14),
+                        Text(
+                          _storeData['shopName'] ?? 'Store Name',
+                          style: AppTextStyles.headlineSmall.copyWith(
+                            color: AppColors.onPrimary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: screenWidth < 380 ? 18 : 20,
+                          ),
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
+                // Bottom spacing to prevent overlap with store info card below
+                const SizedBox(height: 12),
               ],
             ),
           ),
@@ -485,15 +500,17 @@ class _StorePageState extends State<StorePage>
     );
   }
 
-  Widget _buildStoreIcon() {
+  Widget _buildStoreIcon([double size = 88]) {
     final profileImageURL = _storeData['profileImageURL'] as String? ?? '';
+    final double borderRadius = size * 0.25;
+    final double iconSize = size * 0.45;
 
     return Container(
-      width: 80,
-      height: 80,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(borderRadius),
         border: Border.all(color: AppColors.onPrimary, width: 3),
         boxShadow: [
           BoxShadow(
@@ -504,7 +521,7 @@ class _StorePageState extends State<StorePage>
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(17),
+        borderRadius: BorderRadius.circular(borderRadius - 3),
         child: profileImageURL.isNotEmpty
             ? CachedNetworkImage(
                 imageUrl: profileImageURL,
@@ -518,16 +535,16 @@ class _StorePageState extends State<StorePage>
                   ),
                 ),
                 errorWidget: (context, url, error) =>
-                    const Icon(Icons.store, size: 40, color: AppColors.primary),
+                    Icon(Icons.store, size: iconSize, color: AppColors.primary),
               )
-            : const Icon(Icons.store, size: 40, color: AppColors.primary),
+            : Icon(Icons.store, size: iconSize, color: AppColors.primary),
       ),
     );
   }
 
   Widget _buildStoreInfo() {
     return Container(
-      margin: const EdgeInsets.all(16),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: AppColors.surface,

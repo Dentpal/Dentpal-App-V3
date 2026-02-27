@@ -12,6 +12,7 @@ import '../models/product_model.dart';
 import '../services/product_service.dart';
 import '../services/user_service.dart';
 import '../services/category_service.dart';
+import '../services/cart_service.dart';
 import '../services/click_tracking_service.dart';
 import '../widgets/product_card.dart';
 import '../../core/app_theme/app_colors.dart';
@@ -64,6 +65,7 @@ class _ProductListingPageState extends State<ProductListingPage>
   final UserService _userService = UserService();
   final CategoryService _categoryService = CategoryService();
   final ClickTrackingService _clickTrackingService = ClickTrackingService();
+  final CartService _cartService = CartService();
   bool _isLoading = false;
   bool _isLoadingMore = false;
   List<String> _selectedCategories = [];
@@ -80,6 +82,11 @@ class _ProductListingPageState extends State<ProductListingPage>
 
   bool _isSeller = false;
   String _userFirstName = 'User';
+  
+  // Cart item count for badge
+  int _cartItemCount = 0;
+  StreamSubscription<int>? _cartCountSubscription;
+  StreamSubscription<User?>? _authStateSubscription;
   
   // Active banner image URLs and target URLs loaded from Realtime Database
   List<String> _bannerImageUrls = [];
@@ -107,6 +114,7 @@ class _ProductListingPageState extends State<ProductListingPage>
     _checkSellerStatus();
     _loadUserName();
     _loadActiveBanner(); // Load active banner image from Realtime Database
+    _listenToCartCount(); // Listen to cart item count for badge
 
     // Add scroll listener for pagination
     _scrollController.addListener(_scrollListener);
@@ -118,6 +126,36 @@ class _ProductListingPageState extends State<ProductListingPage>
     AppLogger.d(
       "ProductListingPage initState called, products: ${_products.length}, timestamp: $_cacheTimestamp",
     );
+  }
+
+  // Listen to auth state changes and (re)subscribe to cart count accordingly
+  void _listenToCartCount() {
+    _authStateSubscription?.cancel();
+    _authStateSubscription =
+        FirebaseAuth.instance.authStateChanges().listen((user) {
+      _cartCountSubscription?.cancel();
+      _cartCountSubscription = null;
+
+      if (!mounted) return;
+
+      if (user == null) {
+        setState(() {
+          _cartItemCount = 0;
+        });
+        return;
+      }
+
+      _cartCountSubscription =
+          _cartService.cartItemCountStream().listen((count) {
+        if (mounted) {
+          setState(() {
+            _cartItemCount = count;
+          });
+        }
+      }, onError: (error) {
+        AppLogger.d('Error listening to cart count: $error');
+      });
+    });
   }
 
   // Fetch all active banner images from Firebase Realtime Database
@@ -250,6 +288,8 @@ class _ProductListingPageState extends State<ProductListingPage>
     _scrollController.removeListener(_scrollListener);
     _bannerAutoScrollTimer?.cancel();
     _bannerPageController.dispose();
+    _authStateSubscription?.cancel();
+    _cartCountSubscription?.cancel();
 
     AppLogger.d("ProductListingPage dispose called");
     super.dispose();
@@ -1275,10 +1315,40 @@ class _ProductListingPageState extends State<ProductListingPage>
                             },
                             child: Row(
                               children: [
-                                Icon(
-                                  Icons.shopping_cart_outlined,
-                                  color: AppColors.onSurface.withOpacity(0.7),
-                                  size: 22,
+                                Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    Icon(
+                                      Icons.shopping_cart_outlined,
+                                      color: AppColors.onSurface.withOpacity(0.7),
+                                      size: 22,
+                                    ),
+                                    if (_cartItemCount > 0)
+                                      Positioned(
+                                        right: -8,
+                                        top: -6,
+                                        child: Container(
+                                          padding: const EdgeInsets.all(4),
+                                          constraints: const BoxConstraints(
+                                            minWidth: 18,
+                                            minHeight: 18,
+                                          ),
+                                          decoration: const BoxDecoration(
+                                            color: Colors.orange,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: Text(
+                                            _cartItemCount > 99 ? '99+' : '$_cartItemCount',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
@@ -1443,9 +1513,39 @@ class _ProductListingPageState extends State<ProductListingPage>
                             minWidth: 36,
                             minHeight: 36,
                           ),
-                          icon: const Icon(
-                            Icons.shopping_cart,
-                            color: AppColors.onSurface,
+                          icon: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              const Icon(
+                                Icons.shopping_cart,
+                                color: AppColors.onSurface,
+                              ),
+                              if (_cartItemCount > 0)
+                                Positioned(
+                                  right: -8,
+                                  top: -6,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    constraints: const BoxConstraints(
+                                      minWidth: 18,
+                                      minHeight: 18,
+                                    ),
+                                    decoration: const BoxDecoration(
+                                      color: Colors.orange,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Text(
+                                      _cartItemCount > 99 ? '99+' : '$_cartItemCount',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                           onPressed: () {
                             final user = FirebaseAuth.instance.currentUser;
@@ -1480,7 +1580,6 @@ class _ProductListingPageState extends State<ProductListingPage>
                       if (_bannerImageUrls.isNotEmpty)
                         Container(
                           margin: const EdgeInsets.symmetric(horizontal: 16),
-                          height: MediaQuery.of(context).size.width > 800 ? 300 : 180,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(24),
                             boxShadow: [
@@ -1493,11 +1592,11 @@ class _ProductListingPageState extends State<ProductListingPage>
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(24),
-                            child: Stack(
-                              children: [
-                                SizedBox(
-                                  height: MediaQuery.of(context).size.width > 800 ? 300 : 180,
-                                  child: PageView.builder(
+                            child: AspectRatio(
+                              aspectRatio: 8 / 3, // 800x300
+                              child: Stack(
+                                children: [
+                                  PageView.builder(
                                     controller: _bannerPageController,
                                     physics: const BouncingScrollPhysics(),
                                     onPageChanged: (index) {
@@ -1518,6 +1617,8 @@ class _ProductListingPageState extends State<ProductListingPage>
                                           imageUrl: _bannerImageUrls[index],
                                           fit: BoxFit.cover,
                                           width: double.infinity,
+                                          memCacheWidth: 1920,
+                                          memCacheHeight: 720,
                                           placeholder: (context, url) => Container(
                                             decoration: BoxDecoration(
                                               gradient: LinearGradient(
@@ -1557,27 +1658,27 @@ class _ProductListingPageState extends State<ProductListingPage>
                                       );
                                     },
                                   ),
-                                ),
-                                // Gradient overlay for better text readability
-                                IgnorePointer(
-                                  child: Container(
-                                    height: MediaQuery.of(context).size.width > 800 ? 300 : 180,
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        begin: Alignment.topCenter,
-                                        end: Alignment.bottomCenter,
-                                        colors: [
-                                          Colors.transparent,
-                                          Colors.black.withValues(alpha: 0.3),
-                                        ],
+                                  // Gradient overlay for better text readability
+                                  Positioned.fill(
+                                    child: IgnorePointer(
+                                      child: DecoratedBox(
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            begin: Alignment.topCenter,
+                                            end: Alignment.bottomCenter,
+                                            colors: [
+                                              Colors.transparent,
+                                              Colors.black.withValues(alpha: 0.3),
+                                            ],
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                                // Banner indicator dots
-                                if (_bannerImageUrls.length > 1)
-                                  Positioned(
-                                    bottom: 16,
+                                  // Banner indicator dots
+                                  if (_bannerImageUrls.length > 1)
+                                    Positioned(
+                                      bottom: 16,
                                     left: 0,
                                     right: 0,
                                     child: Row(
@@ -1599,6 +1700,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                                     ),
                                   ),
                               ],
+                              ),
                             ),
                           ),
                         ),
