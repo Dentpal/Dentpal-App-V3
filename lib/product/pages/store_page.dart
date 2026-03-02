@@ -463,7 +463,7 @@ class _StorePageState extends State<StorePage>
                         Icons.arrow_back,
                         color: AppColors.primary,
                       ),
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: () => Navigator.maybePop(context),
                     ),
                   ),
                 ),
