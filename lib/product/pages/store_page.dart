@@ -138,14 +138,14 @@ class _StorePageState extends State<StorePage>
             ? vendor['company'] as Map<String, dynamic>
             : const {};
 
-        // Fetch coverImage and profileImage URLs from Seller document root
+        // Fetch coverImage and profileImage URLs from Seller > vendor
         String coverImageURL = '';
         String profileImageURL = '';
-        if (data['coverImage'] is Map && data['coverImage']['url'] is String) {
-          coverImageURL = data['coverImage']['url'] as String;
+        if (vendor['coverImage'] is Map && vendor['coverImage']['url'] is String) {
+          coverImageURL = vendor['coverImage']['url'] as String;
         }
-        if (data['profileImage'] is Map && data['profileImage']['url'] is String) {
-          profileImageURL = data['profileImage']['url'] as String;
+        if (vendor['profileImage'] is Map && vendor['profileImage']['url'] is String) {
+          profileImageURL = vendor['profileImage']['url'] as String;
         }
 
         // Store name from vendor.company.storeName, fallback to previous keys or default
@@ -368,7 +368,7 @@ class _StorePageState extends State<StorePage>
                   child: Column(
                     children: [
                       _buildAppBarHeader(),
-                      _buildStoreInfo(),
+                      _buildStoreInfoHeader(),
                       _buildTabBar(),
                       _buildTabContent(),
                     ],
@@ -393,109 +393,84 @@ class _StorePageState extends State<StorePage>
 
   Widget _buildAppBarHeader() {
     final coverImageURL = _storeData['coverImageURL'] as String? ?? '';
-    final screenHeight = MediaQuery.of(context).size.height;
-    final screenWidth = MediaQuery.of(context).size.width;
-    // Responsive header height: at least 280, scales with screen size
-    final double headerHeight = (screenHeight * 0.35).clamp(280.0, 400.0);
-    // Responsive store icon size
-    final double iconSize = screenWidth < 380 ? 72 : (screenWidth < 600 ? 88 : 100);
 
     return Container(
-      height: headerHeight,
-      width: double.infinity,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Cover image or fallback gradient
-          if (coverImageURL.isNotEmpty)
-            CachedNetworkImage(
-              imageUrl: coverImageURL,
-              fit: BoxFit.cover,
-              placeholder: (context, url) => Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
-                  ),
-                ),
-              ),
-              errorWidget: (context, url, error) => Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
-                  ),
-                ),
-              ),
-            )
-          else
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
-                ),
-              ),
-            ),
-          // Content
-          SafeArea(
-            top: !kIsWeb,
-            child: Column(
-              children: [
-                // Back button row
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Row(
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.9),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: IconButton(
-                          icon: const Icon(
-                            Icons.arrow_back,
-                            color: AppColors.primary,
-                          ),
-                          onPressed: () => Navigator.pop(context),
-                        ),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.2),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: AspectRatio(
+          aspectRatio: 8 / 3, // Same as product listing page banner (800x300)
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Cover image or fallback gradient
+              if (coverImageURL.isNotEmpty)
+                CachedNetworkImage(
+                  imageUrl: coverImageURL,
+                  fit: BoxFit.cover,
+                  placeholder: (context, url) => Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
                       ),
-                    ],
+                    ),
                   ),
-                ),
-                // Store info section
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _buildStoreIcon(iconSize),
-                        const SizedBox(height: 14),
-                        Text(
-                          _storeData['shopName'] ?? 'Store Name',
-                          style: AppTextStyles.headlineSmall.copyWith(
-                            color: AppColors.onPrimary,
-                            fontWeight: FontWeight.bold,
-                            fontSize: screenWidth < 380 ? 18 : 20,
-                          ),
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+                  errorWidget: (context, url, error) => Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
+                      ),
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
                     ),
                   ),
                 ),
-                // Bottom spacing to prevent overlap with store info card below
-                const SizedBox(height: 12),
-              ],
-            ),
+              // Back button only
+              Positioned(
+                top: 16,
+                left: 16,
+                child: SafeArea(
+                  top: !kIsWeb,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: IconButton(
+                      icon: const Icon(
+                        Icons.arrow_back,
+                        color: AppColors.primary,
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -542,28 +517,59 @@ class _StorePageState extends State<StorePage>
     );
   }
 
-  Widget _buildStoreInfo() {
+  Widget _buildStoreInfoHeader() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final double iconSize = screenWidth < 380 ? 72 : (screenWidth < 600 ? 88 : 100);
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          _buildInfoRow(
-            Icons.location_on,
-            'Address',
-            _storeData['address'] ?? 'Not available',
+          // Store icon
+          _buildStoreIcon(iconSize),
+          const SizedBox(width: 16),
+          // Store name and address
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  _storeData['shopName'] ?? 'Store Name',
+                  style: AppTextStyles.headlineSmall.copyWith(
+                    color: AppColors.onSurface,
+                    fontWeight: FontWeight.bold,
+                    fontSize: screenWidth < 380 ? 18 : 20,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.location_on,
+                      size: 16,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        _storeData['address'] ?? 'Not available',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.onSurface.withValues(alpha: 0.7),
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
