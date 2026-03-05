@@ -257,15 +257,75 @@ class _ProductSearchPageState extends State<ProductSearchPage> {
     super.dispose();
   }
 
+  void _showCategoryFilterSidebar() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 600;
+    if (!isMobile) return; // sidebar only on mobile
+
+    // Pre-load subcategories for all categories
+    for (final category in _categories) {
+      _loadSubcategories(category.categoryId);
+    }
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Categories',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 280),
+      pageBuilder: (ctx, animation, secondaryAnimation) {
+        return _SearchCategorySidebarSheet(
+          categories: _categories,
+          subcategoriesByCategory: _subcategoriesByCategory,
+          selectedCategoryIds: List.from(_currentFilters.categoryIds),
+          selectedSubCategoryIds: List.from(_currentFilters.subCategoryIds),
+          onLoadSubcategories: _loadSubcategories,
+          onApplySelection: (newCategoryIds, newSubCategoryIds) {
+            if (!mounted) return;
+            setState(() {
+              _currentFilters = _currentFilters.copyWith(
+                categoryIds: newCategoryIds,
+                subCategoryIds: newSubCategoryIds,
+              );
+              _subcategoriesByCategory.removeWhere(
+                (key, _) => !newCategoryIds.contains(key),
+              );
+            });
+            _performSearch();
+          },
+        );
+      },
+      transitionBuilder: (ctx, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        );
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(1.0, 0.0),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 600;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
           children: [
             _buildSearchHeader(),
-            if (_showFilters) _buildFiltersSection(),
+            // On mobile: always show price + sort; category uses sidebar
+            if (isMobile) _buildMobilePriceSortBar(),
+            // On web/tablet: collapsible full filter panel (no category on mobile)
+            if (!isMobile && _showFilters) _buildFiltersSection(),
             if (_showSuggestions && _searchSuggestions.isNotEmpty)
               _buildSuggestionsSection(),
             Expanded(
@@ -278,6 +338,11 @@ class _ProductSearchPageState extends State<ProductSearchPage> {
   }
 
   Widget _buildSearchHeader() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 600;
+    final hasCategoryFilter = _currentFilters.categoryIds.isNotEmpty ||
+        _currentFilters.subCategoryIds.isNotEmpty;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -328,17 +393,48 @@ class _ProductSearchPageState extends State<ProductSearchPage> {
                   ),
                 ),
               ),
-              IconButton(
-                icon: Icon(
-                  _showFilters ? Icons.filter_list_off : Icons.filter_list,
-                  color: _showFilters ? AppColors.primary : AppColors.grey500,
+              // On mobile: category sidebar icon; on web/tablet: full filter toggle
+              if (isMobile)
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    IconButton(
+                      icon: Icon(
+                        Icons.menu,
+                        color: hasCategoryFilter
+                            ? AppColors.primary
+                            : AppColors.grey500,
+                      ),
+                      onPressed: _showCategoryFilterSidebar,
+                    ),
+                    if (hasCategoryFilter)
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: AppColors.primary,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                  ],
+                )
+              else
+                IconButton(
+                  icon: Icon(
+                    _showFilters ? Icons.filter_list_off : Icons.filter_list,
+                    color:
+                        _showFilters ? AppColors.primary : AppColors.grey500,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _showFilters = !_showFilters;
+                    });
+                  },
                 ),
-                onPressed: () {
-                  setState(() {
-                    _showFilters = !_showFilters;
-                  });
-                },
-              ),
             ],
           ),
           if (_hasActiveFilters()) ...[
@@ -367,6 +463,134 @@ class _ProductSearchPageState extends State<ProductSearchPage> {
             onTap: () => _onSuggestionTap(suggestion),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildMobilePriceSortBar() {
+    return Container(
+      color: AppColors.surface,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Price range title
+          Text(
+            'Price Range',
+            style: AppTextStyles.labelLarge.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Price range row
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _minPriceController,
+                  decoration: InputDecoration(
+                    hintText: 'Min price',
+                    hintStyle: AppTextStyles.inputHint,
+                    isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    prefixText: '₱',
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                  ),
+                  keyboardType: TextInputType.number,
+                  style: AppTextStyles.bodySmall,
+                  onChanged: (_) => _onFilterChanged(),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text(
+                  '–',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.onSurface.withValues(alpha: 0.5),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: TextField(
+                  controller: _maxPriceController,
+                  decoration: InputDecoration(
+                    hintText: 'Max price',
+                    hintStyle: AppTextStyles.inputHint,
+                    isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    prefixText: '₱',
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                  ),
+                  keyboardType: TextInputType.number,
+                  style: AppTextStyles.bodySmall,
+                  onChanged: (_) => _onFilterChanged(),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          // Sort by title
+          Text(
+            'Sort By',
+            style: AppTextStyles.labelLarge.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Sort chips row
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildSortChip('Relevance', SortBy.relevance),
+                const SizedBox(width: 6),
+                _buildSortChip('Price ↑', SortBy.priceAsc),
+                const SizedBox(width: 6),
+                _buildSortChip('Price ↓', SortBy.priceDesc),
+                const SizedBox(width: 6),
+                _buildSortChip('A–Z', SortBy.nameAsc),
+                const SizedBox(width: 6),
+                _buildSortChip('Newest', SortBy.newest),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSortChip(String label, SortBy sortBy) {
+    final isSelected = _currentFilters.sortBy == sortBy;
+    return GestureDetector(
+      onTap: () => _changeSortBy(sortBy),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary : AppColors.grey100,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? AppColors.primary : AppColors.grey300,
+            width: 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: AppTextStyles.bodySmall.copyWith(
+            color: isSelected ? AppColors.onPrimary : AppColors.onSurface,
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
       ),
     );
   }
@@ -1089,5 +1313,656 @@ class _ProductSearchPageState extends State<ProductSearchPage> {
     } else {
       return 0.75; // Mobile screens (same as original)
     }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mobile category sidebar sheet for the search page
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SearchCategorySidebarSheet extends StatefulWidget {
+  final List<Category> categories;
+  final Map<String, List<SubCategory>> subcategoriesByCategory;
+  final List<String> selectedCategoryIds;
+  final List<String> selectedSubCategoryIds;
+  final Future<void> Function(String categoryId) onLoadSubcategories;
+  final void Function(
+    List<String> selectedCategoryIds,
+    List<String> selectedSubCategoryIds,
+  ) onApplySelection;
+
+  const _SearchCategorySidebarSheet({
+    required this.categories,
+    required this.subcategoriesByCategory,
+    required this.selectedCategoryIds,
+    required this.selectedSubCategoryIds,
+    required this.onLoadSubcategories,
+    required this.onApplySelection,
+  });
+
+  @override
+  State<_SearchCategorySidebarSheet> createState() =>
+      _SearchCategorySidebarSheetState();
+}
+
+class _SearchCategorySidebarSheetState
+    extends State<_SearchCategorySidebarSheet> {
+  // null means "All" is highlighted
+  Category? _highlightedCategory;
+  late Map<String, List<SubCategory>> _localSubcategories;
+  bool _loadingSubcategories = false;
+  late List<String> _localSelectedCategoryIds;
+  late List<String> _localSelectedSubCategoryIds;
+
+  @override
+  void initState() {
+    super.initState();
+    _localSubcategories = Map.from(widget.subcategoriesByCategory);
+    _localSelectedCategoryIds = List.from(widget.selectedCategoryIds);
+    _localSelectedSubCategoryIds = List.from(widget.selectedSubCategoryIds);
+
+    // Highlight the first selected category, or "All" if none selected
+    if (_localSelectedCategoryIds.isNotEmpty) {
+      try {
+        _highlightedCategory = widget.categories.firstWhere(
+          (c) => c.categoryId == _localSelectedCategoryIds.first,
+        );
+      } catch (_) {
+        _highlightedCategory = null;
+      }
+    }
+
+    if (_highlightedCategory != null) {
+      _ensureSubcategoriesLoaded(_highlightedCategory!);
+    }
+  }
+
+  Future<void> _ensureSubcategoriesLoaded(Category category) async {
+    if (_localSubcategories.containsKey(category.categoryId)) return;
+    if (mounted) setState(() => _loadingSubcategories = true);
+    await widget.onLoadSubcategories(category.categoryId);
+    if (mounted) {
+      setState(() {
+        final updated = widget.subcategoriesByCategory[category.categoryId];
+        if (updated != null) {
+          _localSubcategories[category.categoryId] = updated;
+        }
+        _loadingSubcategories = false;
+      });
+    }
+  }
+
+  List<SubCategory> get _currentSubcategories {
+    if (_highlightedCategory == null) return [];
+    return _localSubcategories[_highlightedCategory!.categoryId] ?? [];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final sidebarWidth = (screenWidth * 0.88).clamp(0.0, 400.0);
+
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          width: sidebarWidth,
+          height: double.infinity,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(20),
+              bottomLeft: Radius.circular(20),
+            ),
+          ),
+          child: SafeArea(
+            child: Column(
+              children: [
+                // ── Header ──────────────────────────────────────────────────
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
+                  decoration: const BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(20),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.category_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Shop by Category',
+                        style: AppTextStyles.titleMedium.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Spacer(),
+                      GestureDetector(
+                        onTap: () => Navigator.of(context).pop(),
+                        child: const Icon(
+                          Icons.close,
+                          color: Colors.white,
+                          size: 22,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // ── Body: left rail + right subcategory grid ─────────────
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Left rail
+                      Container(
+                        width: 110,
+                        color: const Color(0xFFF5F5F5),
+                        child: ListView(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          children: [
+                            // "All" option
+                            _buildRailItem(
+                              label: 'All',
+                              imageUrl: null,
+                              isHighlighted: _highlightedCategory == null,
+                              isSelected: _localSelectedCategoryIds.isEmpty,
+                              onTap: () {
+                                setState(() => _highlightedCategory = null);
+                              },
+                            ),
+                            ...widget.categories.map((category) {
+                              final isHighlighted =
+                                  _highlightedCategory?.categoryId ==
+                                      category.categoryId;
+                              final isSelected = _localSelectedCategoryIds
+                                  .contains(category.categoryId);
+                              return _buildRailItem(
+                                label: category.categoryName,
+                                imageUrl: category.categoryImageUrl,
+                                isHighlighted: isHighlighted,
+                                isSelected: isSelected,
+                                onTap: () {
+                                  setState(() {
+                                    _highlightedCategory = category;
+                                    _loadingSubcategories = false;
+                                  });
+                                  _ensureSubcategoriesLoaded(category);
+                                },
+                              );
+                            }),
+                          ],
+                        ),
+                      ),
+
+                      // Vertical divider
+                      Container(width: 1, color: const Color(0xFFE0E0E0)),
+
+                      // Right panel
+                      Expanded(
+                        child: _highlightedCategory == null
+                            ? _buildAllCategoriesGrid()
+                            : _buildSubcategoryGrid(),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // ── Footer ───────────────────────────────────────────────
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border(
+                      top: BorderSide(
+                        color: Colors.grey.withValues(alpha: 0.15),
+                      ),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _localSelectedCategoryIds.clear();
+                              _localSelectedSubCategoryIds.clear();
+                            });
+                          },
+                          style: TextButton.styleFrom(
+                            backgroundColor:
+                                AppColors.primary.withValues(alpha: 0.08),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                          child: Text(
+                            'Show All',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            widget.onApplySelection(
+                              _localSelectedCategoryIds,
+                              _localSelectedSubCategoryIds,
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                          child: Text(
+                            'Apply',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRailItem({
+    required String label,
+    required String? imageUrl,
+    required bool isHighlighted,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        color: isHighlighted ? Colors.white : Colors.transparent,
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        child: Column(
+          children: [
+            Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                color: isHighlighted
+                    ? AppColors.primary.withValues(alpha: 0.1)
+                    : AppColors.primary.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(10),
+                border: isHighlighted
+                    ? Border.all(color: AppColors.primary, width: 1.5)
+                    : null,
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(9),
+                child: imageUrl != null && imageUrl.isNotEmpty
+                    ? Image.network(
+                        imageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (c, e, s) => Icon(
+                          Icons.category,
+                          color: AppColors.primary.withValues(alpha: 0.5),
+                          size: 22,
+                        ),
+                      )
+                    : Center(
+                        child: Icon(
+                          label == 'All'
+                              ? Icons.grid_view_rounded
+                              : Icons.category,
+                          color: isHighlighted
+                              ? AppColors.primary
+                              : AppColors.primary.withValues(alpha: 0.5),
+                          size: 24,
+                        ),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: AppTextStyles.bodySmall.copyWith(
+                fontSize: 10,
+                fontWeight:
+                    isHighlighted || isSelected ? FontWeight.bold : FontWeight.w500,
+                color:
+                    isHighlighted ? AppColors.primary : AppColors.onSurface,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (isSelected)
+              Container(
+                margin: const EdgeInsets.only(top: 3),
+                width: 5,
+                height: 5,
+                decoration: const BoxDecoration(
+                  color: AppColors.primary,
+                  shape: BoxShape.circle,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAllCategoriesGrid() {
+    return GridView.builder(
+      padding: const EdgeInsets.all(12),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 0.95,
+      ),
+      itemCount: widget.categories.length,
+      itemBuilder: (context, index) {
+        final category = widget.categories[index];
+        final isSelected =
+            _localSelectedCategoryIds.contains(category.categoryId);
+        final imageUrl = category.categoryImageUrl;
+
+        return GestureDetector(
+          onTap: () {
+            setState(() {
+              if (isSelected) {
+                _localSelectedCategoryIds.remove(category.categoryId);
+                // Remove subcategories belonging to this category
+                if (_localSubcategories.containsKey(category.categoryId)) {
+                  final subIds = _localSubcategories[category.categoryId]!
+                      .map((s) => s.subCategoryId)
+                      .toList();
+                  _localSelectedSubCategoryIds
+                      .removeWhere((id) => subIds.contains(id));
+                }
+              } else {
+                _localSelectedCategoryIds.add(category.categoryId);
+              }
+              _highlightedCategory = category;
+            });
+            _ensureSubcategoriesLoaded(category);
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? AppColors.primary.withValues(alpha: 0.08)
+                  : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isSelected
+                    ? AppColors.primary
+                    : Colors.grey.withValues(alpha: 0.2),
+                width: isSelected ? 1.5 : 1,
+              ),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: imageUrl != null && imageUrl.isNotEmpty
+                        ? Image.network(
+                            imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (c, e, s) => Icon(
+                              Icons.category,
+                              color: AppColors.primary.withValues(alpha: 0.5),
+                              size: 24,
+                            ),
+                          )
+                        : Icon(
+                            Icons.category,
+                            color: AppColors.primary.withValues(alpha: 0.5),
+                            size: 24,
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(
+                    category.categoryName,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      fontSize: 11,
+                      fontWeight:
+                          isSelected ? FontWeight.bold : FontWeight.w500,
+                      color:
+                          isSelected ? AppColors.primary : AppColors.onSurface,
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSubcategoryGrid() {
+    if (_loadingSubcategories) {
+      return const Center(
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: AppColors.primary,
+        ),
+      );
+    }
+
+    final subs = _currentSubcategories;
+    final cat = _highlightedCategory!;
+    final isCatSelected =
+        _localSelectedCategoryIds.contains(cat.categoryId);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Category header – tap toggles this category's selection
+        GestureDetector(
+          onTap: () {
+            setState(() {
+              if (isCatSelected) {
+                _localSelectedCategoryIds.remove(cat.categoryId);
+                // Deselect subcategories of this category
+                if (_localSubcategories.containsKey(cat.categoryId)) {
+                  final subIds = _localSubcategories[cat.categoryId]!
+                      .map((s) => s.subCategoryId)
+                      .toList();
+                  _localSelectedSubCategoryIds
+                      .removeWhere((id) => subIds.contains(id));
+                }
+              } else {
+                _localSelectedCategoryIds.add(cat.categoryId);
+              }
+            });
+          },
+          child: Container(
+            width: double.infinity,
+            padding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            color: isCatSelected
+                ? AppColors.primary.withValues(alpha: 0.08)
+                : AppColors.primary.withValues(alpha: 0.05),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    cat.categoryName,
+                    style: AppTextStyles.titleSmall.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+                if (isCatSelected)
+                  const Icon(
+                    Icons.check_circle,
+                    color: AppColors.primary,
+                    size: 16,
+                  )
+                else
+                  Text(
+                    'Select all ›',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 11,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        if (subs.isEmpty)
+          Expanded(
+            child: Center(
+              child: Text(
+                'No subcategories',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.onSurface.withValues(alpha: 0.4),
+                ),
+              ),
+            ),
+          )
+        else
+          Expanded(
+            child: GridView.builder(
+              padding: const EdgeInsets.all(10),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: 1.1,
+              ),
+              itemCount: subs.length,
+              itemBuilder: (context, index) {
+                final sub = subs[index];
+                final isSelected = _localSelectedSubCategoryIds
+                    .contains(sub.subCategoryId);
+
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      if (isSelected) {
+                        _localSelectedSubCategoryIds
+                            .remove(sub.subCategoryId);
+                      } else {
+                        // Auto-select parent category
+                        if (!_localSelectedCategoryIds
+                            .contains(cat.categoryId)) {
+                          _localSelectedCategoryIds.add(cat.categoryId);
+                        }
+                        _localSelectedSubCategoryIds.add(sub.subCategoryId);
+                      }
+                    });
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? AppColors.primary.withValues(alpha: 0.08)
+                          : Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isSelected
+                            ? AppColors.primary
+                            : Colors.grey.withValues(alpha: 0.2),
+                        width: isSelected ? 1.5 : 1,
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? AppColors.primary.withValues(alpha: 0.12)
+                                : AppColors.primary.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(
+                            Icons.label_outline_rounded,
+                            color: isSelected
+                                ? AppColors.primary
+                                : AppColors.primary.withValues(alpha: 0.5),
+                            size: 22,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Padding(
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 4),
+                          child: Text(
+                            sub.subCategoryName,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              fontSize: 10,
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.w500,
+                              color: isSelected
+                                  ? AppColors.primary
+                                  : AppColors.onSurface,
+                            ),
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
+    );
   }
 }

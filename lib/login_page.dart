@@ -361,6 +361,13 @@ class _LoginPageState extends State<LoginPage> {
                                   height: 420,
                                   fit: BoxFit.contain,
                                 ),
+                                onTap: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (context) => const HomePage(),
+                                    ),
+                                  );
+                                },
                               ),
                             ),
                           ),
@@ -707,6 +714,14 @@ class _LoginPageState extends State<LoginPage> {
                             Material(
                               color: Colors.transparent,
                               child: InkWell(
+                                onTap: () {
+                                  Navigator.of(context).pushAndRemoveUntil(
+                                    MaterialPageRoute(
+                                      builder: (context) => const HomePage(),
+                                    ),
+                                    (route) => false,
+                                  );
+                                },
                                 borderRadius: BorderRadius.circular(20),
                                 splashColor: Colors.white.withOpacity(0.2),
                                 highlightColor: Colors.white.withOpacity(0.1),

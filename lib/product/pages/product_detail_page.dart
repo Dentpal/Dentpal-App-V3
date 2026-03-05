@@ -118,6 +118,9 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   
   // Cache for category names to avoid repeated Firestore calls
   final Map<String, String> _categoryNames = {};
+
+  // Cache for subcategory names to avoid repeated Firestore calls
+  final Map<String, String> _subCategoryNames = {};
   
   // Cache for seller data to avoid repeated Firestore calls
   final Map<String, Map<String, dynamic>> _sellerData = {};
@@ -192,6 +195,25 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       AppLogger.d('Error fetching category name for $categoryId: $e');
       _categoryNames[categoryId] = 'Unknown Category';
       return 'Unknown Category';
+    }
+  }
+
+  // Fetch subcategory name by IDs and cache it
+  Future<String> _getSubCategoryName(String categoryId, String subCategoryId) async {
+    final cacheKey = '$categoryId|$subCategoryId';
+    if (_subCategoryNames.containsKey(cacheKey)) {
+      return _subCategoryNames[cacheKey]!;
+    }
+
+    try {
+      final subCategory = await _categoryService.getSubCategoryById(categoryId, subCategoryId);
+      final subCategoryName = subCategory?.subCategoryName ?? '';
+      _subCategoryNames[cacheKey] = subCategoryName;
+      return subCategoryName;
+    } catch (e) {
+      AppLogger.d('Error fetching subcategory name for $subCategoryId: $e');
+      _subCategoryNames[cacheKey] = '';
+      return '';
     }
   }
 
@@ -1255,6 +1277,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                     _buildVariationsSection(product),
                     _buildQuantityAndStock(),
                     _buildDescriptionSection(product),
+                    _buildSpecificationsSection(product),
                     // _buildReviewsSection(), // Hidden: Static/fake data
                     const SizedBox(height: 80), // Bottom padding for fixed button
                   ],
@@ -1402,9 +1425,17 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                         child: _buildDescriptionSection(product),
                       ),
                       
+                      const SizedBox(height: 8),
+
+                      // Row 3: Specifications (Full Width)
+                      SizedBox(
+                        width: double.infinity,
+                        child: _buildSpecificationsSection(product),
+                      ),
+                      
                       const SizedBox(height: 24),
                       
-                      // Row 3: Reviews (Full Width) - Hidden: Static/fake data
+                      // Row 4: Reviews (Full Width) - Hidden: Static/fake data
                       // SizedBox(
                       //   width: double.infinity,
                       //   child: _buildReviewsSection(),
@@ -2495,6 +2526,144 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
     );
   }
 
+  Widget _buildSpecificationsSection(Product product) {
+    return FutureBuilder<List<dynamic>>(
+      future: Future.wait([
+        _getCategoryName(product.categoryId),
+        _getSubCategoryName(product.categoryId, product.subCategoryId),
+        _getSellerData(product.sellerId),
+      ]),
+      builder: (context, snapshot) {
+        final categoryName = snapshot.data?[0] as String? ?? '';
+        final subCategoryName = snapshot.data?[1] as String? ?? '';
+        final sellerData = snapshot.data?[2] as Map<String, dynamic>? ?? {};
+        final sellerAddress = sellerData['address'] as String? ?? '';
+
+        final hasWarranty = product.warrantyType != null && product.warrantyType!.isNotEmpty;
+
+        return Container(
+          margin: const EdgeInsets.fromLTRB(24, 4, 24, 8),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: AppColors.onSurface.withValues(alpha: 0.1),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Section Header
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.info_outline_rounded,
+                      color: AppColors.primary,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Product Specifications',
+                    style: AppTextStyles.titleMedium.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Spec rows
+              if (snapshot.connectionState == ConnectionState.waiting)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                )
+              else ...[
+                // Category / SubCategory
+                _buildSpecRow(
+                  label: 'Category',
+                  value: subCategoryName.isNotEmpty
+                      ? '$categoryName  ›  $subCategoryName'
+                      : categoryName,
+                ),
+                const Divider(height: 20, thickness: 0.6),
+
+                // Ships From
+                _buildSpecRow(
+                  label: 'Ships From',
+                  value: sellerAddress.isNotEmpty ? sellerAddress : '—',
+                ),
+
+                // Warranty block
+                if (hasWarranty) ...[
+                  const Divider(height: 20, thickness: 0.6),
+                  _buildSpecRow(
+                    label: 'Warranty Type',
+                    value: product.warrantyType!,
+                  ),
+                  if (product.warrantyPeriod != null && product.warrantyPeriod!.isNotEmpty) ...[
+                    const Divider(height: 20, thickness: 0.6),
+                    _buildSpecRow(
+                      label: 'Warranty Duration',
+                      value: product.warrantyPeriodUnit != null && product.warrantyPeriodUnit!.isNotEmpty
+                          ? '${product.warrantyPeriod} ${product.warrantyPeriodUnit}'
+                          : product.warrantyPeriod!,
+                    ),
+                  ],
+                  if (product.warrantyPolicy != null && product.warrantyPolicy!.isNotEmpty) ...[
+                    const Divider(height: 20, thickness: 0.6),
+                    _buildWarrantyPolicyRow(product.warrantyPolicy!),
+                  ],
+                ],
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSpecRow({required String label, required String value}) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 130,
+          child: Text(
+            label,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.onSurface.withValues(alpha: 0.55),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            value,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.onSurface.withValues(alpha: 0.85),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWarrantyPolicyRow(String policy) {
+    return _ExpandableWarrantyPolicy(policy: policy);
+  }
+
   // Hidden: Static/fake review data - uncomment when real reviews are implemented
   // Widget _buildReviewsSection() {
   //   return Container(
@@ -2729,6 +2898,94 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Expandable warranty policy widget (max 3 lines → "Read more …" in blue)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ExpandableWarrantyPolicy extends StatefulWidget {
+  final String policy;
+
+  const _ExpandableWarrantyPolicy({required this.policy});
+
+  @override
+  State<_ExpandableWarrantyPolicy> createState() =>
+      _ExpandableWarrantyPolicyState();
+}
+
+class _ExpandableWarrantyPolicyState extends State<_ExpandableWarrantyPolicy> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 130,
+          child: Text(
+            'Warranty Policy',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.onSurface.withValues(alpha: 0.55),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.policy,
+                maxLines: _expanded ? null : 3,
+                overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.onSurface.withValues(alpha: 0.85),
+                  fontWeight: FontWeight.w500,
+                  height: 1.5,
+                ),
+              ),
+              // Only show the toggle if content actually overflows 3 lines
+              LayoutBuilder(
+                builder: (ctx, constraints) {
+                  final tp = TextPainter(
+                    text: TextSpan(
+                      text: widget.policy,
+                      style: AppTextStyles.bodySmall.copyWith(
+                        fontWeight: FontWeight.w500,
+                        height: 1.5,
+                      ),
+                    ),
+                    maxLines: 3,
+                    textDirection: TextDirection.ltr,
+                  )..layout(maxWidth: constraints.maxWidth);
+
+                  final overflows = tp.didExceedMaxLines;
+                  if (!overflows && !_expanded) return const SizedBox.shrink();
+
+                  return GestureDetector(
+                    onTap: () => setState(() => _expanded = !_expanded),
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        _expanded ? 'Read less' : 'Read more ...',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: Colors.blue,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

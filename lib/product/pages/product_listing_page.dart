@@ -96,6 +96,7 @@ class _ProductListingPageState extends State<ProductListingPage>
   // Mapping between category names and IDs for filtering
   Map<String, String> _categoryNameToId = {};
   Map<String, String> _categoryIdToName = {};
+  Map<String, String?> _categoryNameToImage = {};
 
   // Subcategory state - now grouped by category
   Map<String, List<SubCategory>> _subcategoriesByCategory = {};
@@ -806,6 +807,7 @@ class _ProductListingPageState extends State<ProductListingPage>
           // Clear existing mappings
           _categoryNameToId.clear();
           _categoryIdToName.clear();
+          _categoryNameToImage.clear();
 
           // Add all category names from the service and build mappings
           for (var category in allCategories) {
@@ -815,6 +817,7 @@ class _ProductListingPageState extends State<ProductListingPage>
             categorySet.add(category.categoryName);
             _categoryNameToId[category.categoryName] = category.categoryId;
             _categoryIdToName[category.categoryId] = category.categoryName;
+            _categoryNameToImage[category.categoryName] = category.categoryImageUrl;
           }
 
           _categories = categorySet.toList();
@@ -995,6 +998,7 @@ class _ProductListingPageState extends State<ProductListingPage>
       // Fetch fresh categories
       Map<String, String> freshCategoryMapping = {};
       Map<String, String> freshCategoryIdToName = {};
+      Map<String, String?> freshCategoryImageMapping = {};
       List<String> freshCategoriesList = ['All'];
 
       try {
@@ -1006,6 +1010,7 @@ class _ProductListingPageState extends State<ProductListingPage>
           freshCategoriesList.add(category.categoryName);
           freshCategoryMapping[category.categoryName] = category.categoryId;
           freshCategoryIdToName[category.categoryId] = category.categoryName;
+          freshCategoryImageMapping[category.categoryName] = category.categoryImageUrl;
         }
         AppLogger.d('Fetched ${allCategories.length} fresh categories');
       } catch (e) {
@@ -1013,6 +1018,7 @@ class _ProductListingPageState extends State<ProductListingPage>
         // Keep existing categories on error
         freshCategoryMapping = currentCategories;
         freshCategoriesList = _categories;
+        freshCategoryImageMapping = Map.from(_categoryNameToImage);
       }
 
       if (!mounted) return; // Check if widget is still mounted
@@ -1037,6 +1043,7 @@ class _ProductListingPageState extends State<ProductListingPage>
             _categories = freshCategoriesList;
             _categoryNameToId = freshCategoryMapping;
             _categoryIdToName = freshCategoryIdToName;
+            _categoryNameToImage = freshCategoryImageMapping;
             _cacheTimestamp = DateTime.now();
             _errorMessage = null;
           });
@@ -1560,6 +1567,24 @@ class _ProductListingPageState extends State<ProductListingPage>
                             }
                           },
                         ),
+                        Container(
+                          width: 1,
+                          height: 20,
+                          color: AppColors.onSurface.withValues(alpha: 0.1),
+                        ),
+                        IconButton(
+                          iconSize: 20,
+                          padding: const EdgeInsets.all(8),
+                          constraints: const BoxConstraints(
+                            minWidth: 36,
+                            minHeight: 36,
+                          ),
+                          icon: const Icon(
+                            Icons.menu,
+                            color: AppColors.onSurface,
+                          ),
+                          onPressed: _showCategorySidebar,
+                        ),
                       ],
                     ),
                   ),
@@ -1753,7 +1778,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                             ),
                             const SizedBox(height: 16),
                             SizedBox(
-                              height: 40,
+                              height: 124,
                               child: ListView.builder(
                                 scrollDirection: Axis.horizontal,
                                 itemCount: _categories.length,
@@ -1762,9 +1787,12 @@ class _ProductListingPageState extends State<ProductListingPage>
                                   final isSelected = category == 'All'
                                       ? _selectedCategories.isEmpty
                                       : _selectedCategories.contains(category);
+                                  final imageUrl = category == 'All'
+                                      ? null
+                                      : _categoryNameToImage[category];
 
                                   return Padding(
-                                    padding: const EdgeInsets.only(right: 12),
+                                    padding: const EdgeInsets.only(right: 10),
                                     child: GestureDetector(
                                       onTap: () =>
                                           _onCategorySelected(category),
@@ -1772,22 +1800,17 @@ class _ProductListingPageState extends State<ProductListingPage>
                                         duration: const Duration(
                                           milliseconds: 200,
                                         ),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 20,
-                                          vertical: 8,
-                                        ),
+                                        width: 100,
                                         decoration: BoxDecoration(
                                           color: isSelected
                                               ? AppColors.primary
                                               : AppColors.surface,
-                                          borderRadius: BorderRadius.circular(
-                                            20,
-                                          ),
+                                          borderRadius: BorderRadius.circular(12),
                                           border: Border.all(
                                             color: isSelected
                                                 ? AppColors.primary
                                                 : AppColors.onSurface
-                                                      .withValues(alpha: 0.2),
+                                                      .withValues(alpha: 0.15),
                                             width: 1.5,
                                           ),
                                           boxShadow: isSelected
@@ -1799,24 +1822,133 @@ class _ProductListingPageState extends State<ProductListingPage>
                                                     offset: const Offset(0, 2),
                                                   ),
                                                 ]
-                                              : [],
+                                              : [
+                                                  BoxShadow(
+                                                    color: Colors.black
+                                                        .withValues(alpha: 0.04),
+                                                    blurRadius: 4,
+                                                    offset: const Offset(0, 1),
+                                                  ),
+                                                ],
                                         ),
-                                        child: Center(
-                                          child: Text(
-                                            category,
-                                            style: AppTextStyles.bodyMedium
-                                                .copyWith(
+                                        child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            // Image / icon area
+                                            ClipRRect(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              child: Container(
+                                                width: 64,
+                                                height: 64,
+                                                decoration: BoxDecoration(
                                                   color: isSelected
-                                                      ? AppColors.onPrimary
-                                                      : AppColors.onSurface,
-                                                  fontWeight: isSelected
-                                                      ? FontWeight.bold
-                                                      : FontWeight.w500,
-                                                  fontSize: 13,
+                                                      ? Colors.white
+                                                            .withValues(
+                                                              alpha: 0.2,
+                                                            )
+                                                      : AppColors.primary
+                                                            .withValues(
+                                                              alpha: 0.08,
+                                                            ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
                                                 ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
+                                                child: imageUrl != null &&
+                                                        imageUrl.isNotEmpty
+                                                    ? CachedNetworkImage(
+                                                        imageUrl: imageUrl,
+                                                        fit: BoxFit.cover,
+                                                        placeholder:
+                                                            (context, url) =>
+                                                                Center(
+                                                          child: Icon(
+                                                            Icons.category,
+                                                            color: isSelected
+                                                                ? Colors.white
+                                                                      .withValues(
+                                                                        alpha:
+                                                                            0.7,
+                                                                      )
+                                                                : AppColors
+                                                                      .primary
+                                                                      .withValues(
+                                                                        alpha:
+                                                                            0.5,
+                                                                      ),
+                                                            size: 24,
+                                                          ),
+                                                        ),
+                                                        errorWidget: (context,
+                                                                url, error) =>
+                                                            Center(
+                                                          child: Icon(
+                                                            Icons.category,
+                                                            color: isSelected
+                                                                ? Colors.white
+                                                                      .withValues(
+                                                                        alpha:
+                                                                            0.7,
+                                                                      )
+                                                                : AppColors
+                                                                      .primary
+                                                                      .withValues(
+                                                                        alpha:
+                                                                            0.5,
+                                                                      ),
+                                                            size: 24,
+                                                          ),
+                                                        ),
+                                                      )
+                                                    : Center(
+                                                        child: Icon(
+                                                          category == 'All'
+                                                              ? Icons
+                                                                    .grid_view_rounded
+                                                              : Icons.category,
+                                                          color: isSelected
+                                                              ? Colors.white
+                                                                    .withValues(
+                                                                      alpha:
+                                                                          0.9,
+                                                                    )
+                                                              : AppColors
+                                                                    .primary
+                                                                    .withValues(
+                                                                      alpha:
+                                                                          0.7,
+                                                                    ),
+                                                          size: 26,
+                                                        ),
+                                                      ),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            // Label
+                                            Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 4,
+                                                  ),
+                                              child: Text(
+                                                category,
+                                                style: AppTextStyles.bodySmall
+                                                    .copyWith(
+                                                      color: isSelected
+                                                          ? AppColors.onPrimary
+                                                          : AppColors.onSurface,
+                                                      fontWeight: isSelected
+                                                          ? FontWeight.bold
+                                                          : FontWeight.w500,
+                                                      fontSize: 11,
+                                                    ),
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                textAlign: TextAlign.center,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     ),
@@ -2324,5 +2456,724 @@ class _ProductListingPageState extends State<ProductListingPage>
       AppLogger.d('Error getting subcategory click count: $e');
       return 0;
     }
+  }
+
+  // Open the full-screen category/subcategory sidebar from the right
+  void _showCategorySidebar() {
+    // Initialise the sidebar's highlighted category to the first selected one
+    // (or the first real category if nothing is selected yet).
+    String initialCategory = _selectedCategories.isNotEmpty
+        ? _selectedCategories.first
+        : (_categories.length > 1 ? _categories[1] : 'All');
+
+    // Pre-load subcategories for every category so the panel is responsive.
+    for (final cat in _categories) {
+      if (cat != 'All') _loadSubcategories(cat);
+    }
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Categories',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 280),
+      pageBuilder: (ctx, animation, secondaryAnimation) {
+        return _CategorySidebarSheet(
+          categories: _categories,
+          categoryNameToId: _categoryNameToId,
+          categoryNameToImage: _categoryNameToImage,
+          subcategoriesByCategory: _subcategoriesByCategory,
+          selectedCategories: List.from(_selectedCategories),
+          selectedSubCategories: List.from(_selectedSubCategories),
+          initialHighlightedCategory: initialCategory,
+          onCategorySelected: (cat) {
+            Navigator.of(ctx).pop();
+            _onCategorySelected(cat);
+          },
+          onSubCategorySelected: (subId, subName) {
+            Navigator.of(ctx).pop();
+            _onSubCategorySelected(subId, subName);
+          },
+          onLoadSubcategories: _loadSubcategories,
+          onApplySelection: (newCategories, newSubCategories) {
+            if (!mounted) return;
+            // Clear everything first, then apply the new selection set
+            setState(() {
+              _selectedCategories = List.from(newCategories);
+              _selectedSubCategories = List.from(newSubCategories);
+              _products = [];
+              _lastDocument = null;
+              _hasMore = true;
+              _isLoading = false;
+              _isLoadingMore = false;
+            });
+            _loadFirstPage();
+          },
+        );
+      },
+      transitionBuilder: (ctx, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        );
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(1.0, 0.0),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
+        );
+      },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sidebar sheet widget – shown as a full-height right-side panel
+// ─────────────────────────────────────────────────────────────────────────────
+class _CategorySidebarSheet extends StatefulWidget {
+  final List<String> categories;
+  final Map<String, String> categoryNameToId;
+  final Map<String, String?> categoryNameToImage;
+  final Map<String, List<SubCategory>> subcategoriesByCategory;
+  final List<String> selectedCategories;
+  final List<String> selectedSubCategories;
+  final String initialHighlightedCategory;
+  final void Function(String category) onCategorySelected;
+  final void Function(String subId, String subName) onSubCategorySelected;
+  final Future<void> Function(String categoryName) onLoadSubcategories;
+  final void Function(
+    List<String> selectedCategories,
+    List<String> selectedSubCategories,
+  ) onApplySelection;
+
+  const _CategorySidebarSheet({
+    required this.categories,
+    required this.categoryNameToId,
+    required this.categoryNameToImage,
+    required this.subcategoriesByCategory,
+    required this.selectedCategories,
+    required this.selectedSubCategories,
+    required this.initialHighlightedCategory,
+    required this.onCategorySelected,
+    required this.onSubCategorySelected,
+    required this.onLoadSubcategories,
+    required this.onApplySelection,
+  });
+
+  @override
+  State<_CategorySidebarSheet> createState() => _CategorySidebarSheetState();
+}
+
+class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
+  late String _highlightedCategory;
+  late Map<String, List<SubCategory>> _localSubcategories;
+  bool _loadingSubcategories = false;
+
+  // Local mutable copies of the selection – updated immediately on every tap
+  late List<String> _localSelectedCategories;
+  late List<String> _localSelectedSubCategories;
+
+  @override
+  void initState() {
+    super.initState();
+    _highlightedCategory = widget.initialHighlightedCategory;
+    _localSubcategories = Map.from(widget.subcategoriesByCategory);
+    // Seed local selection from whatever is already active in the parent
+    _localSelectedCategories = List.from(widget.selectedCategories);
+    _localSelectedSubCategories = List.from(widget.selectedSubCategories);
+    _ensureSubcategoriesLoaded(_highlightedCategory);
+  }
+
+  Future<void> _ensureSubcategoriesLoaded(String categoryName) async {
+    final categoryId = widget.categoryNameToId[categoryName];
+    if (categoryId == null) return;
+    if (_localSubcategories.containsKey(categoryId)) return;
+
+    if (mounted) setState(() => _loadingSubcategories = true);
+    await widget.onLoadSubcategories(categoryName);
+
+    // After the parent loads them, copy into local map
+    if (mounted) {
+      setState(() {
+        final updated = widget.subcategoriesByCategory[categoryId];
+        if (updated != null) _localSubcategories[categoryId] = updated;
+        _loadingSubcategories = false;
+      });
+    }
+  }
+
+  List<SubCategory> get _currentSubcategories {
+    final categoryId = widget.categoryNameToId[_highlightedCategory];
+    if (categoryId == null) return [];
+    return _localSubcategories[categoryId] ?? [];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final sidebarWidth = (screenWidth * 0.88).clamp(0.0, 400.0);
+
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          width: sidebarWidth,
+          height: double.infinity,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(20),
+              bottomLeft: Radius.circular(20),
+            ),
+          ),
+          child: SafeArea(
+            child: Column(
+              children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(20),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.category_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Shop by Category',
+                        style: AppTextStyles.titleMedium.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Spacer(),
+                      GestureDetector(
+                        onTap: () => Navigator.of(context).pop(),
+                        child: const Icon(
+                          Icons.close,
+                          color: Colors.white,
+                          size: 22,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Body: left category rail + right subcategory grid
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // ── Left rail: category list ──────────────────────────
+                      Container(
+                        width: 110,
+                        color: const Color(0xFFF5F5F5),
+                        child: ListView.builder(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          itemCount: widget.categories.length,
+                          itemBuilder: (context, index) {
+                            final category = widget.categories[index];
+                            final isHighlighted =
+                                category == _highlightedCategory;
+                            final isSelected = category == 'All'
+                                ? _localSelectedCategories.isEmpty
+                                : _localSelectedCategories.contains(category);
+                            final imageUrl = category == 'All'
+                                ? null
+                                : widget.categoryNameToImage[category];
+
+                            return GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _highlightedCategory = category;
+                                  _loadingSubcategories = false;
+                                });
+                                if (category == 'All') {
+                                  // Tapping "All" in the rail just highlights it;
+                                  // clearing is done via the footer button.
+                                } else {
+                                  _ensureSubcategoriesLoaded(category);
+                                }
+                              },
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 160),
+                                color: isHighlighted
+                                    ? Colors.white
+                                    : Colors.transparent,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                  horizontal: 8,
+                                ),
+                                child: Column(
+                                  children: [
+                                    // Image / icon
+                                    Container(
+                                      width: 54,
+                                      height: 54,
+                                      decoration: BoxDecoration(
+                                        color: isHighlighted
+                                            ? AppColors.primary
+                                                  .withValues(alpha: 0.1)
+                                            : AppColors.primary
+                                                  .withValues(alpha: 0.05),
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: isHighlighted
+                                            ? Border.all(
+                                                color: AppColors.primary,
+                                                width: 1.5,
+                                              )
+                                            : null,
+                                      ),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(9),
+                                        child: imageUrl != null &&
+                                                imageUrl.isNotEmpty
+                                            ? CachedNetworkImage(
+                                                imageUrl: imageUrl,
+                                                fit: BoxFit.cover,
+                                                errorWidget: (c, u, e) =>
+                                                    Center(
+                                                  child: Icon(
+                                                    Icons.category,
+                                                    color: AppColors.primary
+                                                        .withValues(alpha: 0.5),
+                                                    size: 22,
+                                                  ),
+                                                ),
+                                              )
+                                            : Center(
+                                                child: Icon(
+                                                  category == 'All'
+                                                      ? Icons.grid_view_rounded
+                                                      : Icons.category,
+                                                  color: isHighlighted
+                                                      ? AppColors.primary
+                                                      : AppColors.primary
+                                                            .withValues(
+                                                              alpha: 0.5,
+                                                            ),
+                                                  size: 24,
+                                                ),
+                                              ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      category,
+                                      style: AppTextStyles.bodySmall.copyWith(
+                                        fontSize: 10,
+                                        fontWeight: isHighlighted || isSelected
+                                            ? FontWeight.bold
+                                            : FontWeight.w500,
+                                        color: isHighlighted
+                                            ? AppColors.primary
+                                            : AppColors.onSurface,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    // Active selection dot
+                                    if (isSelected)
+                                      Container(
+                                        margin: const EdgeInsets.only(top: 3),
+                                        width: 5,
+                                        height: 5,
+                                        decoration: BoxDecoration(
+                                          color: AppColors.primary,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+
+                      // ── Vertical divider ──────────────────────────────────
+                      Container(width: 1, color: const Color(0xFFE0E0E0)),
+
+                      // ── Right panel: subcategories ────────────────────────
+                      Expanded(
+                        child: _highlightedCategory == 'All'
+                            ? _buildAllCategoriesQuickPick()
+                            : _buildSubcategoryGrid(),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Footer row: "Show All" + "Apply" button
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border(
+                      top: BorderSide(
+                        color: Colors.grey.withValues(alpha: 0.15),
+                      ),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      // Clear / Show All
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () {
+                            widget.onCategorySelected('All');
+                          },
+                          style: TextButton.styleFrom(
+                            backgroundColor: AppColors.primary
+                                .withValues(alpha: 0.08),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                          child: Text(
+                            'Show All',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      // Apply selection
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            // Commit every toggled category/subcategory to parent
+                            widget.onApplySelection(
+                              _localSelectedCategories,
+                              _localSelectedSubCategories,
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                          child: Text(
+                            'Apply',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAllCategoriesQuickPick() {
+    return GridView.builder(
+      padding: const EdgeInsets.all(12),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 0.95,
+      ),
+      itemCount: widget.categories.length - 1, // exclude 'All'
+      itemBuilder: (context, index) {
+        final category = widget.categories[index + 1];
+        final isSelected = _localSelectedCategories.contains(category);
+        final imageUrl = widget.categoryNameToImage[category];
+
+        return GestureDetector(
+          onTap: () {
+            setState(() {
+              if (isSelected) {
+                _localSelectedCategories.remove(category);
+                // Also deselect any subcategories belonging to this category
+                final categoryId = widget.categoryNameToId[category];
+                if (categoryId != null &&
+                    _localSubcategories.containsKey(categoryId)) {
+                  final subIds = _localSubcategories[categoryId]!
+                      .map((s) => s.subCategoryId)
+                      .toList();
+                  _localSelectedSubCategories
+                      .removeWhere((id) => subIds.contains(id));
+                }
+              } else {
+                _localSelectedCategories.add(category);
+              }
+              // Also switch the rail highlight to this category
+              _highlightedCategory = category;
+            });
+            _ensureSubcategoriesLoaded(category);
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? AppColors.primary.withValues(alpha: 0.08)
+                  : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isSelected
+                    ? AppColors.primary
+                    : Colors.grey.withValues(alpha: 0.2),
+                width: isSelected ? 1.5 : 1,
+              ),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: imageUrl != null && imageUrl.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: imageUrl,
+                            fit: BoxFit.cover,
+                            errorWidget: (c, u, e) => Icon(
+                              Icons.category,
+                              color: AppColors.primary.withValues(alpha: 0.5),
+                              size: 24,
+                            ),
+                          )
+                        : Icon(
+                            Icons.category,
+                            color: AppColors.primary.withValues(alpha: 0.5),
+                            size: 24,
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  category,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    fontSize: 11,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                    color: isSelected ? AppColors.primary : AppColors.onSurface,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSubcategoryGrid() {
+    if (_loadingSubcategories) {
+      return const Center(
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: AppColors.primary,
+        ),
+      );
+    }
+
+    final subs = _currentSubcategories;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Category header – tap toggles this category's selection
+        GestureDetector(
+          onTap: () {
+            setState(() {
+              if (_localSelectedCategories.contains(_highlightedCategory)) {
+                _localSelectedCategories.remove(_highlightedCategory);
+                // Deselect subcategories of this category
+                final categoryId =
+                    widget.categoryNameToId[_highlightedCategory];
+                if (categoryId != null &&
+                    _localSubcategories.containsKey(categoryId)) {
+                  final subIds = _localSubcategories[categoryId]!
+                      .map((s) => s.subCategoryId)
+                      .toList();
+                  _localSelectedSubCategories
+                      .removeWhere((id) => subIds.contains(id));
+                }
+              } else {
+                _localSelectedCategories.add(_highlightedCategory);
+              }
+            });
+          },
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            color: _localSelectedCategories.contains(_highlightedCategory)
+                ? AppColors.primary.withValues(alpha: 0.08)
+                : AppColors.primary.withValues(alpha: 0.05),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _highlightedCategory,
+                    style: AppTextStyles.titleSmall.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+                if (_localSelectedCategories.contains(_highlightedCategory))
+                  const Icon(
+                    Icons.check_circle,
+                    color: AppColors.primary,
+                    size: 16,
+                  )
+                else
+                  Text(
+                    'Select all ›',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 11,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        if (subs.isEmpty)
+          Expanded(
+            child: Center(
+              child: Text(
+                'No subcategories',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.onSurface.withValues(alpha: 0.4),
+                ),
+              ),
+            ),
+          )
+        else
+          Expanded(
+            child: GridView.builder(
+              padding: const EdgeInsets.all(10),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: 1.1,
+              ),
+              itemCount: subs.length,
+              itemBuilder: (context, index) {
+                final sub = subs[index];
+                final isSelected = _localSelectedSubCategories
+                    .contains(sub.subCategoryId);
+
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      if (isSelected) {
+                        _localSelectedSubCategories.remove(sub.subCategoryId);
+                      } else {
+                        // Auto-select the parent category if not yet selected
+                        if (!_localSelectedCategories
+                            .contains(_highlightedCategory)) {
+                          _localSelectedCategories.add(_highlightedCategory);
+                        }
+                        _localSelectedSubCategories.add(sub.subCategoryId);
+                      }
+                    });
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? AppColors.primary.withValues(alpha: 0.08)
+                          : Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isSelected
+                            ? AppColors.primary
+                            : Colors.grey.withValues(alpha: 0.2),
+                        width: isSelected ? 1.5 : 1,
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? AppColors.primary.withValues(alpha: 0.12)
+                                : AppColors.primary.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(
+                            Icons.label_outline_rounded,
+                            color: isSelected
+                                ? AppColors.primary
+                                : AppColors.primary.withValues(alpha: 0.5),
+                            size: 22,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Text(
+                            sub.subCategoryName,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              fontSize: 10,
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.w500,
+                              color: isSelected
+                                  ? AppColors.primary
+                                  : AppColors.onSurface,
+                            ),
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
+    );
   }
 }
