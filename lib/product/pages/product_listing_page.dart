@@ -25,6 +25,7 @@ import 'product_detail_page.dart';
 import '../../login_page.dart';
 import 'package:flutter/services.dart';
 import '../../profile/pages/profile_page.dart';
+import 'package:dentpal/core/widgets/web_footer.dart';
 
 // Custom cache manager with web compatibility
 class ProductImageCacheManager {
@@ -2040,6 +2041,11 @@ class _ProductListingPageState extends State<ProductListingPage>
                     ),
                     sliver: _buildModernProductGrid(),
                   ),
+
+            // Web Footer
+            const SliverToBoxAdapter(
+              child: WebFooter(),
+            ),
           ],
         ),
       ),

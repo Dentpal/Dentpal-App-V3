@@ -20,6 +20,7 @@ import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/utils/navigation_utils.dart';
 import 'package:dentpal/services/chat_service.dart';
 import 'package:dentpal/profile/pages/chat_detail_page.dart';
+import 'package:dentpal/core/widgets/web_footer.dart';
 
 class ProductDetailPage extends StatefulWidget {
   final String productId;
@@ -1284,6 +1285,11 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 ),
               ),
             ),
+
+            // Web Footer (only shows on web)
+            const SliverToBoxAdapter(
+              child: WebFooter(),
+            ),
           ],
         ), // End CustomScrollView
         ), // End RefreshIndicator
@@ -1440,6 +1446,10 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                       //   width: double.infinity,
                       //   child: _buildReviewsSection(),
                       // ),
+
+                      // Web Footer
+                      const SizedBox(height: 40),
+                      const WebFooter(),
                     ],
                   ),
                 ),

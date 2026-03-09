@@ -9,6 +9,7 @@ import '../widgets/product_card.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/utils/navigation_utils.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:dentpal/core/widgets/web_footer.dart';
 
 class StorePage extends StatefulWidget {
   final String sellerId;
@@ -371,6 +372,7 @@ class _StorePageState extends State<StorePage>
                       _buildStoreInfo(),
                       _buildTabBar(),
                       _buildTabContent(),
+                      const WebFooter(),
                     ],
                   ),
                 );
