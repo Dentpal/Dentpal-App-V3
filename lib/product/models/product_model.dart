@@ -276,11 +276,13 @@ class SubCategory {
   final String subCategoryId;
   final String subCategoryName;
   final String categoryId;
+  final String? imageURL;
 
   SubCategory({
     required this.subCategoryId,
     required this.subCategoryName,
     required this.categoryId,
+    this.imageURL,
   });
 
   factory SubCategory.fromFirestore(DocumentSnapshot doc) {
@@ -290,6 +292,7 @@ class SubCategory {
       subCategoryId: doc.id,
       subCategoryName: data['subCategoryName'] ?? '',
       categoryId: data['categoryId'] ?? '',  // Changed from 'categoryID' to 'categoryId'
+      imageURL: data['imageURL'] as String?,
     );
   }
 
@@ -297,6 +300,7 @@ class SubCategory {
     return {
       'subCategoryName': subCategoryName,
       'categoryId': categoryId,  // Changed from 'categoryID' to 'categoryId'
+      if (imageURL != null) 'imageURL': imageURL,
     };
   }
 }

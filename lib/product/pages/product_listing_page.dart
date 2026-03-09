@@ -678,6 +678,37 @@ class _ProductListingPageState extends State<ProductListingPage>
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          // Subcategory image or icon
+                          if (subcategory.imageURL != null &&
+                              subcategory.imageURL!.isNotEmpty) ...[
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: Image.network(
+                                subcategory.imageURL!,
+                                width: 20,
+                                height: 20,
+                                fit: BoxFit.cover,
+                                errorBuilder: (c, e, s) => Icon(
+                                  Icons.category_rounded,
+                                  size: 14,
+                                  color: isSelected
+                                      ? AppColors.onSecondary
+                                      : AppColors.onSurface.withValues(
+                                          alpha: 0.6),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                          ] else ...[
+                            Icon(
+                              Icons.category_rounded,
+                              size: 14,
+                              color: isSelected
+                                  ? AppColors.onSecondary
+                                  : AppColors.onSurface.withValues(alpha: 0.6),
+                            ),
+                            const SizedBox(width: 6),
+                          ],
                           Text(
                             subcategory.subCategoryName,
                             style: AppTextStyles.bodySmall.copyWith(
@@ -3145,12 +3176,30 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                                 : AppColors.primary.withValues(alpha: 0.06),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: Icon(
-                            Icons.label_outline_rounded,
-                            color: isSelected
-                                ? AppColors.primary
-                                : AppColors.primary.withValues(alpha: 0.5),
-                            size: 22,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: (sub.imageURL != null &&
+                                    sub.imageURL!.isNotEmpty)
+                                ? Image.network(
+                                    sub.imageURL!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (c, e, s) => Icon(
+                                      Icons.category_rounded,
+                                      color: isSelected
+                                          ? AppColors.primary
+                                          : AppColors.primary
+                                              .withValues(alpha: 0.5),
+                                      size: 22,
+                                    ),
+                                  )
+                                : Icon(
+                                    Icons.category_rounded,
+                                    color: isSelected
+                                        ? AppColors.primary
+                                        : AppColors.primary
+                                            .withValues(alpha: 0.5),
+                                    size: 22,
+                                  ),
                           ),
                         ),
                         const SizedBox(height: 6),

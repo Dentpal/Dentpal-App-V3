@@ -1927,12 +1927,29 @@ class _SearchCategorySidebarSheetState
                                 : AppColors.primary.withValues(alpha: 0.06),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: Icon(
-                            Icons.label_outline_rounded,
-                            color: isSelected
-                                ? AppColors.primary
-                                : AppColors.primary.withValues(alpha: 0.5),
-                            size: 22,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: (sub.imageURL != null && sub.imageURL!.isNotEmpty)
+                                ? Image.network(
+                                    sub.imageURL!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (c, e, s) => Icon(
+                                      Icons.category_rounded,
+                                      color: isSelected
+                                          ? AppColors.primary
+                                          : AppColors.primary
+                                              .withValues(alpha: 0.5),
+                                      size: 22,
+                                    ),
+                                  )
+                                : Icon(
+                                    Icons.category_rounded,
+                                    color: isSelected
+                                        ? AppColors.primary
+                                        : AppColors.primary
+                                            .withValues(alpha: 0.5),
+                                    size: 22,
+                                  ),
                           ),
                         ),
                         const SizedBox(height: 6),
