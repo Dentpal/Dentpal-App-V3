@@ -9,6 +9,7 @@ import 'package:dentpal/home_page.dart';
 import 'package:dentpal/core/app_theme/index.dart';
 import 'package:dentpal/utils/credential_manager.dart';
 import 'package:dentpal/product/services/user_service.dart';
+import 'package:dentpal/core/services/sub_account_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:ui' as ui;
 
@@ -66,6 +67,19 @@ class _LoginPageState extends State<LoginPage> {
     } else {
       // Clear saved credentials when remember me is unchecked
       await CredentialManager.clearCredentials();
+    }
+  }
+
+  /// Quick check if a UID belongs to a sub account by checking SubAccountLookup.
+  Future<bool> _isSubAccountEmail(String uid) async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('SubAccountLookup')
+          .doc(uid)
+          .get();
+      return doc.exists;
+    } catch (e) {
+      return false;
     }
   }
 
@@ -179,8 +193,9 @@ class _LoginPageState extends State<LoginPage> {
         );
       }
 
-      // Check if email is verified
-      if (userCredential.user != null && !userCredential.user!.emailVerified) {
+      // Check if email is verified (skip for sub accounts — they use password reset flow)
+      final isSubAccount = await _isSubAccountEmail(userCredential.user!.uid);
+      if (!isSubAccount && userCredential.user != null && !userCredential.user!.emailVerified) {
         // Sign out the user if email is not verified
         await FirebaseAuth.instance.signOut();
 
@@ -257,10 +272,38 @@ class _LoginPageState extends State<LoginPage> {
             AppLogger.d('Failed to clear cache: $e');
           }
           
-          // Navigate to the home page after successful login
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => const HomePage()),
-          );
+          // Resolve sub account status before navigating to HomePage.
+          try {
+            final subAccountResult =
+                await SubAccountService.lookupSubAccount(uid);
+            if (subAccountResult != null) {
+              // This is a sub account - set up the session
+              SubAccountSessionManager.setSubAccountSession(
+                subAccount: subAccountResult.subAccount,
+                parentUserId: subAccountResult.parentUserId,
+              );
+              AppLogger.d(
+                'Logged in as sub account: ${subAccountResult.subAccount.email} '
+                '(parent: ${subAccountResult.parentUserId})',
+              );
+            } else {
+              // This is a main account
+              SubAccountSessionManager.setMainAccountSession();
+              AppLogger.d('Logged in as main account: $uid');
+            }
+          } catch (e) {
+            // If sub account lookup fails, default to main account behavior
+            SubAccountSessionManager.setMainAccountSession();
+            AppLogger.d('Sub account lookup failed, defaulting to main: $e');
+          }
+
+          // Navigate to HomePage (LoginPage may be pushed on top of the
+          // navigation stack, so we must navigate explicitly).
+          if (mounted) {
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(builder: (context) => const HomePage()),
+            );
+          }
         } else {
           // If uid is null, force sign out and ask user to try again
           await FirebaseAuth.instance.signOut();

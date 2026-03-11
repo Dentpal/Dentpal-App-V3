@@ -10,6 +10,7 @@ import '../widgets/address_map_widget.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import 'package:dentpal/utils/app_logger.dart';
+import '../../core/services/sub_account_service.dart';
 
 class ShippingAddressesPage extends StatefulWidget {
   const ShippingAddressesPage({super.key});
@@ -592,9 +593,10 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
 
       // If displayName is empty, try to get from Firestore User collection
       if (userName == null || userName.trim().isEmpty) {
+        final effectiveUid = SubAccountSessionManager.getEffectiveUserId();
         final userDoc = await FirebaseFirestore.instance
             .collection('User') // Changed from 'users' to 'User' (capital U)
-            .doc(user.uid)
+            .doc(effectiveUid)
             .get();
 
         if (userDoc.exists) {

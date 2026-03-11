@@ -5,10 +5,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb; // Added for web detection
 import '../../../core/app_theme/app_colors.dart';
 import '../../../core/app_theme/app_text_styles.dart';
+import '../../../core/services/sub_account_service.dart';
 import 'change_mobile_page.dart';
 import 'change_password_page.dart';
 import 'edit_profile_page.dart';
 import 'data_privacy_page.dart';
+import 'manage_sub_accounts_page.dart';
 import 'terms_conditions_page.dart';
 import 'privacy_policy_page.dart';
 
@@ -31,9 +33,10 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
+        final effectiveUid = SubAccountSessionManager.getEffectiveUserId();
         final userDoc = await FirebaseFirestore.instance
             .collection('User')
-            .doc(user.uid)
+            .doc(effectiveUid)
             .get();
 
         if (userDoc.exists) {
@@ -92,6 +95,10 @@ class _SettingsPageState extends State<SettingsPage> {
                 const SizedBox(height: 8),
 
                 // Account Settings Section
+                // For sub accounts: only show Manage Sub Accounts (if permitted)
+                // For main accounts: show all options
+                if (!SubAccountSessionManager.isSubAccount ||
+                    SubAccountSessionManager.canManageSubAccounts) ...[
                 _buildSectionHeader('Account Settings'),
                 const SizedBox(height: 16),
                 Container(
@@ -108,6 +115,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   child: Column(
                     children: [
+                      if (!SubAccountSessionManager.isSubAccount) ...[
                       _buildSettingsOption(
                         context,
                         'Change Mobile Number',
@@ -163,11 +171,31 @@ class _SettingsPageState extends State<SettingsPage> {
                           },
                         ),
                       ],
+                      ],
+                      // Show Manage Sub Accounts for main accounts and sub accounts with permission
+                      if (SubAccountSessionManager.canManageSubAccounts) ...[
+                        if (!SubAccountSessionManager.isSubAccount)
+                          _buildDivider(),
+                        _buildSettingsOption(
+                          context,
+                          'Manage Sub Accounts',
+                          Icons.people_outline,
+                          () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const ManageSubAccountsPage(),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
                     ],
                   ),
                 ),
 
                 const SizedBox(height: 32),
+                ],
 
                 /* Business Settings Section (for non-sellers)
                 if (userRole != 'seller') ...[

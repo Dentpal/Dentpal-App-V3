@@ -1,0 +1,113 @@
+{
+  "timestamp": "2026-03-11T05:23:04.205Z",
+  "project_id": "dentpal-161e5",
+  "data": {
+    "user": {
+      "id": "cixRRzmjf3d68C8mYRldrxAYJHU2",
+      "data": {
+        "email": "rain.rrnewtech@gmail.com",
+        "firstName": "Rain Angelo",
+        "lastName": "Morcozo",
+        "fullName": "Rain Angelo J. Morcozo",
+        "middleName": "Juayong",
+        "gender": "Male",
+        "role": "seller",
+        "createdAt": {
+          "_seconds": 1763088426,
+          "_nanoseconds": 93000000
+        },
+        "updatedAt": {
+          "_seconds": 1763088426,
+          "_nanoseconds": 93000000
+        }
+      },
+      "subcollections": {
+        "Address": [
+          {
+            "id": "ZQW8hssSep750HMWnWZx",
+            "data": {
+              "state": "Metro Manila",
+              "addressLine1": "5A Sunrise Street, Corner Mola, Brgy. La Paz",
+              "createdAt": "2025-10-01T09:32:59.793",
+              "fullName": "Rain Angelo Morcozo",
+              "postalCode": "1704",
+              "addressLine2": null,
+              "country": "Philippines",
+              "phoneNumber": "+639226537982",
+              "city": "Makati",
+              "isDefault": true,
+              "notes": "Corner Street",
+              "latitude": 14.56987566168818,
+              "id": "ZQW8hssSep750HMWnWZx",
+              "longitude": 121.00853091102668,
+              "updatedAt": "2025-10-01T09:54:59.640"
+            }
+          }
+        ],
+        "Cart": [
+          {
+            "id": "6zg0fV0bfNcxS4zpsw0S",
+            "data": {
+              "productId": "8wr1KvOXrgzTm7rElATj",
+              "quantity": 1,
+              "variationId": "lzyethpwlnss3ccFWE0J",
+              "addedAt": {
+                "_seconds": 1763449111,
+                "_nanoseconds": 910000000
+              },
+              "isSelected": false
+            }
+          },
+          {
+            "id": "V2MqggFfdXmkQKBk85TJ",
+            "data": {
+              "productId": "gIMqMLEASqMUKxbJ5AJ7",
+              "quantity": 1,
+              "variationId": "KQUyWOURpzi3vTZiUxqT",
+              "addedAt": {
+                "_seconds": 1763367973,
+                "_nanoseconds": 157000000
+              },
+              "isSelected": false
+            }
+          },
+          {
+            "id": "VjJU04AVeOnUj85ViINk",
+            "data": {
+              "productId": "0lYWYwDNESyN0lQva6HS",
+              "quantity": 4,
+              "isSelected": true,
+              "variationId": "HTVQiOXSZeVLSddgCP9v",
+              "addedAt": {
+                "_seconds": 1764571647,
+                "_nanoseconds": 433000000
+              }
+            }
+          },
+          {
+            "id": "b5bhHWveWPDcdnYWw9aX",
+            "data": {
+              "productId": "C78yAi7dGWrT0dvHoEWP",
+              "quantity": 1,
+              "variationId": "Qj3XlJUFe6Ggs4vaUpKg",
+              "addedAt": {
+                "_seconds": 1763366887,
+                "_nanoseconds": 789000000
+              },
+              "isSelected": false
+            }
+          }
+        ],
+        "SubAccounts": [
+          {
+            "id": "[insert id here]",
+            "email": "[insert email here]",
+            "name": "[insert name here]",
+            "dateCreated": "[insert date here]",
+            "permissions": "[insert permissions here]"
+          }
+        ]
+      }
+    }
+  }
+}

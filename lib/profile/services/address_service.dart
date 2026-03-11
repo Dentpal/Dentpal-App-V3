@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../core/services/sub_account_service.dart';
 import '../models/shipping_address.dart';
 
 class AddressService {
@@ -12,7 +13,8 @@ class AddressService {
     if (userId == null) {
       throw Exception('User not authenticated');
     }
-    return _firestore.collection('User').doc(userId).collection('Address');
+    final effectiveUid = SubAccountSessionManager.getEffectiveUserId();
+    return _firestore.collection('User').doc(effectiveUid).collection('Address');
   }
 
   // Create a new address

@@ -12,6 +12,7 @@ import 'package:dentpal/profile/pages/profile_page.dart';
 import 'package:dentpal/login_page.dart';
 import 'package:dentpal/product/services/user_service.dart';
 import 'package:dentpal/product/services/cart_service.dart';
+import 'package:dentpal/core/services/sub_account_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'core/app_theme/app_colors.dart';
 import 'core/app_theme/app_text_styles.dart';
@@ -115,6 +116,31 @@ class _HomePageState extends State<HomePage> {
           _isLoadingSellerStatus = false;
         });
         return;
+      }
+
+      // Detect sub account if not already identified.
+      // This handles the case where AuthWrapper navigates directly to HomePage
+      // (e.g. on app restart with a persisted sub account session).
+      if (!SubAccountSessionManager.isSubAccount) {
+        try {
+          final subAccountResult =
+              await SubAccountService.lookupSubAccount(user.uid);
+          if (subAccountResult != null) {
+            SubAccountSessionManager.setSubAccountSession(
+              subAccount: subAccountResult.subAccount,
+              parentUserId: subAccountResult.parentUserId,
+            );
+            AppLogger.d(
+              'HomePage: Detected sub account: ${subAccountResult.subAccount.email} '
+              '(parent: ${subAccountResult.parentUserId})',
+            );
+          } else {
+            SubAccountSessionManager.setMainAccountSession();
+          }
+        } catch (e) {
+          AppLogger.d('HomePage: Sub account lookup failed: $e');
+          // Don't override if already set (e.g. from login page)
+        }
       }
 
       // Force refresh to ensure we get fresh data after login
