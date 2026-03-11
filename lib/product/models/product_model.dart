@@ -259,7 +259,7 @@ class Category {
       categoryId: doc.id,
       categoryName: data['categoryName'] ?? '',
       clickCounter: data['clickCounter'] ?? 0,
-      categoryImageUrl: data['categoryImage'] as String?,
+      categoryImageUrl: data['imageURL'] as String?,
     );
   }
 
@@ -267,7 +267,7 @@ class Category {
     return {
       'categoryName': categoryName,
       'clickCounter': clickCounter,
-      if (categoryImageUrl != null) 'categoryImage': categoryImageUrl,
+      if (categoryImageUrl != null) 'imageURL': categoryImageUrl,
     };
   }
 }

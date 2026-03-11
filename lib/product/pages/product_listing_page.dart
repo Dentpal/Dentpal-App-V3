@@ -1875,15 +1875,18 @@ class _ProductListingPageState extends State<ProductListingPage>
                                                 width: 64,
                                                 height: 64,
                                                 decoration: BoxDecoration(
-                                                  color: isSelected
-                                                      ? Colors.white
-                                                            .withValues(
-                                                              alpha: 0.2,
-                                                            )
-                                                      : AppColors.primary
-                                                            .withValues(
-                                                              alpha: 0.08,
-                                                            ),
+                                                  color: imageUrl != null &&
+                                                          imageUrl.isNotEmpty
+                                                      ? Colors.transparent
+                                                      : isSelected
+                                                          ? Colors.white
+                                                                .withValues(
+                                                                  alpha: 0.2,
+                                                                )
+                                                          : AppColors.primary
+                                                                .withValues(
+                                                                  alpha: 0.08,
+                                                                ),
                                                   borderRadius:
                                                       BorderRadius.circular(8),
                                                 ),
@@ -2760,11 +2763,14 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                                       width: 54,
                                       height: 54,
                                       decoration: BoxDecoration(
-                                        color: isHighlighted
-                                            ? AppColors.primary
-                                                  .withValues(alpha: 0.1)
-                                            : AppColors.primary
-                                                  .withValues(alpha: 0.05),
+                                        color: imageUrl != null &&
+                                                imageUrl.isNotEmpty
+                                            ? Colors.transparent
+                                            : isHighlighted
+                                                ? AppColors.primary
+                                                      .withValues(alpha: 0.1)
+                                                : AppColors.primary
+                                                      .withValues(alpha: 0.05),
                                         borderRadius: BorderRadius.circular(10),
                                         border: isHighlighted
                                             ? Border.all(
@@ -2993,7 +2999,9 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                   width: 56,
                   height: 56,
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.06),
+                    color: imageUrl != null && imageUrl.isNotEmpty
+                        ? Colors.transparent
+                        : AppColors.primary.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: ClipRRect(
@@ -3171,9 +3179,12 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                           width: 44,
                           height: 44,
                           decoration: BoxDecoration(
-                            color: isSelected
-                                ? AppColors.primary.withValues(alpha: 0.12)
-                                : AppColors.primary.withValues(alpha: 0.06),
+                            color: (sub.imageURL != null &&
+                                    sub.imageURL!.isNotEmpty)
+                                ? Colors.transparent
+                                : isSelected
+                                    ? AppColors.primary.withValues(alpha: 0.12)
+                                    : AppColors.primary.withValues(alpha: 0.06),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: ClipRRect(

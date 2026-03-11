@@ -1617,9 +1617,11 @@ class _SearchCategorySidebarSheetState
               width: 54,
               height: 54,
               decoration: BoxDecoration(
-                color: isHighlighted
-                    ? AppColors.primary.withValues(alpha: 0.1)
-                    : AppColors.primary.withValues(alpha: 0.05),
+                color: imageUrl != null && imageUrl.isNotEmpty
+                    ? Colors.transparent
+                    : isHighlighted
+                        ? AppColors.primary.withValues(alpha: 0.1)
+                        : AppColors.primary.withValues(alpha: 0.05),
                 borderRadius: BorderRadius.circular(10),
                 border: isHighlighted
                     ? Border.all(color: AppColors.primary, width: 1.5)
@@ -1737,7 +1739,9 @@ class _SearchCategorySidebarSheetState
                   width: 56,
                   height: 56,
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.06),
+                    color: imageUrl != null && imageUrl.isNotEmpty
+                        ? Colors.transparent
+                        : AppColors.primary.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: ClipRRect(
@@ -1922,9 +1926,12 @@ class _SearchCategorySidebarSheetState
                           width: 44,
                           height: 44,
                           decoration: BoxDecoration(
-                            color: isSelected
-                                ? AppColors.primary.withValues(alpha: 0.12)
-                                : AppColors.primary.withValues(alpha: 0.06),
+                            color: (sub.imageURL != null &&
+                                    sub.imageURL!.isNotEmpty)
+                                ? Colors.transparent
+                                : isSelected
+                                    ? AppColors.primary.withValues(alpha: 0.12)
+                                    : AppColors.primary.withValues(alpha: 0.06),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: ClipRRect(
