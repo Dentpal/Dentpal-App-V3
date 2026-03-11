@@ -241,6 +241,12 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
             ? vendor['company'] as Map<String, dynamic>
             : const {};
 
+        // Fetch profileImage URL from vendor.profileImage
+        String profileImageURL = '';
+        if (vendor['profileImage'] is Map && vendor['profileImage']['url'] is String) {
+          profileImageURL = vendor['profileImage']['url'] as String;
+        }
+
         // Store name from vendor.company.storeName, fallback to previous keys or default
         final String storeName =
             (company['storeName'] as String?) ??
@@ -271,7 +277,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           'contactEmail': data['contactEmail'] ?? '',
           'contactNumber': data['contactNumber'] ?? '',
           'isActive': data['isActive'] ?? true,
-          'profileImageURL': data['profileImageURL'] ?? '',
+          'profileImageURL': profileImageURL,
         };
       } else {
         // Default data if seller not found
@@ -1892,6 +1898,13 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                   'address': 'Loading...',
                   'isActive': true,
                 };
+                final profileImageURL = sellerData['profileImageURL'] as String? ?? '';
+                // Add cache-busting parameter for web
+                final profileImageURLWithCache = profileImageURL.isNotEmpty
+                    ? (profileImageURL.contains('?') 
+                        ? '$profileImageURL&v=${DateTime.now().millisecondsSinceEpoch}'
+                        : '$profileImageURL?v=${DateTime.now().millisecondsSinceEpoch}')
+                    : '';
                 
                 return Container(
                   padding: const EdgeInsets.all(16),
@@ -1905,15 +1918,35 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                   child: Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.all(8),
+                        width: 48,
+                        height: 48,
                         decoration: BoxDecoration(
-                          color: AppColors.primary,
+                          color: AppColors.primary.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: AppColors.primary.withValues(alpha: 0.2),
+                            width: 2,
+                          ),
                         ),
-                        child: const Icon(
-                          Icons.store,
-                          color: AppColors.onPrimary,
-                          size: 20,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: profileImageURL.isNotEmpty
+                              ? CachedNetworkImage(
+                                  imageUrl: profileImageURLWithCache,
+                                  fit: BoxFit.cover,
+                                  cacheKey: profileImageURL,
+                                  placeholder: (context, url) => const Center(
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        AppColors.primary,
+                                      ),
+                                    ),
+                                  ),
+                                  errorWidget: (context, url, error) =>
+                                      Icon(Icons.store, size: 24, color: AppColors.primary),
+                                )
+                              : Icon(Icons.store, size: 24, color: AppColors.primary),
                         ),
                       ),
                       const SizedBox(width: 12),

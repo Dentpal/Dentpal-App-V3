@@ -139,14 +139,18 @@ class _StorePageState extends State<StorePage>
             ? vendor['company'] as Map<String, dynamic>
             : const {};
 
-        // Fetch coverImage and profileImage URLs from Seller document root
+        // Fetch coverImage and profileImage URLs from vendor nested object
         String coverImageURL = '';
         String profileImageURL = '';
-        if (data['coverImage'] is Map && data['coverImage']['url'] is String) {
-          coverImageURL = data['coverImage']['url'] as String;
+        
+        // Get coverImage from vendor.coverImage
+        if (vendor['coverImage'] is Map && vendor['coverImage']['url'] is String) {
+          coverImageURL = vendor['coverImage']['url'] as String;
         }
-        if (data['profileImage'] is Map && data['profileImage']['url'] is String) {
-          profileImageURL = data['profileImage']['url'] as String;
+        
+        // Get profileImage from vendor.profileImage
+        if (vendor['profileImage'] is Map && vendor['profileImage']['url'] is String) {
+          profileImageURL = vendor['profileImage']['url'] as String;
         }
 
         // Store name from vendor.company.storeName, fallback to previous keys or default
@@ -395,109 +399,83 @@ class _StorePageState extends State<StorePage>
 
   Widget _buildAppBarHeader() {
     final coverImageURL = _storeData['coverImageURL'] as String? ?? '';
-    final screenHeight = MediaQuery.of(context).size.height;
-    final screenWidth = MediaQuery.of(context).size.width;
-    // Responsive header height: at least 280, scales with screen size
-    final double headerHeight = (screenHeight * 0.35).clamp(280.0, 400.0);
-    // Responsive store icon size
-    final double iconSize = screenWidth < 380 ? 72 : (screenWidth < 600 ? 88 : 100);
+    // Add cache-busting parameter for web
+    final coverImageURLWithCache = coverImageURL.isNotEmpty
+        ? (coverImageURL.contains('?') 
+            ? '$coverImageURL&v=${DateTime.now().millisecondsSinceEpoch}'
+            : '$coverImageURL?v=${DateTime.now().millisecondsSinceEpoch}')
+        : '';
 
     return Container(
-      height: headerHeight,
-      width: double.infinity,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Cover image or fallback gradient
-          if (coverImageURL.isNotEmpty)
-            CachedNetworkImage(
-              imageUrl: coverImageURL,
-              fit: BoxFit.cover,
-              placeholder: (context, url) => Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
-                  ),
-                ),
-              ),
-              errorWidget: (context, url, error) => Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
-                  ),
-                ),
-              ),
-            )
-          else
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
-                ),
-              ),
-            ),
-          // Content
-          SafeArea(
-            top: !kIsWeb,
-            child: Column(
-              children: [
-                // Back button row
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Row(
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.9),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: IconButton(
-                          icon: const Icon(
-                            Icons.arrow_back,
-                            color: AppColors.primary,
-                          ),
-                          onPressed: () => Navigator.pop(context),
-                        ),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: AspectRatio(
+          aspectRatio: 8 / 3, // Same as product listing page banner (800x300)
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Cover image or fallback gradient
+              if (coverImageURL.isNotEmpty)
+                CachedNetworkImage(
+                  imageUrl: coverImageURLWithCache,
+                  fit: BoxFit.cover,
+                  cacheKey: coverImageURL,
+                  placeholder: (context, url) => Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
                       ),
-                    ],
+                    ),
+                    child: const Center(
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                      ),
+                    ),
                   ),
-                ),
-                // Store info section
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _buildStoreIcon(iconSize),
-                        const SizedBox(height: 14),
-                        Text(
-                          _storeData['shopName'] ?? 'Store Name',
-                          style: AppTextStyles.headlineSmall.copyWith(
-                            color: AppColors.onPrimary,
-                            fontWeight: FontWeight.bold,
-                            fontSize: screenWidth < 380 ? 18 : 20,
-                          ),
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+                  errorWidget: (context, url, error) => Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
+                      ),
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
                     ),
                   ),
                 ),
-                // Bottom spacing to prevent overlap with store info card below
-                const SizedBox(height: 12),
-              ],
-            ),
+              // Back button
+              Positioned(
+                top: 12,
+                left: 12,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: IconButton(
+                    icon: const Icon(
+                      Icons.arrow_back,
+                      color: AppColors.primary,
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -545,6 +523,15 @@ class _StorePageState extends State<StorePage>
   }
 
   Widget _buildStoreInfo() {
+    final profileImageURL = _storeData['profileImageURL'] as String? ?? '';
+    final storeName = _storeData['shopName'] ?? 'Store Name';
+    // Add cache-busting parameter for web
+    final profileImageURLWithCache = profileImageURL.isNotEmpty
+        ? (profileImageURL.contains('?') 
+            ? '$profileImageURL&v=${DateTime.now().millisecondsSinceEpoch}'
+            : '$profileImageURL?v=${DateTime.now().millisecondsSinceEpoch}')
+        : '';
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       padding: const EdgeInsets.all(20),
@@ -559,13 +546,83 @@ class _StorePageState extends State<StorePage>
           ),
         ],
       ),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildInfoRow(
-            Icons.location_on,
-            'Address',
-            _storeData['address'] ?? 'Not available',
+          // Profile Picture
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.2),
+                width: 2,
+              ),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: profileImageURL.isNotEmpty
+                  ? CachedNetworkImage(
+                      imageUrl: profileImageURLWithCache,
+                      fit: BoxFit.cover,
+                      cacheKey: profileImageURL,
+                      placeholder: (context, url) => const Center(
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            AppColors.primary,
+                          ),
+                        ),
+                      ),
+                      errorWidget: (context, url, error) =>
+                          Icon(Icons.store, size: 28, color: AppColors.primary),
+                    )
+                  : Icon(Icons.store, size: 28, color: AppColors.primary),
+            ),
+          ),
+          const SizedBox(width: 16),
+          // Store Name and Address
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Store Name
+                Text(
+                  storeName,
+                  style: AppTextStyles.titleMedium.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.onSurface,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 8),
+                // Address
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.location_on,
+                      size: 16,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        _storeData['address'] ?? 'Not available',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.onSurface.withValues(alpha: 0.7),
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
