@@ -655,18 +655,18 @@ class _ProductListingPageState extends State<ProductListingPage>
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: isSelected ? AppColors.secondary : Colors.white,
+                        color: isSelected ? AppColors.primary : Colors.white,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: isSelected
-                              ? AppColors.secondary
+                              ? AppColors.primary
                               : AppColors.onSurface.withValues(alpha: 0.2),
                           width: 1,
                         ),
                         boxShadow: isSelected
                             ? [
                                 BoxShadow(
-                                  color: AppColors.secondary.withValues(
+                                  color: AppColors.primary.withValues(
                                     alpha: 0.2,
                                   ),
                                   blurRadius: 4,
