@@ -262,11 +262,6 @@ class _ProductSearchPageState extends State<ProductSearchPage> {
     final isMobile = screenWidth < 600;
     if (!isMobile) return; // sidebar only on mobile
 
-    // Pre-load subcategories for all categories
-    for (final category in _categories) {
-      _loadSubcategories(category.categoryId);
-    }
-
     showGeneralDialog(
       context: context,
       barrierDismissible: true,

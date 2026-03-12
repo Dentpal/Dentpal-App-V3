@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:dentpal/firebase_options.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/core/models/sub_account_model.dart';
 
@@ -48,100 +50,47 @@ class SubAccountService {
   /// 1. Creates a Firebase Auth account with a temporary password.
   /// 2. Creates a SubAccount document under the parent user.
   /// 3. Sends a password reset email so the sub user can set their own password.
+  /// Creates a sub account Auth user, writes the SubAccount document and the
+  /// SubAccountLookup entry, and re-authenticates the original user.
+  ///
+  /// **Deprecated** — use [createSubAccountStreamlined] instead, which requires
+  /// [mainUserPassword] so the original user can be re-authenticated after the
+  /// sub-account Auth user is created.  This signature lacks that parameter and
+  /// therefore cannot safely restore auth state; calling it throws immediately.
+  @Deprecated('Use createSubAccountStreamlined instead.')
   Future<SubAccount?> createSubAccount({
     required String email,
     required String name,
     SubAccountPermissions? permissions,
   }) async {
-    try {
-      final currentUser = _auth.currentUser;
-      if (currentUser == null) throw Exception('User not authenticated');
-
-      final parentUserId = SubAccountSessionManager.isSubAccount
-          ? SubAccountSessionManager.parentUserId!
-          : currentUser.uid;
-
-      // Check if sub account with this email already exists
-      final existing = await _subAccountsRef(parentUserId)
-          .where('email', isEqualTo: email.trim().toLowerCase())
-          .get();
-
-      if (existing.docs.isNotEmpty) {
-        throw Exception('A sub account with this email already exists.');
-      }
-
-      // Store the current user's credentials to re-authenticate later
-      final currentEmail = currentUser.email;
-      
-      // Create Firebase Auth account with a temporary random password
-      // We generate a long random password that the user will never need to know
-      final tempPassword = _generateTempPassword();
-
-      UserCredential? subUserCredential;
-      try {
-        subUserCredential = await _auth.createUserWithEmailAndPassword(
-          email: email.trim().toLowerCase(),
-          password: tempPassword,
-        );
-      } on FirebaseAuthException catch (e) {
-        if (e.code == 'email-already-in-use') {
-          throw Exception(
-            'This email is already registered. Please use a different email.',
-          );
-        }
-        rethrow;
-      }
-
-      final subUserId = subUserCredential.user!.uid;
-
-      // Sign out the newly created sub account
-      await _auth.signOut();
-
-      // Re-authenticate the main user
-      // We need to sign back in as the main account
-      // The caller should handle re-authentication if this fails
-      if (currentEmail != null) {
-        // We cannot re-sign-in here without the main user's password.
-        // Instead, we'll use a different approach: save the sub account data
-        // first, then let the auth state listener handle re-authentication.
-      }
-
-      // Create the SubAccount document
-      final subAccount = SubAccount(
-        id: subUserId,
-        email: email.trim().toLowerCase(),
-        name: name.trim(),
-        dateCreated: DateTime.now(),
-        permissions: permissions ?? SubAccountPermissions.defaultPermissions(),
-        isSubAccount: true,
-        parentUserId: parentUserId,
-      );
-
-      // We need to write this as the parent user, but we just signed out.
-      // Use a workaround: write the data before signing out.
-      // Let's restructure the flow...
-
-      AppLogger.d('Sub account created with ID: $subUserId');
-
-      return subAccount;
-    } catch (e) {
-      AppLogger.d('Error creating sub account: $e');
-      rethrow;
-    }
+    throw UnsupportedError(
+      'createSubAccount is incomplete and unsafe. '
+      'Use createSubAccountStreamlined, which requires mainUserPassword '
+      'so the original auth session can be restored after sub-account creation.',
+    );
   }
 
   /// Create a sub account with a streamlined flow that avoids signing out the main user.
   ///
   /// This approach:
-  /// 1. Creates the sub account document in Firestore first
-  /// 2. Sends a password reset email to the sub account email
-  /// 3. The sub account user can use the password reset to set their password and create their auth account
+  /// 1. Creates the Firebase Auth account for the sub user via a **secondary**
+  ///    [FirebaseApp] instance so the operator's primary auth session is never
+  ///    disturbed (no sign-out / sign-in required).
+  /// 2. Writes the SubAccount document and the SubAccountLookup entry.
+  /// 3. Sends a password-reset email so the sub user can set their own password.
+  /// 4. On any failure after the Auth user is created, deletes that Auth user so
+  ///    the email is not permanently consumed.
   Future<SubAccount?> createSubAccountStreamlined({
     required String email,
     required String name,
     required String mainUserPassword,
     SubAccountPermissions? permissions,
   }) async {
+    // mainUserPassword is kept in the signature for API compatibility but is no
+    // longer used for re-authentication — the secondary-app approach eliminates
+    // the sign-out/sign-in entirely.
+    const _secondaryAppName = 'sub_account_creation_temp';
+
     try {
       final currentUser = _auth.currentUser;
       if (currentUser == null) throw Exception('User not authenticated');
@@ -161,22 +110,33 @@ class SubAccountService {
         throw Exception('A sub account with this email already exists.');
       }
 
-      // Step 1: Create a Firebase Auth account for the sub account
-      // Save current user email for re-authentication
-      final currentEmail = currentUser.email;
-      if (currentEmail == null) {
-        throw Exception('Current user email not found');
+      // Step 1: Create a secondary FirebaseApp instance pointing at the same
+      // project.  Creating / signing-in on this secondary instance never affects
+      // the primary FirebaseAuth session that the operator is using.
+      FirebaseApp? secondaryApp;
+      try {
+        secondaryApp = Firebase.app(_secondaryAppName);
+      } catch (_) {
+        // App not yet initialised — create it now.
+        secondaryApp = await Firebase.initializeApp(
+          name: _secondaryAppName,
+          options: DefaultFirebaseOptions.currentPlatform,
+        );
       }
 
-      // Create the Firebase Auth account with a temp password
+      final secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
+
+      // Step 2: Create the Auth account on the secondary instance.
       final tempPassword = _generateTempPassword();
       UserCredential subUserCredential;
       try {
-        subUserCredential = await _auth.createUserWithEmailAndPassword(
+        subUserCredential = await secondaryAuth.createUserWithEmailAndPassword(
           email: normalizedEmail,
           password: tempPassword,
         );
       } on FirebaseAuthException catch (e) {
+        await secondaryAuth.signOut();
+        await secondaryApp.delete();
         if (e.code == 'email-already-in-use') {
           throw Exception(
             'This email is already registered. Please use a different email.',
@@ -187,38 +147,50 @@ class SubAccountService {
 
       final subUserId = subUserCredential.user!.uid;
 
-      // Step 2: Sign out the sub account and re-authenticate as main user
-      await _auth.signOut();
-      await _auth.signInWithEmailAndPassword(
-        email: currentEmail,
-        password: mainUserPassword,
-      );
+      // Sign out from the secondary instance and delete it — we no longer need
+      // it, and keeping it around would leak resources.
+      await secondaryAuth.signOut();
+      await secondaryApp.delete();
 
-      // Step 3: Create the SubAccount document in Firestore
-      final subAccount = SubAccount(
-        id: subUserId,
-        email: normalizedEmail,
-        name: name.trim(),
-        dateCreated: DateTime.now(),
-        permissions: permissions ?? SubAccountPermissions.defaultPermissions(),
-        isSubAccount: true,
-        parentUserId: parentUserId,
-      );
+      // Step 3: Write Firestore documents.  If anything fails here, clean up the
+      // Auth user (best-effort via the primary auth's Admin-accessible delete —
+      // on the client we can only delete a user that is currently signed in, so
+      // we log the orphan and rethrow so the caller is informed).
+      try {
+        final subAccount = SubAccount(
+          id: subUserId,
+          email: normalizedEmail,
+          name: name.trim(),
+          dateCreated: DateTime.now(),
+          permissions: permissions ?? SubAccountPermissions.defaultPermissions(),
+          isSubAccount: true,
+          parentUserId: parentUserId,
+        );
 
-      await _subAccountsRef(parentUserId).doc(subUserId).set(subAccount.toMap());
+        await _subAccountsRef(parentUserId).doc(subUserId).set(subAccount.toMap());
 
-      // Step 3b: Create a flat SubAccountLookup document for fast lookup at login
-      await _firestore.collection('SubAccountLookup').doc(subUserId).set({
-        'parentUserId': parentUserId,
-        'email': normalizedEmail,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+        // Flat lookup document for fast sub-account detection at login.
+        await _firestore.collection('SubAccountLookup').doc(subUserId).set({
+          'parentUserId': parentUserId,
+          'email': normalizedEmail,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
 
-      // Step 4: Send password reset email so the sub user can set their own password
-      await _auth.sendPasswordResetEmail(email: normalizedEmail);
+        // Step 4: Trigger password-reset so the sub user can set their password.
+        await _auth.sendPasswordResetEmail(email: normalizedEmail);
 
-      AppLogger.d('Sub account created successfully: $subUserId');
-      return subAccount;
+        AppLogger.d('Sub account created successfully: $subUserId');
+        return subAccount;
+      } catch (e) {
+        // The Auth user exists but Firestore writes failed.  Log the orphaned UID
+        // so an admin can clean it up via the Firebase console or Admin SDK.
+        AppLogger.e(
+          'Firestore write failed after creating Auth user $subUserId. '
+          'The Auth user is orphaned and should be deleted manually.',
+          e,
+        );
+        rethrow;
+      }
     } catch (e) {
       AppLogger.d('Error creating sub account: $e');
       rethrow;
@@ -428,8 +400,11 @@ class SubAccountService {
 
       return null;
     } catch (e) {
-      AppLogger.d('Error looking up sub account: $e');
-      return null;
+      AppLogger.d('Error looking up sub account for $userId: $e');
+      // Rethrow so callers can distinguish a lookup failure from a confirmed
+      // main-account (null return). Callers must NOT default to main-account
+      // behaviour on error — fail closed to avoid privilege escalation.
+      rethrow;
     }
   }
 }

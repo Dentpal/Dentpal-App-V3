@@ -92,11 +92,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
   /// Resolve sub account session for a newly authenticated user.
   /// This must complete BEFORE showing HomePage.
   Future<void> _resolveSubAccountSession(String uid) async {
-    if (SubAccountSessionManager.isSubAccount ||
-        SubAccountSessionManager.getEffectiveUserId() == uid) {
-      // Already resolved (e.g. login page already set it)
-      return;
-    }
+    // If the session manager already knows this is a sub-account, it was set
+    // by the login page — no need to re-run the lookup.
+    if (SubAccountSessionManager.isSubAccount) return;
+    // If we already resolved for this uid, skip.
+    if (_resolvedUid == uid) return;
     try {
       AppLogger.d('AuthWrapper: Resolving sub account status for $uid');
       final result = await SubAccountService.lookupSubAccount(uid);
@@ -113,10 +113,15 @@ class _AuthWrapperState extends State<AuthWrapper> {
         SubAccountSessionManager.setMainAccountSession();
         AppLogger.d('AuthWrapper: Main account confirmed: $uid');
       }
+      _resolvedUid = uid;
     } catch (e) {
       AppLogger.d('AuthWrapper: Sub account lookup failed: $e');
-      // Default to main account if lookup fails
-      SubAccountSessionManager.setMainAccountSession();
+      // Do NOT default to main account — that would grant unintended privileges
+      // if the lookup fails for a real sub-account user.  Clear _resolvedUid so
+      // the lookup is retried on the next auth event, and rethrow so the
+      // FutureBuilder can surface an error state.
+      _resolvedUid = null;
+      rethrow;
     }
   }
 
@@ -173,6 +178,55 @@ class _AuthWrapperState extends State<AuthWrapper> {
               // Still resolving — show a loading indicator, NOT HomePage
               return const Scaffold(
                 body: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            // Lookup failed — fail closed: do not show HomePage.
+            // Show an error screen with a retry button so the user is not
+            // silently granted main-account access on a transient error.
+            if (subAccountSnapshot.hasError) {
+              AppLogger.d(
+                'AuthWrapper: Sub account lookup error, showing retry screen: '
+                '${subAccountSnapshot.error}',
+              );
+              return Scaffold(
+                body: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.error_outline,
+                            size: 48, color: Colors.red),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Unable to verify your account type. '
+                          'Please check your connection and try again.',
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 24),
+                        ElevatedButton(
+                          onPressed: () {
+                            if (!mounted) return;
+                            setState(() {
+                              // Reset so _resolveSubAccountSession is re-triggered
+                              // on the next build.
+                              _resolvedUid = null;
+                              _subAccountFuture = null;
+                            });
+                          },
+                          child: const Text('Retry'),
+                        ),
+                        TextButton(
+                          onPressed: () async {
+                            await FirebaseAuth.instance.signOut();
+                          },
+                          child: const Text('Sign out'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               );
             }
 

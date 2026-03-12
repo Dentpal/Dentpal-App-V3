@@ -139,7 +139,24 @@ class _HomePageState extends State<HomePage> {
           }
         } catch (e) {
           AppLogger.d('HomePage: Sub account lookup failed: $e');
-          // Don't override if already set (e.g. from login page)
+          // Do NOT default to main account — fail closed so a sub-account user
+          // whose lookup fails transiently does not get unintended main-account
+          // access. Sign out and let AuthWrapper handle re-resolution on the
+          // next login so the user is prompted to authenticate again.
+          if (mounted) {
+            await FirebaseAuth.instance.signOut();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Unable to verify your account type. '
+                  'Please check your connection and sign in again.',
+                ),
+                backgroundColor: Colors.red,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+          return;
         }
       }
 

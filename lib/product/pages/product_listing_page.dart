@@ -217,8 +217,20 @@ class _ProductListingPageState extends State<ProductListingPage>
                 final bannerUrl = bannerData['imageURL'] as String? ?? bannerData['imageUrl'] as String?;
                 if (bannerUrl != null && bannerUrl.isNotEmpty) {
                   final targetUrl = bannerData['url'] as String?;
-                  final order = bannerData['order'] as int? ?? 999; // Default to 999 if no order specified
-                  
+                  final rawOrder = bannerData['order'];
+                  final int order;
+                  if (rawOrder == null) {
+                    order = 999;
+                  } else if (rawOrder is int) {
+                    order = rawOrder;
+                  } else if (rawOrder is double) {
+                    order = rawOrder.toInt();
+                  } else if (rawOrder is String) {
+                    order = int.tryParse(rawOrder) ?? 999;
+                  } else {
+                    order = 999;
+                  }
+
                   activeBanners.add({
                     'imageURL': bannerUrl,
                     'targetURL': targetUrl,
@@ -232,7 +244,7 @@ class _ProductListingPageState extends State<ProductListingPage>
       }
       
       // Sort banners by order (ascending: 0, 1, 2, ...)
-      activeBanners.sort((a, b) => (a['order'] as int).compareTo(b['order'] as int));
+      activeBanners.sort((a, b) => (a['order'] as int? ?? 999).compareTo(b['order'] as int? ?? 999));
       
       // Extract sorted URLs
       List<String> activeBannerUrls = activeBanners.map((b) => b['imageURL'] as String).toList();

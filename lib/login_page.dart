@@ -292,9 +292,25 @@ class _LoginPageState extends State<LoginPage> {
               AppLogger.d('Logged in as main account: $uid');
             }
           } catch (e) {
-            // If sub account lookup fails, default to main account behavior
-            SubAccountSessionManager.setMainAccountSession();
-            AppLogger.d('Sub account lookup failed, defaulting to main: $e');
+            // Sub account lookup failed — do NOT default to main account
+            // (that would silently grant unintended privileges to a sub-account
+            // user if lookup fails transiently).  Sign out and surface the error
+            // so the user can retry.
+            AppLogger.d('Sub account lookup failed during login: $e');
+            await FirebaseAuth.instance.signOut();
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Unable to verify your account type. '
+                    'Please check your connection and try again.',
+                  ),
+                  backgroundColor: Colors.red,
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+            return;
           }
 
           // Navigate to HomePage (LoginPage may be pushed on top of the
