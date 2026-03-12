@@ -6,6 +6,7 @@ import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import '../../login_page.dart';
 import '../../product/services/user_service.dart';
+import '../../core/services/sub_account_service.dart';
 import 'shipping_addresses_page.dart';
 import 'orders_page.dart';
 //import 'seller_listings_page.dart';
@@ -38,10 +39,11 @@ class _ProfilePageState extends State<ProfilePage> {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
+        final effectiveUid = SubAccountSessionManager.getEffectiveUserId();
         // Get user data
         final userDoc = await FirebaseFirestore.instance
             .collection('User')
-            .doc(user.uid)
+            .doc(effectiveUid)
             .get();
 
         if (userDoc.exists) {
@@ -51,7 +53,7 @@ class _ProfilePageState extends State<ProfilePage> {
           if (_userCache?['role'] == 'seller') {
             final sellerDoc = await FirebaseFirestore.instance
                 .collection('Seller')
-                .doc(user.uid)
+                .doc(effectiveUid)
                 .get();
 
             if (sellerDoc.exists) {

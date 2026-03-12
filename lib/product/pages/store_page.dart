@@ -9,6 +9,7 @@ import '../widgets/product_card.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/utils/navigation_utils.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:dentpal/core/widgets/web_footer.dart';
 
 class StorePage extends StatefulWidget {
   final String sellerId;
@@ -53,9 +54,16 @@ class _StorePageState extends State<StorePage>
     'Price (High to Low)',
   ];
 
+  // Version token appended to image URLs for cache-busting.
+  // Captured once at widget creation so it stays stable across setState()
+  // calls; only a fresh StorePage instance (e.g. after a data refresh that
+  // navigates back and re-opens the page) will produce a new token.
+  late final String _imageVersionToken;
+
   @override
   void initState() {
     super.initState();
+    _imageVersionToken = DateTime.now().millisecondsSinceEpoch.toString();
     // Check for initialTab in sellerData and set appropriate index
     int initialIndex = 0; // Default to 'Products' tab
     if (widget.sellerData != null && widget.sellerData!['initialTab'] != null) {
@@ -138,12 +146,18 @@ class _StorePageState extends State<StorePage>
             ? vendor['company'] as Map<String, dynamic>
             : const {};
 
-        // Fetch coverImage and profileImage URLs from Seller > vendor
+        // Fetch coverImage and profileImage URLs from vendor nested object
         String coverImageURL = '';
         String profileImageURL = '';
+        
+        // Get coverImage from vendor.coverImage
         if (vendor['coverImage'] is Map && vendor['coverImage']['url'] is String) {
           coverImageURL = vendor['coverImage']['url'] as String;
+        } else if (vendor['coverImage'] is String) {
+          coverImageURL = vendor['coverImage'] as String;
         }
+        
+        // Get profileImage from vendor.profileImage
         if (vendor['profileImage'] is Map && vendor['profileImage']['url'] is String) {
           profileImageURL = vendor['profileImage']['url'] as String;
         }
@@ -368,9 +382,10 @@ class _StorePageState extends State<StorePage>
                   child: Column(
                     children: [
                       _buildAppBarHeader(),
-                      _buildStoreInfoHeader(),
+                      _buildStoreInfo(),
                       _buildTabBar(),
                       _buildTabContent(),
+                      const WebFooter(),
                     ],
                   ),
                 );
@@ -393,19 +408,17 @@ class _StorePageState extends State<StorePage>
 
   Widget _buildAppBarHeader() {
     final coverImageURL = _storeData['coverImageURL'] as String? ?? '';
+    // Add cache-busting parameter for web. Uses the stable _imageVersionToken
+    // (set once in initState) so the URL does not change on every rebuild and
+    // the cached_network_image disk cache is not needlessly invalidated.
+    final coverImageURLWithCache = coverImageURL.isNotEmpty
+        ? (coverImageURL.contains('?')
+            ? '$coverImageURL&v=$_imageVersionToken'
+            : '$coverImageURL?v=$_imageVersionToken')
+        : '';
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.2),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
         child: AspectRatio(
@@ -416,14 +429,20 @@ class _StorePageState extends State<StorePage>
               // Cover image or fallback gradient
               if (coverImageURL.isNotEmpty)
                 CachedNetworkImage(
-                  imageUrl: coverImageURL,
+                  imageUrl: coverImageURLWithCache,
                   fit: BoxFit.cover,
+                  cacheKey: coverImageURL,
                   placeholder: (context, url) => Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                         colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
+                      ),
+                    ),
+                    child: const Center(
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
                       ),
                     ),
                   ),
@@ -447,24 +466,29 @@ class _StorePageState extends State<StorePage>
                     ),
                   ),
                 ),
-              // Back button only
+              // Back button
               Positioned(
-                top: 16,
-                left: 16,
-                child: SafeArea(
-                  top: !kIsWeb,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.9),
-                      borderRadius: BorderRadius.circular(12),
+                top: 12,
+                left: 12,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: IconButton(
+                    icon: const Icon(
+                      Icons.arrow_back,
+                      color: AppColors.primary,
                     ),
-                    child: IconButton(
-                      icon: const Icon(
-                        Icons.arrow_back,
-                        color: AppColors.primary,
-                      ),
-                      onPressed: () => Navigator.maybePop(context),
-                    ),
+                    onPressed: () {
+                      if (Navigator.canPop(context)) {
+                        Navigator.pop(context);
+                      } else {
+                        // StorePage is the root route (e.g. deep-linked directly);
+                        // fall back to the app's main landing page.
+                        Navigator.pushReplacementNamed(context, '/');
+                      }
+                    },
                   ),
                 ),
               ),
@@ -517,36 +541,86 @@ class _StorePageState extends State<StorePage>
     );
   }
 
-  Widget _buildStoreInfoHeader() {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final double iconSize = screenWidth < 380 ? 72 : (screenWidth < 600 ? 88 : 100);
+  Widget _buildStoreInfo() {
+    final profileImageURL = _storeData['profileImageURL'] as String? ?? '';
+    final storeName = _storeData['shopName'] ?? 'Store Name';
+    // Add cache-busting parameter for web. Uses the stable _imageVersionToken
+    // (set once in initState) so the URL does not change on every rebuild and
+    // the cached_network_image disk cache is not needlessly invalidated.
+    final profileImageURLWithCache = profileImageURL.isNotEmpty
+        ? (profileImageURL.contains('?')
+            ? '$profileImageURL&v=$_imageVersionToken'
+            : '$profileImageURL?v=$_imageVersionToken')
+        : '';
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Store icon
-          _buildStoreIcon(iconSize),
+          // Profile Picture
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.2),
+                width: 2,
+              ),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: profileImageURL.isNotEmpty
+                  ? CachedNetworkImage(
+                      imageUrl: profileImageURLWithCache,
+                      fit: BoxFit.cover,
+                      cacheKey: profileImageURL,
+                      placeholder: (context, url) => const Center(
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            AppColors.primary,
+                          ),
+                        ),
+                      ),
+                      errorWidget: (context, url, error) =>
+                          Icon(Icons.store, size: 28, color: AppColors.primary),
+                    )
+                  : Icon(Icons.store, size: 28, color: AppColors.primary),
+            ),
+          ),
           const SizedBox(width: 16),
-          // Store name and address
+          // Store Name and Address
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                // Store Name
                 Text(
-                  _storeData['shopName'] ?? 'Store Name',
-                  style: AppTextStyles.headlineSmall.copyWith(
-                    color: AppColors.onSurface,
+                  storeName,
+                  style: AppTextStyles.titleMedium.copyWith(
                     fontWeight: FontWeight.bold,
-                    fontSize: screenWidth < 380 ? 18 : 20,
+                    color: AppColors.onSurface,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 8),
+                // Address
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

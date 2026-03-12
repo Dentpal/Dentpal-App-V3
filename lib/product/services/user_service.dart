@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:dentpal/utils/app_logger.dart';
+import 'package:dentpal/core/services/sub_account_service.dart';
 
 class UserService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -12,12 +13,15 @@ class UserService {
   static String? _cachedUserId;
 
   // Get current user data
+  // For sub accounts, returns the parent account's data
   Future<Map<String, dynamic>?> getCurrentUserData() async {
     try {
       final user = _auth.currentUser;
       if (user == null) return null;
 
-      final userData = await _firestore.collection('User').doc(user.uid).get();
+      // Use the effective user ID (parent's ID for sub accounts)
+      final effectiveUserId = SubAccountSessionManager.getEffectiveUserId();
+      final userData = await _firestore.collection('User').doc(effectiveUserId).get();
       if (userData.exists) {
         return userData.data();
       }
@@ -41,23 +45,26 @@ class UserService {
         return false;
       }
 
+      // Use effective user ID (parent's ID for sub accounts)
+      final effectiveUid = SubAccountSessionManager.getEffectiveUserId();
+
       // Return cached value if available and user hasn't changed
       if (!forceRefresh &&
           _cachedIsSeller != null &&
-          _cachedUserId == user.uid) {
+          _cachedUserId == effectiveUid) {
         AppLogger.d(
-          'Returning cached seller status: $_cachedIsSeller for user ${user.uid}',
+          'Returning cached seller status: $_cachedIsSeller for user $effectiveUid',
         );
         return _cachedIsSeller!;
       }
 
-      AppLogger.d('Checking seller status for user: ${user.uid}');
+      AppLogger.d('Checking seller status for user: $effectiveUid');
 
       // First, check if Seller document exists (primary check)
       // This handles sellers who may only have a Seller document
       final sellerDoc = await _firestore
           .collection('Seller')
-          .doc(user.uid)
+          .doc(effectiveUid)
           .get();
 
       if (sellerDoc.exists) {
@@ -66,22 +73,22 @@ class UserService {
 
         if (isActive) {
           _cachedIsSeller = true;
-          _cachedUserId = user.uid;
+          _cachedUserId = effectiveUid;
           AppLogger.d(
-            'User ${user.uid} is a verified seller (found in Seller collection)',
+            'User $effectiveUid is a verified seller (found in Seller collection)',
           );
           return true;
         } else {
-          AppLogger.d('User ${user.uid} has inactive seller account');
+          AppLogger.d('User $effectiveUid has inactive seller account');
           _cachedIsSeller = false;
-          _cachedUserId = user.uid;
+          _cachedUserId = effectiveUid;
           return false;
         }
       }
 
       // Secondary check: User collection with role='seller'
       // This handles edge cases where User doc exists with seller role
-      final userDoc = await _firestore.collection('User').doc(user.uid).get();
+      final userDoc = await _firestore.collection('User').doc(effectiveUid).get();
 
       if (userDoc.exists) {
         final userData = userDoc.data() as Map<String, dynamic>;
@@ -91,16 +98,16 @@ class UserService {
           // User has seller role but no Seller document
           // This might be an incomplete registration, but we should still show seller UI
           _cachedIsSeller = true;
-          _cachedUserId = user.uid;
-          AppLogger.d('User ${user.uid} has seller role in User collection');
+          _cachedUserId = effectiveUid;
+          AppLogger.d('User $effectiveUid has seller role in User collection');
           return true;
         }
       }
 
       _cachedIsSeller = false;
-      _cachedUserId = user.uid;
+      _cachedUserId = effectiveUid;
       AppLogger.d(
-        'User ${user.uid} is a buyer (not found in Seller collection, no seller role)',
+        'User $effectiveUid is a buyer (not found in Seller collection, no seller role)',
       );
       return false;
     } catch (e) {
@@ -184,20 +191,23 @@ class UserService {
         return false;
       }
 
+      // Use effective user ID (parent's ID for sub accounts)
+      final effectiveUid = SubAccountSessionManager.getEffectiveUserId();
+
       // Return cached value if available and user hasn't changed
       if (!forceRefresh &&
           _cachedIsCustomerSupport != null &&
-          _cachedUserId == user.uid) {
+          _cachedUserId == effectiveUid) {
         AppLogger.d(
-          'Returning cached customer support status: $_cachedIsCustomerSupport for user ${user.uid}',
+          'Returning cached customer support status: $_cachedIsCustomerSupport for user $effectiveUid',
         );
         return _cachedIsCustomerSupport!;
       }
 
-      AppLogger.d('Checking customer support status for user: ${user.uid} (forceRefresh: $forceRefresh)');
+      AppLogger.d('Checking customer support status for user: $effectiveUid (forceRefresh: $forceRefresh)');
 
       // Check User collection for role='customer_support'
-      final userDoc = await _firestore.collection('User').doc(user.uid).get();
+      final userDoc = await _firestore.collection('User').doc(effectiveUid).get();
       AppLogger.d('User document exists: ${userDoc.exists}');
 
       if (userDoc.exists) {
@@ -207,15 +217,15 @@ class UserService {
 
         if (userRole == 'customer_support') {
           _cachedIsCustomerSupport = true;
-          _cachedUserId = user.uid;
-          AppLogger.d('User ${user.uid} is a Customer Support Representative');
+          _cachedUserId = effectiveUid;
+          AppLogger.d('User $effectiveUid is a Customer Support Representative');
           return true;
         }
       }
 
       _cachedIsCustomerSupport = false;
-      _cachedUserId = user.uid;
-      AppLogger.d('User ${user.uid} is not a Customer Support Representative');
+      _cachedUserId = effectiveUid;
+      AppLogger.d('User $effectiveUid is not a Customer Support Representative');
       return false;
     } catch (e) {
       AppLogger.d('Error checking customer support status: $e');
@@ -228,6 +238,7 @@ class UserService {
     _cachedIsSeller = null;
     _cachedIsCustomerSupport = null;
     _cachedUserId = null;
+    SubAccountSessionManager.clearSession();
   }
 
   // Get user's first name

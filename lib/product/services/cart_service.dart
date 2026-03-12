@@ -6,21 +6,25 @@ import '../models/cart_model.dart';
 import '../models/product_model.dart';
 import 'jrs_shipping_service.dart';
 import 'package:dentpal/utils/app_logger.dart';
+import 'package:dentpal/core/services/sub_account_service.dart';
 
 class CartService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   // Get current user ID or throw error if not authenticated (for methods that require auth)
+  // For sub accounts, returns the parent user ID to share the cart
   String _getCurrentUserIdRequired() {
     final user = _auth.currentUser;
     if (user == null) {
       throw Exception('User not authenticated');
     }
-    return user.uid;
+    // If logged in as a sub account, use the parent's user ID for cart access
+    return SubAccountSessionManager.getEffectiveUserId();
   }
 
   // Get cart reference for current user (throws if not authenticated)
+  // For sub accounts, this returns the parent account's cart reference
   CollectionReference _getCartRefRequired() {
     final userId = _getCurrentUserIdRequired();
     return _firestore.collection('User').doc(userId).collection('Cart');
@@ -48,7 +52,9 @@ class CartService {
     try {
       final user = _auth.currentUser;
       if (user == null) return Stream.value(0);
-      final cartRef = _firestore.collection('User').doc(user.uid).collection('Cart');
+      // Use effective user ID for sub accounts (parent's cart)
+      final effectiveUserId = SubAccountSessionManager.getEffectiveUserId();
+      final cartRef = _firestore.collection('User').doc(effectiveUserId).collection('Cart');
       return cartRef
           .snapshots()
           .map((snapshot) => snapshot.docs.length)

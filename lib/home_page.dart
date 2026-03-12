@@ -12,6 +12,7 @@ import 'package:dentpal/profile/pages/profile_page.dart';
 import 'package:dentpal/login_page.dart';
 import 'package:dentpal/product/services/user_service.dart';
 import 'package:dentpal/product/services/cart_service.dart';
+import 'package:dentpal/core/services/sub_account_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'core/app_theme/app_colors.dart';
 import 'core/app_theme/app_text_styles.dart';
@@ -115,6 +116,55 @@ class _HomePageState extends State<HomePage> {
           _isLoadingSellerStatus = false;
         });
         return;
+      }
+
+      // Detect sub account if not already identified.
+      // This handles the case where AuthWrapper navigates directly to HomePage
+      // (e.g. on app restart with a persisted sub account session).
+      // Skip entirely when AuthWrapper (or the login page) has already resolved
+      // the role for this UID — re-running the lookup is redundant and, if it
+      // fails transiently, would trigger an unintended sign-out.
+      if (SubAccountSessionManager.resolvedForUid != user.uid) {
+        try {
+          final subAccountResult =
+              await SubAccountService.lookupSubAccount(user.uid);
+          if (subAccountResult != null) {
+            SubAccountSessionManager.setSubAccountSession(
+              subAccount: subAccountResult.subAccount,
+              parentUserId: subAccountResult.parentUserId,
+            );
+            AppLogger.d(
+              'HomePage: Detected sub account: ${subAccountResult.subAccount.email} '
+              '(parent: ${subAccountResult.parentUserId})',
+            );
+          } else {
+            SubAccountSessionManager.setMainAccountSession();
+          }
+        } catch (e) {
+          AppLogger.d('HomePage: Sub account lookup failed: $e');
+          // Do NOT default to main account — fail closed so a sub-account user
+          // whose lookup fails transiently does not get unintended main-account
+          // access. Sign out and let AuthWrapper handle re-resolution on the
+          // next login so the user is prompted to authenticate again.
+          if (mounted) {
+            await FirebaseAuth.instance.signOut();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Unable to verify your account type. '
+                  'Please check your connection and sign in again.',
+                ),
+                backgroundColor: Colors.red,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+          return;
+        }
+      } else {
+        AppLogger.d(
+          'HomePage: Sub account role already resolved by AuthWrapper for ${user.uid}, skipping lookup.',
+        );
       }
 
       // Force refresh to ensure we get fresh data after login

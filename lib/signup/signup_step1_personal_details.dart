@@ -272,47 +272,55 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
                 color: AppColors.grey50,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Row(
+              child: Column(
                 children: [
-                  Expanded(
-                    child: RadioListTile<String>(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      title: Text('Male', style: AppTextStyles.bodyMedium),
-                      value: 'Male',
-                      groupValue: _controller.selectedGender,
-                      activeColor: AppColors.primary,
-                      onChanged: (value) {
-                        setState(() {
-                          _controller.selectedGender = value;
-                        });
-                      },
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: RadioListTile<String>(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          title: Text('Male', style: AppTextStyles.bodyMedium),
+                          value: 'Male',
+                          groupValue: _controller.selectedGender,
+                          activeColor: AppColors.primary,
+                          onChanged: (value) {
+                            setState(() {
+                              _controller.selectedGender = value;
+                            });
+                          },
+                        ),
+                      ),
+                      Expanded(
+                        child: RadioListTile<String>(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          title: Text('Female', style: AppTextStyles.bodyMedium),
+                          value: 'Female',
+                          groupValue: _controller.selectedGender,
+                          activeColor: AppColors.primary,
+                          onChanged: (value) {
+                            setState(() {
+                              _controller.selectedGender = value;
+                            });
+                          },
+                        ),
+                      ),
+                    ],
                   ),
-                  Expanded(
-                    child: RadioListTile<String>(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      title: Text('Female', style: AppTextStyles.bodyMedium),
-                      value: 'Female',
-                      groupValue: _controller.selectedGender,
-                      activeColor: AppColors.primary,
-                      onChanged: (value) {
-                        setState(() {
-                          _controller.selectedGender = value;
-                        });
-                      },
-                    ),
+                  RadioListTile<String>(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    title: Text('Rather not say', style: AppTextStyles.bodyMedium),
+                    value: 'Not Specified',
+                    groupValue: _controller.selectedGender,
+                    activeColor: AppColors.primary,
+                    onChanged: (value) {
+                      setState(() {
+                        _controller.selectedGender = value;
+                      });
+                    },
                   ),
                 ],
               ),
             ),
-            if (_controller.step1GenderError != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8.0),
-                child: Text(
-                  _controller.step1GenderError!,
-                  style: AppTextStyles.bodySmall.copyWith(color: AppColors.error),
-                ),
-              ),
             const SizedBox(height: 16),
             
             // Birthdate field
@@ -494,22 +502,18 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
   
   void _validateAndProceed() async {
     final valid = _controller.formKeyStep1.currentState?.validate() ?? false;
-    String? genderError;
     String? birthdateError;
     
-    if (_controller.selectedGender == null) {
-      genderError = 'Please select a gender';
-    }
     if (_controller.selectedBirthdate == null) {
       birthdateError = 'Please select your birthdate';
     }
     
     setState(() {
-      _controller.step1GenderError = genderError;
+      _controller.step1GenderError = null;
       _controller.step1BirthdateError = birthdateError;
     });
     
-    if (valid && genderError == null && birthdateError == null) {
+    if (valid && birthdateError == null) {
       // Check if phone number already exists in UserLookup
       setState(() {
         _isCheckingPhoneNumber = true;

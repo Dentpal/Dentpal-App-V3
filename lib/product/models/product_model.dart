@@ -243,11 +243,13 @@ class Category {
   final String categoryId;
   final String categoryName;
   final int clickCounter;
+  final String? categoryImageUrl;
 
   Category({
     required this.categoryId,
     required this.categoryName,
     required this.clickCounter,
+    this.categoryImageUrl,
   });
 
   factory Category.fromFirestore(DocumentSnapshot doc) {
@@ -257,6 +259,7 @@ class Category {
       categoryId: doc.id,
       categoryName: data['categoryName'] ?? '',
       clickCounter: data['clickCounter'] ?? 0,
+      categoryImageUrl: data['imageURL'] as String?,
     );
   }
 
@@ -264,6 +267,7 @@ class Category {
     return {
       'categoryName': categoryName,
       'clickCounter': clickCounter,
+      if (categoryImageUrl != null) 'imageURL': categoryImageUrl,
     };
   }
 }
@@ -272,11 +276,13 @@ class SubCategory {
   final String subCategoryId;
   final String subCategoryName;
   final String categoryId;
+  final String? imageURL;
 
   SubCategory({
     required this.subCategoryId,
     required this.subCategoryName,
     required this.categoryId,
+    this.imageURL,
   });
 
   factory SubCategory.fromFirestore(DocumentSnapshot doc) {
@@ -286,6 +292,7 @@ class SubCategory {
       subCategoryId: doc.id,
       subCategoryName: data['subCategoryName'] ?? '',
       categoryId: data['categoryId'] ?? '',  // Changed from 'categoryID' to 'categoryId'
+      imageURL: data['imageURL'] as String?,
     );
   }
 
@@ -293,6 +300,7 @@ class SubCategory {
     return {
       'subCategoryName': subCategoryName,
       'categoryId': categoryId,  // Changed from 'categoryID' to 'categoryId'
+      if (imageURL != null) 'imageURL': imageURL,
     };
   }
 }

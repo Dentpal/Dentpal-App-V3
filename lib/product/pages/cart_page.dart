@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/utils/navigation_utils.dart';
+import 'package:dentpal/core/services/sub_account_service.dart';
 import '../models/cart_model.dart';
 import '../services/cart_service.dart';
 import '../widgets/seller_group_widget.dart';
@@ -1136,17 +1137,52 @@ class _CartPageState extends State<CartPage>
                     const SizedBox(height: 16),
                   ],
 
+                  // Sub account checkout restriction warning (web)
+                  if (_isSubAccountWithoutCheckout()) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.warning.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.warning.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            color: AppColors.warning,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Sub accounts are not allowed to initiate checkout. Please ask the main account holder to complete the purchase.',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.warning,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
                   // Checkout button
                   SizedBox(
                     width: double.infinity,
                     height: 56,
                     child: ElevatedButton(
-                      onPressed: _cartSummary!.hasInsufficientStock ? null : _proceedToCheckout,
+                      onPressed: (_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
+                          ? null
+                          : _proceedToCheckout,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _cartSummary!.hasInsufficientStock
+                        backgroundColor: (_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
                             ? AppColors.grey300
                             : AppColors.primary,
-                        foregroundColor: _cartSummary!.hasInsufficientStock
+                        foregroundColor: (_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
                             ? AppColors.onSurface.withValues(alpha: 0.38)
                             : AppColors.onPrimary,
                         elevation: 0,
@@ -1159,14 +1195,16 @@ class _CartPageState extends State<CartPage>
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(_cartSummary!.hasInsufficientStock 
+                          Icon((_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
                               ? Icons.block 
                               : Icons.shopping_bag),
                           const SizedBox(width: 8),
                           Text(
                             _cartSummary!.hasInsufficientStock
                                 ? 'Insufficient Stock'
-                                : 'Checkout',
+                                : _isSubAccountWithoutCheckout()
+                                    ? 'Checkout Not Allowed'
+                                    : 'Checkout',
                             style: AppTextStyles.buttonLarge.copyWith(
                               fontWeight: FontWeight.w600,
                             ),
@@ -1642,14 +1680,49 @@ class _CartPageState extends State<CartPage>
               const SizedBox(height: 12),
             ],
 
+            // Sub account checkout restriction warning
+            if (_isSubAccountWithoutCheckout()) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppColors.warning.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      color: AppColors.warning,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Sub accounts are not allowed to initiate checkout. Please ask the main account holder to complete the purchase.',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.warning,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
             // Checkout button
             ElevatedButton(
-              onPressed: _cartSummary!.hasInsufficientStock ? null : _proceedToCheckout,
+              onPressed: (_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
+                  ? null
+                  : _proceedToCheckout,
               style: ElevatedButton.styleFrom(
-                backgroundColor: _cartSummary!.hasInsufficientStock 
+                backgroundColor: (_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
                     ? AppColors.grey300 
                     : AppColors.primary,
-                foregroundColor: _cartSummary!.hasInsufficientStock
+                foregroundColor: (_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
                     ? AppColors.onSurface.withValues(alpha: 0.38)
                     : AppColors.onPrimary,
                 padding: const EdgeInsets.symmetric(vertical: 16),
@@ -1663,14 +1736,16 @@ class _CartPageState extends State<CartPage>
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(_cartSummary!.hasInsufficientStock 
+                  Icon((_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
                       ? Icons.block 
                       : Icons.payment),
                   const SizedBox(width: 8),
                   Text(
                     _cartSummary!.hasInsufficientStock 
-                        ? 'Insufficient Stock' 
-                        : 'Proceed to Checkout',
+                        ? 'Insufficient Stock'
+                        : _isSubAccountWithoutCheckout()
+                            ? 'Checkout Not Allowed'
+                            : 'Proceed to Checkout',
                     style: AppTextStyles.buttonLarge,
                   ),
                 ],
@@ -1682,7 +1757,32 @@ class _CartPageState extends State<CartPage>
     );
   }
 
+  /// Returns true if the current user is a sub account without checkout permission.
+  bool _isSubAccountWithoutCheckout() {
+    return SubAccountSessionManager.isSubAccount &&
+        !SubAccountSessionManager.canCheckout;
+  }
+
   void _proceedToCheckout() {
+    // Check if the user is a sub account without checkout permission
+    if (SubAccountSessionManager.isSubAccount &&
+        !SubAccountSessionManager.canCheckout) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Sub accounts are not allowed to initiate checkout. Please ask the main account holder to complete the purchase.',
+          ),
+          backgroundColor: AppColors.warning,
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+      return;
+    }
+
     if (_cartSummary == null || !_cartSummary!.hasSelectedItems) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

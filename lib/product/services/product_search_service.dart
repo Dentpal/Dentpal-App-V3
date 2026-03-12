@@ -34,15 +34,17 @@ class SearchFilters {
     List<String>? categoryIds,
     List<String>? subCategoryIds,
     double? minPrice,
+    bool clearMinPrice = false,
     double? maxPrice,
+    bool clearMaxPrice = false,
     bool? hasWarranty,
     SortBy? sortBy,
   }) {
     return SearchFilters(
       categoryIds: categoryIds ?? this.categoryIds,
       subCategoryIds: subCategoryIds ?? this.subCategoryIds,
-      minPrice: minPrice ?? this.minPrice,
-      maxPrice: maxPrice ?? this.maxPrice,
+      minPrice: clearMinPrice ? null : (minPrice ?? this.minPrice),
+      maxPrice: clearMaxPrice ? null : (maxPrice ?? this.maxPrice),
       hasWarranty: hasWarranty ?? this.hasWarranty,
       sortBy: sortBy ?? this.sortBy,
     );

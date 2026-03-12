@@ -1,0 +1,4 @@
+# Example local.properties file for Android
+sdk.dir=/path/to/android/sdk
+flutter.sdk=/path/to/flutter/sdk
+# Add other keys as needed

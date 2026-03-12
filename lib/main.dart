@@ -99,7 +99,7 @@ class MyApp extends StatelessWidget {
       navigatorObservers: [DebugNavigatorObserver()],
       initialRoute: _getInitialRoute(),
       routes: {
-        '/': (context) => const AuthWrapper(),
+        '/': (context) => const HomePage(),
         '/login': (context) => const LoginPage(),
         '/auth': (context) => const AuthWrapper(),
         '/home': (context) => const HomePage(),
