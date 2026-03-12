@@ -54,9 +54,16 @@ class _StorePageState extends State<StorePage>
     'Price (High to Low)',
   ];
 
+  // Version token appended to image URLs for cache-busting.
+  // Captured once at widget creation so it stays stable across setState()
+  // calls; only a fresh StorePage instance (e.g. after a data refresh that
+  // navigates back and re-opens the page) will produce a new token.
+  late final String _imageVersionToken;
+
   @override
   void initState() {
     super.initState();
+    _imageVersionToken = DateTime.now().millisecondsSinceEpoch.toString();
     // Check for initialTab in sellerData and set appropriate index
     int initialIndex = 0; // Default to 'Products' tab
     if (widget.sellerData != null && widget.sellerData!['initialTab'] != null) {
@@ -399,11 +406,13 @@ class _StorePageState extends State<StorePage>
 
   Widget _buildAppBarHeader() {
     final coverImageURL = _storeData['coverImageURL'] as String? ?? '';
-    // Add cache-busting parameter for web
+    // Add cache-busting parameter for web. Uses the stable _imageVersionToken
+    // (set once in initState) so the URL does not change on every rebuild and
+    // the cached_network_image disk cache is not needlessly invalidated.
     final coverImageURLWithCache = coverImageURL.isNotEmpty
-        ? (coverImageURL.contains('?') 
-            ? '$coverImageURL&v=${DateTime.now().millisecondsSinceEpoch}'
-            : '$coverImageURL?v=${DateTime.now().millisecondsSinceEpoch}')
+        ? (coverImageURL.contains('?')
+            ? '$coverImageURL&v=$_imageVersionToken'
+            : '$coverImageURL?v=$_imageVersionToken')
         : '';
 
     return Container(
@@ -469,7 +478,15 @@ class _StorePageState extends State<StorePage>
                       Icons.arrow_back,
                       color: AppColors.primary,
                     ),
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () {
+                      if (Navigator.canPop(context)) {
+                        Navigator.pop(context);
+                      } else {
+                        // StorePage is the root route (e.g. deep-linked directly);
+                        // fall back to the app's main landing page.
+                        Navigator.pushReplacementNamed(context, '/');
+                      }
+                    },
                   ),
                 ),
               ),
@@ -525,11 +542,13 @@ class _StorePageState extends State<StorePage>
   Widget _buildStoreInfo() {
     final profileImageURL = _storeData['profileImageURL'] as String? ?? '';
     final storeName = _storeData['shopName'] ?? 'Store Name';
-    // Add cache-busting parameter for web
+    // Add cache-busting parameter for web. Uses the stable _imageVersionToken
+    // (set once in initState) so the URL does not change on every rebuild and
+    // the cached_network_image disk cache is not needlessly invalidated.
     final profileImageURLWithCache = profileImageURL.isNotEmpty
-        ? (profileImageURL.contains('?') 
-            ? '$profileImageURL&v=${DateTime.now().millisecondsSinceEpoch}'
-            : '$profileImageURL?v=${DateTime.now().millisecondsSinceEpoch}')
+        ? (profileImageURL.contains('?')
+            ? '$profileImageURL&v=$_imageVersionToken'
+            : '$profileImageURL?v=$_imageVersionToken')
         : '';
 
     return Container(

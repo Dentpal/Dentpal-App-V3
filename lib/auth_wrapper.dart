@@ -22,6 +22,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
   Widget? _cachedScreen; // Cache the screen before signup starts
   Future<void>? _subAccountFuture; // Cache the sub account resolution future
   String? _resolvedUid; // Track which UID we already resolved
+  bool _subAccountFailed = false; // True after a lookup failure; cleared on success or explicit retry
 
   @override
   void initState() {
@@ -114,13 +115,15 @@ class _AuthWrapperState extends State<AuthWrapper> {
         AppLogger.d('AuthWrapper: Main account confirmed: $uid');
       }
       _resolvedUid = uid;
+      _subAccountFailed = false;
     } catch (e) {
       AppLogger.d('AuthWrapper: Sub account lookup failed: $e');
       // Do NOT default to main account — that would grant unintended privileges
-      // if the lookup fails for a real sub-account user.  Clear _resolvedUid so
-      // the lookup is retried on the next auth event, and rethrow so the
-      // FutureBuilder can surface an error state.
-      _resolvedUid = null;
+      // if the lookup fails for a real sub-account user.  Mark the failure so
+      // the StreamBuilder does NOT automatically retry on the next rebuild;
+      // retries only happen when the user explicitly presses Retry or a new
+      // UID is seen.  Rethrow so the FutureBuilder can surface an error state.
+      _subAccountFailed = true;
       rethrow;
     }
   }
@@ -156,6 +159,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
           _cachedScreen = const LoginPage();
           _subAccountFuture = null;
           _resolvedUid = null;
+          _subAccountFailed = false;
+          SubAccountSessionManager.clearSession();
           return _cachedScreen!;
         }
 
@@ -166,11 +171,22 @@ class _AuthWrapperState extends State<AuthWrapper> {
         AppLogger.d('AuthWrapper: Auth state change - user: ${user.uid}');
 
         // Cache the future so it doesn't restart on every rebuild.
-        // Do NOT set _resolvedUid here — _resolveSubAccountSession sets it
-        // only after it successfully completes, so that a failed future leaves
-        // _resolvedUid null and the retry path can kick off a fresh future.
-        if (_resolvedUid != user.uid) {
-          _subAccountFuture = _resolveSubAccountSession(user.uid);
+        // Start a new resolution only when:
+        //   • the UID changed (new sign-in), OR
+        //   • there is no prior failure (_subAccountFailed == false) and we
+        //     haven't resolved this UID yet.
+        // This prevents automatic retries on persistent failures; the user
+        // must press "Retry" explicitly (which clears _subAccountFailed and
+        // rebuilds _subAccountFuture via setState).
+        final uidChanged = _resolvedUid != user.uid;
+        if (uidChanged) {
+          // New user — reset failure flag so the lookup runs unconditionally.
+          _subAccountFailed = false;
+        }
+        if (uidChanged || !_subAccountFailed) {
+          if (_subAccountFuture == null || uidChanged) {
+            _subAccountFuture = _resolveSubAccountSession(user.uid);
+          }
         }
 
         return FutureBuilder<void>(
@@ -210,17 +226,21 @@ class _AuthWrapperState extends State<AuthWrapper> {
                         ElevatedButton(
                           onPressed: () {
                             if (!mounted) return;
+                            final uid = FirebaseAuth.instance.currentUser?.uid;
+                            if (uid == null) return;
                             setState(() {
-                              // Reset so _resolveSubAccountSession is re-triggered
-                              // on the next build.
-                              _resolvedUid = null;
-                              _subAccountFuture = null;
+                              // Clear failure flag and rebuild the future so
+                              // the next build triggers a fresh lookup.
+                              _subAccountFailed = false;
+                              _subAccountFuture =
+                                  _resolveSubAccountSession(uid);
                             });
                           },
                           child: const Text('Retry'),
                         ),
                         TextButton(
                           onPressed: () async {
+                            SubAccountSessionManager.clearSession();
                             await FirebaseAuth.instance.signOut();
                           },
                           child: const Text('Sign out'),
