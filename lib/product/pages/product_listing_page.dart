@@ -174,31 +174,76 @@ class _ProductListingPageState extends State<ProductListingPage>
         AppLogger.d('No banners found in Realtime Database');
         return;
       }
-      List<String> activeBannerUrls = [];
-      List<String?> activeBannerTargetUrls = [];
+      
+      // Create a list to hold banner data with order
+      List<Map<String, dynamic>> activeBanners = [];
+      final currentTime = DateTime.now();
+      
       final bannersData = snapshot.value as Map<dynamic, dynamic>?;
       if (bannersData != null) {
         for (final entry in bannersData.entries) {
           final bannerData = entry.value as Map<dynamic, dynamic>?;
           if (bannerData != null) {
             final isActive = bannerData['isActive'] == true;
+            
+            // Only process if banner is active
             if (isActive) {
-              final bannerUrl = bannerData['imageURL'] as String? ?? bannerData['imageUrl'] as String?;
-              if (bannerUrl != null && bannerUrl.isNotEmpty) {
-                activeBannerUrls.add(bannerUrl);
-                final targetUrl = bannerData['url'] as String?;
-                activeBannerTargetUrls.add(targetUrl);
+              // Check duration.startTime if exists
+              bool shouldDisplay = true;
+              
+              if (bannerData['duration'] != null) {
+                final duration = bannerData['duration'] as Map<dynamic, dynamic>?;
+                if (duration != null && duration['startTime'] != null) {
+                  final startTimeStr = duration['startTime'] as String?;
+                  if (startTimeStr != null) {
+                    try {
+                      final startTime = DateTime.parse(startTimeStr);
+                      // Only display if current time is after or equal to start time
+                      shouldDisplay = currentTime.isAfter(startTime) || currentTime.isAtSameMomentAs(startTime);
+                      
+                      if (!shouldDisplay) {
+                        AppLogger.d('Banner ${entry.key} not yet started. Start time: $startTimeStr, Current time: $currentTime');
+                      }
+                    } catch (e) {
+                      AppLogger.d('Error parsing startTime for banner ${entry.key}: $e');
+                      // If parsing fails, don't display the banner
+                      shouldDisplay = false;
+                    }
+                  }
+                }
+              }
+              
+              if (shouldDisplay) {
+                final bannerUrl = bannerData['imageURL'] as String? ?? bannerData['imageUrl'] as String?;
+                if (bannerUrl != null && bannerUrl.isNotEmpty) {
+                  final targetUrl = bannerData['url'] as String?;
+                  final order = bannerData['order'] as int? ?? 999; // Default to 999 if no order specified
+                  
+                  activeBanners.add({
+                    'imageURL': bannerUrl,
+                    'targetURL': targetUrl,
+                    'order': order,
+                  });
+                }
               }
             }
           }
         }
       }
+      
+      // Sort banners by order (ascending: 0, 1, 2, ...)
+      activeBanners.sort((a, b) => (a['order'] as int).compareTo(b['order'] as int));
+      
+      // Extract sorted URLs
+      List<String> activeBannerUrls = activeBanners.map((b) => b['imageURL'] as String).toList();
+      List<String?> activeBannerTargetUrls = activeBanners.map((b) => b['targetURL'] as String?).toList();
+      
       if (mounted && activeBannerUrls.isNotEmpty) {
         setState(() {
           _bannerImageUrls = activeBannerUrls;
           _bannerTargetUrls = activeBannerTargetUrls;
         });
-        AppLogger.d('${activeBannerUrls.length} active banners loaded from Realtime Database');
+        AppLogger.d('${activeBannerUrls.length} active banners loaded and sorted by order from Realtime Database');
         _startBannerAutoScroll();
       } else {
         AppLogger.d('No active banners found in Realtime Database');
