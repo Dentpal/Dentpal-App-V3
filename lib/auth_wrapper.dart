@@ -165,9 +165,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
         final user = snapshot.data!;
         AppLogger.d('AuthWrapper: Auth state change - user: ${user.uid}');
 
-        // Cache the future so it doesn't restart on every rebuild
+        // Cache the future so it doesn't restart on every rebuild.
+        // Do NOT set _resolvedUid here — _resolveSubAccountSession sets it
+        // only after it successfully completes, so that a failed future leaves
+        // _resolvedUid null and the retry path can kick off a fresh future.
         if (_resolvedUid != user.uid) {
-          _resolvedUid = user.uid;
           _subAccountFuture = _resolveSubAccountSession(user.uid);
         }
 

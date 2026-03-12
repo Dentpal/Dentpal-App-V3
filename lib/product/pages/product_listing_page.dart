@@ -2594,7 +2594,32 @@ class _ProductListingPageState extends State<ProductListingPage>
           onLoadSubcategories: _loadSubcategories,
           onApplySelection: (newCategories, newSubCategories) {
             if (!mounted) return;
-            // Clear everything first, then apply the new selection set
+
+            // Track clicks for newly added categories (not previously selected)
+            for (final categoryName in newCategories) {
+              if (!_selectedCategories.contains(categoryName)) {
+                final categoryId = _categoryNameToId[categoryName];
+                if (categoryId != null) {
+                  _clickTrackingService.trackCategoryClick(categoryId);
+                }
+              }
+            }
+
+            // Track clicks for newly added subcategories (not previously selected)
+            for (final subCategoryId in newSubCategories) {
+              if (!_selectedSubCategories.contains(subCategoryId)) {
+                for (final entry in _subcategoriesByCategory.entries) {
+                  if (entry.value
+                      .any((s) => s.subCategoryId == subCategoryId)) {
+                    _clickTrackingService.trackSubCategoryClick(
+                        entry.key, subCategoryId);
+                    break;
+                  }
+                }
+              }
+            }
+
+            // Apply the full new selection set and reset pagination
             setState(() {
               _selectedCategories = List.from(newCategories);
               _selectedSubCategories = List.from(newSubCategories);
@@ -2604,6 +2629,12 @@ class _ProductListingPageState extends State<ProductListingPage>
               _isLoading = false;
               _isLoadingMore = false;
             });
+
+            // Ensure subcategories are loaded for all newly selected categories
+            for (final categoryName in newCategories) {
+              _loadSubcategories(categoryName);
+            }
+
             _loadFirstPage();
           },
         );

@@ -209,21 +209,24 @@ class _ProductSearchPageState extends State<ProductSearchPage> {
   }
 
   void _onFilterChanged() {
-    // Parse price filters
-    double? minPrice;
-    double? maxPrice;
-    
-    if (_minPriceController.text.isNotEmpty) {
-      minPrice = double.tryParse(_minPriceController.text);
-    }
-    
-    if (_maxPriceController.text.isNotEmpty) {
-      maxPrice = double.tryParse(_maxPriceController.text);
-    }
+    // Parse price fields: an empty or invalid string explicitly becomes null so
+    // that clearing a field actually removes the filter rather than keeping the
+    // stale value (SearchFilters.copyWith uses ?? which retains old values when
+    // null is passed, so we rebuild the filters object directly).
+    final minText = _minPriceController.text.trim();
+    final maxText = _maxPriceController.text.trim();
+    final double? minPrice = minText.isEmpty ? null : double.tryParse(minText);
+    final double? maxPrice = maxText.isEmpty ? null : double.tryParse(maxText);
 
-    _currentFilters = _currentFilters.copyWith(
+    // Rebuild filters preserving all non-price fields, but always writing the
+    // freshly-parsed price values (including null to clear them).
+    _currentFilters = SearchFilters(
+      categoryIds: _currentFilters.categoryIds,
+      subCategoryIds: _currentFilters.subCategoryIds,
       minPrice: minPrice,
       maxPrice: maxPrice,
+      hasWarranty: _currentFilters.hasWarranty,
+      sortBy: _currentFilters.sortBy,
     );
 
     _performSearch();
@@ -1345,7 +1348,7 @@ class _SearchCategorySidebarSheetState
   // null means "All" is highlighted
   Category? _highlightedCategory;
   late Map<String, List<SubCategory>> _localSubcategories;
-  bool _loadingSubcategories = false;
+  final Set<String> _loadingSubcategoryIds = {};
   late List<String> _localSelectedCategoryIds;
   late List<String> _localSelectedSubCategoryIds;
 
@@ -1374,7 +1377,8 @@ class _SearchCategorySidebarSheetState
 
   Future<void> _ensureSubcategoriesLoaded(Category category) async {
     if (_localSubcategories.containsKey(category.categoryId)) return;
-    if (mounted) setState(() => _loadingSubcategories = true);
+    if (_loadingSubcategoryIds.contains(category.categoryId)) return;
+    if (mounted) setState(() => _loadingSubcategoryIds.add(category.categoryId));
     await widget.onLoadSubcategories(category.categoryId);
     if (mounted) {
       setState(() {
@@ -1382,7 +1386,7 @@ class _SearchCategorySidebarSheetState
         if (updated != null) {
           _localSubcategories[category.categoryId] = updated;
         }
-        _loadingSubcategories = false;
+        _loadingSubcategoryIds.remove(category.categoryId);
       });
     }
   }
@@ -1395,7 +1399,7 @@ class _SearchCategorySidebarSheetState
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final sidebarWidth = (screenWidth * 0.88).clamp(0.0, 400.0);
+    final sidebarWidth = (screenWidth * 0.88).clamp(0.0, 400.0).toDouble();
 
     return Align(
       alignment: Alignment.centerRight,
@@ -1490,7 +1494,6 @@ class _SearchCategorySidebarSheetState
                                 onTap: () {
                                   setState(() {
                                     _highlightedCategory = category;
-                                    _loadingSubcategories = false;
                                   });
                                   _ensureSubcategoriesLoaded(category);
                                 },
@@ -1784,7 +1787,7 @@ class _SearchCategorySidebarSheetState
   }
 
   Widget _buildSubcategoryGrid() {
-    if (_loadingSubcategories) {
+    if (_loadingSubcategoryIds.contains(_highlightedCategory?.categoryId)) {
       return const Center(
         child: CircularProgressIndicator(
           strokeWidth: 2,
