@@ -149,12 +149,6 @@ class _StorePageState extends State<StorePage>
         }
         
         // Get profileImage from vendor.profileImage
-        // Fetch coverImage and profileImage URLs from Seller > vendor
-        String coverImageURL = '';
-        String profileImageURL = '';
-        if (vendor['coverImage'] is Map && vendor['coverImage']['url'] is String) {
-          coverImageURL = vendor['coverImage']['url'] as String;
-        }
         if (vendor['profileImage'] is Map && vendor['profileImage']['url'] is String) {
           profileImageURL = vendor['profileImage']['url'] as String;
         }
@@ -379,7 +373,7 @@ class _StorePageState extends State<StorePage>
                   child: Column(
                     children: [
                       _buildAppBarHeader(),
-                      _buildStoreInfoHeader(),
+                      _buildStoreInfo(),
                       _buildTabBar(),
                       _buildTabContent(),
                       const WebFooter(),
@@ -414,19 +408,6 @@ class _StorePageState extends State<StorePage>
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.2),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
         child: AspectRatio(
@@ -440,8 +421,6 @@ class _StorePageState extends State<StorePage>
                   imageUrl: coverImageURLWithCache,
                   fit: BoxFit.cover,
                   cacheKey: coverImageURL,
-                  imageUrl: coverImageURL,
-                  fit: BoxFit.cover,
                   placeholder: (context, url) => Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -489,23 +468,6 @@ class _StorePageState extends State<StorePage>
                     icon: const Icon(
                       Icons.arrow_back,
                       color: AppColors.primary,
-              // Back button only
-              Positioned(
-                top: 16,
-                left: 16,
-                child: SafeArea(
-                  top: !kIsWeb,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.9),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: IconButton(
-                      icon: const Icon(
-                        Icons.arrow_back,
-                        color: AppColors.primary,
-                      ),
-                      onPressed: () => Navigator.maybePop(context),
                     ),
                     onPressed: () => Navigator.pop(context),
                   ),
@@ -632,31 +594,6 @@ class _StorePageState extends State<StorePage>
                   style: AppTextStyles.titleMedium.copyWith(
                     fontWeight: FontWeight.bold,
                     color: AppColors.onSurface,
-  Widget _buildStoreInfoHeader() {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final double iconSize = screenWidth < 380 ? 72 : (screenWidth < 600 ? 88 : 100);
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Store icon
-          _buildStoreIcon(iconSize),
-          const SizedBox(width: 16),
-          // Store name and address
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  _storeData['shopName'] ?? 'Store Name',
-                  style: AppTextStyles.headlineSmall.copyWith(
-                    color: AppColors.onSurface,
-                    fontWeight: FontWeight.bold,
-                    fontSize: screenWidth < 380 ? 18 : 20,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
