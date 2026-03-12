@@ -121,7 +121,10 @@ class _HomePageState extends State<HomePage> {
       // Detect sub account if not already identified.
       // This handles the case where AuthWrapper navigates directly to HomePage
       // (e.g. on app restart with a persisted sub account session).
-      if (!SubAccountSessionManager.isSubAccount) {
+      // Skip entirely when AuthWrapper (or the login page) has already resolved
+      // the role for this UID — re-running the lookup is redundant and, if it
+      // fails transiently, would trigger an unintended sign-out.
+      if (SubAccountSessionManager.resolvedForUid != user.uid) {
         try {
           final subAccountResult =
               await SubAccountService.lookupSubAccount(user.uid);
@@ -158,6 +161,10 @@ class _HomePageState extends State<HomePage> {
           }
           return;
         }
+      } else {
+        AppLogger.d(
+          'HomePage: Sub account role already resolved by AuthWrapper for ${user.uid}, skipping lookup.',
+        );
       }
 
       // Force refresh to ensure we get fresh data after login

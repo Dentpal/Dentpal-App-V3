@@ -427,6 +427,11 @@ class SubAccountSessionManager {
   static bool _isSubAccount = false;
   static String? _parentUserId;
   static SubAccount? _currentSubAccount;
+  /// UID for which the sub-account role has already been authoritatively
+  /// resolved (either by [setSubAccountSession] or [setMainAccountSession]).
+  /// Other widgets (e.g. HomePage) can check this to avoid re-running the
+  /// lookup for a UID that AuthWrapper has already resolved.
+  static String? _resolvedForUid;
 
   /// Whether the current logged-in user is a sub account.
   static bool get isSubAccount => _isSubAccount;
@@ -436,6 +441,11 @@ class SubAccountSessionManager {
 
   /// The current sub account data (null if main account).
   static SubAccount? get currentSubAccount => _currentSubAccount;
+
+  /// The UID for which the session role has been authoritatively resolved.
+  /// Null until [setSubAccountSession] or [setMainAccountSession] has been
+  /// called for a specific user, and cleared by [clearSession] on sign-out.
+  static String? get resolvedForUid => _resolvedForUid;
 
   /// The effective user ID for data access (parent's ID for sub accounts).
   /// Use this when accessing shared data like Cart.
@@ -454,6 +464,7 @@ class SubAccountSessionManager {
     _isSubAccount = true;
     _parentUserId = parentUserId;
     _currentSubAccount = subAccount;
+    _resolvedForUid = subAccount.id;
     AppLogger.d(
       'Sub account session initialized: ${subAccount.email} (parent: $parentUserId)',
     );
@@ -464,6 +475,7 @@ class SubAccountSessionManager {
     _isSubAccount = false;
     _parentUserId = null;
     _currentSubAccount = null;
+    _resolvedForUid = FirebaseAuth.instance.currentUser?.uid;
     AppLogger.d('Main account session initialized');
   }
 
@@ -472,6 +484,7 @@ class SubAccountSessionManager {
     _isSubAccount = false;
     _parentUserId = null;
     _currentSubAccount = null;
+    _resolvedForUid = null;
     AppLogger.d('Sub account session cleared');
   }
 

@@ -211,22 +211,19 @@ class _ProductSearchPageState extends State<ProductSearchPage> {
   void _onFilterChanged() {
     // Parse price fields: an empty or invalid string explicitly becomes null so
     // that clearing a field actually removes the filter rather than keeping the
-    // stale value (SearchFilters.copyWith uses ?? which retains old values when
-    // null is passed, so we rebuild the filters object directly).
+    // stale value.
     final minText = _minPriceController.text.trim();
     final maxText = _maxPriceController.text.trim();
     final double? minPrice = minText.isEmpty ? null : double.tryParse(minText);
     final double? maxPrice = maxText.isEmpty ? null : double.tryParse(maxText);
 
-    // Rebuild filters preserving all non-price fields, but always writing the
-    // freshly-parsed price values (including null to clear them).
-    _currentFilters = SearchFilters(
-      categoryIds: _currentFilters.categoryIds,
-      subCategoryIds: _currentFilters.subCategoryIds,
+    // Use copyWith with explicit clear flags so that null correctly removes the
+    // price filter instead of being silently ignored.
+    _currentFilters = _currentFilters.copyWith(
       minPrice: minPrice,
+      clearMinPrice: minPrice == null,
       maxPrice: maxPrice,
-      hasWarranty: _currentFilters.hasWarranty,
-      sortBy: _currentFilters.sortBy,
+      clearMaxPrice: maxPrice == null,
     );
 
     _performSearch();

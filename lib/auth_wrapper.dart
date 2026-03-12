@@ -95,7 +95,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
   Future<void> _resolveSubAccountSession(String uid) async {
     // If the session manager already knows this is a sub-account, it was set
     // by the login page — no need to re-run the lookup.
-    if (SubAccountSessionManager.isSubAccount) return;
+    if (SubAccountSessionManager.isSubAccount) {
+      _resolvedUid = uid;
+      return;
+    }
     // If we already resolved for this uid, skip.
     if (_resolvedUid == uid) return;
     try {

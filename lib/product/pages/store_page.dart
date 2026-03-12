@@ -153,6 +153,8 @@ class _StorePageState extends State<StorePage>
         // Get coverImage from vendor.coverImage
         if (vendor['coverImage'] is Map && vendor['coverImage']['url'] is String) {
           coverImageURL = vendor['coverImage']['url'] as String;
+        } else if (vendor['coverImage'] is String) {
+          coverImageURL = vendor['coverImage'] as String;
         }
         
         // Get profileImage from vendor.profileImage

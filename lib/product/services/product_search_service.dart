@@ -13,14 +13,6 @@ enum SortBy {
   clickCount,
 }
 
-// Private sentinel used by SearchFilters.copyWith to distinguish
-// "argument omitted" (keep current value) from "explicit null" (clear value).
-class _NoChange {
-  const _NoChange();
-}
-
-const _noChange = _NoChange();
-
 class SearchFilters {
   final List<String> categoryIds;
   final List<String> subCategoryIds;
@@ -41,18 +33,18 @@ class SearchFilters {
   SearchFilters copyWith({
     List<String>? categoryIds,
     List<String>? subCategoryIds,
-    // Typed as Object? so callers can pass null to clear the field; the
-    // default _noChange sentinel means "leave the current value unchanged".
-    Object? minPrice = _noChange,
-    Object? maxPrice = _noChange,
+    double? minPrice,
+    bool clearMinPrice = false,
+    double? maxPrice,
+    bool clearMaxPrice = false,
     bool? hasWarranty,
     SortBy? sortBy,
   }) {
     return SearchFilters(
       categoryIds: categoryIds ?? this.categoryIds,
       subCategoryIds: subCategoryIds ?? this.subCategoryIds,
-      minPrice: identical(minPrice, _noChange) ? this.minPrice : minPrice as double?,
-      maxPrice: identical(maxPrice, _noChange) ? this.maxPrice : maxPrice as double?,
+      minPrice: clearMinPrice ? null : (minPrice ?? this.minPrice),
+      maxPrice: clearMaxPrice ? null : (maxPrice ?? this.maxPrice),
       hasWarranty: hasWarranty ?? this.hasWarranty,
       sortBy: sortBy ?? this.sortBy,
     );
