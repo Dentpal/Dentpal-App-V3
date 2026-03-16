@@ -712,45 +712,85 @@ class _LoginPageState extends State<LoginPage> {
                                       //   ],
                                       // ),
                                       const SizedBox(height: 26),
-                                      // Sign up link - Opens Play Store
+                                      // Sign up link - Download app
                                       Center(
-                                        child: TextButton(
-                                          onPressed: () async {
-                                            // Invalid Play Store link (placeholder)
-                                            const playStoreUrl =
-                                                'https://play.google.com/store/apps/details?id=com.dentpal.app';
-                                            final uri = Uri.parse(playStoreUrl);
-                                            if (await canLaunchUrl(uri)) {
-                                              await launchUrl(
-                                                uri,
-                                                mode: LaunchMode
-                                                    .externalApplication,
-                                              );
-                                            }
-                                          },
-                                          child: RichText(
-                                            text: TextSpan(
-                                              style: AppTextStyles.bodyMedium
-                                                  .copyWith(
-                                                    color: AppColors.onSurface
-                                                        .withOpacity(0.7),
-                                                  ),
-                                              children: const [
-                                                TextSpan(
-                                                  text:
-                                                      "Don't have an account? ",
-                                                ),
-                                                TextSpan(
-                                                  text: 'Download Our App now',
-                                                  style: TextStyle(
-                                                    color: AppColors.accent,
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
+                                        child: Text(
+                                          "Don't have an account? Download our app now",
+                                          style: AppTextStyles.bodyMedium.copyWith(
+                                            color: AppColors.onSurface.withOpacity(0.7),
                                           ),
                                         ),
+                                      ),
+                                      const SizedBox(height: 14),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          // App Store button
+                                          Expanded(
+                                            child: OutlinedButton.icon(
+                                              onPressed: () async {
+                                                const appStoreUrl =
+                                                    'https://apps.apple.com/app/dentpal/id6758815697';
+                                                final uri = Uri.parse(appStoreUrl);
+                                                if (await canLaunchUrl(uri)) {
+                                                  await launchUrl(
+                                                    uri,
+                                                    mode: LaunchMode.externalApplication,
+                                                  );
+                                                }
+                                              },
+                                              icon: const Icon(Icons.apple, size: 22),
+                                              label: const Text('App Store'),
+                                              style: OutlinedButton.styleFrom(
+                                                foregroundColor: AppColors.onSurface,
+                                                side: BorderSide(
+                                                  color: AppColors.onSurface.withOpacity(0.2),
+                                                ),
+                                                padding: const EdgeInsets.symmetric(
+                                                  vertical: 14,
+                                                ),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius: BorderRadius.circular(12),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 14),
+                                          // Google Play button
+                                          Expanded(
+                                            child: OutlinedButton.icon(
+                                              onPressed: () async {
+                                                const playStoreUrl =
+                                                    'https://play.google.com/store/apps/details?id=com.rrnewtech.dentpal';
+                                                final uri = Uri.parse(playStoreUrl);
+                                                if (await canLaunchUrl(uri)) {
+                                                  await launchUrl(
+                                                    uri,
+                                                    mode: LaunchMode.externalApplication,
+                                                  );
+                                                }
+                                              },
+                                              icon: Image.asset(
+                                                'lib/assets/icons/google-logo.png',
+                                                width: 18,
+                                                height: 18,
+                                              ),
+                                              label: const Text('Google Play'),
+                                              style: OutlinedButton.styleFrom(
+                                                foregroundColor: AppColors.onSurface,
+                                                side: BorderSide(
+                                                  color: AppColors.onSurface.withOpacity(0.2),
+                                                ),
+                                                padding: const EdgeInsets.symmetric(
+                                                  vertical: 14,
+                                                ),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius: BorderRadius.circular(12),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ],
                                   ),
@@ -1047,50 +1087,88 @@ class _LoginPageState extends State<LoginPage> {
                                   const SizedBox(height: 24),
                                   Center(
                                     child: kIsWeb
-                                        // On web (mobile browser), show download app link
-                                        ? TextButton(
-                                            onPressed: () async {
-                                              // Invalid Play Store link (placeholder)
-                                              const playStoreUrl =
-                                                  'https://play.google.com/store/apps/details?id=com.dentpal.app';
-                                              final uri = Uri.parse(
-                                                playStoreUrl,
-                                              );
-                                              if (await canLaunchUrl(uri)) {
-                                                await launchUrl(
-                                                  uri,
-                                                  mode: LaunchMode
-                                                      .externalApplication,
-                                                );
-                                              }
-                                            },
-                                            child: RichText(
-                                              textAlign: TextAlign.center,
-                                              text: TextSpan(
-                                                style: AppTextStyles.bodyMedium,
-                                                children: const [
-                                                  TextSpan(
-                                                    text:
-                                                        "Don't have an account? ",
-                                                    style: TextStyle(
-                                                      color: AppColors
-                                                          .onSurfaceVariant,
-                                                      fontWeight:
-                                                          FontWeight.normal,
+                                        // On web (mobile browser), show download app links
+                                        ? Column(
+                                            children: [
+                                              Text(
+                                                "Don't have an account? Download our app now",
+                                                style: AppTextStyles.bodyMedium.copyWith(
+                                                  color: AppColors.onSurfaceVariant,
+                                                ),
+                                                textAlign: TextAlign.center,
+                                              ),
+                                              const SizedBox(height: 14),
+                                              Row(
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                children: [
+                                                  // App Store button
+                                                  Expanded(
+                                                    child: OutlinedButton.icon(
+                                                      onPressed: () async {
+                                                        const appStoreUrl =
+                                                            'https://apps.apple.com/app/dentpal/id6758815697';
+                                                        final uri = Uri.parse(appStoreUrl);
+                                                        if (await canLaunchUrl(uri)) {
+                                                          await launchUrl(
+                                                            uri,
+                                                            mode: LaunchMode.externalApplication,
+                                                          );
+                                                        }
+                                                      },
+                                                      icon: const Icon(Icons.apple, size: 22),
+                                                      label: const Text('App Store'),
+                                                      style: OutlinedButton.styleFrom(
+                                                        foregroundColor: AppColors.onSurface,
+                                                        side: BorderSide(
+                                                          color: AppColors.onSurface.withOpacity(0.2),
+                                                        ),
+                                                        padding: const EdgeInsets.symmetric(
+                                                          vertical: 14,
+                                                        ),
+                                                        shape: RoundedRectangleBorder(
+                                                          borderRadius: BorderRadius.circular(12),
+                                                        ),
+                                                      ),
                                                     ),
                                                   ),
-                                                  TextSpan(
-                                                    text:
-                                                        'Download Our App now',
-                                                    style: TextStyle(
-                                                      color: AppColors.accent,
-                                                      fontWeight:
-                                                          FontWeight.w600,
+                                                  const SizedBox(width: 14),
+                                                  // Google Play button
+                                                  Expanded(
+                                                    child: OutlinedButton.icon(
+                                                      onPressed: () async {
+                                                        const playStoreUrl =
+                                                            'https://play.google.com/store/apps/details?id=com.rrnewtech.dentpal';
+                                                        final uri = Uri.parse(playStoreUrl);
+                                                        if (await canLaunchUrl(uri)) {
+                                                          await launchUrl(
+                                                            uri,
+                                                            mode: LaunchMode.externalApplication,
+                                                          );
+                                                        }
+                                                      },
+                                                      icon: Image.asset(
+                                                        'lib/assets/icons/google-logo.png',
+                                                        width: 18,
+                                                        height: 18,
+                                                      ),
+                                                      label: const Text('Google Play'),
+                                                      style: OutlinedButton.styleFrom(
+                                                        foregroundColor: AppColors.onSurface,
+                                                        side: BorderSide(
+                                                          color: AppColors.onSurface.withOpacity(0.2),
+                                                        ),
+                                                        padding: const EdgeInsets.symmetric(
+                                                          vertical: 14,
+                                                        ),
+                                                        shape: RoundedRectangleBorder(
+                                                          borderRadius: BorderRadius.circular(12),
+                                                        ),
+                                                      ),
                                                     ),
                                                   ),
                                                 ],
                                               ),
-                                            ),
+                                            ],
                                           )
                                         // On native app, allow sign up
                                         : TextButton(
