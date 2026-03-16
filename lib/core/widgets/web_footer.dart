@@ -328,8 +328,12 @@ class WebFooter extends StatelessWidget {
                     child: Material(
                       color: Colors.transparent,
                       child: InkWell(
-                        onTap: () {
-                          // TODO: Add App Store link
+                        onTap: () async {
+                          const appStoreUrl = 'https://apps.apple.com/app/dentpal/id6758815697';
+                          final uri = Uri.parse(appStoreUrl);
+                          if (await canLaunchUrl(uri)) {
+                            await launchUrl(uri, mode: LaunchMode.externalApplication);
+                          }
                         },
                         borderRadius: BorderRadius.circular(6),
                         child: Padding(
@@ -385,8 +389,12 @@ class WebFooter extends StatelessWidget {
                     child: Material(
                       color: Colors.transparent,
                       child: InkWell(
-                        onTap: () {
-                          // TODO: Add Play Store link
+                        onTap: () async {
+                          const playStoreUrl = 'https://play.google.com/store/apps/details?id=com.rrnewtech.dentpal';
+                          final uri = Uri.parse(playStoreUrl);
+                          if (await canLaunchUrl(uri)) {
+                            await launchUrl(uri, mode: LaunchMode.externalApplication);
+                          }
                         },
                         borderRadius: BorderRadius.circular(6),
                         child: Padding(

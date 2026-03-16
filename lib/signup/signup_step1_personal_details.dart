@@ -260,10 +260,23 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
             const SizedBox(height: 16),
             
             // Gender field
-            Text(
-              'Gender',
-              style: AppTextStyles.labelLarge.copyWith(
-                fontWeight: FontWeight.w500,
+            Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: 'Gender',
+                    style: AppTextStyles.labelLarge.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  TextSpan(
+                    text: ' (optional)',
+                    style: AppTextStyles.labelLarge.copyWith(
+                      fontWeight: FontWeight.w400,
+                      color: AppColors.grey400,
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 8),
@@ -324,10 +337,23 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
             const SizedBox(height: 16),
             
             // Birthdate field
-            Text(
-              'Birthdate',
-              style: AppTextStyles.labelLarge.copyWith(
-                fontWeight: FontWeight.w500,
+            Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: 'Birthdate',
+                    style: AppTextStyles.labelLarge.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  TextSpan(
+                    text: ' (optional)',
+                    style: AppTextStyles.labelLarge.copyWith(
+                      fontWeight: FontWeight.w400,
+                      color: AppColors.grey400,
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 4),
@@ -502,18 +528,13 @@ class _SignupStep1PersonalDetailsState extends State<SignupStep1PersonalDetails>
   
   void _validateAndProceed() async {
     final valid = _controller.formKeyStep1.currentState?.validate() ?? false;
-    String? birthdateError;
-    
-    if (_controller.selectedBirthdate == null) {
-      birthdateError = 'Please select your birthdate';
-    }
     
     setState(() {
       _controller.step1GenderError = null;
-      _controller.step1BirthdateError = birthdateError;
+      _controller.step1BirthdateError = null;
     });
     
-    if (valid && birthdateError == null) {
+    if (valid) {
       // Check if phone number already exists in UserLookup
       setState(() {
         _isCheckingPhoneNumber = true;
