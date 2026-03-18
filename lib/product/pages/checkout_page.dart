@@ -1280,7 +1280,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
-              children: PaymentMethod.values.map((method) {
+              children: PaymentMethod.values
+                  // Hide GrabPay, BillEase, and PayMaya for now
+                  .where((method) => method != PaymentMethod.grabpay && 
+                                     method != PaymentMethod.billEase && 
+                                     method != PaymentMethod.paymaya)
+                  .map((method) {
                 final isSelected = _selectedPaymentMethod == method;
                 
                 return Padding(

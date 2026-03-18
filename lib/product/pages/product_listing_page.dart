@@ -83,12 +83,12 @@ class _ProductListingPageState extends State<ProductListingPage>
 
   bool _isSeller = false;
   String _userFirstName = 'User';
-  
+
   // Cart item count for badge
   int _cartItemCount = 0;
   StreamSubscription<int>? _cartCountSubscription;
   StreamSubscription<User?>? _authStateSubscription;
-  
+
   // Active banner image URLs and target URLs loaded from Realtime Database
   List<String> _bannerImageUrls = [];
   List<String?> _bannerTargetUrls = [];
@@ -133,8 +133,9 @@ class _ProductListingPageState extends State<ProductListingPage>
   // Listen to auth state changes and (re)subscribe to cart count accordingly
   void _listenToCartCount() {
     _authStateSubscription?.cancel();
-    _authStateSubscription =
-        FirebaseAuth.instance.authStateChanges().listen((user) {
+    _authStateSubscription = FirebaseAuth.instance.authStateChanges().listen((
+      user,
+    ) {
       _cartCountSubscription?.cancel();
       _cartCountSubscription = null;
 
@@ -147,23 +148,26 @@ class _ProductListingPageState extends State<ProductListingPage>
         return;
       }
 
-      _cartCountSubscription =
-          _cartService.cartItemCountStream().listen((count) {
-        if (mounted) {
-          setState(() {
-            _cartItemCount = count;
-          });
-        }
-      }, onError: (error) {
-        AppLogger.d('Error listening to cart count: $error');
-      });
+      _cartCountSubscription = _cartService.cartItemCountStream().listen(
+        (count) {
+          if (mounted) {
+            setState(() {
+              _cartItemCount = count;
+            });
+          }
+        },
+        onError: (error) {
+          AppLogger.d('Error listening to cart count: $error');
+        },
+      );
     });
   }
 
   // Fetch all active banner images from Firebase Realtime Database
   Future<void> _loadActiveBanner() async {
     try {
-      final databaseUrl = 'https://dentpal-161e5-default-rtdb.asia-southeast1.firebasedatabase.app';
+      final databaseUrl =
+          'https://dentpal-161e5-default-rtdb.asia-southeast1.firebasedatabase.app';
       final database = FirebaseDatabase.instanceFor(
         app: Firebase.app(),
         databaseURL: databaseUrl,
@@ -174,47 +178,56 @@ class _ProductListingPageState extends State<ProductListingPage>
         AppLogger.d('No banners found in Realtime Database');
         return;
       }
-      
+
       // Create a list to hold banner data with order
       List<Map<String, dynamic>> activeBanners = [];
       final currentTime = DateTime.now();
-      
+
       final bannersData = snapshot.value as Map<dynamic, dynamic>?;
       if (bannersData != null) {
         for (final entry in bannersData.entries) {
           final bannerData = entry.value as Map<dynamic, dynamic>?;
           if (bannerData != null) {
             final isActive = bannerData['isActive'] == true;
-            
+
             // Only process if banner is active
             if (isActive) {
               // Check duration.startTime if exists
               bool shouldDisplay = true;
-              
+
               if (bannerData['duration'] != null) {
-                final duration = bannerData['duration'] as Map<dynamic, dynamic>?;
+                final duration =
+                    bannerData['duration'] as Map<dynamic, dynamic>?;
                 if (duration != null && duration['startTime'] != null) {
                   final startTimeStr = duration['startTime'] as String?;
                   if (startTimeStr != null) {
                     try {
                       final startTime = DateTime.parse(startTimeStr);
                       // Only display if current time is after or equal to start time
-                      shouldDisplay = currentTime.isAfter(startTime) || currentTime.isAtSameMomentAs(startTime);
-                      
+                      shouldDisplay =
+                          currentTime.isAfter(startTime) ||
+                          currentTime.isAtSameMomentAs(startTime);
+
                       if (!shouldDisplay) {
-                        AppLogger.d('Banner ${entry.key} not yet started. Start time: $startTimeStr, Current time: $currentTime');
+                        AppLogger.d(
+                          'Banner ${entry.key} not yet started. Start time: $startTimeStr, Current time: $currentTime',
+                        );
                       }
                     } catch (e) {
-                      AppLogger.d('Error parsing startTime for banner ${entry.key}: $e');
+                      AppLogger.d(
+                        'Error parsing startTime for banner ${entry.key}: $e',
+                      );
                       // If parsing fails, don't display the banner
                       shouldDisplay = false;
                     }
                   }
                 }
               }
-              
+
               if (shouldDisplay) {
-                final bannerUrl = bannerData['imageURL'] as String? ?? bannerData['imageUrl'] as String?;
+                final bannerUrl =
+                    bannerData['imageURL'] as String? ??
+                    bannerData['imageUrl'] as String?;
                 if (bannerUrl != null && bannerUrl.isNotEmpty) {
                   final targetUrl = bannerData['url'] as String?;
                   final rawOrder = bannerData['order'];
@@ -242,20 +255,29 @@ class _ProductListingPageState extends State<ProductListingPage>
           }
         }
       }
-      
+
       // Sort banners by order (ascending: 0, 1, 2, ...)
-      activeBanners.sort((a, b) => (a['order'] as int? ?? 999).compareTo(b['order'] as int? ?? 999));
-      
+      activeBanners.sort(
+        (a, b) =>
+            (a['order'] as int? ?? 999).compareTo(b['order'] as int? ?? 999),
+      );
+
       // Extract sorted URLs
-      List<String> activeBannerUrls = activeBanners.map((b) => b['imageURL'] as String).toList();
-      List<String?> activeBannerTargetUrls = activeBanners.map((b) => b['targetURL'] as String?).toList();
-      
+      List<String> activeBannerUrls = activeBanners
+          .map((b) => b['imageURL'] as String)
+          .toList();
+      List<String?> activeBannerTargetUrls = activeBanners
+          .map((b) => b['targetURL'] as String?)
+          .toList();
+
       if (mounted && activeBannerUrls.isNotEmpty) {
         setState(() {
           _bannerImageUrls = activeBannerUrls;
           _bannerTargetUrls = activeBannerTargetUrls;
         });
-        AppLogger.d('${activeBannerUrls.length} active banners loaded and sorted by order from Realtime Database');
+        AppLogger.d(
+          '${activeBannerUrls.length} active banners loaded and sorted by order from Realtime Database',
+        );
         _startBannerAutoScroll();
       } else {
         AppLogger.d('No active banners found in Realtime Database');
@@ -277,45 +299,44 @@ class _ProductListingPageState extends State<ProductListingPage>
           if (targetUrl.contains('/product/')) {
             // Extract product ID from URL
             final uri = Uri.parse(targetUrl);
-            final pathSegments = uri.fragment.isNotEmpty 
-                ? uri.fragment.split('/') 
+            final pathSegments = uri.fragment.isNotEmpty
+                ? uri.fragment.split('/')
                 : uri.pathSegments;
-            
+
             // Find the product ID (comes after 'product')
             final productIndex = pathSegments.indexOf('product');
             if (productIndex != -1 && productIndex < pathSegments.length - 1) {
               final productId = pathSegments[productIndex + 1];
-              AppLogger.d('Navigating to product detail page with ID: $productId');
-              
+              AppLogger.d(
+                'Navigating to product detail page with ID: $productId',
+              );
+
               // Navigate to product detail page within the app
               if (mounted) {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (context) => ProductDetailPage(productId: productId),
+                    builder: (context) =>
+                        ProductDetailPage(productId: productId),
                   ),
                 );
               }
               return;
             }
           }
-          
+
           // If not a product URL, launch externally
           final uri = Uri.parse(targetUrl);
-          await launchUrl(
-            uri,
-            mode: LaunchMode.externalApplication,
-          );
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
           AppLogger.d('Successfully launched URL externally: $targetUrl');
         } catch (e) {
           AppLogger.d('Error launching banner URL: $e');
           // Try alternative launch mode if first attempt fails
           try {
             final uri = Uri.parse(targetUrl);
-            await launchUrl(
-              uri,
-              mode: LaunchMode.platformDefault,
+            await launchUrl(uri, mode: LaunchMode.platformDefault);
+            AppLogger.d(
+              'Successfully launched URL with platformDefault mode: $targetUrl',
             );
-            AppLogger.d('Successfully launched URL with platformDefault mode: $targetUrl');
           } catch (e2) {
             AppLogger.d('Error with platformDefault mode: $e2');
           }
@@ -328,7 +349,9 @@ class _ProductListingPageState extends State<ProductListingPage>
   void _startBannerAutoScroll() {
     _bannerAutoScrollTimer?.cancel();
     if (_bannerImageUrls.length > 1) {
-      _bannerAutoScrollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      _bannerAutoScrollTimer = Timer.periodic(const Duration(seconds: 5), (
+        timer,
+      ) {
         if (mounted && _bannerPageController.hasClients) {
           final nextPage = (_currentBannerIndex + 1) % _bannerImageUrls.length;
           _bannerPageController.animateToPage(
@@ -751,7 +774,8 @@ class _ProductListingPageState extends State<ProductListingPage>
                                   color: isSelected
                                       ? AppColors.onSecondary
                                       : AppColors.onSurface.withValues(
-                                          alpha: 0.6),
+                                          alpha: 0.6,
+                                        ),
                                 ),
                               ),
                             ),
@@ -906,7 +930,8 @@ class _ProductListingPageState extends State<ProductListingPage>
             categorySet.add(category.categoryName);
             _categoryNameToId[category.categoryName] = category.categoryId;
             _categoryIdToName[category.categoryId] = category.categoryName;
-            _categoryNameToImage[category.categoryName] = category.categoryImageUrl;
+            _categoryNameToImage[category.categoryName] =
+                category.categoryImageUrl;
           }
 
           _categories = categorySet.toList();
@@ -1099,7 +1124,8 @@ class _ProductListingPageState extends State<ProductListingPage>
           freshCategoriesList.add(category.categoryName);
           freshCategoryMapping[category.categoryName] = category.categoryId;
           freshCategoryIdToName[category.categoryId] = category.categoryName;
-          freshCategoryImageMapping[category.categoryName] = category.categoryImageUrl;
+          freshCategoryImageMapping[category.categoryName] =
+              category.categoryImageUrl;
         }
         AppLogger.d('Fetched ${allCategories.length} fresh categories');
       } catch (e) {
@@ -1416,7 +1442,9 @@ class _ProductListingPageState extends State<ProductListingPage>
                                   children: [
                                     Icon(
                                       Icons.shopping_cart_outlined,
-                                      color: AppColors.onSurface.withOpacity(0.7),
+                                      color: AppColors.onSurface.withOpacity(
+                                        0.7,
+                                      ),
                                       size: 22,
                                     ),
                                     if (_cartItemCount > 0)
@@ -1434,7 +1462,9 @@ class _ProductListingPageState extends State<ProductListingPage>
                                             shape: BoxShape.circle,
                                           ),
                                           child: Text(
-                                            _cartItemCount > 99 ? '99+' : '$_cartItemCount',
+                                            _cartItemCount > 99
+                                                ? '99+'
+                                                : '$_cartItemCount',
                                             style: const TextStyle(
                                               color: Colors.white,
                                               fontSize: 10,
@@ -1631,7 +1661,9 @@ class _ProductListingPageState extends State<ProductListingPage>
                                       shape: BoxShape.circle,
                                     ),
                                     child: Text(
-                                      _cartItemCount > 99 ? '99+' : '$_cartItemCount',
+                                      _cartItemCount > 99
+                                          ? '99+'
+                                          : '$_cartItemCount',
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontSize: 10,
@@ -1693,9 +1725,15 @@ class _ProductListingPageState extends State<ProductListingPage>
                       // Banner Slideshow
                       if (_bannerImageUrls.isNotEmpty)
                         Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 16),
+                          margin: EdgeInsets.symmetric(
+                            horizontal: MediaQuery.of(context).size.width >= 600
+                                ? 16 // Standard margin for tablet/desktop
+                                : 0, // No margin for mobile = full width = much taller banner
+                          ),
                           decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(24),
+                            borderRadius: BorderRadius.circular(
+                              MediaQuery.of(context).size.width >= 600 ? 24 : 0,
+                            ),
                             boxShadow: [
                               BoxShadow(
                                 color: AppColors.primary.withValues(alpha: 0.2),
@@ -1705,14 +1743,20 @@ class _ProductListingPageState extends State<ProductListingPage>
                             ],
                           ),
                           child: ClipRRect(
-                            borderRadius: BorderRadius.circular(24),
+                            borderRadius: BorderRadius.circular(
+                              MediaQuery.of(context).size.width >= 600 ? 24 : 0,
+                            ),
                             child: AspectRatio(
-                              aspectRatio: 8 / 3, // 800x300
+                              aspectRatio:
+                                  8 /
+                                  3, // Keep original 8:3 ratio for all screens
                               child: Stack(
                                 children: [
                                   PageView.builder(
                                     controller: _bannerPageController,
-                                    physics: const BouncingScrollPhysics(),
+                                    physics: kIsWeb
+                                        ? const AlwaysScrollableScrollPhysics()
+                                        : const PageScrollPhysics(),
                                     onPageChanged: (index) {
                                       setState(() {
                                         _currentBannerIndex = index;
@@ -1722,9 +1766,11 @@ class _ProductListingPageState extends State<ProductListingPage>
                                     itemCount: _bannerImageUrls.length,
                                     itemBuilder: (context, index) {
                                       return GestureDetector(
-                                        behavior: HitTestBehavior.opaque,
-                                        onTap: () {
-                                          AppLogger.d('Banner GestureDetector tapped at index: $index');
+                                        behavior: HitTestBehavior.translucent,
+                                        onTapUp: (details) {
+                                          AppLogger.d(
+                                            'Banner GestureDetector tapped at index: $index',
+                                          );
                                           _onBannerTap(index);
                                         },
                                         child: CachedNetworkImage(
@@ -1733,87 +1779,118 @@ class _ProductListingPageState extends State<ProductListingPage>
                                           width: double.infinity,
                                           memCacheWidth: 1920,
                                           memCacheHeight: 720,
-                                          placeholder: (context, url) => Container(
-                                            decoration: BoxDecoration(
-                                              gradient: LinearGradient(
-                                                colors: [
-                                                  AppColors.primary.withValues(alpha: 0.1),
-                                                  AppColors.accent.withValues(alpha: 0.1),
-                                                ],
-                                                begin: Alignment.topLeft,
-                                                end: Alignment.bottomRight,
+                                          placeholder: (context, url) =>
+                                              Container(
+                                                decoration: BoxDecoration(
+                                                  gradient: LinearGradient(
+                                                    colors: [
+                                                      AppColors.primary
+                                                          .withValues(
+                                                            alpha: 0.1,
+                                                          ),
+                                                      AppColors.accent
+                                                          .withValues(
+                                                            alpha: 0.1,
+                                                          ),
+                                                    ],
+                                                    begin: Alignment.topLeft,
+                                                    end: Alignment.bottomRight,
+                                                  ),
+                                                ),
+                                                child: const Center(
+                                                  child:
+                                                      CircularProgressIndicator(),
+                                                ),
                                               ),
-                                            ),
-                                            child: const Center(
-                                              child: CircularProgressIndicator(),
-                                            ),
-                                          ),
-                                          errorWidget: (context, url, error) => Container(
-                                            decoration: BoxDecoration(
-                                              gradient: LinearGradient(
-                                                colors: [
-                                                  AppColors.primary.withValues(alpha: 0.1),
-                                                  AppColors.accent.withValues(alpha: 0.1),
-                                                ],
-                                                begin: Alignment.topLeft,
-                                                end: Alignment.bottomRight,
+                                          errorWidget: (context, url, error) =>
+                                              Container(
+                                                decoration: BoxDecoration(
+                                                  gradient: LinearGradient(
+                                                    colors: [
+                                                      AppColors.primary
+                                                          .withValues(
+                                                            alpha: 0.1,
+                                                          ),
+                                                      AppColors.accent
+                                                          .withValues(
+                                                            alpha: 0.1,
+                                                          ),
+                                                    ],
+                                                    begin: Alignment.topLeft,
+                                                    end: Alignment.bottomRight,
+                                                  ),
+                                                ),
+                                                child: const Center(
+                                                  child: Icon(
+                                                    Icons.image_not_supported,
+                                                    color: Colors.grey,
+                                                    size: 40,
+                                                  ),
+                                                ),
                                               ),
-                                            ),
-                                            child: const Center(
-                                              child: Icon(
-                                                Icons.image_not_supported,
-                                                color: Colors.grey,
-                                                size: 40,
-                                              ),
-                                            ),
-                                          ),
-                                          cacheManager: ProductImageCacheManager.instance,
+                                          cacheManager:
+                                              ProductImageCacheManager.instance,
                                         ),
                                       );
                                     },
-                                  ),
-                                  // Gradient overlay for better text readability
-                                  Positioned.fill(
-                                    child: IgnorePointer(
-                                      child: DecoratedBox(
-                                        decoration: BoxDecoration(
-                                          gradient: LinearGradient(
-                                            begin: Alignment.topCenter,
-                                            end: Alignment.bottomCenter,
-                                            colors: [
-                                              Colors.transparent,
-                                              Colors.black.withValues(alpha: 0.3),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
                                   ),
                                   // Banner indicator dots
                                   if (_bannerImageUrls.length > 1)
                                     Positioned(
                                       bottom: 16,
-                                    left: 0,
-                                    right: 0,
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: List.generate(_bannerImageUrls.length, (index) {
-                                        return AnimatedContainer(
-                                          duration: const Duration(milliseconds: 300),
-                                          margin: const EdgeInsets.symmetric(horizontal: 4),
-                                          width: _currentBannerIndex == index ? 16 : 8,
-                                          height: 8,
-                                          decoration: BoxDecoration(
-                                            color: _currentBannerIndex == index
-                                                ? AppColors.primary
-                                                : AppColors.primary.withOpacity(0.3),
-                                            borderRadius: BorderRadius.circular(4),
-                                          ),
-                                        );
-                                      }),
+                                      left: 0,
+                                      right: 0,
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: List.generate(
+                                          _bannerImageUrls.length,
+                                          (index) {
+                                            return GestureDetector(
+                                              onTap: () {
+                                                if (_bannerPageController
+                                                    .hasClients) {
+                                                  _bannerPageController
+                                                      .animateToPage(
+                                                        index,
+                                                        duration:
+                                                            const Duration(
+                                                              milliseconds: 300,
+                                                            ),
+                                                        curve: Curves.easeInOut,
+                                                      );
+                                                }
+                                              },
+                                              child: AnimatedContainer(
+                                                duration: const Duration(
+                                                  milliseconds: 300,
+                                                ),
+                                                margin:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 5,
+                                                    ),
+                                                width:
+                                                    _currentBannerIndex == index
+                                                    ? 24
+                                                    : 12,
+                                                height: 12,
+                                                decoration: BoxDecoration(
+                                                  color:
+                                                      _currentBannerIndex ==
+                                                          index
+                                                      ? AppColors.primary
+                                                      : AppColors.primary
+                                                            .withOpacity(0.3),
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                              ],
+                                ],
                               ),
                             ),
                           ),
@@ -1894,7 +1971,9 @@ class _ProductListingPageState extends State<ProductListingPage>
                                           color: isSelected
                                               ? AppColors.primary
                                               : AppColors.surface,
-                                          borderRadius: BorderRadius.circular(12),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
                                           border: Border.all(
                                             color: isSelected
                                                 ? AppColors.primary
@@ -1914,7 +1993,9 @@ class _ProductListingPageState extends State<ProductListingPage>
                                               : [
                                                   BoxShadow(
                                                     color: Colors.black
-                                                        .withValues(alpha: 0.04),
+                                                        .withValues(
+                                                          alpha: 0.04,
+                                                        ),
                                                     blurRadius: 4,
                                                     offset: const Offset(0, 1),
                                                   ),
@@ -1932,29 +2013,28 @@ class _ProductListingPageState extends State<ProductListingPage>
                                                 width: 64,
                                                 height: 64,
                                                 decoration: BoxDecoration(
-                                                  color: imageUrl != null &&
+                                                  color:
+                                                      imageUrl != null &&
                                                           imageUrl.isNotEmpty
                                                       ? Colors.transparent
                                                       : isSelected
-                                                          ? Colors.white
-                                                                .withValues(
-                                                                  alpha: 0.2,
-                                                                )
-                                                          : AppColors.primary
-                                                                .withValues(
-                                                                  alpha: 0.08,
-                                                                ),
+                                                      ? Colors.white.withValues(
+                                                          alpha: 0.2,
+                                                        )
+                                                      : AppColors.primary
+                                                            .withValues(
+                                                              alpha: 0.08,
+                                                            ),
                                                   borderRadius:
                                                       BorderRadius.circular(8),
                                                 ),
-                                                child: imageUrl != null &&
+                                                child:
+                                                    imageUrl != null &&
                                                         imageUrl.isNotEmpty
                                                     ? CachedNetworkImage(
                                                         imageUrl: imageUrl,
                                                         fit: BoxFit.cover,
-                                                        placeholder:
-                                                            (context, url) =>
-                                                                Center(
+                                                        placeholder: (context, url) => Center(
                                                           child: Icon(
                                                             Icons.category,
                                                             color: isSelected
@@ -1972,9 +2052,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                                                             size: 24,
                                                           ),
                                                         ),
-                                                        errorWidget: (context,
-                                                                url, error) =>
-                                                            Center(
+                                                        errorWidget: (context, url, error) => Center(
                                                           child: Icon(
                                                             Icons.category,
                                                             color: isSelected
@@ -2134,9 +2212,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                   ),
 
             // Web Footer
-            const SliverToBoxAdapter(
-              child: WebFooter(),
-            ),
+            const SliverToBoxAdapter(child: WebFooter()),
           ],
         ),
       ),
@@ -2609,10 +2685,13 @@ class _ProductListingPageState extends State<ProductListingPage>
             for (final subCategoryId in newSubCategories) {
               if (!_selectedSubCategories.contains(subCategoryId)) {
                 for (final entry in _subcategoriesByCategory.entries) {
-                  if (entry.value
-                      .any((s) => s.subCategoryId == subCategoryId)) {
+                  if (entry.value.any(
+                    (s) => s.subCategoryId == subCategoryId,
+                  )) {
                     _clickTrackingService.trackSubCategoryClick(
-                        entry.key, subCategoryId);
+                      entry.key,
+                      subCategoryId,
+                    );
                     break;
                   }
                 }
@@ -2673,7 +2752,8 @@ class _CategorySidebarSheet extends StatefulWidget {
   final void Function(
     List<String> selectedCategories,
     List<String> selectedSubCategories,
-  ) onApplySelection;
+  )
+  onApplySelection;
 
   const _CategorySidebarSheet({
     required this.categories,
@@ -2851,14 +2931,17 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                                       width: 54,
                                       height: 54,
                                       decoration: BoxDecoration(
-                                        color: imageUrl != null &&
+                                        color:
+                                            imageUrl != null &&
                                                 imageUrl.isNotEmpty
                                             ? Colors.transparent
                                             : isHighlighted
-                                                ? AppColors.primary
-                                                      .withValues(alpha: 0.1)
-                                                : AppColors.primary
-                                                      .withValues(alpha: 0.05),
+                                            ? AppColors.primary.withValues(
+                                                alpha: 0.1,
+                                              )
+                                            : AppColors.primary.withValues(
+                                                alpha: 0.05,
+                                              ),
                                         borderRadius: BorderRadius.circular(10),
                                         border: isHighlighted
                                             ? Border.all(
@@ -2869,20 +2952,23 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                                       ),
                                       child: ClipRRect(
                                         borderRadius: BorderRadius.circular(9),
-                                        child: imageUrl != null &&
+                                        child:
+                                            imageUrl != null &&
                                                 imageUrl.isNotEmpty
                                             ? CachedNetworkImage(
                                                 imageUrl: imageUrl,
                                                 fit: BoxFit.cover,
                                                 errorWidget: (c, u, e) =>
                                                     Center(
-                                                  child: Icon(
-                                                    Icons.category,
-                                                    color: AppColors.primary
-                                                        .withValues(alpha: 0.5),
-                                                    size: 22,
-                                                  ),
-                                                ),
+                                                      child: Icon(
+                                                        Icons.category,
+                                                        color: AppColors.primary
+                                                            .withValues(
+                                                              alpha: 0.5,
+                                                            ),
+                                                        size: 22,
+                                                      ),
+                                                    ),
                                               )
                                             : Center(
                                                 child: Icon(
@@ -2971,8 +3057,9 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                             widget.onCategorySelected('All');
                           },
                           style: TextButton.styleFrom(
-                            backgroundColor: AppColors.primary
-                                .withValues(alpha: 0.08),
+                            backgroundColor: AppColors.primary.withValues(
+                              alpha: 0.08,
+                            ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
                             ),
@@ -3055,8 +3142,9 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                   final subIds = _localSubcategories[categoryId]!
                       .map((s) => s.subCategoryId)
                       .toList();
-                  _localSelectedSubCategories
-                      .removeWhere((id) => subIds.contains(id));
+                  _localSelectedSubCategories.removeWhere(
+                    (id) => subIds.contains(id),
+                  );
                 }
               } else {
                 _localSelectedCategories.add(category);
@@ -3160,8 +3248,9 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                   final subIds = _localSubcategories[categoryId]!
                       .map((s) => s.subCategoryId)
                       .toList();
-                  _localSelectedSubCategories
-                      .removeWhere((id) => subIds.contains(id));
+                  _localSelectedSubCategories.removeWhere(
+                    (id) => subIds.contains(id),
+                  );
                 }
               } else {
                 _localSelectedCategories.add(_highlightedCategory);
@@ -3228,8 +3317,9 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
               itemCount: subs.length,
               itemBuilder: (context, index) {
                 final sub = subs[index];
-                final isSelected = _localSelectedSubCategories
-                    .contains(sub.subCategoryId);
+                final isSelected = _localSelectedSubCategories.contains(
+                  sub.subCategoryId,
+                );
 
                 return GestureDetector(
                   onTap: () {
@@ -3238,8 +3328,9 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                         _localSelectedSubCategories.remove(sub.subCategoryId);
                       } else {
                         // Auto-select the parent category if not yet selected
-                        if (!_localSelectedCategories
-                            .contains(_highlightedCategory)) {
+                        if (!_localSelectedCategories.contains(
+                          _highlightedCategory,
+                        )) {
                           _localSelectedCategories.add(_highlightedCategory);
                         }
                         _localSelectedSubCategories.add(sub.subCategoryId);
@@ -3267,17 +3358,19 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                           width: 44,
                           height: 44,
                           decoration: BoxDecoration(
-                            color: (sub.imageURL != null &&
+                            color:
+                                (sub.imageURL != null &&
                                     sub.imageURL!.isNotEmpty)
                                 ? Colors.transparent
                                 : isSelected
-                                    ? AppColors.primary.withValues(alpha: 0.12)
-                                    : AppColors.primary.withValues(alpha: 0.06),
+                                ? AppColors.primary.withValues(alpha: 0.12)
+                                : AppColors.primary.withValues(alpha: 0.06),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(8),
-                            child: (sub.imageURL != null &&
+                            child:
+                                (sub.imageURL != null &&
                                     sub.imageURL!.isNotEmpty)
                                 ? Image.network(
                                     sub.imageURL!,
@@ -3286,8 +3379,9 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                                       Icons.category_rounded,
                                       color: isSelected
                                           ? AppColors.primary
-                                          : AppColors.primary
-                                              .withValues(alpha: 0.5),
+                                          : AppColors.primary.withValues(
+                                              alpha: 0.5,
+                                            ),
                                       size: 22,
                                     ),
                                   )
@@ -3295,8 +3389,9 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                                     Icons.category_rounded,
                                     color: isSelected
                                         ? AppColors.primary
-                                        : AppColors.primary
-                                            .withValues(alpha: 0.5),
+                                        : AppColors.primary.withValues(
+                                            alpha: 0.5,
+                                          ),
                                     size: 22,
                                   ),
                           ),

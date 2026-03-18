@@ -166,6 +166,8 @@ class SellerGroupWidget extends StatelessWidget {
   }
 
   Widget _buildCartItem(BuildContext context, CartItem item) {
+    final bool isUnavailable = item.isUnavailable;
+    
     return Dismissible(
       key: Key(item.cartItemId),
       direction: DismissDirection.endToStart,
@@ -191,148 +193,204 @@ class SellerGroupWidget extends StatelessWidget {
       onDismissed: (direction) {
         onRemoveItem(item);
       },
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            // Item selection checkbox
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () => onToggleItemSelection(item, !item.isSelected),
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  child: Icon(
-                    item.isSelected
-                        ? Icons.check_circle
-                        : Icons.circle_outlined,
-                    color: item.isSelected
-                        ? AppColors.primary
-                        : AppColors.grey400,
-                    size: 20,
+      child: Opacity(
+        opacity: isUnavailable ? 0.5 : 1.0,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: isUnavailable ? BoxDecoration(
+            color: AppColors.grey100.withValues(alpha: 0.5),
+          ) : null,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Unavailable warning banner
+              if (isUnavailable) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppColors.error.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        color: AppColors.error,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          item.unavailableReason ?? 'This product is unavailable',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.error,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-            ),
+              ],
+              Row(
+                children: [
+                  // Item selection checkbox - disabled for unavailable items
+                  Tooltip(
+                    message: isUnavailable 
+                        ? item.unavailableReason ?? 'This product is unavailable'
+                        : 'Select item',
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(8),
+                        onTap: isUnavailable 
+                            ? null 
+                            : () => onToggleItemSelection(item, !item.isSelected),
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(
+                            isUnavailable
+                                ? Icons.block
+                                : item.isSelected
+                                    ? Icons.check_circle
+                                    : Icons.circle_outlined,
+                            color: isUnavailable
+                                ? AppColors.error
+                                : item.isSelected
+                                    ? AppColors.primary
+                                    : AppColors.grey400,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
 
-            const SizedBox(width: 12),
+                  const SizedBox(width: 12),
 
-            // Product image
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  color: AppColors.grey100,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: item.productImage != null
-                    ? CachedNetworkImage(
-                        imageUrl: item.productImage!,
-                        fit: BoxFit.cover,
-                        placeholder: (context, url) => Container(
-                          color: AppColors.grey100,
-                          child: const Center(
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: AppColors.primary,
+                  // Product image
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        color: AppColors.grey100,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: item.productImage != null
+                          ? CachedNetworkImage(
+                              imageUrl: item.productImage!,
+                              fit: BoxFit.cover,
+                              placeholder: (context, url) => Container(
+                                color: AppColors.grey100,
+                                child: const Center(
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ),
+                              errorWidget: (context, url, error) => Container(
+                                color: AppColors.grey100,
+                                child: const Icon(
+                                  Icons.image_not_supported,
+                                  color: AppColors.grey400,
+                                  size: 24,
+                                ),
+                              ),
+                            )
+                          : const Icon(
+                              Icons.image_not_supported,
+                              color: AppColors.grey400,
+                              size: 24,
+                            ),
+                    ),
+                  ),
+
+                  const SizedBox(width: 12),
+
+                  // Product details
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.productName ?? 'Loading...',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (item.variationName != null && item.variationName!.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            item.variationName!,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.onSurface.withValues(alpha: 0.6),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                        const SizedBox(height: 4),
+                        Text(
+                          '₱${(item.productPrice ?? 0).toStringAsFixed(2)}',
+                          style: AppTextStyles.titleSmall.copyWith(
+                            color: isUnavailable ? AppColors.grey400 : AppColors.primary,
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'Roboto', // Use Roboto for peso sign
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+
+                        // Stock warning if quantity exceeds available stock
+                        if (!isUnavailable && item.availableStock != null &&
+                            item.quantity > item.availableStock!)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.error.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              'Only ${item.availableStock} in stock',
+                              style: AppTextStyles.labelSmall.copyWith(
+                                color: AppColors.error,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
-                        ),
-                        errorWidget: (context, url, error) => Container(
-                          color: AppColors.grey100,
-                          child: const Icon(
-                            Icons.image_not_supported,
-                            color: AppColors.grey400,
-                            size: 24,
-                          ),
-                        ),
-                      )
-                    : const Icon(
-                        Icons.image_not_supported,
-                        color: AppColors.grey400,
-                        size: 24,
-                      ),
-              ),
-            ),
-
-            const SizedBox(width: 12),
-
-            // Product details
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.productName ?? 'Loading...',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (item.variationName != null && item.variationName!.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      item.variationName!,
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.onSurface.withValues(alpha: 0.6),
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                  const SizedBox(height: 4),
-                  Text(
-                    '₱${(item.productPrice ?? 0).toStringAsFixed(2)}',
-                    style: AppTextStyles.titleSmall.copyWith(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w700,
-                      fontFamily: 'Roboto', // Use Roboto for peso sign
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 8),
 
-                  // Stock warning if quantity exceeds available stock
-                  if (item.availableStock != null &&
-                      item.quantity > item.availableStock!)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.error.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        'Only ${item.availableStock} in stock',
-                        style: AppTextStyles.labelSmall.copyWith(
-                          color: AppColors.error,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
+                  const SizedBox(width: 12),
+
+                  // Quantity controls - disabled for unavailable items
+                  _buildQuantitySelector(item, isUnavailable: isUnavailable),
                 ],
               ),
-            ),
-
-            const SizedBox(width: 12),
-
-            // Quantity controls
-            _buildQuantitySelector(item),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildQuantitySelector(CartItem item) {
-    final bool canDecrease = item.quantity > 1;
-    final bool canIncrease =
-        item.availableStock == null || item.quantity < item.availableStock!;
+  Widget _buildQuantitySelector(CartItem item, {bool isUnavailable = false}) {
+    final bool canDecrease = item.quantity > 1 && !isUnavailable;
+    final bool canIncrease = !isUnavailable &&
+        (item.availableStock == null || item.quantity < item.availableStock!);
     final bool exceedsStock =
         item.availableStock != null && item.quantity > item.availableStock!;
 

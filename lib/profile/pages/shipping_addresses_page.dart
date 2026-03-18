@@ -681,36 +681,36 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
       );
     }
 
-    // Directly auto-fill the address fields without showing a popup
-    _fillAddressFields(addressData);
+    // Directly auto-fill the address fields - overwrite existing values when user pins location
+    _fillAddressFields(addressData, overwriteExisting: true);
   }
 
-  void _fillAddressFields(Map<String, String> addressData) {
-    AppLogger.d('_fillAddressFields called with: $addressData');
+  void _fillAddressFields(Map<String, String> addressData, {bool overwriteExisting = false}) {
+    AppLogger.d('_fillAddressFields called with: $addressData, overwriteExisting: $overwriteExisting');
 
     setState(() {
       _isAutoFilling = true; // Set flag to prevent map pin movement
 
-      // Only fill empty fields and ensure the value is not null or empty
-      if (_addressLine1Controller.text.trim().isEmpty &&
+      // Fill fields - overwrite if overwriteExisting is true, otherwise only fill empty fields
+      if ((overwriteExisting || _addressLine1Controller.text.trim().isEmpty) &&
           addressData['street']?.isNotEmpty == true) {
         _addressLine1Controller.text = addressData['street']!;
         AppLogger.d('Filled addressLine1: ${addressData['street']}');
       }
 
-      if (_cityController.text.trim().isEmpty &&
+      if ((overwriteExisting || _cityController.text.trim().isEmpty) &&
           addressData['city']?.isNotEmpty == true) {
         _cityController.text = addressData['city']!;
         AppLogger.d('Filled city: ${addressData['city']}');
       }
 
-      if (_stateController.text.trim().isEmpty &&
+      if ((overwriteExisting || _stateController.text.trim().isEmpty) &&
           addressData['state']?.isNotEmpty == true) {
         _stateController.text = addressData['state']!;
         AppLogger.d('Filled state: ${addressData['state']}');
       }
 
-      if (_postalCodeController.text.trim().isEmpty &&
+      if ((overwriteExisting || _postalCodeController.text.trim().isEmpty) &&
           addressData['postalCode']?.isNotEmpty == true) {
         _postalCodeController.text = addressData['postalCode']!;
         AppLogger.d('Filled postalCode: ${addressData['postalCode']}');
@@ -787,76 +787,34 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
 
     if (!_formKey.currentState!.validate()) return;
 
-    // Check if location is pinned
-    if (_latitude == null || _longitude == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(
-            'Please pin your exact location on the map before saving',
-          ),
-          backgroundColor: AppColors.error,
-          duration: const Duration(seconds: 3),
-          action: SnackBarAction(
-            label: 'OK',
-            textColor: Colors.white,
-            onPressed: () {},
-          ),
-        ),
-      );
-      return;
-    }
+    // Note: Map pinning is optional - users can save addresses without pinning a location
+    // Address validation is optional and won't block saving
 
-    // Validate address with Google Maps before saving
     setState(() {
       _isValidatingAddress = true;
     });
 
     try {
-      // Validate the address components with geocoding
+      // Try to validate the address components with geocoding (optional)
       final validationResult = await GeocodingValidatorService.validateAddress(
         city: _cityController.text.trim(),
         state: _stateController.text.trim(),
         postalCode: _postalCodeController.text.trim(),
       );
 
-      if (!validationResult['isValid']) {
-        setState(() {
-          _isValidatingAddress = false;
-        });
-
-        // Show error dialog with suggestion if available
-        final shouldContinue = await _showValidationErrorDialog(
-          validationResult['message'],
-          suggestion: validationResult['suggestion'],
-          resolvedCity: validationResult['resolvedCity'],
-          resolvedState: validationResult['resolvedState'],
-          resolvedPostal: validationResult['resolvedPostal'],
-        );
-
-        if (!shouldContinue) return;
-      } else {
-        // Update coordinates if validation was successful
+      // If validation is successful, update coordinates
+      if (validationResult['isValid'] == true) {
         if (validationResult['latitude'] != null &&
             validationResult['longitude'] != null) {
           _latitude = validationResult['latitude'];
           _longitude = validationResult['longitude'];
         }
       }
+      // If validation fails, just continue without blocking - don't show dialog
     } catch (e) {
-      setState(() {
-        _isValidatingAddress = false;
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Unable to validate address: $e'),
-            backgroundColor: AppColors.error,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-      return;
+      // Validation failed but we don't block saving since map pin is optional
+      // Just log the error and continue with saving
+      AppLogger.d('Address validation failed: $e');
     }
 
     setState(() {
@@ -938,149 +896,6 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
         });
       }
     }
-  }
-
-  Future<bool> _showValidationErrorDialog(
-    String message, {
-    String? suggestion,
-    String? resolvedCity,
-    String? resolvedState,
-    String? resolvedPostal,
-  }) async {
-    return await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            backgroundColor: AppColors.surface,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            title: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.error.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.warning_outlined,
-                    color: AppColors.error,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Address Validation',
-                    style: AppTextStyles.titleMedium.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  message,
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.onSurface.withValues(alpha: 0.8),
-                  ),
-                ),
-                if (suggestion != null) ...[
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: AppColors.primary.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.lightbulb_outline,
-                              size: 18,
-                              color: AppColors.primary,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Suggestion:',
-                              style: AppTextStyles.bodyMedium.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(suggestion, style: AppTextStyles.bodyMedium),
-                        if (resolvedCity != null && resolvedState != null) ...[
-                          const SizedBox(height: 12),
-                          ElevatedButton.icon(
-                            onPressed: () {
-                              // Auto-fill with suggested values
-                              if (resolvedCity.isNotEmpty) {
-                                _cityController.text = resolvedCity;
-                              }
-                              if (resolvedState.isNotEmpty) {
-                                _stateController.text = resolvedState;
-                              }
-                              if (resolvedPostal != null &&
-                                  resolvedPostal.isNotEmpty) {
-                                _postalCodeController.text = resolvedPostal;
-                              }
-                              Navigator.of(
-                                context,
-                              ).pop(false); // Close dialog, don't save yet
-                            },
-                            icon: const Icon(Icons.auto_fix_high, size: 18),
-                            label: const Text('Use Suggestion'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: AppColors.onPrimary,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.onSurface.withValues(alpha: 0.6),
-                ),
-                child: Text('Edit Address', style: AppTextStyles.buttonMedium),
-              ),
-              if (suggestion == null)
-                ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.error,
-                    foregroundColor: AppColors.onPrimary,
-                    elevation: 0,
-                  ),
-                  child: Text('Save Anyway', style: AppTextStyles.buttonMedium),
-                ),
-            ],
-          ),
-        ) ??
-        false;
   }
 
   @override

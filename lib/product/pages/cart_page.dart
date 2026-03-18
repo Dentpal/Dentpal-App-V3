@@ -1104,6 +1104,39 @@ class _CartPageState extends State<CartPage>
                   ),
                   const SizedBox(height: 32),
 
+                  // Show unavailable items warning
+                  if (_cartSummary!.hasUnavailableItems) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.error.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.error.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.block,
+                            color: AppColors.error,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Some selected items are unavailable (out of stock or no longer available). Please remove them to proceed.',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.error,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
                   // Show insufficient stock warning
                   if (_cartSummary!.hasInsufficientStock) ...[
                     Container(
@@ -1175,14 +1208,14 @@ class _CartPageState extends State<CartPage>
                     width: double.infinity,
                     height: 56,
                     child: ElevatedButton(
-                      onPressed: (_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
+                      onPressed: (_cartSummary!.hasUnavailableItems || _cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
                           ? null
                           : _proceedToCheckout,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: (_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
+                        backgroundColor: (_cartSummary!.hasUnavailableItems || _cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
                             ? AppColors.grey300
                             : AppColors.primary,
-                        foregroundColor: (_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
+                        foregroundColor: (_cartSummary!.hasUnavailableItems || _cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
                             ? AppColors.onSurface.withValues(alpha: 0.38)
                             : AppColors.onPrimary,
                         elevation: 0,
@@ -1195,16 +1228,18 @@ class _CartPageState extends State<CartPage>
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon((_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
+                          Icon((_cartSummary!.hasUnavailableItems || _cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
                               ? Icons.block 
                               : Icons.shopping_bag),
                           const SizedBox(width: 8),
                           Text(
-                            _cartSummary!.hasInsufficientStock
-                                ? 'Insufficient Stock'
-                                : _isSubAccountWithoutCheckout()
-                                    ? 'Checkout Not Allowed'
-                                    : 'Checkout',
+                            _cartSummary!.hasUnavailableItems
+                                ? 'Unavailable Items'
+                                : _cartSummary!.hasInsufficientStock
+                                    ? 'Insufficient Stock'
+                                    : _isSubAccountWithoutCheckout()
+                                        ? 'Checkout Not Allowed'
+                                        : 'Checkout',
                             style: AppTextStyles.buttonLarge.copyWith(
                               fontWeight: FontWeight.w600,
                             ),
@@ -1680,6 +1715,39 @@ class _CartPageState extends State<CartPage>
               const SizedBox(height: 12),
             ],
 
+            // Show unavailable items warning
+            if (_cartSummary!.hasUnavailableItems) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.error.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppColors.error.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.warning_outlined,
+                      color: AppColors.error,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Some selected items are no longer available. Please remove them to continue.',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.error,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
             // Sub account checkout restriction warning
             if (_isSubAccountWithoutCheckout()) ...[
               Container(
@@ -1715,14 +1783,14 @@ class _CartPageState extends State<CartPage>
 
             // Checkout button
             ElevatedButton(
-              onPressed: (_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
+              onPressed: (_cartSummary!.hasUnavailableItems || _cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
                   ? null
                   : _proceedToCheckout,
               style: ElevatedButton.styleFrom(
-                backgroundColor: (_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
+                backgroundColor: (_cartSummary!.hasUnavailableItems || _cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
                     ? AppColors.grey300 
                     : AppColors.primary,
-                foregroundColor: (_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
+                foregroundColor: (_cartSummary!.hasUnavailableItems || _cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
                     ? AppColors.onSurface.withValues(alpha: 0.38)
                     : AppColors.onPrimary,
                 padding: const EdgeInsets.symmetric(vertical: 16),
@@ -1736,16 +1804,18 @@ class _CartPageState extends State<CartPage>
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon((_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
+                  Icon((_cartSummary!.hasUnavailableItems || _cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
                       ? Icons.block 
                       : Icons.payment),
                   const SizedBox(width: 8),
                   Text(
-                    _cartSummary!.hasInsufficientStock 
-                        ? 'Insufficient Stock'
-                        : _isSubAccountWithoutCheckout()
-                            ? 'Checkout Not Allowed'
-                            : 'Proceed to Checkout',
+                    _cartSummary!.hasUnavailableItems
+                        ? 'Unavailable Items'
+                        : _cartSummary!.hasInsufficientStock 
+                            ? 'Insufficient Stock'
+                            : _isSubAccountWithoutCheckout()
+                                ? 'Checkout Not Allowed'
+                                : 'Proceed to Checkout',
                     style: AppTextStyles.buttonLarge,
                   ),
                 ],
@@ -1788,6 +1858,26 @@ class _CartPageState extends State<CartPage>
         const SnackBar(
           content: Text('Please select items to checkout'),
           backgroundColor: AppColors.warning,
+        ),
+      );
+      return;
+    }
+
+    // Check for unavailable items (inactive or out of stock)
+    if (_cartSummary!.hasUnavailableItems) {
+      final unavailableItems = _cartSummary!.unavailableSelectedItems;
+      final itemNames = unavailableItems
+          .take(3)
+          .map((item) => item.productName ?? 'Unknown')
+          .join(', ');
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Cannot checkout: ${unavailableItems.length} item(s) are no longer available${unavailableItems.length <= 3 ? ' ($itemNames)' : ''}. Please remove them from your cart.',
+          ),
+          backgroundColor: AppColors.error,
+          duration: const Duration(seconds: 4),
         ),
       );
       return;

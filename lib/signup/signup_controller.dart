@@ -20,7 +20,6 @@ class SignupController {
   
   // Specialty selection (after ID verification)
   List<String> selectedSpecialties = [];
-  static const int maxSpecialties = 5;
   
   // Face verification (Step 4)
   bool isFaceVerified = false;

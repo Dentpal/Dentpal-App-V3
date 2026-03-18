@@ -159,7 +159,7 @@ class WebFooter extends StatelessWidget {
             }),
             const SizedBox(width: 12),
             _buildSocialIcon(Icons.email, () async {
-              final uri = Uri.parse('mailto:support@dentpal.ph');
+              final uri = Uri.parse('mailto:admin@dentpal.shop');
               final success = await launchUrl(uri);
               if (!success) {
                 final scaffold = ScaffoldMessenger.of(context);
@@ -169,7 +169,7 @@ class WebFooter extends StatelessWidget {
                     duration: Duration(seconds: 3),
                   ),
                 );
-                Clipboard.setData(ClipboardData(text: 'support@dentpal.ph'));
+                Clipboard.setData(ClipboardData(text: 'admin@ddentpal.shop'));
               }
             }),
             const SizedBox(width: 12),
@@ -220,18 +220,18 @@ class WebFooter extends StatelessWidget {
         _buildFooterLink('Help Center', () {
           Navigator.of(context).pushNamed('/support-url');
         }),
-        const SizedBox(height: 12),
-        _buildFooterLink('Track Order', () {
-          Navigator.of(context).pushNamed('/');
-        }),
-        const SizedBox(height: 12),
-        _buildFooterLink('Returns & Refunds', () {
-          Navigator.of(context).pushNamed('/');
-        }),
-        const SizedBox(height: 12),
-        _buildFooterLink('Shipping Info', () {
-          Navigator.of(context).pushNamed('/');
-        }),
+        // const SizedBox(height: 12),
+        // _buildFooterLink('Track Order', () {
+        //   Navigator.of(context).pushNamed('/');
+        // }),
+        // const SizedBox(height: 12),
+        // _buildFooterLink('Returns & Refunds', () {
+        //   Navigator.of(context).pushNamed('/');
+        // }),
+        // const SizedBox(height: 12),
+        // _buildFooterLink('Shipping Info', () {
+        //   Navigator.of(context).pushNamed('/');
+        // }),
         const SizedBox(height: 12),
         _buildFooterLink('Contact Us', () {
           Navigator.of(context).pushNamed('/support-url');
@@ -259,14 +259,14 @@ class WebFooter extends StatelessWidget {
         _buildFooterLink('Terms of Service', () {
           Navigator.of(context).pushNamed('/terms-of-service');
         }),
-        const SizedBox(height: 12),
-        _buildFooterLink('Seller Agreement', () {
-          Navigator.of(context).pushNamed('/');
-        }),
-        const SizedBox(height: 12),
-        _buildFooterLink('Cookie Policy', () {
-          Navigator.of(context).pushNamed('/');
-        }),
+        // const SizedBox(height: 12),
+        // _buildFooterLink('Seller Agreement', () {
+        //   Navigator.of(context).pushNamed('/');
+        // }),
+        // const SizedBox(height: 12),
+        // _buildFooterLink('Cookie Policy', () {
+        //   Navigator.of(context).pushNamed('/');
+        // }),
       ],
     );
   }

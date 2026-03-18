@@ -233,6 +233,7 @@ class CartService {
           item.productName = product.name;
           item.productImage = product.imageURL;
           item.sellerId = product.sellerId;
+          item.isProductActive = product.isActive; // Set product active status
           
           // Get seller info from cache
           final sellerData = sellersMap[product.sellerId];

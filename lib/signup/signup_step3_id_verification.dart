@@ -292,7 +292,6 @@ class _SignupStep3IdVerificationState extends State<SignupStep3IdVerification> {
                   widget.controller.selectedSpecialties = specialties;
                 });
               },
-              maxSelections: SignupController.maxSpecialties,
             ),
           ],
           

@@ -4,102 +4,75 @@ import 'package:dentpal/core/app_theme/index.dart';
 /// Predefined list of dental specialties
 class DentalSpecialties {
   static const List<String> specialties = [
-    // Recognized Dental Specialties (Core)
-    'General Dentistry',
-    'Prosthodontics',
-    'Orthodontics and Dentofacial Orthopedics',
-    'Periodontics',
+    '3D Printing in Dentistry',
+    'Academic / Teaching Dentistry',
+    'Adult Orthodontics',
+    'Biological Dentistry',
+    'Bone Grafting and Regenerative Surgery',
+    'CAD/CAM Dentistry',
+    'Clear Aligner Therapy',
+    'Clinical Research',
+    'Community Dentistry',
+    'Corporate Dentistry',
+    'Cosmetic / Aesthetic Dentistry',
+    'Crown Lengthening',
+    'Dental Public Health',
+    'Dental Sleep Medicine',
+    'Dentistry for Patients with Disabilities',
+    'Digital Dentistry',
+    'Digital Smile Design',
+    'Early / Interceptive Orthodontics',
+    'Emergency Dentistry',
     'Endodontics',
-    'Oral and Maxillofacial Surgery',
-    'Pediatric Dentistry',
+    'Epidemiology in Dentistry',
+    'Esthetic Dentistry',
+    'Fixed Prosthodontics',
+    'Full Mouth Rehabilitation',
+    'Functional Orthopedics',
+    'General Dentistry',
+    'Geriatric Dentistry',
+    'Gingival Aesthetics',
+    'Guided Tissue Regeneration',
+    'Gum Disease Treatment',
+    'Hard Tissue Surgery',
+    'Holistic Dentistry',
+    'Hospital Dentistry',
+    'Implant Dentistry',
+    'Implant Prosthodontics',
+    'Integrative Dentistry',
+    'Laser Dentistry',
+    'Lingual Orthodontics',
+    'Maxillofacial Prosthetics',
+    'Microscopic Endodontics',
+    'Minimally Invasive Dentistry',
+    'Mobile Dentistry',
+    'Occlusal Rehabilitation',
     'Oral and Maxillofacial Pathology',
     'Oral and Maxillofacial Radiology',
-    'Dental Public Health',
-    
-    // Restorative & Aesthetic Dentistry
-    'Restorative Dentistry',
-    'Cosmetic / Aesthetic Dentistry',
-    'Esthetic Dentistry',
-    'Smile Design',
-    'Full Mouth Rehabilitation',
-    'Minimally Invasive Dentistry',
-    
-    // Surgical & Advanced Procedures
-    'Implant Dentistry',
-    'Oral Implantology',
-    'Bone Grafting and Regenerative Surgery',
-    'Sinus Lift Surgery',
-    'Surgical Extractions',
-    'Soft Tissue Surgery',
-    'Hard Tissue Surgery',
-    
-    // Periodontal Sub-Specialties
-    'Periodontal Surgery',
-    'Gum Disease Treatment',
-    'Gingival Aesthetics',
-    'Crown Lengthening',
-    'Guided Tissue Regeneration',
-    
-    // Endodontic Sub-Specialties
-    'Root Canal Treatment',
-    'Microscopic Endodontics',
-    'Surgical Endodontics (Apicoectomy)',
-    'Regenerative Endodontics',
-    
-    // Prosthodontic Sub-Specialties
-    'Fixed Prosthodontics',
-    'Removable Prosthodontics',
-    'Implant Prosthodontics',
-    'Maxillofacial Prosthetics',
-    'Occlusal Rehabilitation',
-    
-    // Orthodontic Sub-Specialties
-    'Traditional Orthodontics',
-    'Clear Aligner Therapy',
-    'Lingual Orthodontics',
-    'Early / Interceptive Orthodontics',
-    'Adult Orthodontics',
-    'Functional Orthopedics',
-    
-    // Pediatric & Special Care
-    'Special Care Dentistry',
-    'Dentistry for Patients with Disabilities',
-    'Geriatric Dentistry',
-    
-    // Diagnostic & Preventive Dentistry
-    'Preventive Dentistry',
+    'Oral and Maxillofacial Surgery',
     'Oral Diagnosis',
+    'Oral Implantology',
     'Oral Medicine',
-    'Dental Sleep Medicine',
-    'TMJ / TMD Disorders',
     'Orofacial Pain Management',
-    
-    // Public Health, Research & Education
-    'Community Dentistry',
-    'Academic / Teaching Dentistry',
-    'Clinical Research',
-    'Epidemiology in Dentistry',
-    
-    // Digital & Modern Dentistry
-    'Digital Dentistry',
-    'CAD/CAM Dentistry',
-    '3D Printing in Dentistry',
-    'Digital Smile Design',
-    'Laser Dentistry',
-    
-    // Holistic & Alternative Approaches
-    'Holistic Dentistry',
-    'Biological Dentistry',
-    'Integrative Dentistry',
-    
-    // Practice Type / Focus
+    'Orthodontics and Dentofacial Orthopedics',
+    'Pediatric Dentistry',
+    'Periodontal Surgery',
+    'Periodontics',
+    'Preventive Dentistry',
     'Private Practice',
-    'Hospital Dentistry',
-    'Corporate Dentistry',
-    'Mobile Dentistry',
-    'Emergency Dentistry',
-    
-    // Other
+    'Prosthodontics',
+    'Regenerative Endodontics',
+    'Removable Prosthodontics',
+    'Restorative Dentistry',
+    'Root Canal Treatment',
+    'Sinus Lift Surgery',
+    'Smile Design',
+    'Soft Tissue Surgery',
+    'Special Care Dentistry',
+    'Surgical Endodontics (Apicoectomy)',
+    'Surgical Extractions',
+    'TMJ / TMD Disorders',
+    'Traditional Orthodontics',
     'Others',
   ];
 }
@@ -107,13 +80,11 @@ class DentalSpecialties {
 class SpecialtySelectionWidget extends StatefulWidget {
   final List<String> selectedSpecialties;
   final Function(List<String>) onSelectionChanged;
-  final int maxSelections;
 
   const SpecialtySelectionWidget({
     super.key,
     required this.selectedSpecialties,
     required this.onSelectionChanged,
-    this.maxSelections = 5,
   });
 
   @override
@@ -141,16 +112,6 @@ class _SpecialtySelectionWidgetState extends State<SpecialtySelectionWidget> {
     if (newSelection.contains(specialty)) {
       newSelection.remove(specialty);
     } else {
-      if (newSelection.length >= widget.maxSelections) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Maximum ${widget.maxSelections} specialties can be selected'),
-            backgroundColor: AppColors.error,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-        return;
-      }
       newSelection.add(specialty);
     }
     
@@ -172,16 +133,6 @@ class _SpecialtySelectionWidgetState extends State<SpecialtySelectionWidget> {
             if (localSelectedSpecialties.contains(specialty)) {
               localSelectedSpecialties.remove(specialty);
             } else {
-              if (localSelectedSpecialties.length >= widget.maxSelections) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Maximum ${widget.maxSelections} specialties can be selected'),
-                    backgroundColor: AppColors.error,
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
-                return;
-              }
               localSelectedSpecialties.add(specialty);
             }
             setModalState(() {});
@@ -232,11 +183,9 @@ class _SpecialtySelectionWidgetState extends State<SpecialtySelectionWidget> {
                             ),
                           ),
                           Text(
-                            '${localSelectedSpecialties.length}/${widget.maxSelections}',
+                            '${localSelectedSpecialties.length} selected',
                             style: AppTextStyles.bodyMedium.copyWith(
-                              color: localSelectedSpecialties.length >= widget.maxSelections 
-                                  ? AppColors.error 
-                                  : AppColors.primary,
+                              color: AppColors.primary,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -363,7 +312,7 @@ class _SpecialtySelectionWidgetState extends State<SpecialtySelectionWidget> {
         ),
         const SizedBox(height: 4),
         Text(
-          'Select at least 1, up to ${widget.maxSelections} specialties',
+          'Select at least 1 specialty',
           style: AppTextStyles.bodySmall.copyWith(
             color: AppColors.grey600,
           ),

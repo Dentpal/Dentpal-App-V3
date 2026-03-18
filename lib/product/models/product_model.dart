@@ -21,6 +21,9 @@ class Product {
   final String? warrantyPeriod;
   final String? warrantyPeriodUnit;
   final String? warrantyPolicy;
+  final String? warrantyDuration;
+  final String? dangerousGoods;
+  final String? brand;
   final bool allowInquiry;
 
   Product({
@@ -43,16 +46,19 @@ class Product {
     this.warrantyPeriod,
     this.warrantyPeriodUnit,
     this.warrantyPolicy,
+    this.warrantyDuration,
+    this.dangerousGoods,
+    this.brand,
     required this.allowInquiry,
   });
 
   factory Product.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
-    
+
     // Add more defensive coding for timestamp fields
     DateTime createdAt = DateTime.now();
     DateTime updatedAt = DateTime.now();
-    
+
     try {
       if (data['createdAt'] != null) {
         if (data['createdAt'] is Timestamp) {
@@ -61,7 +67,7 @@ class Product {
           createdAt = data['createdAt'] as DateTime;
         }
       }
-      
+
       if (data['updatedAt'] != null) {
         if (data['updatedAt'] is Timestamp) {
           updatedAt = (data['updatedAt'] as Timestamp).toDate();
@@ -72,23 +78,29 @@ class Product {
     } catch (e) {
       AppLogger.d('Error parsing timestamps for product ${doc.id}: $e');
     }
-    
+
     // Handle nullable string fields defensively
     String? warrantyType;
     String? warrantyPeriod;
     String? warrantyPeriodUnit;
     String? warrantyPolicy;
-    
+    String? warrantyDuration;
+    String? dangerousGoods;
+    String? brand;
+
     try {
       // Convert non-null values to strings safely
       warrantyType = data['warrantyType']?.toString();
       warrantyPeriod = data['warrantyPeriod']?.toString();
       warrantyPeriodUnit = data['warrantyPeriodUnit']?.toString();
       warrantyPolicy = data['warrantyPolicy']?.toString();
+      warrantyDuration = data['warrantyDuration']?.toString();
+      dangerousGoods = data['dangerousGoods']?.toString();
+      brand = data['brand']?.toString();
     } catch (e) {
       AppLogger.d('Error parsing warranty fields for product ${doc.id}: $e');
     }
-    
+
     return Product(
       productId: doc.id,
       name: data['name'] ?? '',
@@ -109,6 +121,9 @@ class Product {
       warrantyPeriod: warrantyPeriod,
       warrantyPeriodUnit: warrantyPeriodUnit,
       warrantyPolicy: warrantyPolicy,
+      warrantyDuration: warrantyDuration,
+      dangerousGoods: dangerousGoods,
+      brand: brand,
       allowInquiry: data['allowInquiry'] ?? false,
     );
   }
@@ -132,6 +147,9 @@ class Product {
       'warrantyPeriod': warrantyPeriod,
       'warrantyPeriodUnit': warrantyPeriodUnit,
       'warrantyPolicy': warrantyPolicy,
+      'warrantyDuration': warrantyDuration,
+      'dangerousGoods': dangerousGoods,
+      'brand': brand,
       'allowInquiry': allowInquiry,
     };
   }
@@ -154,6 +172,7 @@ class ProductVariation {
   final double? weight;
   final Map<String, dynamic>? dimensions;
   final bool isFragile;
+  final int? pcsPerBox;
 
   ProductVariation({
     required this.variationId,
@@ -166,16 +185,17 @@ class ProductVariation {
     this.weight,
     this.dimensions,
     this.isFragile = false,
+    this.pcsPerBox,
   });
 
   factory ProductVariation.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
-    
+
     // Handle numeric fields more defensively
     double price = 0;
     int stock = 0;
     double? weight;
-    
+
     try {
       if (data['price'] != null) {
         if (data['price'] is double) {
@@ -186,7 +206,7 @@ class ProductVariation {
           price = double.tryParse(data['price']) ?? 0;
         }
       }
-      
+
       if (data['stock'] != null) {
         if (data['stock'] is int) {
           stock = data['stock'];
@@ -196,7 +216,7 @@ class ProductVariation {
           stock = int.tryParse(data['stock']) ?? 0;
         }
       }
-      
+
       if (data['weight'] != null) {
         if (data['weight'] is double) {
           weight = data['weight'];
@@ -209,7 +229,7 @@ class ProductVariation {
     } catch (e) {
       AppLogger.d('Error parsing numeric fields for variation ${doc.id}: $e');
     }
-    
+
     return ProductVariation(
       variationId: doc.id,
       productId: data['productId'] ?? '',
@@ -221,6 +241,7 @@ class ProductVariation {
       weight: weight,
       dimensions: data['dimensions'],
       isFragile: data['isFragile'] ?? false,
+      pcsPerBox: data['pcsPerBox'] as int?,
     );
   }
 
@@ -235,6 +256,7 @@ class ProductVariation {
       'weight': weight,
       'dimensions': dimensions,
       'isFragile': isFragile,
+      'pcsPerBox': pcsPerBox,
     };
   }
 }
@@ -254,7 +276,7 @@ class Category {
 
   factory Category.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
-    
+
     return Category(
       categoryId: doc.id,
       categoryName: data['categoryName'] ?? '',
@@ -287,11 +309,12 @@ class SubCategory {
 
   factory SubCategory.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
-    
+
     return SubCategory(
       subCategoryId: doc.id,
       subCategoryName: data['subCategoryName'] ?? '',
-      categoryId: data['categoryId'] ?? '',  // Changed from 'categoryID' to 'categoryId'
+      categoryId:
+          data['categoryId'] ?? '', // Changed from 'categoryID' to 'categoryId'
       imageURL: data['imageURL'] as String?,
     );
   }
@@ -299,7 +322,7 @@ class SubCategory {
   Map<String, dynamic> toMap() {
     return {
       'subCategoryName': subCategoryName,
-      'categoryId': categoryId,  // Changed from 'categoryID' to 'categoryId'
+      'categoryId': categoryId, // Changed from 'categoryID' to 'categoryId'
       if (imageURL != null) 'imageURL': imageURL,
     };
   }

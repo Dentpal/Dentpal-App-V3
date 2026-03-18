@@ -22,6 +22,9 @@ class CartItem {
   String? variationId;
   String? variationName;
   
+  // Product availability status
+  bool isProductActive; // Whether the product is active/available for purchase
+  
   // Seller information
   String? sellerId;
   String? sellerName;
@@ -35,6 +38,17 @@ class CartItem {
   
   // Selection state for multi-seller checkout
   bool isSelected;
+  
+  /// Returns true if this item is unavailable for checkout
+  /// (either product is inactive or out of stock)
+  bool get isUnavailable => !isProductActive || (availableStock != null && availableStock! <= 0);
+  
+  /// Returns the reason why the item is unavailable, or null if available
+  String? get unavailableReason {
+    if (!isProductActive) return 'Product is no longer available';
+    if (availableStock != null && availableStock! <= 0) return 'Out of stock';
+    return null;
+  }
 
   CartItem({
     required this.cartItemId,
@@ -47,6 +61,7 @@ class CartItem {
     this.availableStock,
     this.variationId,
     this.variationName,
+    this.isProductActive = true, // Default to active
     this.sellerId,
     this.sellerName,
     this.sellerAddress,
@@ -212,6 +227,31 @@ class CartSummary {
       }
     }
     return false;
+  }
+
+  // Check if any selected items are unavailable (inactive or out of stock)
+  bool get hasUnavailableItems {
+    for (var group in sellerGroups) {
+      for (var item in group.items) {
+        if (item.isSelected && item.isUnavailable) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  // Get list of selected items that are unavailable
+  List<CartItem> get unavailableSelectedItems {
+    final List<CartItem> unavailableItems = [];
+    for (var group in sellerGroups) {
+      for (var item in group.items) {
+        if (item.isSelected && item.isUnavailable) {
+          unavailableItems.add(item);
+        }
+      }
+    }
+    return unavailableItems;
   }
 
   // Get list of selected items with insufficient stock

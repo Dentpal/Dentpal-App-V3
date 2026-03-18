@@ -13,6 +13,7 @@ import 'orders_page.dart';
 import 'chats_page.dart';
 import 'settings/settings_page.dart';
 import 'settings/notifications_page.dart';
+import 'settings/manage_sub_accounts_page.dart';
 import 'package:dentpal/utils/app_logger.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -327,6 +328,22 @@ class _ProfilePageState extends State<ProfilePage> {
                       );
                     },
                   ),
+                  // Show Manage Sub Accounts for main accounts and sub accounts with permission
+                  if (SubAccountSessionManager.canManageSubAccounts) ...[
+                    _buildDivider(),
+                    _buildProfileOption(
+                      context,
+                      'Manage Sub Accounts',
+                      Icons.people_outline,
+                      () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => const ManageSubAccountsPage(),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                   _buildDivider(),
                   _buildProfileOption(
                     context,
