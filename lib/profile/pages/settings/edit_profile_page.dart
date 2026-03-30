@@ -10,6 +10,7 @@ import 'dart:typed_data';
 import '../../../core/app_theme/app_colors.dart';
 import '../../../core/app_theme/app_text_styles.dart';
 import '../../../utils/app_logger.dart';
+import '../../../signup/specialty_selection_widget.dart';
 import 'package:intl/intl.dart';
 
 class EditProfilePage extends StatefulWidget {
@@ -36,12 +37,14 @@ class _EditProfilePageState extends State<EditProfilePage> {
   String _originalGender = '';
   DateTime? _originalBirthdate;
   String _originalPhotoURL = '';
+  List<String> _originalSpecialties = [];
   
   // Form state
   String _selectedGender = '';
   DateTime? _selectedBirthdate;
   bool _isLoading = false;
   bool _hasLoadedData = false;
+  List<String> _selectedSpecialties = [];
   
   // Photo state
   File? _selectedImageFile;
@@ -160,6 +163,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
             _selectedBirthdate = _originalBirthdate;
           }
           
+          // Handle specialties
+          if (userData['specialties'] != null) {
+            _originalSpecialties = List<String>.from(userData['specialties']);
+            _selectedSpecialties = List<String>.from(_originalSpecialties);
+          }
+          
           _hasLoadedData = true;
         }
       }
@@ -220,7 +229,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
              _selectedBirthdate != null ||
              _selectedImageFile != null ||
              _selectedImageBytes != null ||
-             _hasNewPhoto;
+             _hasNewPhoto ||
+             _selectedSpecialties.isNotEmpty;
     }
     
     final currentDisplayName = _displayNameController.text.trim();
@@ -232,6 +242,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
     final originalGenderNormalized = _originalGender.toLowerCase();
     final selectedGenderNormalized = _selectedGender.toLowerCase();
     
+    // Check if specialties have changed
+    final specialtiesChanged = !_areListsEqual(_selectedSpecialties, _originalSpecialties);
+    
     return currentDisplayName != _originalDisplayName ||
            currentFirstName != _originalFirstName ||
            currentMiddleName != _originalMiddleName ||
@@ -240,7 +253,18 @@ class _EditProfilePageState extends State<EditProfilePage> {
            _selectedBirthdate != _originalBirthdate ||
            _selectedImageFile != null ||
            _selectedImageBytes != null ||
-           _hasNewPhoto;
+           _hasNewPhoto ||
+           specialtiesChanged;
+  }
+
+  bool _areListsEqual(List<String> list1, List<String> list2) {
+    if (list1.length != list2.length) return false;
+    final sortedList1 = List<String>.from(list1)..sort();
+    final sortedList2 = List<String>.from(list2)..sort();
+    for (int i = 0; i < sortedList1.length; i++) {
+      if (sortedList1[i] != sortedList2[i]) return false;
+    }
+    return true;
   }
 
   Future<void> _selectBirthdate() async {
@@ -655,6 +679,11 @@ class _EditProfilePageState extends State<EditProfilePage> {
         updates['photoURL'] = null;
       }
       
+      // Update specialties
+      if (!_areListsEqual(_selectedSpecialties, _originalSpecialties)) {
+        updates['specialties'] = _selectedSpecialties;
+      }
+      
       if (updates.isNotEmpty) {
         updates['updatedAt'] = FieldValue.serverTimestamp();
         
@@ -729,6 +758,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _originalGender = _selectedGender;
     _originalBirthdate = _selectedBirthdate;
     _originalPhotoURL = _currentPhotoURL ?? '';
+    _originalSpecialties = List<String>.from(_selectedSpecialties);
     
     // Clear selected image after successful save
     _selectedImageFile = null;
@@ -1073,6 +1103,21 @@ class _EditProfilePageState extends State<EditProfilePage> {
         'Profile Photo',
         _originalPhotoURL.isEmpty ? '(No photo)' : 'Current photo',
         'New photo selected',
+      ));
+    }
+    
+    // Specialty changes
+    if (!_areListsEqual(_selectedSpecialties, _originalSpecialties)) {
+      final originalStr = _originalSpecialties.isEmpty 
+          ? '(Not set)' 
+          : '${_originalSpecialties.length} specialty(s)';
+      final newStr = _selectedSpecialties.isEmpty 
+          ? '(Not set)' 
+          : '${_selectedSpecialties.length} specialty(s)';
+      changes.add(_buildChangeItem(
+        'Specialties',
+        originalStr,
+        newStr,
       ));
     }
     
@@ -1545,6 +1590,34 @@ class _EditProfilePageState extends State<EditProfilePage> {
                                 ),
                               ),
                             ],
+                          ),
+                        ),
+                        
+                        const SizedBox(height: 32),
+                        
+                        // Professional Information Section
+                        _buildSectionHeader('Professional Information'),
+                        const SizedBox(height: 16),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.surface,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.onSurface.withValues(alpha: 0.05),
+                                blurRadius: 10,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          padding: const EdgeInsets.all(20),
+                          child: SpecialtySelectionWidget(
+                            selectedSpecialties: _selectedSpecialties,
+                            onSelectionChanged: (specialties) {
+                              setState(() {
+                                _selectedSpecialties = specialties;
+                              });
+                            },
                           ),
                         ),
                         

@@ -394,6 +394,14 @@ class _ProfilePageState extends State<ProfilePage> {
         toolbarHeight: 60,
         backgroundColor: AppColors.surface,
         elevation: 0,
+        automaticallyImplyLeading: false,
+        leading: kIsWeb
+            ? IconButton(
+                icon: Icon(Icons.arrow_back, color: AppColors.onSurface),
+                onPressed: () => Navigator.of(context).pop(),
+                tooltip: 'Back',
+              )
+            : null,
         title: Row(
           children: [
             Icon(Icons.person, color: AppColors.primary, size: 24),

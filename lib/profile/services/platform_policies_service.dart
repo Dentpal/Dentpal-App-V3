@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:http/http.dart' as http;
@@ -7,7 +8,7 @@ class PlatformPoliciesService {
 
   /// Fetch Terms and Conditions from Firebase Storage
   /// Looks for document in platform_policies collection with type: 'user-terms-of-service'
-  /// and downloads content from the downloadUrl
+  /// that is active and published, and downloads content from the downloadUrl
   static Future<String?> getTermsAndConditions() async {
     try {
       AppLogger.d('Fetching Terms and Conditions from Firebase...');
@@ -15,6 +16,8 @@ class PlatformPoliciesService {
       final querySnapshot = await _firestore
           .collection('platform_policies')
           .where('type', isEqualTo: 'user-terms-of-service')
+          .where('isActive', isEqualTo: true)
+          .where('status', isEqualTo: 'published')
           .limit(1)
           .get();
 
@@ -30,7 +33,8 @@ class PlatformPoliciesService {
               .timeout(const Duration(seconds: 30));
           
           if (response.statusCode == 200) {
-            final content = response.body;
+            // Decode as UTF-8 to properly handle special characters
+            final content = utf8.decode(response.bodyBytes);
             AppLogger.d('Successfully fetched Terms and Conditions from Storage');
             return content;
           } else {
@@ -53,7 +57,7 @@ class PlatformPoliciesService {
 
   /// Fetch Privacy Policy from Firebase Storage
   /// Looks for document in platform_policies collection with type: 'privacy-policy'
-  /// and downloads content from the downloadUrl
+  /// that is active and published, and downloads content from the downloadUrl
   static Future<String?> getPrivacyPolicy() async {
     try {
       AppLogger.d('Fetching Privacy Policy from Firebase...');
@@ -61,6 +65,8 @@ class PlatformPoliciesService {
       final querySnapshot = await _firestore
           .collection('platform_policies')
           .where('type', isEqualTo: 'privacy-policy')
+          .where('isActive', isEqualTo: true)
+          .where('status', isEqualTo: 'published')
           .limit(1)
           .get();
 
@@ -75,7 +81,8 @@ class PlatformPoliciesService {
           final response = await http.get(Uri.parse(downloadUrl));
           
           if (response.statusCode == 200) {
-            final content = response.body;
+            // Decode as UTF-8 to properly handle special characters
+            final content = utf8.decode(response.bodyBytes);
             AppLogger.d('Successfully fetched Privacy Policy from Storage');
             return content;
           } else {
@@ -98,7 +105,7 @@ class PlatformPoliciesService {
 
   /// Fetch User Privacy Policy from Firebase Storage
   /// Looks for document in platform_policies collection with type: 'user-privacy-policy'
-  /// and downloads content from the downloadUrl
+  /// that is active and published, and downloads content from the downloadUrl
   static Future<String?> getUserPrivacyPolicy() async {
     try {
       AppLogger.d('Fetching User Privacy Policy from Firebase...');
@@ -106,6 +113,8 @@ class PlatformPoliciesService {
       final querySnapshot = await _firestore
           .collection('platform_policies')
           .where('type', isEqualTo: 'user-privacy-policy')
+          .where('isActive', isEqualTo: true)
+          .where('status', isEqualTo: 'published')
           .limit(1)
           .get();
 
@@ -121,7 +130,8 @@ class PlatformPoliciesService {
               .timeout(const Duration(seconds: 30));
           
           if (response.statusCode == 200) {
-            final content = response.body;
+            // Decode as UTF-8 to properly handle special characters
+            final content = utf8.decode(response.bodyBytes);
             AppLogger.d('Successfully fetched User Privacy Policy from Storage');
             return content;
           } else {
@@ -148,6 +158,8 @@ class PlatformPoliciesService {
     return _firestore
         .collection('platform_policies')
         .where('type', isEqualTo: 'user-terms-of-service')
+        .where('isActive', isEqualTo: true)
+        .where('status', isEqualTo: 'published')
         .limit(1)
         .snapshots()
         .map((snapshot) {
@@ -165,6 +177,8 @@ class PlatformPoliciesService {
     return _firestore
         .collection('platform_policies')
         .where('type', isEqualTo: 'privacy-policy')
+        .where('isActive', isEqualTo: true)
+        .where('status', isEqualTo: 'published')
         .limit(1)
         .snapshots()
         .map((snapshot) {
@@ -182,6 +196,8 @@ class PlatformPoliciesService {
     return _firestore
         .collection('platform_policies')
         .where('type', isEqualTo: 'user-privacy-policy')
+        .where('isActive', isEqualTo: true)
+        .where('status', isEqualTo: 'published')
         .limit(1)
         .snapshots()
         .map((snapshot) {

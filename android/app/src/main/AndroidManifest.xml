@@ -23,6 +23,12 @@
         android:label="Dentpal"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
+        
+        <!-- Declare support for 16KB page sizes (required by Google Play) -->
+        <property
+            android:name="android.app.supportsPageSizes"
+            android:value="16KB" />
+        
         <activity
             android:name=".MainActivity"
             android:exported="true"

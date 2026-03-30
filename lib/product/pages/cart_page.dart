@@ -615,23 +615,26 @@ class _CartPageState extends State<CartPage>
 
     Widget scaffold = isWebView ? _buildWebScaffold() : _buildScaffold();
 
-    // Only wrap with PopScope if not used within home page navigation
+    // Only wrap with PopScope if used within home page navigation (onBackPressed is set)
+    // When navigated to from other pages (onBackPressed is null), allow normal back navigation
     if (widget.onBackPressed != null) {
-      return scaffold;
+      // Used within home page bottom navigation - show exit dialog
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) async {
+          if (didPop) return;
+          
+          final shouldExit = await _showExitConfirmation();
+          if (shouldExit && context.mounted) {
+            Navigator.of(context).pop();
+          }
+        },
+        child: scaffold,
+      );
     }
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) async {
-        if (didPop) return;
-        
-        final shouldExit = await _showExitConfirmation();
-        if (shouldExit && context.mounted) {
-          Navigator.of(context).pop();
-        }
-      },
-      child: scaffold,
-    );
+    // Navigated from other pages - allow normal back navigation
+    return scaffold;
   }
 
   Widget _buildScaffold() {
@@ -646,34 +649,9 @@ class _CartPageState extends State<CartPage>
             pinned: true,
             elevation: 0,
             backgroundColor: AppColors.surface,
-            // Hide leading icon when used within home page navigation
-            leading: widget.onBackPressed != null ? null : Container(
-              margin: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.1),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: IconButton(
-                onPressed: () {
-                  if (Navigator.canPop(context)) {
-                    Navigator.pop(context);
-                  } else {
-                    // Fallback: try to navigate to the first route
-                    Navigator.of(
-                      context,
-                    ).pushNamedAndRemoveUntil('/', (route) => false);
-                  }
-                },
-                icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
-              ),
-            ),
+            // Hide leading icon when used within home page navigation (onBackPressed is set)
+            // Show back button when navigated from other pages (onBackPressed is null)
+            automaticallyImplyLeading: widget.onBackPressed == null,
             title: Row(
               children: [
                 Icon(Icons.shopping_cart, color: AppColors.primary, size: 24),

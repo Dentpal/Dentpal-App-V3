@@ -18,6 +18,7 @@ import 'edit_product_page.dart';
 import '../../login_page.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/utils/navigation_utils.dart';
+import 'package:dentpal/utils/currency_formatter.dart';
 import 'package:dentpal/services/chat_service.dart';
 import 'package:dentpal/profile/pages/chat_detail_page.dart';
 import 'package:dentpal/core/widgets/web_footer.dart';
@@ -1735,7 +1736,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: LoadingButton(
         text: _selectedVariation != null && _selectedVariation!.stock > 0
-            ? 'Add to Cart • ₱${(_selectedVariation!.price * _quantity).toStringAsFixed(2)}'
+            ? 'Add to Cart • ${CurrencyFormatter.formatWithPeso(_selectedVariation!.price * _quantity)}'
             : 'Out of Stock',
         loadingText: 'Adding to cart...',
         isLoading: _isAddingToCart,
@@ -2419,7 +2420,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                     ),
                   ),
                   Text(
-                    '₱${_selectedVariation!.price.toStringAsFixed(2)}',
+                    CurrencyFormatter.formatWithPeso(_selectedVariation!.price),
                     style: AppTextStyles.bodyMedium.copyWith(
                       fontWeight: FontWeight.w600,
                       color: AppColors.onSurface,
@@ -2434,7 +2435,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                     ),
                   ),
                   Text(
-                    '₱${(_selectedVariation!.price * _quantity).toStringAsFixed(2)}',
+                    CurrencyFormatter.formatWithPeso(_selectedVariation!.price * _quantity),
                     style: AppTextStyles.titleMedium.copyWith(
                       fontWeight: FontWeight.bold,
                       color: AppColors.primary,
@@ -3114,7 +3115,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           top: false,
           child: LoadingButton(
             text: _selectedVariation != null && _selectedVariation!.stock > 0
-                ? 'Add to Cart • ₱${(_selectedVariation!.price * _quantity).toStringAsFixed(2)}'
+                ? 'Add to Cart • ${CurrencyFormatter.formatWithPeso(_selectedVariation!.price * _quantity)}'
                 : 'Out of Stock',
             loadingText: 'Adding to cart...',
             isLoading: _isAddingToCart,

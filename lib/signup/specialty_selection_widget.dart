@@ -93,6 +93,7 @@ class SpecialtySelectionWidget extends StatefulWidget {
 
 class _SpecialtySelectionWidgetState extends State<SpecialtySelectionWidget> {
   final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _customSpecialtyController = TextEditingController();
   String _searchQuery = '';
   List<String> _filteredSpecialties = List.from(DentalSpecialties.specialties);
   
@@ -116,6 +117,122 @@ class _SpecialtySelectionWidgetState extends State<SpecialtySelectionWidget> {
     }
     
     widget.onSelectionChanged(newSelection);
+  }
+
+  void _showAddCustomSpecialtyDialog(BuildContext parentContext, List<String> currentSelections, Function(String) onAdd) {
+    _customSpecialtyController.clear();
+    
+    showDialog(
+      context: parentContext,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Icon(Icons.add_circle_outline, color: AppColors.primary, size: 24),
+              const SizedBox(width: 8),
+              Text(
+                'Add Custom Specialty',
+                style: AppTextStyles.titleMedium.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Enter a specialty not in the list:',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.grey600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _customSpecialtyController,
+                autofocus: true,
+                textCapitalization: TextCapitalization.words,
+                decoration: InputDecoration(
+                  hintText: 'e.g., Pediatric Oral Surgery',
+                  hintStyle: AppTextStyles.inputHint,
+                  filled: true,
+                  fillColor: AppColors.grey50,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppColors.grey300),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppColors.grey300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppColors.primary, width: 2),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                ),
+                style: AppTextStyles.bodyMedium,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(
+                'Cancel',
+                style: AppTextStyles.buttonMedium.copyWith(
+                  color: AppColors.grey600,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final customSpecialty = _customSpecialtyController.text.trim();
+                if (customSpecialty.isNotEmpty) {
+                  // Check if specialty already exists (case-insensitive)
+                  final alreadyExists = currentSelections.any(
+                    (s) => s.toLowerCase() == customSpecialty.toLowerCase()
+                  ) || DentalSpecialties.specialties.any(
+                    (s) => s.toLowerCase() == customSpecialty.toLowerCase()
+                  );
+                  
+                  if (alreadyExists) {
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      SnackBar(
+                        content: Text('This specialty already exists'),
+                        backgroundColor: AppColors.warning,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  } else {
+                    onAdd(customSpecialty);
+                    Navigator.pop(dialogContext);
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      SnackBar(
+                        content: Text('Added "$customSpecialty"'),
+                        backgroundColor: AppColors.success,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.onPrimary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text('Add'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _showSpecialtyPicker() {
@@ -264,20 +381,52 @@ class _SpecialtySelectionWidgetState extends State<SpecialtySelectionWidget> {
                     color: AppColors.grey50,
                     border: Border(top: BorderSide(color: AppColors.grey200)),
                   ),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: AppColors.onPrimary,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Add Custom Specialty Button
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            _showAddCustomSpecialtyDialog(context, localSelectedSpecialties, (newSpecialty) {
+                              if (newSpecialty.isNotEmpty && !localSelectedSpecialties.contains(newSpecialty)) {
+                                localSelectedSpecialties.add(newSpecialty);
+                                setModalState(() {});
+                                widget.onSelectionChanged(List.from(localSelectedSpecialties));
+                              }
+                            });
+                          },
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('Add Custom Specialty'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.primary,
+                            side: BorderSide(color: AppColors.primary),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
                         ),
                       ),
-                      child: const Text('Done'),
-                    ),
+                      const SizedBox(height: 8),
+                      // Done Button
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: AppColors.onPrimary,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text('Done'),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -296,6 +445,7 @@ class _SpecialtySelectionWidgetState extends State<SpecialtySelectionWidget> {
   @override
   void dispose() {
     _searchController.dispose();
+    _customSpecialtyController.dispose();
     super.dispose();
   }
 
