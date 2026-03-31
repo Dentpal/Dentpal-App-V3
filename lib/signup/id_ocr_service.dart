@@ -428,31 +428,39 @@ class IdOcrService {
       );
     }
     
-    // Check name matches - combine both name checks into one user-friendly message
-    bool firstNameFound = _flexibleNameMatch(expectedFirstName, parsedData.firstName, rawOcrText);
-    bool lastNameFound = _flexibleNameMatch(expectedLastName, parsedData.lastName, rawOcrText);
+    // Check name matches - skip validation if expected names are empty (new signup flow)
+    // When expected names are empty, we're in the flow where ID verification comes first
+    bool skipNameValidation = expectedFirstName.trim().isEmpty && expectedLastName.trim().isEmpty;
     
-    if (!firstNameFound && !lastNameFound) {
-      return IdVerificationResult(
-        isValid: false,
-        errorMessage: 'Name on PRC ID does not match. Please ensure this is your personal PRC ID.',
-        registrationNumber: parsedData.registrationNumber,
-        faceImage: parsedData.faceImage,
-      );
-    } else if (!firstNameFound) {
-      return IdVerificationResult(
-        isValid: false,
-        errorMessage: 'First name does not match PRC ID. Please check your name entry.',
-        registrationNumber: parsedData.registrationNumber,
-        faceImage: parsedData.faceImage,
-      );
-    } else if (!lastNameFound) {
-      return IdVerificationResult(
-        isValid: false,
-        errorMessage: 'Last name does not match PRC ID. Please check your name entry.',
-        registrationNumber: parsedData.registrationNumber,
-        faceImage: parsedData.faceImage,
-      );
+    if (!skipNameValidation) {
+      // Combine both name checks into one user-friendly message
+      bool firstNameFound = _flexibleNameMatch(expectedFirstName, parsedData.firstName, rawOcrText);
+      bool lastNameFound = _flexibleNameMatch(expectedLastName, parsedData.lastName, rawOcrText);
+      
+      if (!firstNameFound && !lastNameFound) {
+        return IdVerificationResult(
+          isValid: false,
+          errorMessage: 'Name on PRC ID does not match. Please ensure this is your personal PRC ID.',
+          registrationNumber: parsedData.registrationNumber,
+          faceImage: parsedData.faceImage,
+        );
+      } else if (!firstNameFound) {
+        return IdVerificationResult(
+          isValid: false,
+          errorMessage: 'First name does not match PRC ID. Please check your name entry.',
+          registrationNumber: parsedData.registrationNumber,
+          faceImage: parsedData.faceImage,
+        );
+      } else if (!lastNameFound) {
+        return IdVerificationResult(
+          isValid: false,
+          errorMessage: 'Last name does not match PRC ID. Please check your name entry.',
+          registrationNumber: parsedData.registrationNumber,
+          faceImage: parsedData.faceImage,
+        );
+      }
+    } else {
+      SignupController.logOcrResult('INFO', 'Skipping name validation - new signup flow with ID-first verification');
     }
     
     // All validations passed
@@ -461,6 +469,8 @@ class IdOcrService {
       errorMessage: null,
       registrationNumber: parsedData.registrationNumber,
       faceImage: parsedData.faceImage,
+      firstName: parsedData.firstName,
+      lastName: parsedData.lastName,
     );
   }
 
@@ -697,16 +707,20 @@ class IdVerificationResult {
   final String? errorMessage;
   final String? registrationNumber;
   final Uint8List? faceImage;
+  final String? firstName;
+  final String? lastName;
 
   IdVerificationResult({
     required this.isValid,
     this.errorMessage,
     this.registrationNumber,
     this.faceImage,
+    this.firstName,
+    this.lastName,
   });
 
   @override
   String toString() {
-    return 'IdVerificationResult(isValid: $isValid, errorMessage: $errorMessage, registrationNumber: $registrationNumber, hasFace: ${faceImage != null})';
+    return 'IdVerificationResult(isValid: $isValid, errorMessage: $errorMessage, registrationNumber: $registrationNumber, hasFace: ${faceImage != null}, firstName: $firstName, lastName: $lastName)';
   }
 }

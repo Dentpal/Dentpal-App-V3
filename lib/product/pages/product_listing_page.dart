@@ -103,6 +103,20 @@ class _ProductListingPageState extends State<ProductListingPage>
   Map<String, List<SubCategory>> _subcategoriesByCategory = {};
   List<String> _selectedSubCategories = [];
 
+  // Brand state
+  List<String> _brands = ['All'];
+  String _selectedBrand = 'All';
+
+  // Filter state
+  String _selectedShippedFrom = 'All';
+  String _selectedPriceRange = 'All';
+  String _selectedRating = 'All';
+
+  // Filter options
+  final List<String> _shippedFromOptions = ['All', 'Local', 'International', 'Metro Manila', 'Cebu', 'Davao'];
+  final List<String> _priceRangeOptions = ['All', '₱0-500', '₱500-1000', '₱1000-5000', '₱5000+'];
+  final List<String> _ratingOptions = ['All', '4★ & up', '3★ & up', '2★ & up'];
+
   // Override to keep this page alive when navigating away
   @override
   bool get wantKeepAlive => true;
@@ -117,6 +131,7 @@ class _ProductListingPageState extends State<ProductListingPage>
     _loadUserName();
     _loadActiveBanner(); // Load active banner image from Realtime Database
     _listenToCartCount(); // Listen to cart item count for badge
+    _loadBrands(); // Load brands for filtering
 
     // Add scroll listener for pagination
     _scrollController.addListener(_scrollListener);
@@ -128,6 +143,39 @@ class _ProductListingPageState extends State<ProductListingPage>
     AppLogger.d(
       "ProductListingPage initState called, products: ${_products.length}, timestamp: $_cacheTimestamp",
     );
+  }
+
+  // Load unique brands from products
+  Future<void> _loadBrands() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('Product')
+          .where('isActive', isEqualTo: true)
+          .where('isDraft', isEqualTo: false)
+          .get();
+      
+      final Set<String> brandSet = {'All'};
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        final brand = data['brand'] as String?;
+        if (brand != null && brand.isNotEmpty) {
+          brandSet.add(brand);
+        }
+      }
+      
+      if (mounted) {
+        setState(() {
+          _brands = brandSet.toList()..sort((a, b) {
+            if (a == 'All') return -1;
+            if (b == 'All') return 1;
+            return a.compareTo(b);
+          });
+        });
+      }
+      AppLogger.d('Loaded ${_brands.length} brands');
+    } catch (e) {
+      AppLogger.d('Error loading brands: $e');
+    }
   }
 
   // Listen to auth state changes and (re)subscribe to cart count accordingly
@@ -1896,249 +1944,34 @@ class _ProductListingPageState extends State<ProductListingPage>
                           ),
                         ),
 
-                      // Modern Categories Section
+                      // Brand Section (New)
                       const SizedBox(height: 20),
+                      _buildBrandSection(),
 
-                      Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 16),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppColors.surface,
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.05),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
+                      // Modern Categories Section
+                      const SizedBox(height: 16),
+                      _buildCategoriesSection(),
+
+                      // Filter Section (New - Horizontal Filter Bar)
+                      const SizedBox(height: 16),
+                      _buildFilterSection(),
+
+                      // Subcategories section (grouped by category)
+                      if (_selectedCategories.isNotEmpty &&
+                          _subcategoriesByCategory.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: _buildGroupedSubcategoriesSection(),
+                          ),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary.withValues(
-                                      alpha: 0.1,
-                                    ),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Icon(
-                                    Icons.category,
-                                    color: AppColors.primary,
-                                    size: 20,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  'Categories',
-                                  style: AppTextStyles.titleMedium.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.onSurface,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            SizedBox(
-                              height: 124,
-                              child: ListView.builder(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: _categories.length,
-                                itemBuilder: (context, index) {
-                                  final category = _categories[index];
-                                  final isSelected = category == 'All'
-                                      ? _selectedCategories.isEmpty
-                                      : _selectedCategories.contains(category);
-                                  final imageUrl = category == 'All'
-                                      ? null
-                                      : _categoryNameToImage[category];
-
-                                  return Padding(
-                                    padding: const EdgeInsets.only(right: 10),
-                                    child: GestureDetector(
-                                      onTap: () =>
-                                          _onCategorySelected(category),
-                                      child: AnimatedContainer(
-                                        duration: const Duration(
-                                          milliseconds: 200,
-                                        ),
-                                        width: 100,
-                                        decoration: BoxDecoration(
-                                          color: isSelected
-                                              ? AppColors.primary
-                                              : AppColors.surface,
-                                          borderRadius: BorderRadius.circular(
-                                            12,
-                                          ),
-                                          border: Border.all(
-                                            color: isSelected
-                                                ? AppColors.primary
-                                                : AppColors.onSurface
-                                                      .withValues(alpha: 0.15),
-                                            width: 1.5,
-                                          ),
-                                          boxShadow: isSelected
-                                              ? [
-                                                  BoxShadow(
-                                                    color: AppColors.primary
-                                                        .withValues(alpha: 0.3),
-                                                    blurRadius: 8,
-                                                    offset: const Offset(0, 2),
-                                                  ),
-                                                ]
-                                              : [
-                                                  BoxShadow(
-                                                    color: Colors.black
-                                                        .withValues(
-                                                          alpha: 0.04,
-                                                        ),
-                                                    blurRadius: 4,
-                                                    offset: const Offset(0, 1),
-                                                  ),
-                                                ],
-                                        ),
-                                        child: Column(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          children: [
-                                            // Image / icon area
-                                            ClipRRect(
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              child: Container(
-                                                width: 64,
-                                                height: 64,
-                                                decoration: BoxDecoration(
-                                                  color:
-                                                      imageUrl != null &&
-                                                          imageUrl.isNotEmpty
-                                                      ? Colors.transparent
-                                                      : isSelected
-                                                      ? Colors.white.withValues(
-                                                          alpha: 0.2,
-                                                        )
-                                                      : AppColors.primary
-                                                            .withValues(
-                                                              alpha: 0.08,
-                                                            ),
-                                                  borderRadius:
-                                                      BorderRadius.circular(8),
-                                                ),
-                                                child:
-                                                    imageUrl != null &&
-                                                        imageUrl.isNotEmpty
-                                                    ? CachedNetworkImage(
-                                                        imageUrl: imageUrl,
-                                                        fit: BoxFit.cover,
-                                                        placeholder: (context, url) => Center(
-                                                          child: Icon(
-                                                            Icons.category,
-                                                            color: isSelected
-                                                                ? Colors.white
-                                                                      .withValues(
-                                                                        alpha:
-                                                                            0.7,
-                                                                      )
-                                                                : AppColors
-                                                                      .primary
-                                                                      .withValues(
-                                                                        alpha:
-                                                                            0.5,
-                                                                      ),
-                                                            size: 24,
-                                                          ),
-                                                        ),
-                                                        errorWidget: (context, url, error) => Center(
-                                                          child: Icon(
-                                                            Icons.category,
-                                                            color: isSelected
-                                                                ? Colors.white
-                                                                      .withValues(
-                                                                        alpha:
-                                                                            0.7,
-                                                                      )
-                                                                : AppColors
-                                                                      .primary
-                                                                      .withValues(
-                                                                        alpha:
-                                                                            0.5,
-                                                                      ),
-                                                            size: 24,
-                                                          ),
-                                                        ),
-                                                      )
-                                                    : Center(
-                                                        child: Icon(
-                                                          category == 'All'
-                                                              ? Icons
-                                                                    .grid_view_rounded
-                                                              : Icons.category,
-                                                          color: isSelected
-                                                              ? Colors.white
-                                                                    .withValues(
-                                                                      alpha:
-                                                                          0.9,
-                                                                    )
-                                                              : AppColors
-                                                                    .primary
-                                                                    .withValues(
-                                                                      alpha:
-                                                                          0.7,
-                                                                    ),
-                                                          size: 26,
-                                                        ),
-                                                      ),
-                                              ),
-                                            ),
-                                            const SizedBox(height: 6),
-                                            // Label
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 4,
-                                                  ),
-                                              child: Text(
-                                                category,
-                                                style: AppTextStyles.bodySmall
-                                                    .copyWith(
-                                                      color: isSelected
-                                                          ? AppColors.onPrimary
-                                                          : AppColors.onSurface,
-                                                      fontWeight: isSelected
-                                                          ? FontWeight.bold
-                                                          : FontWeight.w500,
-                                                      fontSize: 11,
-                                                    ),
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                textAlign: TextAlign.center,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-
-                            // Subcategories section (grouped by category)
-                            if (_selectedCategories.isNotEmpty &&
-                                _subcategoriesByCategory.isNotEmpty) ...[
-                              const SizedBox(height: 16),
-                              ..._buildGroupedSubcategoriesSection(),
-                            ],
-                          ],
-                        ),
-                      ),
+                      ],
 
                       const SizedBox(height: 24),
 
+                      // Explore Dental Traders Section Header (renamed from Products)
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: Row(
@@ -2150,7 +1983,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: const Icon(
-                                Icons.grid_view_rounded,
+                                Icons.store_rounded,
                                 color: AppColors.accent,
                                 size: 20,
                               ),
@@ -2158,7 +1991,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
-                                'Products',
+                                'Explore Dental Traders',
                                 style: AppTextStyles.titleLarge.copyWith(
                                   fontWeight: FontWeight.bold,
                                   color: AppColors.onSurface,
@@ -2175,7 +2008,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                                 borderRadius: BorderRadius.circular(16),
                               ),
                               child: Text(
-                                '${_getFilteredProductsCount()} items',
+                                '${_getFilteredProductsCount()} traders',
                                 style: AppTextStyles.bodySmall.copyWith(
                                   color: AppColors.primary,
                                   fontWeight: FontWeight.w600,
@@ -2193,7 +2026,7 @@ class _ProductListingPageState extends State<ProductListingPage>
               ),
             ),
 
-            // Products Grid
+            // Traders List (Vertical List Layout - Foodpanda style)
             _isLoading && _products.isEmpty
                 ? const SliverFillRemaining(
                     child: Center(child: CircularProgressIndicator()),
@@ -2208,7 +2041,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                           ? (MediaQuery.of(context).size.width - 1100) / 2
                           : 16,
                     ),
-                    sliver: _buildModernProductGrid(),
+                    sliver: _buildTradersList(),
                   ),
 
             // Web Footer
@@ -2731,6 +2564,765 @@ class _ProductListingPageState extends State<ProductListingPage>
           child: child,
         );
       },
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // NEW WIDGET BUILDERS FOR REDESIGNED LAYOUT
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Build Brand Section (horizontally scrollable)
+  Widget _buildBrandSection() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.verified_rounded,
+                  color: AppColors.accent,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Brand',
+                style: AppTextStyles.titleMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.onSurface,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 40,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: _brands.length,
+              itemBuilder: (context, index) {
+                final brand = _brands[index];
+                final isSelected = _selectedBrand == brand;
+                
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _selectedBrand = brand;
+                        _products = [];
+                        _lastDocument = null;
+                        _hasMore = true;
+                      });
+                      _loadFirstPage();
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isSelected ? AppColors.primary : AppColors.surface,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isSelected ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.15),
+                          width: 1,
+                        ),
+                        boxShadow: isSelected
+                            ? [
+                                BoxShadow(
+                                  color: AppColors.primary.withValues(alpha: 0.25),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Text(
+                        brand,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: isSelected ? AppColors.onPrimary : AppColors.onSurface,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build Categories Section (horizontally scrollable)
+  Widget _buildCategoriesSection() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.category_rounded,
+                  color: AppColors.primary,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Categories',
+                style: AppTextStyles.titleMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.onSurface,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 100,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: _categories.length,
+              itemBuilder: (context, index) {
+                final category = _categories[index];
+                final isSelected = category == 'All'
+                    ? _selectedCategories.isEmpty
+                    : _selectedCategories.contains(category);
+                final imageUrl = category == 'All' ? null : _categoryNameToImage[category];
+
+                return Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: GestureDetector(
+                    onTap: () => _onCategorySelected(category),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: 80,
+                      decoration: BoxDecoration(
+                        color: isSelected ? AppColors.primary : AppColors.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isSelected
+                              ? AppColors.primary
+                              : AppColors.onSurface.withValues(alpha: 0.12),
+                          width: 1.5,
+                        ),
+                        boxShadow: isSelected
+                            ? [
+                                BoxShadow(
+                                  color: AppColors.primary.withValues(alpha: 0.25),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ]
+                            : [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.04),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: imageUrl != null && imageUrl.isNotEmpty
+                                    ? Colors.transparent
+                                    : isSelected
+                                        ? Colors.white.withValues(alpha: 0.2)
+                                        : AppColors.primary.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: imageUrl != null && imageUrl.isNotEmpty
+                                  ? CachedNetworkImage(
+                                      imageUrl: imageUrl,
+                                      fit: BoxFit.cover,
+                                      placeholder: (context, url) => Center(
+                                        child: Icon(
+                                          Icons.category,
+                                          color: isSelected
+                                              ? Colors.white.withValues(alpha: 0.7)
+                                              : AppColors.primary.withValues(alpha: 0.5),
+                                          size: 20,
+                                        ),
+                                      ),
+                                      errorWidget: (context, url, error) => Center(
+                                        child: Icon(
+                                          Icons.category,
+                                          color: isSelected
+                                              ? Colors.white.withValues(alpha: 0.7)
+                                              : AppColors.primary.withValues(alpha: 0.5),
+                                          size: 20,
+                                        ),
+                                      ),
+                                    )
+                                  : Center(
+                                      child: Icon(
+                                        category == 'All' ? Icons.grid_view_rounded : Icons.category,
+                                        color: isSelected
+                                            ? Colors.white.withValues(alpha: 0.9)
+                                            : AppColors.primary.withValues(alpha: 0.7),
+                                        size: 22,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: Text(
+                              category,
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: isSelected ? AppColors.onPrimary : AppColors.onSurface,
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                fontSize: 10,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build Filter Section (horizontal filter bar with chips)
+  Widget _buildFilterSection() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            // Shipped From Filter
+            _buildFilterChip(
+              icon: Icons.local_shipping_rounded,
+              label: 'Shipped From',
+              value: _selectedShippedFrom,
+              options: _shippedFromOptions,
+              onSelected: (value) {
+                setState(() {
+                  _selectedShippedFrom = value;
+                  _products = [];
+                  _lastDocument = null;
+                  _hasMore = true;
+                });
+                _loadFirstPage();
+              },
+            ),
+            const SizedBox(width: 8),
+            // Price Range Filter
+            _buildFilterChip(
+              icon: Icons.attach_money_rounded,
+              label: 'Price',
+              value: _selectedPriceRange,
+              options: _priceRangeOptions,
+              onSelected: (value) {
+                setState(() {
+                  _selectedPriceRange = value;
+                  _products = [];
+                  _lastDocument = null;
+                  _hasMore = true;
+                });
+                _loadFirstPage();
+              },
+            ),
+            const SizedBox(width: 8),
+            // Rating Filter
+            _buildFilterChip(
+              icon: Icons.star_rounded,
+              label: 'Rating',
+              value: _selectedRating,
+              options: _ratingOptions,
+              onSelected: (value) {
+                setState(() {
+                  _selectedRating = value;
+                  _products = [];
+                  _lastDocument = null;
+                  _hasMore = true;
+                });
+                _loadFirstPage();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Build individual filter chip with dropdown
+  Widget _buildFilterChip({
+    required IconData icon,
+    required String label,
+    required String value,
+    required List<String> options,
+    required Function(String) onSelected,
+  }) {
+    final isActive = value != 'All';
+    
+    return PopupMenuButton<String>(
+      onSelected: onSelected,
+      offset: const Offset(0, 40),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: AppColors.surface,
+      itemBuilder: (context) => options.map((option) {
+        final isSelectedOption = option == value;
+        return PopupMenuItem<String>(
+          value: option,
+          child: Row(
+            children: [
+              if (isSelectedOption)
+                Icon(Icons.check_rounded, color: AppColors.primary, size: 18)
+              else
+                const SizedBox(width: 18),
+              const SizedBox(width: 8),
+              Text(
+                option,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: isSelectedOption ? AppColors.primary : AppColors.onSurface,
+                  fontWeight: isSelectedOption ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isActive ? AppColors.primary.withValues(alpha: 0.1) : AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isActive ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.15),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isActive ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.6),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              value == 'All' ? label : value,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: isActive ? AppColors.primary : AppColors.onSurface,
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(
+              Icons.keyboard_arrow_down_rounded,
+              size: 16,
+              color: isActive ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.5),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Build Traders List (Foodpanda-style vertical list layout)
+  Widget _buildTradersList() {
+    // Group products by seller to create "business" cards
+    final Map<String, List<Product>> productsBySeller = {};
+    
+    final filteredProducts = _products.where((product) {
+      if (product.isDraft == true) return false;
+      if (product.isActive == false) return false;
+      if (product.isArchived == true) return false;
+      
+      // Apply brand filter
+      if (_selectedBrand != 'All' && product.brand != _selectedBrand) return false;
+      
+      // Apply category filter
+      if (_selectedCategories.isNotEmpty) {
+        final selectedCategoryIds = _selectedCategories
+            .map((categoryName) => _categoryNameToId[categoryName])
+            .where((id) => id != null)
+            .cast<String>()
+            .toList();
+        
+        if (!selectedCategoryIds.contains(product.categoryId)) return false;
+        
+        // Apply subcategory filter
+        if (_selectedSubCategories.isNotEmpty) {
+          final hasSubCategory = product.subCategoryId.isNotEmpty;
+          final isInSelectedSubCategory = _selectedSubCategories.contains(product.subCategoryId);
+          if (hasSubCategory && !isInSelectedSubCategory) return false;
+        }
+      }
+      
+      return true;
+    }).toList();
+    
+    // Group by seller
+    for (final product in filteredProducts) {
+      final sellerId = product.sellerId.isNotEmpty ? product.sellerId : 'unknown';
+      productsBySeller.putIfAbsent(sellerId, () => []).add(product);
+    }
+    
+    final sellerIds = productsBySeller.keys.toList();
+    
+    if (sellerIds.isEmpty) {
+      return SliverToBoxAdapter(
+        child: _buildEmptyState(),
+      );
+    }
+
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          if (index >= sellerIds.length) {
+            if (_isLoadingMore) {
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: CircularProgressIndicator(),
+                ),
+              );
+            }
+            return const SizedBox.shrink();
+          }
+          
+          final sellerId = sellerIds[index];
+          final sellerProducts = productsBySeller[sellerId]!;
+          
+          return _buildTraderCard(sellerId, sellerProducts);
+        },
+        childCount: sellerIds.length + (_isLoadingMore ? 1 : 0),
+      ),
+    );
+  }
+
+  // Build individual Trader/Business Card (Foodpanda style)
+  Widget _buildTraderCard(String sellerId, List<Product> products) {
+    // Get representative data from first product
+    final firstProduct = products.first;
+    
+    // Calculate price range indicator
+    final prices = products.map((p) => p.lowestPrice ?? 0).where((p) => p > 0).toList();
+    String priceIndicator = '₱';
+    if (prices.isNotEmpty) {
+      final avgPrice = prices.reduce((a, b) => a + b) / prices.length;
+      if (avgPrice > 5000) {
+        priceIndicator = '₱₱₱';
+      } else if (avgPrice > 1000) {
+        priceIndicator = '₱₱';
+      }
+    }
+    
+    // Get categories for this seller
+    final categoryIds = products.map((p) => p.categoryId).toSet().toList();
+    final categoryNames = categoryIds
+        .map((id) => _categoryIdToName[id])
+        .where((name) => name != null)
+        .take(2)
+        .toList();
+    
+    // Check if has any voucher (mock for now - you can integrate real voucher data)
+    final hasVoucher = products.length > 5;
+    
+    return GestureDetector(
+      onTap: () {
+        // Navigate to first product detail (you can change this to a seller page)
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ProductDetailPage(productId: firstProduct.productId),
+          ),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Banner Image
+            ClipRRect(
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+              ),
+              child: AspectRatio(
+                aspectRatio: 16 / 7,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    CachedNetworkImage(
+                      imageUrl: firstProduct.imageURL,
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => Container(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        child: const Center(child: CircularProgressIndicator()),
+                      ),
+                      errorWidget: (context, url, error) => Container(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        child: const Icon(Icons.store_rounded, size: 40, color: AppColors.primary),
+                      ),
+                      cacheManager: ProductImageCacheManager.instance,
+                    ),
+                    // Gradient overlay for better text readability
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      child: Container(
+                        height: 60,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              Colors.black.withValues(alpha: 0.4),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Product count badge
+                    Positioned(
+                      top: 12,
+                      right: 12,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.15),
+                              blurRadius: 4,
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.inventory_2_outlined, size: 14, color: AppColors.primary),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${products.length} items',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.onSurface,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            
+            // Content Section
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Business Name & Price Range
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          firstProduct.brand?.isNotEmpty == true 
+                              ? firstProduct.brand! 
+                              : 'Dental Trader',
+                          style: AppTextStyles.titleMedium.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.onSurface,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.accent.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          priceIndicator,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.accent,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 6),
+                  
+                  // Location (mock - you can get real location from seller data)
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.location_on_outlined,
+                        size: 14,
+                        color: AppColors.onSurface.withValues(alpha: 0.6),
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          'Metro Manila', // Replace with actual location
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.onSurface.withValues(alpha: 0.7),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 10),
+                  
+                  // ETA & Categories Row
+                  Row(
+                    children: [
+                      // ETA
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.access_time_rounded,
+                              size: 12,
+                              color: AppColors.primary,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '1-3 days',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Categories
+                      Expanded(
+                        child: Text(
+                          categoryNames.isEmpty 
+                              ? 'Dental Products' 
+                              : categoryNames.join(', '),
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.onSurface.withValues(alpha: 0.6),
+                            fontSize: 11,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  // Voucher Badge (if available)
+                  if (hasVoucher) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            AppColors.accent.withValues(alpha: 0.15),
+                            AppColors.primary.withValues(alpha: 0.15),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: AppColors.accent.withValues(alpha: 0.3),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.local_offer_rounded,
+                            size: 14,
+                            color: AppColors.accent,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Free Delivery on orders ₱500+',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.accent,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

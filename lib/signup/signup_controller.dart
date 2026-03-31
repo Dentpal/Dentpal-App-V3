@@ -10,6 +10,7 @@ class SignupController {
   final TextEditingController contactNumberController = TextEditingController();
   String? selectedGender;
   DateTime? selectedBirthdate;
+  String? selectedLocation;
   
   // ID verification (Step 3)
   String? idNumber; // Registration number from the scanned ID
@@ -63,6 +64,7 @@ class SignupController {
   // Form validation errors
   String? step1GenderError;
   String? step1BirthdateError;
+  String? step1LocationError;
   
   // Password validation
   bool hasUppercase = false;
@@ -103,6 +105,7 @@ class SignupController {
   String get password => passwordController.text;
   String get gender => selectedGender ?? '';
   DateTime? get birthdate => selectedBirthdate;
+  String get location => selectedLocation ?? '';
   
   // Getter to access the formatted phone number for Firebase operations
   String get formattedPhoneNumber => formatPhoneNumberForFirebase(contactNumberController.text);
