@@ -17,6 +17,7 @@ class SignupController {
   final TextEditingController idNumberController = TextEditingController(); // Editable ID number field
   bool isIdVerified = false;
   String? idVerificationError;
+  bool isIdAlreadyRegistered = false; // Flag to indicate if this PRC ID is already registered
   Uint8List? idFaceImage; // Temporarily store face image from ID
   
   // Specialty selection (after ID verification)

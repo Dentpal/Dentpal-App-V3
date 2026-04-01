@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'signup_controller.dart';
 
@@ -36,6 +37,37 @@ class IdOcrService {
   }
   
   static final FaceDetector _faceDetector = _createFaceDetector();
+
+  /// Check if a registration number already exists in the UserLookup collection
+  /// Returns true if the registration number is already registered
+  /// Note: Registration number "000000" is a special admin bypass code that always returns false
+  static Future<bool> checkRegistrationNumberExists(String registrationNumber) async {
+    try {
+      // Admin bypass: Allow registration number "000000" to proceed regardless of existing records
+      if (registrationNumber == '000000') {
+        SignupController.logOcrResult('CHECK', 'Admin bypass: Registration number 000000 allowed');
+        return false;
+      }
+      
+      SignupController.logOcrResult('CHECK', 'Checking if registration number exists: $registrationNumber');
+      
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('UserLookup')
+          .where('RegistrationNo', isEqualTo: registrationNumber)
+          .limit(1)
+          .get();
+      
+      final exists = querySnapshot.docs.isNotEmpty;
+      SignupController.logOcrResult('CHECK', 'Registration number exists: $exists');
+      
+      return exists;
+    } catch (e) {
+      SignupController.logOcrResult('ERROR', 'Error checking registration number: $e');
+      // If there's an error checking, return false to allow user to proceed
+      // The error will be caught during actual registration
+      return false;
+    }
+  }
 
   static Future<IdVerificationResult> processIdImage(
     String imagePath,
@@ -76,6 +108,23 @@ class IdOcrService {
       // 4. Verify against user input
       final verification = _verifyIdData(parsedData, expectedFirstName, expectedLastName, recognizedText.text);
       SignupController.logOcrResult('VERIFICATION', 'Verification result: ${verification.toString()}');
+      
+      // 5. If verification passed, check if registration number is already registered
+      if (verification.isValid && verification.registrationNumber != null) {
+        final alreadyRegistered = await checkRegistrationNumberExists(verification.registrationNumber!);
+        if (alreadyRegistered) {
+          SignupController.logOcrResult('DUPLICATE', 'Registration number ${verification.registrationNumber} is already registered');
+          return IdVerificationResult(
+            isValid: false,
+            errorMessage: 'This PRC ID is already registered with an existing account. Please log in instead, or contact support if you believe this is an error.',
+            registrationNumber: verification.registrationNumber,
+            faceImage: verification.faceImage,
+            firstName: verification.firstName,
+            lastName: verification.lastName,
+            isAlreadyRegistered: true,
+          );
+        }
+      }
       
       return verification;
     } catch (e) {
@@ -399,15 +448,22 @@ class IdOcrService {
       }
     }
     
-    // Check expiry date - prioritize expired ID messages
+    // Check expiry date - accept IDs that expired within the last year
     if (parsedData.validUntil != null) {
-      if (parsedData.validUntil!.isBefore(DateTime.now())) {
+      final now = DateTime.now();
+      final oneYearAgo = DateTime(now.year - 1, now.month, now.day);
+      
+      if (parsedData.validUntil!.isBefore(oneYearAgo)) {
+        // ID expired more than a year ago - reject
         return IdVerificationResult(
           isValid: false,
-          errorMessage: 'PRC ID has expired. Please use a valid, non-expired PRC ID.',
+          errorMessage: 'PRC ID has expired for more than a year. Please use a valid PRC ID.',
           registrationNumber: parsedData.registrationNumber,
           faceImage: parsedData.faceImage,
         );
+      } else if (parsedData.validUntil!.isBefore(now)) {
+        // ID expired within the last year - accept with warning log
+        SignupController.logOcrResult('INFO', 'PRC ID expired within last year (${parsedData.validUntil}) - allowing registration');
       }
     } else {
       return IdVerificationResult(
@@ -709,6 +765,7 @@ class IdVerificationResult {
   final Uint8List? faceImage;
   final String? firstName;
   final String? lastName;
+  final bool isAlreadyRegistered; // Flag to indicate if this PRC ID is already registered
 
   IdVerificationResult({
     required this.isValid,
@@ -717,10 +774,11 @@ class IdVerificationResult {
     this.faceImage,
     this.firstName,
     this.lastName,
+    this.isAlreadyRegistered = false,
   });
 
   @override
   String toString() {
-    return 'IdVerificationResult(isValid: $isValid, errorMessage: $errorMessage, registrationNumber: $registrationNumber, hasFace: ${faceImage != null}, firstName: $firstName, lastName: $lastName)';
+    return 'IdVerificationResult(isValid: $isValid, errorMessage: $errorMessage, registrationNumber: $registrationNumber, hasFace: ${faceImage != null}, firstName: $firstName, lastName: $lastName, isAlreadyRegistered: $isAlreadyRegistered)';
   }
 }

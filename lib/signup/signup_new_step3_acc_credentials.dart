@@ -690,6 +690,7 @@ class _SignupNewStep3AccCredentialsState extends State<SignupNewStep3AccCredenti
       await FirebaseFirestore.instance.collection('UserLookup').doc(user.uid).set({
         'contactNumber': _controller.formattedPhoneNumber,
         'email': _controller.email,
+        'RegistrationNo': registrationNo, // PRC Registration Number for duplicate check
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });

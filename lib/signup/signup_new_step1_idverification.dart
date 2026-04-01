@@ -102,35 +102,59 @@ class _SignupNewStep1IdVerificationState extends State<SignupNewStep1IdVerificat
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
                       ),
-                      child: Row(
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(Icons.error_outline, color: AppColors.error, size: 20),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  widget.controller.idVerificationError!,
-                                  style: AppTextStyles.bodySmall.copyWith(
-                                    color: AppColors.error,
-                                  ),
-                                ),
-                                // Add iOS-specific tip if it's a face detection error on iOS
-                                if (Platform.isIOS && widget.controller.idVerificationError!.contains('face')) ...[
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'iOS Tip: Ensure good lighting and hold the ID steady. The verification may still proceed even if face detection has issues.',
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color: AppColors.grey600,
-                                      fontStyle: FontStyle.italic,
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(Icons.error_outline, color: AppColors.error, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      widget.controller.idVerificationError!,
+                                      style: AppTextStyles.bodySmall.copyWith(
+                                        color: AppColors.error,
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              ],
-                            ),
+                                    // Add iOS-specific tip if it's a face detection error on iOS
+                                    if (Platform.isIOS && widget.controller.idVerificationError!.contains('face')) ...[
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Ensure good lighting and hold the ID steady.',
+                                        style: AppTextStyles.bodySmall.copyWith(
+                                          color: AppColors.grey600,
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
+                          // Show login button if ID is already registered
+                          if (widget.controller.isIdAlreadyRegistered) ...[
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  Navigator.of(context).pop();
+                                },
+                                icon: Icon(Icons.login),
+                                label: Text('Go to Login'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primary,
+                                  foregroundColor: AppColors.onPrimary,
+                                  padding: EdgeInsets.symmetric(vertical: 12),
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -396,10 +420,12 @@ class _SignupNewStep1IdVerificationState extends State<SignupNewStep1IdVerificat
               widget.controller.lastNameController.text = result.lastName!;
             }
             
+            widget.controller.isIdAlreadyRegistered = false;
             _capturedImage = null;
           } else {
             widget.controller.isIdVerified = false;
             widget.controller.idVerificationError = result.errorMessage;
+            widget.controller.isIdAlreadyRegistered = result.isAlreadyRegistered;
             widget.controller.idNumber = null;
             widget.controller.idNumberController.text = '';
             widget.controller.idFaceImage = null;
@@ -411,6 +437,7 @@ class _SignupNewStep1IdVerificationState extends State<SignupNewStep1IdVerificat
         setState(() {
           widget.controller.isIdVerified = false;
           widget.controller.idVerificationError = 'ID verification cancelled. Please try again to complete your registration.';
+          widget.controller.isIdAlreadyRegistered = false;
           widget.controller.idNumber = null;
           widget.controller.idNumberController.text = '';
           widget.controller.idFaceImage = null;
@@ -423,6 +450,7 @@ class _SignupNewStep1IdVerificationState extends State<SignupNewStep1IdVerificat
         setState(() {
           widget.controller.isIdVerified = false;
           widget.controller.idVerificationError = 'Unable to access camera. Please check permissions and try again.';
+          widget.controller.isIdAlreadyRegistered = false;
           widget.controller.idNumber = null;
           widget.controller.idNumberController.text = '';
           widget.controller.idFaceImage = null;
