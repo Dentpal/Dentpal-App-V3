@@ -663,4 +663,141 @@ class ProductService {
       return [];
     }
   }
+
+  /// Get paginated products for a specific seller.
+  /// Returns { 'products': List<Product>, 'lastDocument': DocumentSnapshot?, 'hasMore': bool }
+  Future<Map<String, dynamic>> getProductsBySellerPaginated({
+    required String sellerId,
+    int limit = 10,
+    DocumentSnapshot? lastDocument,
+    String? categoryId,
+  }) async {
+    try {
+      AppLogger.d('ProductService: Fetching paginated products for seller: $sellerId (limit: $limit, category: $categoryId)');
+
+      Query query = _firestore
+          .collection('Product')
+          .where('sellerId', isEqualTo: sellerId)
+          .where('isActive', isEqualTo: true);
+
+      if (categoryId != null && categoryId.isNotEmpty) {
+        query = query.where('categoryID', isEqualTo: categoryId);
+      }
+
+      query = query.orderBy('createdAt', descending: true).limit(limit);
+
+      if (lastDocument != null) {
+        query = query.startAfterDocument(lastDocument);
+      }
+
+      final querySnapshot = await query.get();
+      final docs = querySnapshot.docs;
+
+      List<Product> products = [];
+      DocumentSnapshot? lastDoc;
+
+      for (var doc in docs) {
+        try {
+          Product product = Product.fromFirestore(doc);
+
+          // Skip drafts and archived client-side
+          if (product.isDraft) continue;
+          if (product.isArchived) continue;
+
+          // Fetch variations
+          final variationsSnapshot = await _firestore
+              .collection('Product')
+              .doc(product.productId)
+              .collection('Variation')
+              .get();
+
+          if (variationsSnapshot.docs.isNotEmpty) {
+            List<ProductVariation> variations = variationsSnapshot.docs
+                .map((vDoc) => ProductVariation.fromFirestore(vDoc))
+                .toList();
+
+            product = Product(
+              productId: product.productId,
+              name: product.name,
+              description: product.description,
+              imageURL: product.imageURL,
+              categoryId: product.categoryId,
+              subCategoryId: product.subCategoryId,
+              sellerId: product.sellerId,
+              createdAt: product.createdAt,
+              updatedAt: product.updatedAt,
+              isActive: product.isActive,
+              isDraft: product.isDraft,
+              isArchived: product.isArchived,
+              clickCounter: product.clickCounter,
+              variations: variations,
+              hasWarranty: product.hasWarranty,
+              warrantyType: product.warrantyType,
+              warrantyPeriod: product.warrantyPeriod,
+              warrantyPeriodUnit: product.warrantyPeriodUnit,
+              warrantyPolicy: product.warrantyPolicy,
+              warrantyDuration: product.warrantyDuration,
+              dangerousGoods: product.dangerousGoods,
+              brand: product.brand,
+              allowInquiry: product.allowInquiry,
+            );
+          }
+
+          products.add(product);
+          lastDoc = doc;
+        } catch (e) {
+          AppLogger.d('ProductService: Error processing product ${doc.id}: $e');
+        }
+      }
+
+      final hasMore = docs.length >= limit;
+
+      AppLogger.d('ProductService: Fetched ${products.length} paginated products for seller $sellerId (hasMore: $hasMore)');
+
+      return {
+        'products': products,
+        'lastDocument': lastDoc,
+        'hasMore': hasMore,
+      };
+    } catch (e) {
+      AppLogger.d('ProductService: Error fetching paginated products for seller $sellerId: $e');
+      return {
+        'products': <Product>[],
+        'lastDocument': null,
+        'hasMore': false,
+      };
+    }
+  }
+
+  /// Get sold counts for a specific seller's products from completed orders.
+  /// Returns a map of productId -> total quantity sold.
+  Future<Map<String, int>> getSoldCountsBySeller(String sellerId) async {
+    try {
+      final snapshot = await _firestore
+          .collection('Order')
+          .where('status', isEqualTo: 'completed')
+          .get();
+
+      final Map<String, int> soldCounts = {};
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final items = (data['items'] as List<dynamic>?) ?? [];
+        for (final item in items) {
+          if (item is Map<String, dynamic> && item['sellerId'] == sellerId) {
+            final pid = item['productId'] as String?;
+            if (pid != null) {
+              final qty = (item['quantity'] as num?)?.toInt() ?? 1;
+              soldCounts[pid] = (soldCounts[pid] ?? 0) + qty;
+            }
+          }
+        }
+      }
+
+      AppLogger.d('ProductService: Got sold counts for ${soldCounts.length} products (seller: $sellerId)');
+      return soldCounts;
+    } catch (e) {
+      AppLogger.d('ProductService: Error fetching sold counts for seller $sellerId: $e');
+      return {};
+    }
+  }
 }

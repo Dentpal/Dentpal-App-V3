@@ -20,8 +20,8 @@ import '../../core/app_theme/app_text_styles.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/utils/navigation_utils.dart';
 import 'cart_page.dart';
-import 'product_search_page.dart';
 import 'product_detail_page.dart';
+import '../services/product_search_service.dart';
 import '../../login_page.dart';
 import 'package:flutter/services.dart';
 import '../../profile/pages/profile_page.dart';
@@ -76,7 +76,9 @@ class _ProductListingPageState extends State<ProductListingPage>
   DateTime? _cacheTimestamp;
   DocumentSnapshot? _lastDocument;
   bool _hasMore = true;
-  final int _pageSize = 15;
+  final int _pageSize = 50; // Fetch products in larger batches to accumulate stores
+  static const int _storePageSize = 10; // Display 10 unique stores per page
+  Set<String> _loadedSellerIds = {};
   final ScrollController _scrollController = ScrollController();
   final PageController _bannerPageController = PageController();
   Timer? _bannerAutoScrollTimer;
@@ -93,6 +95,11 @@ class _ProductListingPageState extends State<ProductListingPage>
   List<String> _bannerImageUrls = [];
   List<String?> _bannerTargetUrls = [];
   int _currentBannerIndex = 0;
+
+  // Cache for seller/vendor data fetched from Firestore, keyed by sellerId.
+  // A null value means the document was fetched but does not exist in Firestore.
+  Map<String, Map<String, dynamic>?> _sellerDataCache = {};
+  Set<String> _sellerDataFetching = {};
 
   // Mapping between category names and IDs for filtering
   Map<String, String> _categoryNameToId = {};
@@ -116,6 +123,21 @@ class _ProductListingPageState extends State<ProductListingPage>
   final List<String> _shippedFromOptions = ['All', 'Local', 'International', 'Metro Manila', 'Cebu', 'Davao'];
   final List<String> _priceRangeOptions = ['All', '₱0-500', '₱500-1000', '₱1000-5000', '₱5000+'];
   final List<String> _ratingOptions = ['All', '4★ & up', '3★ & up', '2★ & up'];
+
+  // Inline search state
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  final ProductSearchService _searchService = ProductSearchService();
+  String _searchQuery = '';
+  bool _isSearchMode = false;
+  List<Product> _searchResults = [];
+  List<String> _searchSuggestions = [];
+  bool _showSearchSuggestions = false;
+  bool _isSearching = false;
+  bool _isLoadingMoreSearch = false;
+  Timer? _searchDebounceTimer;
+  SearchResult? _lastSearchResult;
+  bool _showMobileSearchBar = false;
 
   // Override to keep this page alive when navigating away
   @override
@@ -420,6 +442,9 @@ class _ProductListingPageState extends State<ProductListingPage>
     _bannerPageController.dispose();
     _authStateSubscription?.cancel();
     _cartCountSubscription?.cancel();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    _searchDebounceTimer?.cancel();
 
     AppLogger.d("ProductListingPage dispose called");
     super.dispose();
@@ -566,6 +591,7 @@ class _ProductListingPageState extends State<ProductListingPage>
       _hasMore = true;
       _errorMessage = null;
       _cacheTimestamp = null;
+      _loadedSellerIds.clear();
     });
 
     _loadFirstPage();
@@ -573,13 +599,92 @@ class _ProductListingPageState extends State<ProductListingPage>
 
   // Scroll listener for detecting when user reaches bottom
   void _scrollListener() {
-    if (_scrollController.position.pixels >=
-            _scrollController.position.maxScrollExtent - 200 &&
-        !_isLoading &&
-        !_isLoadingMore &&
-        _hasMore) {
-      _loadNextPage();
+    if (_scrollController.position.pixels <
+        _scrollController.position.maxScrollExtent - 200) return;
+    if (_isSearchMode) {
+      if (!_isSearching && !_isLoadingMoreSearch && (_lastSearchResult?.hasMore ?? false)) {
+        _performSearch(isLoadMore: true);
+      }
+    } else {
+      if (!_isLoading && !_isLoadingMore && _hasMore) {
+        _loadNextPage();
+      }
     }
+  }
+
+  // ── Inline search methods ──────────────────────────────────────────────────
+
+  void _onSearchChanged(String query) {
+    _searchDebounceTimer?.cancel();
+    setState(() {
+      _searchQuery = query;
+      _showSearchSuggestions = query.isNotEmpty;
+    });
+    if (query.isEmpty) {
+      _clearSearch();
+      return;
+    }
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 500), () {
+      _performSearch();
+      if (query.length > 1) _loadSearchSuggestions(query);
+    });
+  }
+
+  Future<void> _performSearch({bool isLoadMore = false}) async {
+    if (_searchQuery.trim().isEmpty) return;
+    if (isLoadMore && (_isLoadingMoreSearch || !(_lastSearchResult?.hasMore ?? true))) return;
+    setState(() {
+      if (isLoadMore) {
+        _isLoadingMoreSearch = true;
+      } else {
+        _isSearching = true;
+      }
+    });
+    final result = await _searchService.searchProducts(
+      searchQuery: _searchQuery,
+      filters: SearchFilters(),
+      lastDocument: isLoadMore ? _lastSearchResult?.lastDocument : null,
+    );
+    if (!mounted) return;
+    setState(() {
+      _isSearchMode = true;
+      _isSearching = false;
+      _isLoadingMoreSearch = false;
+      if (isLoadMore) {
+        _searchResults.addAll(result.products);
+      } else {
+        _searchResults = result.products;
+      }
+      _lastSearchResult = result;
+    });
+  }
+
+  Future<void> _loadSearchSuggestions(String query) async {
+    final suggestions = await _searchService.getSearchSuggestions(query);
+    if (mounted) setState(() { _searchSuggestions = suggestions; });
+  }
+
+  void _onSuggestionTap(String suggestion) {
+    _searchController.text = suggestion;
+    setState(() {
+      _searchQuery = suggestion;
+      _showSearchSuggestions = false;
+    });
+    _performSearch();
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    setState(() {
+      _searchQuery = '';
+      _isSearchMode = false;
+      _searchResults = [];
+      _searchSuggestions = [];
+      _showSearchSuggestions = false;
+      _lastSearchResult = null;
+      _showMobileSearchBar = false;
+    });
+    _searchFocusNode.unfocus();
   }
 
   // Handle category selection (now supports multiple selection)
@@ -903,7 +1008,7 @@ class _ProductListingPageState extends State<ProductListingPage>
     return widgets;
   }
 
-  // Load the first page of products
+  // Load the first page of products, accumulating until we have enough unique stores
   Future<void> _loadFirstPage() async {
     if (_isLoading || !mounted) return;
 
@@ -914,67 +1019,65 @@ class _ProductListingPageState extends State<ProductListingPage>
 
     try {
       AppLogger.d('ProductListingPage: Loading first page of products...');
-      AppLogger.d('DEBUG: Selected categories: $_selectedCategories');
-      AppLogger.d('DEBUG: Selected subcategories: $_selectedSubCategories');
 
       // Use server-side filtering when possible
       String? filterCategoryId;
       String? filterSubCategoryId;
 
-      // If only one category is selected, use server-side filtering
       if (_selectedCategories.length == 1) {
         filterCategoryId = _categoryNameToId[_selectedCategories.first];
-        AppLogger.d('Using server-side category filter: $filterCategoryId');
       }
-
-      // If only one subcategory is selected, use server-side filtering
       if (_selectedSubCategories.length == 1) {
         filterSubCategoryId = _selectedSubCategories.first;
-        AppLogger.d(
-          'Using server-side subcategory filter: $filterSubCategoryId',
-        );
       }
 
-      final result = await _productService.getProductsPaginated(
-        limit: _pageSize,
-        categoryId: filterCategoryId,
-        subCategoryId: filterSubCategoryId,
-        includeInactive: false,
-        includeDrafts: false,
-        includeArchived: false,
-      );
+      // Reset seller tracking for first page
+      _loadedSellerIds.clear();
+      List<Product> allFetched = [];
+      DocumentSnapshot? cursor;
+      bool moreAvailable = true;
 
-      if (!mounted) return; // Check if widget is still mounted
+      // Fetch products in batches until we have _storePageSize unique sellers
+      while (moreAvailable) {
+        final result = await _productService.getProductsPaginated(
+          limit: _pageSize,
+          lastDocument: cursor,
+          categoryId: filterCategoryId,
+          subCategoryId: filterSubCategoryId,
+          includeInactive: false,
+          includeDrafts: false,
+          includeArchived: false,
+        );
 
-      final newProducts = result['products'] as List<Product>;
-      final lastDoc = result['lastDocument'] as DocumentSnapshot?;
-      final hasMore = result['hasMore'] as bool;
+        if (!mounted) return;
+
+        final batch = result['products'] as List<Product>;
+        cursor = result['lastDocument'] as DocumentSnapshot?;
+        moreAvailable = result['hasMore'] as bool;
+
+        allFetched.addAll(batch);
+
+        // Count unique sellers so far
+        for (final p in batch) {
+          if (p.sellerId.isNotEmpty) _loadedSellerIds.add(p.sellerId);
+        }
+
+        // Stop if we have enough unique sellers or no more data
+        if (_loadedSellerIds.length >= _storePageSize || !moreAvailable) break;
+      }
 
       // Load categories only if they haven't been loaded yet
       if (_categories.length <= 1) {
         try {
-          // Fetch all categories from CategoryService (now with caching)
           final allCategories = await _categoryService.getCategories();
+          if (!mounted) return;
 
-          if (!mounted) return; // Check if widget is still mounted
-
-          AppLogger.d(
-            'DEBUG: Fetched ${allCategories.length} categories from service',
-          );
-
-          // Build categories list starting with 'All'
           Set<String> categorySet = {'All'};
-
-          // Clear existing mappings
           _categoryNameToId.clear();
           _categoryIdToName.clear();
           _categoryNameToImage.clear();
 
-          // Add all category names from the service and build mappings
           for (var category in allCategories) {
-            AppLogger.d(
-              'DEBUG: Category - Name: ${category.categoryName}, ID: ${category.categoryId}',
-            );
             categorySet.add(category.categoryName);
             _categoryNameToId[category.categoryName] = category.categoryId;
             _categoryIdToName[category.categoryId] = category.categoryName;
@@ -983,28 +1086,30 @@ class _ProductListingPageState extends State<ProductListingPage>
           }
 
           _categories = categorySet.toList();
-          AppLogger.d('DEBUG: Final categories list: $_categories');
         } catch (e) {
           AppLogger.d('Error loading categories: $e');
-          // Fallback to just 'All' if category loading fails
           _categories = ['All'];
         }
       }
 
       if (mounted) {
         setState(() {
-          _products = newProducts;
-          _lastDocument = lastDoc;
-          _hasMore = hasMore;
+          _products = allFetched;
+          _lastDocument = cursor;
+          _hasMore = moreAvailable;
           _isLoading = false;
           _cacheTimestamp = DateTime.now();
         });
       }
 
-      AppLogger.d('Loaded ${newProducts.length} products (first page)');
+      // Pre-fetch vendor data for trader cards
+      _prefetchSellerData(allFetched).then((_) {
+        if (mounted) setState(() {});
+      });
+
+      AppLogger.d('Loaded ${allFetched.length} products covering ${_loadedSellerIds.length} stores (first page)');
     } catch (e) {
       AppLogger.d('Error loading first page: $e');
-      AppLogger.d('Stack trace: ${StackTrace.current}');
 
       if (mounted) {
         setState(() {
@@ -1015,59 +1120,80 @@ class _ProductListingPageState extends State<ProductListingPage>
     }
   }
 
-  // Load the next page of products
+  // Load the next page of products, accumulating until 10 new unique stores are found
   Future<void> _loadNextPage() async {
-    if (_isLoadingMore || !_hasMore || _lastDocument == null || !mounted)
+    if (_isLoadingMore || !_hasMore || _lastDocument == null || !mounted) {
       return;
+    }
 
     setState(() {
       _isLoadingMore = true;
     });
 
     try {
-      AppLogger.d('ProductListingPage: Loading more products...');
+      AppLogger.d('ProductListingPage: Loading more stores...');
 
-      // Use same filtering logic as first page
       String? filterCategoryId;
       String? filterSubCategoryId;
 
       if (_selectedCategories.length == 1) {
         filterCategoryId = _categoryNameToId[_selectedCategories.first];
       }
-
       if (_selectedSubCategories.length == 1) {
         filterSubCategoryId = _selectedSubCategories.first;
       }
 
-      final result = await _productService.getProductsPaginated(
-        limit: _pageSize,
-        lastDocument: _lastDocument,
-        categoryId: filterCategoryId,
-        subCategoryId: filterSubCategoryId,
-        includeInactive: false,
-        includeDrafts: false,
-        includeArchived: false,
-      );
+      final int sellersBefore = _loadedSellerIds.length;
+      List<Product> allNewProducts = [];
+      DocumentSnapshot? cursor = _lastDocument;
+      bool moreAvailable = true;
 
-      if (!mounted) return; // Check if widget is still mounted
+      // Fetch batches until we accumulate _storePageSize new sellers
+      while (moreAvailable) {
+        final result = await _productService.getProductsPaginated(
+          limit: _pageSize,
+          lastDocument: cursor,
+          categoryId: filterCategoryId,
+          subCategoryId: filterSubCategoryId,
+          includeInactive: false,
+          includeDrafts: false,
+          includeArchived: false,
+        );
 
-      final newProducts = result['products'] as List<Product>;
-      final lastDoc = result['lastDocument'] as DocumentSnapshot?;
-      final hasMore = result['hasMore'] as bool;
+        if (!mounted) return;
+
+        final batch = result['products'] as List<Product>;
+        cursor = result['lastDocument'] as DocumentSnapshot?;
+        moreAvailable = result['hasMore'] as bool;
+
+        allNewProducts.addAll(batch);
+
+        for (final p in batch) {
+          if (p.sellerId.isNotEmpty) _loadedSellerIds.add(p.sellerId);
+        }
+
+        final newSellers = _loadedSellerIds.length - sellersBefore;
+        if (newSellers >= _storePageSize || !moreAvailable) break;
+      }
 
       if (mounted) {
         setState(() {
-          _products.addAll(newProducts);
-          _lastDocument = lastDoc;
-          _hasMore = hasMore;
+          _products.addAll(allNewProducts);
+          _lastDocument = cursor;
+          _hasMore = moreAvailable;
           _isLoadingMore = false;
         });
       }
 
-      AppLogger.d('Loaded ${newProducts.length} more products');
+      // Pre-fetch vendor data for new traders
+      _prefetchSellerData(allNewProducts).then((_) {
+        if (mounted) setState(() {});
+      });
+
+      final newSellers = _loadedSellerIds.length - sellersBefore;
+      AppLogger.d('Loaded ${allNewProducts.length} more products covering $newSellers new stores');
     } catch (e) {
       AppLogger.d('Error loading more products: $e');
-      AppLogger.d('Stack trace: ${StackTrace.current}');
 
       if (mounted) {
         setState(() {
@@ -1209,6 +1335,12 @@ class _ProductListingPageState extends State<ProductListingPage>
             _categoryNameToImage = freshCategoryImageMapping;
             _cacheTimestamp = DateTime.now();
             _errorMessage = null;
+            _sellerDataCache.clear(); // invalidate vendor cache on manual refresh
+          });
+
+          // Re-fetch vendor data after cache clear
+          _prefetchSellerData(freshProducts).then((_) {
+            if (mounted) setState(() {});
           });
         }
 
@@ -1420,6 +1552,8 @@ class _ProductListingPageState extends State<ProductListingPage>
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: TextField(
+                                    controller: _searchController,
+                                    focusNode: _searchFocusNode,
                                     decoration: InputDecoration(
                                       hintText: 'Search products...',
                                       border: InputBorder.none,
@@ -1430,16 +1564,17 @@ class _ProductListingPageState extends State<ProductListingPage>
                                           ),
                                     ),
                                     style: AppTextStyles.bodyMedium,
-                                    onSubmitted: (_) {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (context) =>
-                                              const ProductSearchPage(),
-                                        ),
-                                      );
-                                    },
+                                    onChanged: _onSearchChanged,
                                   ),
                                 ),
+                                if (_searchQuery.isNotEmpty)
+                                  IconButton(
+                                    icon: const Icon(Icons.close, size: 18),
+                                    color: AppColors.onSurface.withOpacity(0.5),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                    onPressed: _clearSearch,
+                                  ),
                               ],
                             ),
                           ),
@@ -1585,46 +1720,61 @@ class _ProductListingPageState extends State<ProductListingPage>
                 elevation: 0,
                 backgroundColor: AppColors.surface,
                 automaticallyImplyLeading: false,
-                title: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(
-                        Icons.waving_hand,
-                        color: AppColors.accent,
-                        size: 16,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
+                title: _showMobileSearchBar
+                    ? TextField(
+                        controller: _searchController,
+                        focusNode: _searchFocusNode,
+                        autofocus: true,
+                        onChanged: _onSearchChanged,
+                        decoration: InputDecoration(
+                          hintText: 'Search products...',
+                          border: InputBorder.none,
+                          hintStyle: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.onSurface.withValues(alpha: 0.5),
+                          ),
+                        ),
+                        style: AppTextStyles.bodyMedium,
+                      )
+                    : Row(
                         children: [
-                          Text(
-                            'Welcome back!',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.onSurface.withValues(alpha: 0.6),
-                              fontSize: 11,
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.waving_hand,
+                              color: AppColors.accent,
+                              size: 16,
                             ),
                           ),
-                          Text(
-                            'Hi $_userFirstName',
-                            style: AppTextStyles.titleMedium.copyWith(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'Welcome back!',
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.onSurface.withValues(alpha: 0.6),
+                                    fontSize: 11,
+                                  ),
+                                ),
+                                Text(
+                                  'Hi $_userFirstName',
+                                  style: AppTextStyles.titleMedium.copyWith(
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
-                    ),
-                  ],
-                ),
                 flexibleSpace: FlexibleSpaceBar(
                   background: Container(
                     decoration: BoxDecoration(
@@ -1663,75 +1813,17 @@ class _ProductListingPageState extends State<ProductListingPage>
                             minWidth: 36,
                             minHeight: 36,
                           ),
-                          icon: const Icon(
-                            Icons.search,
+                          icon: Icon(
+                            _showMobileSearchBar ? Icons.close : Icons.search,
                             color: AppColors.onSurface,
                           ),
                           onPressed: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (context) => const ProductSearchPage(),
-                              ),
-                            );
-                          },
-                        ),
-                        Container(
-                          width: 1,
-                          height: 20,
-                          color: AppColors.onSurface.withValues(alpha: 0.1),
-                        ),
-                        IconButton(
-                          iconSize: 20,
-                          padding: const EdgeInsets.all(8),
-                          constraints: const BoxConstraints(
-                            minWidth: 36,
-                            minHeight: 36,
-                          ),
-                          icon: Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              const Icon(
-                                Icons.shopping_cart,
-                                color: AppColors.onSurface,
-                              ),
-                              if (_cartItemCount > 0)
-                                Positioned(
-                                  right: -8,
-                                  top: -6,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(4),
-                                    constraints: const BoxConstraints(
-                                      minWidth: 18,
-                                      minHeight: 18,
-                                    ),
-                                    decoration: const BoxDecoration(
-                                      color: Colors.orange,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Text(
-                                      _cartItemCount > 99
-                                          ? '99+'
-                                          : '$_cartItemCount',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                          onPressed: () {
-                            final user = FirebaseAuth.instance.currentUser;
-                            if (user == null) {
-                              _showLoginRequiredDialog();
+                            if (_showMobileSearchBar) {
+                              _clearSearch();
                             } else {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (context) => const CartPage(),
-                                ),
+                              setState(() { _showMobileSearchBar = true; });
+                              WidgetsBinding.instance.addPostFrameCallback(
+                                (_) => _searchFocusNode.requestFocus(),
                               );
                             }
                           },
@@ -1760,6 +1852,130 @@ class _ProductListingPageState extends State<ProductListingPage>
                   const SizedBox(width: 8),
                 ],
               ),
+            // Search suggestions overlay
+            if (_isSearchMode && _showSearchSuggestions && _searchSuggestions.isNotEmpty)
+              SliverToBoxAdapter(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: isWideScreen ? 1100 : double.infinity,
+                    ),
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.1),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: _searchSuggestions.map((suggestion) {
+                          return ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.search, size: 18),
+                            title: Text(suggestion, style: AppTextStyles.bodyMedium),
+                            onTap: () => _onSuggestionTap(suggestion),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+            // Search mode content
+            if (_isSearchMode) ...[
+              // Search results header
+              SliverToBoxAdapter(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: isWideScreen ? 1100 : double.infinity,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.search, color: AppColors.primary, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _isSearching
+                                  ? 'Searching...'
+                                  : 'Results for "$_searchQuery" (${_searchResults.length} products)',
+                              style: AppTextStyles.titleMedium.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.onSurface,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _clearSearch,
+                            child: const Text('Clear'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              // Search results as trader cards
+              if (_isSearching)
+                const SliverFillRemaining(
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_searchResults.isEmpty)
+                SliverFillRemaining(
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.search_off, size: 64, color: AppColors.onSurface.withValues(alpha: 0.3)),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No products found.',
+                          style: AppTextStyles.titleMedium.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Try a different search term',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.onSurface.withValues(alpha: 0.6),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                SliverPadding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: MediaQuery.of(context).size.width >= 900
+                        ? (MediaQuery.of(context).size.width - 1100) / 2
+                        : 16,
+                  ),
+                  sliver: _buildSearchTradersList(),
+                ),
+              if (_isLoadingMoreSearch)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                ),
+            ],
+
+            // Normal browsing content
+            if (!_isSearchMode) ...[
             // Main centered content
             SliverToBoxAdapter(
               child: Center(
@@ -2043,6 +2259,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                     ),
                     sliver: _buildTradersList(),
                   ),
+            ], // end if (!_isSearchMode)
 
             // Web Footer
             const SliverToBoxAdapter(child: WebFooter()),
@@ -2956,6 +3173,43 @@ class _ProductListingPageState extends State<ProductListingPage>
     );
   }
 
+  // ── Seller data helpers ──────────────────────────────────────────────────
+
+  /// Returns cached seller data or fetches from Firestore and caches the result.
+  /// A cached null value means the document was queried but does not exist.
+  Future<Map<String, dynamic>?> _getSellerDataCached(String sellerId) async {
+    if (_sellerDataCache.containsKey(sellerId)) return _sellerDataCache[sellerId];
+    if (_sellerDataFetching.contains(sellerId)) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      return _sellerDataCache[sellerId];
+    }
+    _sellerDataFetching.add(sellerId);
+    try {
+      final data = await _userService.getSellerData(sellerId);
+      _sellerDataCache[sellerId] = data;
+      return data;
+    } catch (e) {
+      AppLogger.d('Error fetching seller data for $sellerId: $e');
+      _sellerDataCache[sellerId] = null;
+      return null;
+    } finally {
+      _sellerDataFetching.remove(sellerId);
+    }
+  }
+
+  /// Batch-fetches seller data for all unique sellerIds in [products] that are
+  /// not already cached. Runs fetches concurrently.
+  Future<void> _prefetchSellerData(List<Product> products) async {
+    final ids = products
+        .map((p) => p.sellerId)
+        .where((id) => id.isNotEmpty && !_sellerDataCache.containsKey(id))
+        .toSet();
+    if (ids.isEmpty) return;
+    AppLogger.d('Pre-fetching seller data for ${ids.length} sellers');
+    await Future.wait(ids.map((id) => _getSellerDataCached(id)));
+    AppLogger.d('Seller data pre-fetch complete');
+  }
+
   // Build Traders List (Foodpanda-style vertical list layout)
   Widget _buildTradersList() {
     // Group products by seller to create "business" cards
@@ -3029,12 +3283,119 @@ class _ProductListingPageState extends State<ProductListingPage>
     );
   }
 
+  // Build trader cards from search results grouped by seller
+  Widget _buildSearchTradersList() {
+    final Map<String, List<Product>> productsBySeller = {};
+    for (final product in _searchResults) {
+      if (product.isDraft == true) continue;
+      if (product.isActive == false) continue;
+      if (product.isArchived == true) continue;
+      final sellerId = product.sellerId.isNotEmpty ? product.sellerId : 'unknown';
+      productsBySeller.putIfAbsent(sellerId, () => []).add(product);
+    }
+
+    final sellerIds = productsBySeller.keys.toList();
+
+    if (sellerIds.isEmpty) {
+      return SliverToBoxAdapter(child: _buildEmptyState());
+    }
+
+    // Pre-fetch seller data for search results
+    _prefetchSellerData(_searchResults);
+
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          if (index >= sellerIds.length) return const SizedBox.shrink();
+          final sellerId = sellerIds[index];
+          final sellerProducts = productsBySeller[sellerId]!;
+          return _buildTraderCard(sellerId, sellerProducts);
+        },
+        childCount: sellerIds.length,
+      ),
+    );
+  }
+
+  /// Extracts display-ready vendor fields from a raw Firestore Seller document.
+  /// Falls back gracefully at every level so the card always renders.
+  static _SellerDisplayData _extractSellerDisplay(
+    Map<String, dynamic>? raw,
+    List<Product> products,
+    Map<String, String> categoryIdToName,
+  ) {
+    // Fallback values derived from product data
+    final fallbackName = products.first.brand?.isNotEmpty == true
+        ? products.first.brand!
+        : 'Dental Trader';
+    var fallbackCats = products
+        .map((p) => categoryIdToName[p.categoryId])
+        .whereType<String>()
+        .toSet()
+        .take(2)
+        .join(', ');
+    if (fallbackCats.isEmpty) fallbackCats = 'Dental Products';
+
+    if (raw == null) {
+      return _SellerDisplayData(
+        storeName: fallbackName,
+        province: 'Metro Manila',
+        coverImageUrl: products.first.imageURL,
+        categories: fallbackCats,
+      );
+    }
+
+    final vendor = raw['vendor'] is Map
+        ? raw['vendor'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final company = vendor['company'] is Map
+        ? vendor['company'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final address = company['address'] is Map
+        ? company['address'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final coverImg = vendor['coverImage'];
+
+    // Cover image: url → path → product image fallback
+    String coverUrl = products.first.imageURL;
+    if (coverImg is Map) {
+      final u = coverImg['url'] as String?;
+      final p = coverImg['path'] as String?;
+      if (u != null && u.isNotEmpty) {
+        coverUrl = u;
+      } else if (p != null && p.isNotEmpty) {
+        coverUrl = p;
+      }
+    }
+
+    // Store name
+    final storeName = (company['storeName'] as String?)?.isNotEmpty == true
+        ? company['storeName'] as String
+        : ((raw['storeName'] as String?) ?? fallbackName);
+
+    // Province
+    final province = (address['province'] as String?)?.isNotEmpty == true
+        ? address['province'] as String
+        : 'Metro Manila';
+
+    // Categories — vendor.categories is an array of name strings
+    var cats = fallbackCats;
+    final rawCats = vendor['categories'];
+    if (rawCats is List && rawCats.isNotEmpty) {
+      final joined = rawCats.whereType<String>().take(2).join(', ');
+      if (joined.isNotEmpty) cats = joined;
+    }
+
+    return _SellerDisplayData(
+      storeName: storeName,
+      province: province,
+      coverImageUrl: coverUrl,
+      categories: cats,
+    );
+  }
+
   // Build individual Trader/Business Card (Foodpanda style)
   Widget _buildTraderCard(String sellerId, List<Product> products) {
-    // Get representative data from first product
-    final firstProduct = products.first;
-    
-    // Calculate price range indicator
+    // Price range indicator from average of product prices
     final prices = products.map((p) => p.lowestPrice ?? 0).where((p) => p > 0).toList();
     String priceIndicator = '₱';
     if (prices.isNotEmpty) {
@@ -3045,26 +3406,46 @@ class _ProductListingPageState extends State<ProductListingPage>
         priceIndicator = '₱₱';
       }
     }
-    
-    // Get categories for this seller
-    final categoryIds = products.map((p) => p.categoryId).toSet().toList();
-    final categoryNames = categoryIds
-        .map((id) => _categoryIdToName[id])
-        .where((name) => name != null)
-        .take(2)
-        .toList();
-    
-    // Check if has any voucher (mock for now - you can integrate real voucher data)
+
+    // Read vendor data from cache (populated by pre-fetch before build)
+    final stillLoading = !_sellerDataCache.containsKey(sellerId);
+    final display = _extractSellerDisplay(
+      stillLoading ? null : _sellerDataCache[sellerId],
+      products,
+      _categoryIdToName,
+    );
+
+    // Show loading skeleton while vendor fetch is in flight (edge case)
+    if (stillLoading) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: const AspectRatio(
+          aspectRatio: 16 / 7,
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
+
+    // Voucher placeholder — replace with real voucher logic when available
     final hasVoucher = products.length > 5;
-    
+
     return GestureDetector(
       onTap: () {
-        // Navigate to first product detail (you can change this to a seller page)
-        Navigator.push(
+        NavigationUtils.navigateToStore(
           context,
-          MaterialPageRoute(
-            builder: (context) => ProductDetailPage(productId: firstProduct.productId),
-          ),
+          sellerId,
+          sellerData: _sellerDataCache[sellerId],
         );
       },
       child: Container(
@@ -3083,7 +3464,7 @@ class _ProductListingPageState extends State<ProductListingPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Banner Image
+            // Banner image from vendor coverImage
             ClipRRect(
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(16),
@@ -3095,7 +3476,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                   fit: StackFit.expand,
                   children: [
                     CachedNetworkImage(
-                      imageUrl: firstProduct.imageURL,
+                      imageUrl: display.coverImageUrl,
                       fit: BoxFit.cover,
                       placeholder: (context, url) => Container(
                         color: AppColors.primary.withValues(alpha: 0.1),
@@ -3107,7 +3488,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                       ),
                       cacheManager: ProductImageCacheManager.instance,
                     ),
-                    // Gradient overlay for better text readability
+                    // Gradient overlay for text readability
                     Positioned(
                       bottom: 0,
                       left: 0,
@@ -3163,21 +3544,19 @@ class _ProductListingPageState extends State<ProductListingPage>
                 ),
               ),
             ),
-            
-            // Content Section
+
+            // Info section
             Padding(
               padding: const EdgeInsets.all(14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Business Name & Price Range
+                  // Top row: store name + price range badge
                   Row(
                     children: [
                       Expanded(
                         child: Text(
-                          firstProduct.brand?.isNotEmpty == true 
-                              ? firstProduct.brand! 
-                              : 'Dental Trader',
+                          display.storeName,
                           style: AppTextStyles.titleMedium.copyWith(
                             fontWeight: FontWeight.bold,
                             color: AppColors.onSurface,
@@ -3203,10 +3582,10 @@ class _ProductListingPageState extends State<ProductListingPage>
                       ),
                     ],
                   ),
-                  
-                  const SizedBox(height: 6),
-                  
-                  // Location (mock - you can get real location from seller data)
+
+                  const SizedBox(height: 4),
+
+                  // Province / location row
                   Row(
                     children: [
                       Icon(
@@ -3217,7 +3596,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          'Metro Manila', // Replace with actual location
+                          display.province,
                           style: AppTextStyles.bodySmall.copyWith(
                             color: AppColors.onSurface.withValues(alpha: 0.7),
                           ),
@@ -3227,13 +3606,12 @@ class _ProductListingPageState extends State<ProductListingPage>
                       ),
                     ],
                   ),
-                  
+
                   const SizedBox(height: 10),
-                  
-                  // ETA & Categories Row
+
+                  // Middle row: ETA pill + categories
                   Row(
                     children: [
-                      // ETA
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
@@ -3243,7 +3621,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
+                            const Icon(
                               Icons.access_time_rounded,
                               size: 12,
                               color: AppColors.primary,
@@ -3261,12 +3639,9 @@ class _ProductListingPageState extends State<ProductListingPage>
                         ),
                       ),
                       const SizedBox(width: 8),
-                      // Categories
                       Expanded(
                         child: Text(
-                          categoryNames.isEmpty 
-                              ? 'Dental Products' 
-                              : categoryNames.join(', '),
+                          display.categories,
                           style: AppTextStyles.bodySmall.copyWith(
                             color: AppColors.onSurface.withValues(alpha: 0.6),
                             fontSize: 11,
@@ -3277,8 +3652,8 @@ class _ProductListingPageState extends State<ProductListingPage>
                       ),
                     ],
                   ),
-                  
-                  // Voucher Badge (if available)
+
+                  // Bottom row: voucher badge (if available)
                   if (hasVoucher) ...[
                     const SizedBox(height: 10),
                     Container(
@@ -3299,7 +3674,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
+                          const Icon(
                             Icons.local_offer_rounded,
                             size: 14,
                             color: AppColors.accent,
@@ -3325,6 +3700,22 @@ class _ProductListingPageState extends State<ProductListingPage>
       ),
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Value object holding display-ready vendor fields for a trader card
+// ─────────────────────────────────────────────────────────────────────────────
+class _SellerDisplayData {
+  final String storeName;
+  final String province;
+  final String coverImageUrl;
+  final String categories;
+  const _SellerDisplayData({
+    required this.storeName,
+    required this.province,
+    required this.coverImageUrl,
+    required this.categories,
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
