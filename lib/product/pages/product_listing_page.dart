@@ -110,18 +110,17 @@ class _ProductListingPageState extends State<ProductListingPage>
   Map<String, List<SubCategory>> _subcategoriesByCategory = {};
   List<String> _selectedSubCategories = [];
 
-  // Brand state
-  List<String> _brands = ['All'];
-  String _selectedBrand = 'All';
+  // Brand filter — null means no filter (show all)
+  String? _selectedBrand;
 
   // Filter state
   String _selectedShippedFrom = 'All';
-  String _selectedPriceRange = 'All';
+  String _selectedPriceSort = 'All';
   String _selectedRating = 'All';
 
   // Filter options
-  final List<String> _shippedFromOptions = ['All', 'Local', 'International', 'Metro Manila', 'Cebu', 'Davao'];
-  final List<String> _priceRangeOptions = ['All', '₱0-500', '₱500-1000', '₱1000-5000', '₱5000+'];
+  final List<String> _shippedFromOptions = ['All', 'Metro Manila', 'NCR', 'Luzon', 'Visayas', 'Mindanao'];
+  final List<String> _priceSortOptions = ['All', 'Low to High', 'High to Low'];
   final List<String> _ratingOptions = ['All', '4★ & up', '3★ & up', '2★ & up'];
 
   // Inline search state
@@ -153,7 +152,7 @@ class _ProductListingPageState extends State<ProductListingPage>
     _loadUserName();
     _loadActiveBanner(); // Load active banner image from Realtime Database
     _listenToCartCount(); // Listen to cart item count for badge
-    _loadBrands(); // Load brands for filtering
+    _loadStoresForBrandSection(); // Load sellers for brand/store section
 
     // Add scroll listener for pagination
     _scrollController.addListener(_scrollListener);
@@ -167,34 +166,45 @@ class _ProductListingPageState extends State<ProductListingPage>
     );
   }
 
-  // Load unique brands from products
-  Future<void> _loadBrands() async {
+  // Brands for the brand section — list of {brand, brandImage}
+  List<Map<String, String>> _brandList = [];
+
+  // Load unique brands from Products collection (brand + brandImage)
+  Future<void> _loadStoresForBrandSection() async {
     try {
       final snapshot = await FirebaseFirestore.instance
           .collection('Product')
           .where('isActive', isEqualTo: true)
-          .where('isDraft', isEqualTo: false)
           .get();
-      
-      final Set<String> brandSet = {'All'};
-      for (var doc in snapshot.docs) {
+
+      // Use lowercase key for deduplication, store original display name
+      final Map<String, String> brandDisplayName = {}; // lowercased -> display name
+      final Map<String, String> brandImageMap = {}; // lowercased -> brandImage url
+      for (final doc in snapshot.docs) {
         final data = doc.data();
-        final brand = data['brand'] as String?;
-        if (brand != null && brand.isNotEmpty) {
-          brandSet.add(brand);
+        // Filter out drafts client-side to avoid composite index requirement
+        if (data['isDraft'] == true) continue;
+        final rawBrand = data['brand'] as String?;
+        if (rawBrand == null || rawBrand.trim().isEmpty) continue;
+        final brandKey = rawBrand.trim().toLowerCase();
+        if (!brandImageMap.containsKey(brandKey)) {
+          brandDisplayName[brandKey] = rawBrand.trim();
+          final img = (data['brandImage'] as String?) ?? (data['brandimage'] as String?) ?? '';
+          brandImageMap[brandKey] = img;
         }
       }
-      
+
+      final List<Map<String, String>> brands = brandImageMap.entries
+          .map((e) => {'brand': brandDisplayName[e.key]!, 'brandImage': e.value})
+          .toList()
+        ..sort((a, b) => a['brand']!.toLowerCase().compareTo(b['brand']!.toLowerCase()));
+
       if (mounted) {
         setState(() {
-          _brands = brandSet.toList()..sort((a, b) {
-            if (a == 'All') return -1;
-            if (b == 'All') return 1;
-            return a.compareTo(b);
-          });
+          _brandList = brands;
         });
       }
-      AppLogger.d('Loaded ${_brands.length} brands');
+      AppLogger.d('Loaded ${_brandList.length} brands');
     } catch (e) {
       AppLogger.d('Error loading brands: $e');
     }
@@ -2622,44 +2632,45 @@ class _ProductListingPageState extends State<ProductListingPage>
   }
 
   int _getFilteredProductsCount() {
-    return _products.where((product) {
-      // Exclude draft products from product listing page
-      if (product.isDraft == true) return false;
+    // Collect unique seller IDs from filtered products
+    final Set<String> sellerIds = {};
+    for (final product in _products) {
+      if (product.isDraft == true) continue;
+      if (product.isActive == false) continue;
+      if (product.isArchived == true) continue;
 
-      // Exclude inactive products from product listing page
-      if (product.isActive == false) return false;
+      // Apply brand filter
+      if (_selectedBrand != null && product.brand != _selectedBrand) continue;
 
-      // Exclude archived products from product listing page
-      if (product.isArchived == true) return false;
+      // Apply category/subcategory filters
+      if (_selectedCategories.isNotEmpty) {
+        final selectedCategoryIds = _selectedCategories
+            .map((categoryName) => _categoryNameToId[categoryName])
+            .where((id) => id != null)
+            .cast<String>()
+            .toList();
 
-      // If no categories selected, show all
-      if (_selectedCategories.isEmpty) return true;
+        if (!selectedCategoryIds.contains(product.categoryId)) continue;
 
-      // Get selected category IDs
-      final selectedCategoryIds = _selectedCategories
-          .map((categoryName) => _categoryNameToId[categoryName])
-          .where((id) => id != null)
-          .cast<String>()
-          .toList();
-
-      // If subcategories are selected, filter by subcategory AND category
-      if (_selectedSubCategories.isNotEmpty) {
-        // Product must be in a selected category
-        final isInSelectedCategory = selectedCategoryIds.contains(
-          product.categoryId,
-        );
-
-        final hasSubCategory = product.subCategoryId.isNotEmpty;
-        final isInSelectedSubCategory = _selectedSubCategories.contains(
-          product.subCategoryId,
-        );
-        final shouldShowProduct = !hasSubCategory || isInSelectedSubCategory;
-
-        return isInSelectedCategory && shouldShowProduct;
+        if (_selectedSubCategories.isNotEmpty) {
+          final hasSubCategory = product.subCategoryId.isNotEmpty;
+          final isInSelectedSubCategory = _selectedSubCategories.contains(product.subCategoryId);
+          if (hasSubCategory && !isInSelectedSubCategory) continue;
+        }
       }
 
-      // Otherwise, filter by selected categories only
-      return selectedCategoryIds.contains(product.categoryId);
+      if (product.sellerId.isNotEmpty) {
+        sellerIds.add(product.sellerId);
+      }
+    }
+
+    // Only count parent seller accounts (not sub-accounts)
+    return sellerIds.where((sid) {
+      final data = _sellerDataCache[sid];
+      if (data == null) return true; // include if not yet cached
+      final isSubAccount = data['isSubAccount'] == true;
+      final role = data['role'] as String? ?? '';
+      return !isSubAccount && role == 'seller';
     }).length;
   }
 
@@ -2788,7 +2799,7 @@ class _ProductListingPageState extends State<ProductListingPage>
   // NEW WIDGET BUILDERS FOR REDESIGNED LAYOUT
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // Build Brand Section (horizontally scrollable)
+  // Build Brand Section (horizontally scrollable, matches Categories style)
   Widget _buildBrandSection() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -2811,7 +2822,7 @@ class _ProductListingPageState extends State<ProductListingPage>
               ),
               const SizedBox(width: 10),
               Text(
-                'Brand',
+                'Brands',
                 style: AppTextStyles.titleMedium.copyWith(
                   fontWeight: FontWeight.bold,
                   color: AppColors.onSurface,
@@ -2820,53 +2831,214 @@ class _ProductListingPageState extends State<ProductListingPage>
             ],
           ),
           const SizedBox(height: 12),
-          SizedBox(
-            height: 40,
+          if (_brandList.isEmpty) const SizedBox.shrink() else SizedBox(
+            height: 100,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
-              itemCount: _brands.length,
+              itemCount: _brandList.length + 1, // +1 for "All" option
               itemBuilder: (context, index) {
-                final brand = _brands[index];
+                // First item is "All"
+                if (index == 0) {
+                  final isSelected = _selectedBrand == null;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 10),
+                    child: GestureDetector(
+                      onTap: () {
+                        if (_selectedBrand != null) {
+                          setState(() {
+                            _selectedBrand = null;
+                            _products = [];
+                            _lastDocument = null;
+                            _hasMore = true;
+                            _loadedSellerIds = {};
+                          });
+                          _loadFirstPage();
+                        }
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 80,
+                        decoration: BoxDecoration(
+                          color: isSelected ? AppColors.accent : AppColors.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSelected
+                                ? AppColors.accent
+                                : AppColors.onSurface.withValues(alpha: 0.12),
+                            width: 1.5,
+                          ),
+                          boxShadow: isSelected
+                              ? [
+                                  BoxShadow(
+                                    color: AppColors.accent.withValues(alpha: 0.25),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ]
+                              : [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.04),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? Colors.white.withValues(alpha: 0.2)
+                                      : AppColors.accent.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Center(
+                                  child: Icon(
+                                    Icons.grid_view_rounded,
+                                    color: isSelected
+                                        ? Colors.white.withValues(alpha: 0.9)
+                                        : AppColors.accent.withValues(alpha: 0.7),
+                                    size: 22,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'All',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: isSelected ? AppColors.onPrimary : AppColors.onSurface,
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                fontSize: 10,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }
+
+                final brandIndex = index - 1;
+                final brand = _brandList[brandIndex]['brand'] ?? '';
+                final brandImage = _brandList[brandIndex]['brandImage'] ?? '';
                 final isSelected = _selectedBrand == brand;
-                
+
                 return Padding(
-                  padding: const EdgeInsets.only(right: 8),
+                  padding: const EdgeInsets.only(right: 10),
                   child: GestureDetector(
                     onTap: () {
                       setState(() {
-                        _selectedBrand = brand;
+                        _selectedBrand = isSelected ? null : brand;
                         _products = [];
                         _lastDocument = null;
                         _hasMore = true;
+                        _loadedSellerIds = {};
                       });
                       _loadFirstPage();
                     },
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      width: 80,
                       decoration: BoxDecoration(
-                        color: isSelected ? AppColors.primary : AppColors.surface,
-                        borderRadius: BorderRadius.circular(20),
+                        color: isSelected ? AppColors.accent : AppColors.surface,
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: isSelected ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.15),
-                          width: 1,
+                          color: isSelected
+                              ? AppColors.accent
+                              : AppColors.onSurface.withValues(alpha: 0.12),
+                          width: 1.5,
                         ),
                         boxShadow: isSelected
                             ? [
                                 BoxShadow(
-                                  color: AppColors.primary.withValues(alpha: 0.25),
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 2),
+                                  color: AppColors.accent.withValues(alpha: 0.25),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 3),
                                 ),
                               ]
-                            : null,
+                            : [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.04),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
                       ),
-                      child: Text(
-                        brand,
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: isSelected ? AppColors.onPrimary : AppColors.onSurface,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                        ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: brandImage.isNotEmpty
+                                    ? Colors.transparent
+                                    : isSelected
+                                        ? Colors.white.withValues(alpha: 0.2)
+                                        : AppColors.accent.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: brandImage.isNotEmpty
+                                  ? CachedNetworkImage(
+                                      imageUrl: brandImage,
+                                      fit: BoxFit.cover,
+                                      placeholder: (context, url) => Center(
+                                        child: Icon(
+                                          Icons.verified_rounded,
+                                          color: isSelected
+                                              ? Colors.white.withValues(alpha: 0.7)
+                                              : AppColors.accent.withValues(alpha: 0.5),
+                                          size: 20,
+                                        ),
+                                      ),
+                                      errorWidget: (context, url, error) => Center(
+                                        child: Icon(
+                                          Icons.verified_rounded,
+                                          color: isSelected
+                                              ? Colors.white.withValues(alpha: 0.7)
+                                              : AppColors.accent.withValues(alpha: 0.5),
+                                          size: 20,
+                                        ),
+                                      ),
+                                    )
+                                  : Center(
+                                      child: Icon(
+                                        Icons.verified_rounded,
+                                        color: isSelected
+                                            ? Colors.white.withValues(alpha: 0.9)
+                                            : AppColors.accent.withValues(alpha: 0.7),
+                                        size: 22,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: Text(
+                              brand,
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: isSelected ? AppColors.onPrimary : AppColors.onSurface,
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                fontSize: 10,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -3058,15 +3230,15 @@ class _ProductListingPageState extends State<ProductListingPage>
               },
             ),
             const SizedBox(width: 8),
-            // Price Range Filter
+            // Price Sort Filter
             _buildFilterChip(
               icon: Icons.attach_money_rounded,
               label: 'Price',
-              value: _selectedPriceRange,
-              options: _priceRangeOptions,
+              value: _selectedPriceSort,
+              options: _priceSortOptions,
               onSelected: (value) {
                 setState(() {
-                  _selectedPriceRange = value;
+                  _selectedPriceSort = value;
                   _products = [];
                   _lastDocument = null;
                   _hasMore = true;
@@ -3214,15 +3386,15 @@ class _ProductListingPageState extends State<ProductListingPage>
   Widget _buildTradersList() {
     // Group products by seller to create "business" cards
     final Map<String, List<Product>> productsBySeller = {};
-    
+
     final filteredProducts = _products.where((product) {
       if (product.isDraft == true) return false;
       if (product.isActive == false) return false;
       if (product.isArchived == true) return false;
-      
+
       // Apply brand filter
-      if (_selectedBrand != 'All' && product.brand != _selectedBrand) return false;
-      
+      if (_selectedBrand != null && product.brand != _selectedBrand) return false;
+
       // Apply category filter
       if (_selectedCategories.isNotEmpty) {
         final selectedCategoryIds = _selectedCategories
@@ -3230,9 +3402,9 @@ class _ProductListingPageState extends State<ProductListingPage>
             .where((id) => id != null)
             .cast<String>()
             .toList();
-        
+
         if (!selectedCategoryIds.contains(product.categoryId)) return false;
-        
+
         // Apply subcategory filter
         if (_selectedSubCategories.isNotEmpty) {
           final hasSubCategory = product.subCategoryId.isNotEmpty;
@@ -3240,18 +3412,59 @@ class _ProductListingPageState extends State<ProductListingPage>
           if (hasSubCategory && !isInSelectedSubCategory) return false;
         }
       }
-      
+
       return true;
     }).toList();
-    
+
     // Group by seller
     for (final product in filteredProducts) {
       final sellerId = product.sellerId.isNotEmpty ? product.sellerId : 'unknown';
       productsBySeller.putIfAbsent(sellerId, () => []).add(product);
     }
-    
-    final sellerIds = productsBySeller.keys.toList();
-    
+
+    // Apply Shipped From filter — based on seller province from cache
+    List<String> sellerIds = productsBySeller.keys.toList();
+    if (_selectedShippedFrom != 'All') {
+      sellerIds = sellerIds.where((sid) {
+        final raw = _sellerDataCache[sid];
+        final vendor = raw?['vendor'] is Map ? raw!['vendor'] as Map<String, dynamic> : <String, dynamic>{};
+        final company = vendor['company'] is Map ? vendor['company'] as Map<String, dynamic> : <String, dynamic>{};
+        final address = company['address'] is Map ? company['address'] as Map<String, dynamic> : <String, dynamic>{};
+        final province = ((address['province'] as String?) ?? (raw?['address'] as String?) ?? '').toLowerCase();
+        final filter = _selectedShippedFrom.toLowerCase();
+        // NCR and Metro Manila are treated as the same region
+        if (filter == 'ncr' || filter == 'metro manila') {
+          return province.contains('ncr') || province.contains('metro manila') || province.contains('manila');
+        }
+        return province.contains(filter);
+      }).toList();
+    }
+
+    // Apply Rating filter
+    if (_selectedRating != 'All') {
+      final minRating = _selectedRating.startsWith('4') ? 4.0 : _selectedRating.startsWith('3') ? 3.0 : 2.0;
+      sellerIds = sellerIds.where((sid) {
+        final raw = _sellerDataCache[sid];
+        final rating = (raw?['rating'] as num?)?.toDouble() ?? 0.0;
+        return rating >= minRating;
+      }).toList();
+    }
+
+    // Apply Price Sort — sort sellers by their minimum product price
+    if (_selectedPriceSort == 'Low to High') {
+      sellerIds.sort((a, b) {
+        final aMin = (productsBySeller[a] ?? []).map((p) => p.lowestPrice ?? 0.0).fold(double.infinity, (m, v) => v < m ? v : m);
+        final bMin = (productsBySeller[b] ?? []).map((p) => p.lowestPrice ?? 0.0).fold(double.infinity, (m, v) => v < m ? v : m);
+        return aMin.compareTo(bMin);
+      });
+    } else if (_selectedPriceSort == 'High to Low') {
+      sellerIds.sort((a, b) {
+        final aMin = (productsBySeller[a] ?? []).map((p) => p.lowestPrice ?? 0.0).fold(0.0, (m, v) => v > m ? v : m);
+        final bMin = (productsBySeller[b] ?? []).map((p) => p.lowestPrice ?? 0.0).fold(0.0, (m, v) => v > m ? v : m);
+        return bMin.compareTo(aMin);
+      });
+    }
+
     if (sellerIds.isEmpty) {
       return SliverToBoxAdapter(
         child: _buildEmptyState(),
@@ -3272,10 +3485,10 @@ class _ProductListingPageState extends State<ProductListingPage>
             }
             return const SizedBox.shrink();
           }
-          
+
           final sellerId = sellerIds[index];
           final sellerProducts = productsBySeller[sellerId]!;
-          
+
           return _buildTraderCard(sellerId, sellerProducts);
         },
         childCount: sellerIds.length + (_isLoadingMore ? 1 : 0),
