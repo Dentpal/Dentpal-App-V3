@@ -677,6 +677,8 @@ class CreateCheckoutOrderRequest {
   final List<String> paymentMethodTypes;
   final String? successUrl;
   final String? cancelUrl;
+  final Map<String, double> sellerShippingCosts;
+  final bool isExpress;
 
   CreateCheckoutOrderRequest({
     required this.cartItemIds,
@@ -685,6 +687,8 @@ class CreateCheckoutOrderRequest {
     required this.paymentMethodTypes,
     this.successUrl,
     this.cancelUrl,
+    this.sellerShippingCosts = const {},
+    this.isExpress = true,
   });
 
   Map<String, dynamic> toJson() {
@@ -695,6 +699,8 @@ class CreateCheckoutOrderRequest {
       'payment_method_types': paymentMethodTypes,
       'success_url': successUrl,
       'cancel_url': cancelUrl,
+      'seller_shipping_costs': sellerShippingCosts,
+      'is_express': isExpress,
     };
   }
 }

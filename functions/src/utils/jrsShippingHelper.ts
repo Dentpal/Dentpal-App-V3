@@ -563,7 +563,8 @@ export async function calculateJRSShippingCost(
   recipientAddress: string,
   orderItems: CartItemData[],
   jrsApiKey?: string,
-  jrsApiUrl?: string
+  jrsApiUrl?: string,
+  express: boolean = true
 ): Promise<number> {
   if (!jrsApiKey || !jrsApiUrl) {
     throw new Error('JRS API configuration missing - API key and URL are required');
@@ -607,19 +608,22 @@ export async function calculateJRSShippingCost(
       throw new Error('No items have the required dimensions for shipping calculation');
     }
 
-    // Determine product name based on shipment weight and dimensions.
-    // If no manual rule matches, productName will be undefined and the
-    // JRS API will determine the appropriate product automatically.
+    // Determine product name based on shipment weight and dimensions for observability only.
+    // productName is NOT sent to the JRS API — when omitted, JRS selects the appropriate
+    // packaging automatically based on the express flag and shipment dimensions.
+    // Sending productName overrides the express flag (JRS ignores it), causing express
+    // and non-express calls to return the same rate.
     const productName = determineProductName(shipmentItems);
 
     const jrsRequest: JRSShippingRequest = {
       requestType: 'getrate',
       apiShippingRequest: {
-        express: true,
+        express,
         insurance: true,
         valuation: true,
         codAmountToCollect: 0,
-        ...(productName ? { productName } : {}), // Only include productName when manually determined
+        // productName intentionally omitted — let JRS API choose packaging based on
+        // the express flag + item dimensions so express/non-express rates differ correctly
         shipperAddressLine1: shipperAddress,
         recipientAddressLine1: recipientFormattedAddress,
         shipmentItems
@@ -755,7 +759,8 @@ export async function calculateJRSShippingCostWithFallback(
   jrsApiKey?: string,
   jrsApiUrl?: string,
   fallbackCost: number = DEFAULT_FALLBACK_SHIPPING_COST,
-  allowConfigFallback: boolean = false
+  allowConfigFallback: boolean = false,
+  express: boolean = true
 ): Promise<{ shippingCost: number; isFallback: boolean; error?: string }> {
   // Fail fast on configuration issues unless explicitly allowed to fallback
   if (!jrsApiKey || !jrsApiUrl) {
@@ -793,7 +798,8 @@ export async function calculateJRSShippingCostWithFallback(
       recipientAddress,
       orderItems,
       jrsApiKey,
-      jrsApiUrl
+      jrsApiUrl,
+      express
     );
     
     return {

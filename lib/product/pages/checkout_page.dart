@@ -40,9 +40,16 @@ class _CheckoutPageState extends State<CheckoutPage> {
   bool _isProcessing = false;
   
   // Per-seller shipping costs
-  Map<String, double> _sellerShippingCosts = {}; // sellerId -> buyer's portion of shipping cost
-  Map<String, double> _sellerTotalShippingCosts = {}; // sellerId -> total shipping cost (for display)
+  Map<String, double> _sellerShippingCosts = {}; // sellerId -> active buyer's portion (express or standard)
+  Map<String, double> _sellerTotalShippingCosts = {}; // sellerId -> active total cost (for display)
   bool _isCalculatingShipping = false; // Track if shipping calculation is in progress
+
+  // Express vs standard shipping
+  bool _isExpressShipping = true; // checkbox default: express
+  Map<String, double> _expressSellerShippingCosts = {};
+  Map<String, double> _expressSellerTotalShippingCosts = {};
+  Map<String, double> _standardSellerShippingCosts = {};
+  Map<String, double> _standardSellerTotalShippingCosts = {};
   
   final TextEditingController _notesController = TextEditingController();
 
@@ -101,6 +108,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
           cartItemIds: cartItemIds,
           addressId: _selectedAddress!.id,
           notes: _orderNotes,
+          sellerShippingCosts: _sellerShippingCosts,
+          isExpress: _isExpressShipping,
         );
 
         AppLogger.d('COD order created successfully');
@@ -118,6 +127,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
           paymentMethodTypes: [_selectedPaymentMethod!.paymongoType],
           successUrl: 'https://dentpal-store.web.app/payment-success', // Updated success URL
           cancelUrl: 'https://dentpal-store.web.app/payment-failed', // Updated cancel URL
+          sellerShippingCosts: _sellerShippingCosts,
+          isExpress: _isExpressShipping,
         );
 
         AppLogger.d('Order created successfully');
@@ -190,72 +201,101 @@ class _CheckoutPageState extends State<CheckoutPage> {
   /// Calculate shipping cost when address is selected - per seller
   Future<void> _calculateShippingCost() async {
     if (_selectedAddress == null) return;
-    
+
     setState(() {
       _isCalculatingShipping = true;
-      _sellerShippingCosts.clear(); // Reset previous calculations
-      _sellerTotalShippingCosts.clear(); // Reset total shipping costs
+      _expressSellerShippingCosts.clear();
+      _expressSellerTotalShippingCosts.clear();
+      _standardSellerShippingCosts.clear();
+      _standardSellerTotalShippingCosts.clear();
+      _sellerShippingCosts.clear();
+      _sellerTotalShippingCosts.clear();
     });
 
     try {
-      AppLogger.d('Calculating per-seller shipping costs for checkout');
-      
+      AppLogger.d('Calculating per-seller shipping costs (express + standard) for checkout');
+
       // Group cart items by seller
       final Map<String, List<CartItem>> sellerGroups = {};
       for (final item in widget.cartItems) {
         final sellerId = item.sellerId ?? 'unknown';
-        if (!sellerGroups.containsKey(sellerId)) {
-          sellerGroups[sellerId] = [];
-        }
-        sellerGroups[sellerId]!.add(item);
+        sellerGroups.putIfAbsent(sellerId, () => []).add(item);
       }
-      
-      // Calculate shipping for each seller separately using the detailed method
+
+      // For each seller, fetch express and standard rates in parallel
       for (final entry in sellerGroups.entries) {
         final sellerId = entry.key;
         final sellerItems = entry.value;
-        
+
         try {
-          // Use the new detailed calculation that returns both values from JRS
-          final shippingDetails = await _checkoutService.calculateShippingCostDetailed(
-            items: sellerItems,
-            address: _selectedAddress!,
-          );
-          
-          // Store both the buyer's portion and the total from JRS
-          final buyerCost = shippingDetails['buyerCost'] ?? 0.0;
-          final totalCost = shippingDetails['totalCost'] ?? 0.0;
-          
-          _sellerShippingCosts[sellerId] = buyerCost;
-          _sellerTotalShippingCosts[sellerId] = totalCost;
-          
-          AppLogger.d('Seller $sellerId - Total from JRS: ₱$totalCost, Buyer pays: ₱$buyerCost');
+          final results = await Future.wait([
+            _checkoutService.calculateShippingCostDetailed(
+              items: sellerItems,
+              address: _selectedAddress!,
+              express: true,
+            ),
+            _checkoutService.calculateShippingCostDetailed(
+              items: sellerItems,
+              address: _selectedAddress!,
+              express: false,
+            ),
+          ]);
+
+          final expressDetails = results[0];
+          final standardDetails = results[1];
+
+          _expressSellerShippingCosts[sellerId] = expressDetails['buyerCost'] ?? 0.0;
+          _expressSellerTotalShippingCosts[sellerId] = expressDetails['totalCost'] ?? 0.0;
+          _standardSellerShippingCosts[sellerId] = standardDetails['buyerCost'] ?? 0.0;
+          _standardSellerTotalShippingCosts[sellerId] = standardDetails['totalCost'] ?? 0.0;
+
+          AppLogger.d('Seller $sellerId - Express: ₱${expressDetails['totalCost']}, Standard: ₱${standardDetails['totalCost']}');
         } catch (e) {
           AppLogger.d('Error calculating shipping for seller $sellerId: $e');
-          // Set to 0 to indicate calculation failed for this seller
-          _sellerShippingCosts[sellerId] = 0.0;
-          _sellerTotalShippingCosts[sellerId] = 0.0;
+          _expressSellerShippingCosts[sellerId] = 0.0;
+          _expressSellerTotalShippingCosts[sellerId] = 0.0;
+          _standardSellerShippingCosts[sellerId] = 0.0;
+          _standardSellerTotalShippingCosts[sellerId] = 0.0;
         }
       }
-      
+
+      // Set active maps based on current checkbox selection
+      _sellerShippingCosts = Map.from(
+          _isExpressShipping ? _expressSellerShippingCosts : _standardSellerShippingCosts);
+      _sellerTotalShippingCosts = Map.from(
+          _isExpressShipping ? _expressSellerTotalShippingCosts : _standardSellerTotalShippingCosts);
+
       setState(() {
         _isCalculatingShipping = false;
       });
-      
-      final totalShipping = _sellerShippingCosts.values.fold(0.0, (sum, cost) => sum + cost);
-      final totalShippingFull = _sellerTotalShippingCosts.values.fold(0.0, (sum, cost) => sum + cost);
-      AppLogger.d('Total shipping - Full: ₱$totalShippingFull, Buyer pays: ₱$totalShipping across ${_sellerShippingCosts.length} sellers');
-      
+
+      AppLogger.d('Express total: ₱${_expressSellerShippingCosts.values.fold(0.0, (s, c) => s + c)}, '
+          'Standard total: ₱${_standardSellerShippingCosts.values.fold(0.0, (s, c) => s + c)}');
     } catch (e) {
       AppLogger.d('Error calculating shipping costs: $e');
-      
       setState(() {
         _isCalculatingShipping = false;
+        _expressSellerShippingCosts.clear();
+        _expressSellerTotalShippingCosts.clear();
+        _standardSellerShippingCosts.clear();
+        _standardSellerTotalShippingCosts.clear();
         _sellerShippingCosts.clear();
         _sellerTotalShippingCosts.clear();
       });
     }
   }
+
+  /// Switch active shipping costs when the express checkbox is toggled
+  void _onExpressShippingToggled(bool value) {
+    setState(() {
+      _isExpressShipping = value;
+      _sellerShippingCosts = Map.from(
+          value ? _expressSellerShippingCosts : _standardSellerShippingCosts);
+      _sellerTotalShippingCosts = Map.from(
+          value ? _expressSellerTotalShippingCosts : _standardSellerTotalShippingCosts);
+    });
+  }
+
 
   /// Get total buyer's portion of shipping cost across all sellers
   double _calculateBuyerShippingPortion() {
@@ -881,8 +921,71 @@ class _CheckoutPageState extends State<CheckoutPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                
                 ..._buildGroupedSellerItems(),
+                const SizedBox(height: 12),
+                const Divider(height: 1),
+                const SizedBox(height: 4),
+                // Express shipping toggle
+                InkWell(
+                  onTap: _isCalculatingShipping
+                      ? null
+                      : () => _onExpressShippingToggled(!_isExpressShipping),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        Checkbox(
+                          value: _isExpressShipping,
+                          onChanged: _isCalculatingShipping
+                              ? null
+                              : (v) => _onExpressShippingToggled(v ?? true),
+                          activeColor: AppColors.primary,
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(Icons.flash_on, size: 16, color: _isExpressShipping ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.4)),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Express Delivery',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: _isExpressShipping ? FontWeight.w600 : FontWeight.normal,
+                            color: _isExpressShipping ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.6),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                // Standard (non-express) comparison line
+                if (!_isCalculatingShipping && _standardSellerShippingCosts.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 40),
+                    child: Row(
+                      children: [
+                        Text(
+                          'Non-Express: ',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.onSurface.withValues(alpha: 0.45),
+                          ),
+                        ),
+                        Text(
+                          () {
+                            final cost = _standardSellerShippingCosts.values.fold(0.0, (s, c) => s + c);
+                            return cost > 0 ? '₱${cost.toStringAsFixed(2)}' : 'FREE';
+                          }(),
+                          style: AppTextStyles.bodySmall.copyWith(
+                            fontFamily: 'Roboto',
+                            color: AppColors.onSurface.withValues(alpha: 0.45),
+                            fontWeight: !_isExpressShipping ? FontWeight.w600 : FontWeight.normal,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -1567,7 +1670,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
             ),
             const SizedBox(height: 8),
             
-            // Shipping row
+            // Shipping row — reflects active selection (express or standard)
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -1602,8 +1705,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     : Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (_calculateTotalShippingCost() > 0 && _calculateBuyerShippingPortion() < _calculateTotalShippingCost()) ...[
-                            // Show crossed out total shipping when some/all is free
+                          if (_calculateTotalShippingCost() > 0 &&
+                              _calculateBuyerShippingPortion() < _calculateTotalShippingCost()) ...[
                             Text(
                               '₱${_calculateTotalShippingCost().toStringAsFixed(2)}',
                               style: AppTextStyles.bodySmall.copyWith(
@@ -1623,7 +1726,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
                             style: AppTextStyles.bodyMedium.copyWith(
                               fontWeight: FontWeight.w600,
                               fontFamily: _calculateBuyerShippingPortion() > 0 ? 'Roboto' : null,
-                              color: _calculateBuyerShippingPortion() > 0 ? null : AppColors.success,
+                              color: _calculateBuyerShippingPortion() > 0
+                                  ? null
+                                  : AppColors.success,
                             ),
                           ),
                         ],

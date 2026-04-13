@@ -379,6 +379,20 @@ export const createCheckoutSession = onRequest(
           cancelUrl
         } = validatedInput;
 
+        // Extract pre-calculated per-seller shipping costs from frontend (optional).
+        // When provided, the per-seller JRS API call is skipped to avoid a duplicate
+        // calculation and ensure the order total matches what the user saw on-screen.
+        const sellerShippingCosts: Record<string, number> =
+          (request.body.seller_shipping_costs && typeof request.body.seller_shipping_costs === 'object')
+            ? request.body.seller_shipping_costs
+            : {};
+
+        // Express delivery preference chosen by the user on the checkout page.
+        // Used when the backend must fall back to its own JRS call (no pre-calculated cost
+        // provided for a seller), and stored on the order document for fulfilment.
+        const isExpress: boolean =
+          typeof request.body.is_express === 'boolean' ? request.body.is_express : true;
+
         console.log(`Creating checkout session for user ${userId} with ${cartItemIds.length} cart items`);
         
         // Get user's cart items with validation
@@ -634,6 +648,21 @@ export const createCheckoutSession = onRequest(
             itemCount: shipmentItemsForLog.length
           });
           
+          // If the frontend already calculated this seller's shipping cost, use it
+          // directly and skip the redundant JRS API call.
+          if (sellerShippingCosts[sellerId] !== undefined) {
+            const providedCost = sellerShippingCosts[sellerId];
+            console.log(`Seller ${sellerId} shipping cost: ₱${providedCost} (from frontend, JRS call skipped), cart value: ₱${sellerCartValue}`);
+            return {
+              sellerId,
+              sellerName,
+              shippingCost: providedCost,
+              cartValue: sellerCartValue,
+              isFallbackShipping: false,
+              platformFeePercentage
+            };
+          }
+
           // Calculate shipping cost for this seller's items with fallback support
           // If JRS API fails (500 error, timeout, etc.), use fallback shipping cost
           const shippingResult = await calculateJRSShippingCostWithFallback(
@@ -642,15 +671,17 @@ export const createCheckoutSession = onRequest(
             validItems,
             JRS_API_KEY_SECRET,
             JRS_GETRATE_API_URL,
-            DEFAULT_FALLBACK_SHIPPING_COST
+            DEFAULT_FALLBACK_SHIPPING_COST,
+            false,
+            isExpress
           );
-          
+
           if (shippingResult.isFallback) {
             console.warn(`JRS API failed for seller ${sellerId}, using fallback shipping cost of ₱${shippingResult.shippingCost}. Error: ${shippingResult.error}`);
           } else {
             console.log(`Seller ${sellerId} shipping cost: ₱${shippingResult.shippingCost}, cart value: ₱${sellerCartValue}`);
           }
-          
+
           return {
             sellerId,
             sellerName,
@@ -746,6 +777,7 @@ export const createCheckoutSession = onRequest(
             sellerShippingCharge: sellerShippingCharge,
             buyerShippingCharge: buyerShippingCharge,
             shippingSplitRule: shippingSplitRule,
+            isExpressDelivery: isExpress,
             // Track if fallback shipping was used (JRS API was unavailable)
             usedFallbackShipping: sellersWithFallback.length > 0,
             fallbackShippingSellerCount: sellersWithFallback.length,
@@ -787,6 +819,7 @@ export const createCheckoutSession = onRequest(
             country: shippingAddress?.country,
             phoneNumber: shippingAddress?.phoneNumber,
             notes: notes,
+            isExpress: isExpress,
           },
           status: 'pending',
           createdAt: admin.firestore.FieldValue.serverTimestamp(),

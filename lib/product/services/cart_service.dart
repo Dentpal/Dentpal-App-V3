@@ -582,6 +582,7 @@ class CartService {
     required String sellerId,
     required List<CartItem> items,
     required String recipientAddress,
+    bool express = true,
   }) async {
     try {
       AppLogger.d('Calculating shipping cost with recipient address');
@@ -652,7 +653,7 @@ class CartService {
         sellerAddress: sellerAddress,
         recipientAddress: formattedRecipientAddress,
         cartItems: items,
-        express: true,
+        express: express,
         insurance: true,
         valuation: true,
       );

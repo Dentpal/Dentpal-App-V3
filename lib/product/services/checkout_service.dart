@@ -31,6 +31,8 @@ class CheckoutService {
     List<String> paymentMethodTypes = const ['card', 'gcash', 'grab_pay', 'paymaya'],
     String? successUrl,
     String? cancelUrl,
+    Map<String, double> sellerShippingCosts = const {},
+    bool isExpress = true,
   }) async {
     try {
       AppLogger.d('Creating order with checkout session for ${cartItemIds.length} items');
@@ -50,6 +52,8 @@ class CheckoutService {
         paymentMethodTypes: paymentMethodTypes,
         successUrl: successUrl,
         cancelUrl: cancelUrl,
+        sellerShippingCosts: sellerShippingCosts,
+        isExpress: isExpress,
       );
 
       // Call Firebase Function via HTTP
@@ -158,6 +162,7 @@ class CheckoutService {
   Future<Map<String, double>> calculateShippingCostDetailed({
     required List<CartItem> items,
     required ShippingAddress address,
+    bool express = true,
   }) async {
     try {
       AppLogger.d('Calculating shipping cost for checkout');
@@ -192,6 +197,7 @@ class CheckoutService {
             sellerId: sellerId,
             items: sellerItems,
             recipientAddress: recipientAddress,
+            express: express,
           );
           
           totalBuyerCost += result.buyerShippingCharge;
@@ -322,6 +328,8 @@ class CheckoutService {
     required List<String> cartItemIds,
     required String addressId,
     String? notes,
+    Map<String, double> sellerShippingCosts = const {},
+    bool isExpress = true,
   }) async {
     try {
       AppLogger.d('Creating Cash on Delivery order for ${cartItemIds.length} items');
@@ -339,6 +347,8 @@ class CheckoutService {
         'address_id': addressId,
         'notes': notes,
         'payment_method': 'cash_on_delivery',
+        'seller_shipping_costs': sellerShippingCosts,
+        'is_express': isExpress,
       };
 
       // Call Firebase Function via HTTP

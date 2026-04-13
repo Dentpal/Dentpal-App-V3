@@ -157,6 +157,16 @@ export const createCodOrder = onRequest(
         const validatedData = validateRequestBody(request.body);
         const { cartItemIds, addressId, notes } = validatedData;
 
+        // Extract pre-calculated per-seller shipping costs from frontend (optional)
+        const sellerShippingCosts: Record<string, number> =
+          (request.body.seller_shipping_costs && typeof request.body.seller_shipping_costs === 'object')
+            ? request.body.seller_shipping_costs
+            : {};
+
+        // Express delivery preference chosen by the user on the checkout page
+        const isExpress: boolean =
+          typeof request.body.is_express === 'boolean' ? request.body.is_express : true;
+
         console.log('Creating COD order', { 
           userId, 
           cartItemCount: cartItemIds.length,
@@ -358,16 +368,20 @@ export const createCodOrder = onRequest(
             itemCount: sellerItems.length
           });
           
-          // For COD, use a simplified shipping cost (can enhance with JRS API later)
-          // For now, use default fallback shipping cost
-          const shippingCost = 200; // Default COD shipping per seller
-          
+          // Use the pre-calculated shipping cost provided by the frontend (from JRS API).
+          // Fall back to 200 only if the frontend did not supply a cost for this seller.
+          const shippingCost = (sellerShippingCosts[sellerId] !== undefined)
+            ? sellerShippingCosts[sellerId]
+            : 200;
+
+          console.log(`Seller ${sellerId} shipping cost: ₱${shippingCost} (${sellerShippingCosts[sellerId] !== undefined ? 'from frontend' : 'fallback'})`);
+
           return {
             sellerId,
             sellerName,
-            shippingCost: shippingCost,
+            shippingCost,
             cartValue: sellerCartValue,
-            isFallbackShipping: false,
+            isFallbackShipping: sellerShippingCosts[sellerId] === undefined,
             platformFeePercentage
           };
         });
@@ -422,7 +436,8 @@ export const createCodOrder = onRequest(
             sellerShippingCharge: sellerShippingCharge,
             buyerShippingCharge: buyerShippingCharge,
             shippingSplitRule: shippingSplitRule,
-            usedFallbackShipping: false, // JRS API is used unless it fails
+            isExpressDelivery: isExpress,
+            usedFallbackShipping: false,
             fallbackShippingSellerCount: 0,
           },
           fees: {
@@ -461,6 +476,7 @@ export const createCodOrder = onRequest(
             country: shippingAddress?.country,
             phoneNumber: shippingAddress?.phoneNumber,
             notes: notes,
+            isExpress: isExpress,
           },
           status: 'confirmed',
           createdAt: admin.firestore.FieldValue.serverTimestamp(),

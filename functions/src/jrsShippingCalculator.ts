@@ -110,6 +110,7 @@ async function handleOldInterface(request: CallableRequest<CalculateShippingRequ
     await verifyAuthToken(authHeader);
     
     const { sellerAddress, cartItems, recipientAddress } = request.data;
+    const express: boolean = typeof request.data.express === 'boolean' ? request.data.express : true;
     
     if (!sellerAddress || !cartItems || cartItems.length === 0) {
       throw new HttpsError('invalid-argument', 'Missing required shipping data');
@@ -157,7 +158,9 @@ async function handleOldInterface(request: CallableRequest<CalculateShippingRequ
       cartItems,
       process.env.JRS_API_KEY,
       process.env.JRS_GETRATE_API_URL,
-      DEFAULT_FALLBACK_SHIPPING_COST
+      DEFAULT_FALLBACK_SHIPPING_COST,
+      false,
+      express
     );
 
     const shippingCost = shippingResult.shippingCost;
@@ -261,6 +264,10 @@ export const calculateJRSShipping = onCall(
         logger.error('Invalid request data', request.data);
         throw new HttpsError('invalid-argument', 'Missing required shipping data');
       }
+
+      // Express delivery preference from the frontend checkout page
+      const expressDelivery: boolean =
+        typeof request.data.express === 'boolean' ? request.data.express : true;
 
       // Format recipient address
       const recipientAddress = formatAddress(request.data.recipientAddress);
@@ -428,7 +435,8 @@ export const calculateJRSShipping = onCall(
           recipientAddress,
           sellerItems,
           process.env.JRS_API_KEY,
-          process.env.JRS_GETRATE_API_URL
+          process.env.JRS_GETRATE_API_URL,
+          expressDelivery
         );
 
         // Calculate cart value for this seller's items
