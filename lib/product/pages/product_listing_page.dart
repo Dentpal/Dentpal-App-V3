@@ -18,6 +18,7 @@ import '../widgets/product_card.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import 'package:dentpal/utils/app_logger.dart';
+import 'package:dentpal/utils/currency_formatter.dart';
 import 'package:dentpal/utils/navigation_utils.dart';
 import 'cart_page.dart';
 import 'product_detail_page.dart';
@@ -100,6 +101,11 @@ class _ProductListingPageState extends State<ProductListingPage>
   // A null value means the document was fetched but does not exist in Firestore.
   Map<String, Map<String, dynamic>?> _sellerDataCache = {};
   Set<String> _sellerDataFetching = {};
+
+  // Cache for active vouchers per seller, keyed by sellerId. Each value is
+  // the list of currently-valid voucher documents (already date-filtered).
+  final Map<String, List<Map<String, dynamic>>> _sellerVouchersCache = {};
+  final Set<String> _sellerVouchersFetching = {};
 
   // Mapping between category names and IDs for filtering
   Map<String, String> _categoryNameToId = {};
@@ -3372,14 +3378,165 @@ class _ProductListingPageState extends State<ProductListingPage>
   /// Batch-fetches seller data for all unique sellerIds in [products] that are
   /// not already cached. Runs fetches concurrently.
   Future<void> _prefetchSellerData(List<Product> products) async {
-    final ids = products
+    final sellerIds = products
         .map((p) => p.sellerId)
-        .where((id) => id.isNotEmpty && !_sellerDataCache.containsKey(id))
+        .where((id) => id.isNotEmpty)
         .toSet();
-    if (ids.isEmpty) return;
-    AppLogger.d('Pre-fetching seller data for ${ids.length} sellers');
-    await Future.wait(ids.map((id) => _getSellerDataCached(id)));
-    AppLogger.d('Seller data pre-fetch complete');
+
+    final uncachedSellerIds =
+        sellerIds.where((id) => !_sellerDataCache.containsKey(id)).toSet();
+    if (uncachedSellerIds.isNotEmpty) {
+      AppLogger.d('Pre-fetching seller data for ${uncachedSellerIds.length} sellers');
+      await Future.wait(uncachedSellerIds.map(_getSellerDataCached));
+      AppLogger.d('Seller data pre-fetch complete');
+    }
+
+    // Pre-fetch active vouchers for all sellers in view.
+    final uncachedVoucherIds =
+        sellerIds.where((id) => !_sellerVouchersCache.containsKey(id)).toSet();
+    if (uncachedVoucherIds.isNotEmpty) {
+      await Future.wait(uncachedVoucherIds.map(_fetchSellerVouchers));
+    }
+  }
+
+  /// Fetches active, currently-valid vouchers for a single seller and caches
+  /// them in [_sellerVouchersCache]. Caches an empty list on error so we don't
+  /// retry on every rebuild.
+  Future<void> _fetchSellerVouchers(String sellerId) async {
+    if (_sellerVouchersCache.containsKey(sellerId)) return;
+    if (_sellerVouchersFetching.contains(sellerId)) return;
+    _sellerVouchersFetching.add(sellerId);
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('vouchers')
+          .where('sellerId', isEqualTo: sellerId)
+          .where('status', isEqualTo: 'active')
+          .get();
+
+      final now = DateTime.now();
+      final valid = snapshot.docs
+          .map((d) => d.data())
+          .where((v) {
+            final start = _parseVoucherDate(v['startDate']);
+            final end = _parseVoucherDate(v['endDate']);
+            if (start == null || end == null) return false;
+            return !start.isAfter(now) && !end.isBefore(now);
+          })
+          .toList();
+
+      _sellerVouchersCache[sellerId] = valid;
+    } catch (e) {
+      AppLogger.d('Error fetching vouchers for $sellerId: $e');
+      _sellerVouchersCache[sellerId] = const [];
+    } finally {
+      _sellerVouchersFetching.remove(sellerId);
+    }
+  }
+
+  DateTime? _parseVoucherDate(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    return null;
+  }
+
+  /// Sorts vouchers by priority:
+  ///   1. percentage (highest discountValue first)
+  ///   2. fixed (highest discountValue first)
+  ///   3. free_delivery
+  /// Returns a new sorted list without mutating the input.
+  List<Map<String, dynamic>> _sortVouchersByPriority(
+      List<Map<String, dynamic>> vouchers) {
+    int typeRank(String? type) {
+      switch (type) {
+        case 'percentage':
+          return 0;
+        case 'fixed':
+          return 1;
+        case 'free_delivery':
+          return 2;
+        default:
+          return 3;
+      }
+    }
+
+    final sorted = [...vouchers];
+    sorted.sort((a, b) {
+      final rankA = typeRank(a['discountType'] as String?);
+      final rankB = typeRank(b['discountType'] as String?);
+      if (rankA != rankB) return rankA.compareTo(rankB);
+      final valA = (a['discountValue'] as num?)?.toDouble() ?? 0;
+      final valB = (b['discountValue'] as num?)?.toDouble() ?? 0;
+      return valB.compareTo(valA); // highest first
+    });
+    return sorted;
+  }
+
+  /// Formats a single voucher into its display label based on `discountType`.
+  /// Returns null if the voucher has invalid data (e.g. 0% off, ₱0 off).
+  String? _formatSingleVoucher(Map<String, dynamic> voucher) {
+    final type = (voucher['discountType'] as String?) ?? '';
+    final code = (voucher['code'] as String?) ?? '';
+    final value = (voucher['discountValue'] as num?)?.toDouble() ?? 0;
+    final minAmount = (voucher['minimumOrderAmount'] as num?)?.toDouble() ?? 0;
+
+    switch (type) {
+      case 'percentage':
+        if (value <= 0) return null;
+        final pct = value == value.roundToDouble()
+            ? value.toStringAsFixed(0)
+            : value.toString();
+        return '$pct% OFF ${CurrencyFormatter.formatWithPeso(minAmount)} : $code';
+      case 'fixed':
+        if (value <= 0) return null;
+        return '${CurrencyFormatter.formatWithPeso(value)} OFF : $code';
+      case 'free_delivery':
+        return 'Free Shipping';
+      default:
+        return null;
+    }
+  }
+
+  /// Renders a single orange voucher badge matching the existing tag style.
+  Widget _buildVoucherBadge(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppColors.accent.withValues(alpha: 0.15),
+            AppColors.primary.withValues(alpha: 0.15),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: AppColors.accent.withValues(alpha: 0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.local_offer_rounded,
+            size: 14,
+            color: AppColors.accent,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.accent,
+              fontWeight: FontWeight.w600,
+              fontSize: 11,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
   }
 
   // Build Traders List (Foodpanda-style vertical list layout)
@@ -3650,8 +3807,30 @@ class _ProductListingPageState extends State<ProductListingPage>
       );
     }
 
-    // Voucher placeholder — replace with real voucher logic when available
-    final hasVoucher = products.length > 5;
+    // Dynamic vouchers fetched from Firestore (pre-cached by _prefetchSellerData).
+    // Sort by priority, format each into a label, drop invalid (null) entries.
+    final sortedVouchers =
+        _sortVouchersByPriority(_sellerVouchersCache[sellerId] ?? const []);
+    final voucherLabels = sortedVouchers
+        .map(_formatSingleVoucher)
+        .whereType<String>()
+        .toList();
+
+    // Display rules:
+    //   1 voucher  → show it
+    //   2 vouchers → show both
+    //   3+         → show first 2 + "+X more"
+    final List<String> displayedVoucherLabels;
+    if (voucherLabels.length <= 2) {
+      displayedVoucherLabels = voucherLabels;
+    } else {
+      displayedVoucherLabels = [
+        voucherLabels[0],
+        voucherLabels[1],
+        '+${voucherLabels.length - 2} more',
+      ];
+    }
+    final hasVoucher = displayedVoucherLabels.isNotEmpty;
 
     return GestureDetector(
       onTap: () {
@@ -3866,41 +4045,18 @@ class _ProductListingPageState extends State<ProductListingPage>
                     ],
                   ),
 
-                  // Bottom row: voucher badge (if available)
+                  // Bottom row: voucher badges (horizontal list)
                   if (hasVoucher) ...[
                     const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            AppColors.accent.withValues(alpha: 0.15),
-                            AppColors.primary.withValues(alpha: 0.15),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: AppColors.accent.withValues(alpha: 0.3),
-                          width: 1,
-                        ),
-                      ),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(
-                            Icons.local_offer_rounded,
-                            size: 14,
-                            color: AppColors.accent,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Free Delivery on orders ₱500+',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.accent,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 11,
-                            ),
-                          ),
+                          for (int i = 0; i < displayedVoucherLabels.length; i++) ...[
+                            if (i > 0) const SizedBox(width: 6),
+                            _buildVoucherBadge(displayedVoucherLabels[i]),
+                          ],
                         ],
                       ),
                     ),

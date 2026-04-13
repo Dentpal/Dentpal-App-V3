@@ -2069,7 +2069,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                             Text(
                               sellerData['shopName'] ??
                                   'Store name not available',
-                              style: AppTextStyles.titleLarge.copyWith(
+                              style: AppTextStyles.titleMedium.copyWith(
                                 color: AppColors.primary,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -2086,76 +2086,6 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                             ),
                           ],
                         ),
-                      ),
-                      Row(
-                        children: [
-                          // Visit Store button
-                          Container(
-                            decoration: BoxDecoration(
-                              color: AppColors.primary,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(12),
-                                onTap: () {
-                                  NavigationUtils.navigateToStore(
-                                    context,
-                                    product.sellerId,
-                                    sellerData: sellerData,
-                                  );
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                  child: Text(
-                                    'Visit Store',
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color: AppColors.onPrimary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-
-                          // Show inquiry button only if allowed
-                          if (product.allowInquiry) ...[
-                            const SizedBox(width: 8),
-
-                            // Inquire button
-                            Container(
-                              decoration: BoxDecoration(
-                                color: AppColors.accent,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(12),
-                                  onTap: () => _inquireAboutProduct(product),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 8,
-                                    ),
-                                    child: Text(
-                                      'Inquire',
-                                      style: AppTextStyles.bodySmall.copyWith(
-                                        color: AppColors.onSecondary,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
                       ),
                     ],
                   ),
@@ -3091,6 +3021,12 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   // }
 
   Widget _buildFixedAddToCartButton(Product product) {
+    // If inquiry is allowed and item is out of stock (or no variation selected),
+    // show "Contact a Sales Agent" instead of the Out of Stock button.
+    final bool isInStock =
+        _selectedVariation != null && _selectedVariation!.stock > 0;
+    final bool showContactAgent = product.allowInquiry && !isInStock;
+
     return Positioned(
       bottom: 0,
       left: 0,
@@ -3113,23 +3049,43 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         ),
         child: SafeArea(
           top: false,
-          child: LoadingButton(
-            text: _selectedVariation != null && _selectedVariation!.stock > 0
-                ? 'Add to Cart • ${CurrencyFormatter.formatWithPeso(_selectedVariation!.price * _quantity)}'
-                : 'Out of Stock',
-            loadingText: 'Adding to cart...',
-            isLoading: _isAddingToCart,
-            onPressed:
-                _selectedVariation != null && _selectedVariation!.stock > 0
-                ? () => _addToCart(product)
-                : null,
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            textStyle: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              fontFamily: 'Roboto', // Use Roboto for peso sign support
-            ),
-          ),
+          child: showContactAgent
+              ? SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => _inquireAboutProduct(product),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.accent,
+                      foregroundColor: AppColors.onSecondary,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: const Text(
+                      'Contact a Sales Agent',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                )
+              : LoadingButton(
+                  text: isInStock
+                      ? 'Add to Cart • ${CurrencyFormatter.formatWithPeso(_selectedVariation!.price * _quantity)}'
+                      : 'Out of Stock',
+                  loadingText: 'Adding to cart...',
+                  isLoading: _isAddingToCart,
+                  onPressed: isInStock ? () => _addToCart(product) : null,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  textStyle: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'Roboto',
+                  ),
+                ),
         ),
       ),
     );

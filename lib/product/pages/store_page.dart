@@ -597,38 +597,164 @@ class _StorePageState extends State<StorePage> {
   // ── Voucher Section ─────────────────────────────────────────────────────
 
   Widget _buildVoucherSection() {
-    // Show voucher if store has enough products (existing pattern from trader cards)
-    if (_products.length <= 5) return const SizedBox.shrink();
+    final stream = FirebaseFirestore.instance
+        .collection('vouchers')
+        .where('sellerId', isEqualTo: widget.sellerId)
+        .where('status', isEqualTo: 'active')
+        .snapshots();
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.accent.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.accent.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: AppColors.accent.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(Icons.local_offer, size: 16, color: AppColors.accent),
+    return StreamBuilder<QuerySnapshot>(
+      stream: stream,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox.shrink();
+
+        final now = DateTime.now();
+        final vouchers = snapshot.data!.docs
+            .map((doc) => doc.data() as Map<String, dynamic>)
+            .where((v) {
+              final start = _parseDate(v['startDate']);
+              final end = _parseDate(v['endDate']);
+              if (start == null || end == null) return false;
+              return !start.isAfter(now) && !end.isBefore(now);
+            })
+            .take(5)
+            .toList();
+
+        if (vouchers.isEmpty) return const SizedBox.shrink();
+
+        return Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: Text(
+                  'Vouchers',
+                  style: AppTextStyles.titleMedium.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.onSurface,
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 88,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: vouchers.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 12),
+                  itemBuilder: (context, index) => _buildVoucherTicket(vouchers[index]),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Free Delivery on orders ₱500+',
-              style: AppTextStyles.bodySmall.copyWith(
-                color: AppColors.accent,
-                fontWeight: FontWeight.w600,
+        );
+      },
+    );
+  }
+
+  DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    return null;
+  }
+
+  Widget _buildVoucherTicket(Map<String, dynamic> voucher) {
+    final code = (voucher['code'] as String?) ?? '';
+    final name = (voucher['name'] as String?) ?? '';
+    final minAmount = voucher['minimumOrderAmount'];
+    final double? minSpend = (minAmount is num) ? minAmount.toDouble() : null;
+
+    return ClipPath(
+      clipper: _TicketClipper(),
+      child: Container(
+        width: 280,
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Left section — Code
+            Container(
+              width: 96,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.12),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  const Icon(Icons.local_offer, size: 18, color: AppColors.primary),
+                  const SizedBox(height: 4),
+                  Text(
+                    code,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.primary,
+                      letterSpacing: 0.5,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ),
             ),
-          ),
-        ],
+            // Dashed divider
+            SizedBox(
+              width: 1,
+              height: double.infinity,
+              child: CustomPaint(
+                painter: _DashedLinePainter(
+                  color: AppColors.onSurface.withValues(alpha: 0.25),
+                ),
+              ),
+            ),
+            // Right section — Name + min spend
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.onSurface,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (minSpend != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Min. Spend: ${CurrencyFormatter.formatWithPeso(minSpend)}',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.onSurface.withValues(alpha: 0.65),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -961,4 +1087,96 @@ class _StorePageState extends State<StorePage> {
     if (screenWidth >= 600) return 0.68;
     return 0.65;
   }
+}
+
+/// Clips a rectangle into a ticket shape with small semicircle notches
+/// cut out of the left and right edges at the vertical midpoint.
+class _TicketClipper extends CustomClipper<Path> {
+  static const double _radius = 14;
+  static const double _notchRadius = 8;
+  static const double _leftSectionWidth = 96;
+
+  @override
+  Path getClip(Size size) {
+    final path = Path();
+    final double notchCx = _leftSectionWidth;
+    final double notchCy = size.height / 2;
+
+    // Top-left rounded corner
+    path.moveTo(0, _radius);
+    path.quadraticBezierTo(0, 0, _radius, 0);
+    // Top edge
+    path.lineTo(size.width - _radius, 0);
+    // Top-right rounded corner
+    path.quadraticBezierTo(size.width, 0, size.width, _radius);
+    // Right edge down to bottom-right corner
+    path.lineTo(size.width, size.height - _radius);
+    path.quadraticBezierTo(
+        size.width, size.height, size.width - _radius, size.height);
+    // Bottom edge
+    path.lineTo(_radius, size.height);
+    // Bottom-left rounded corner
+    path.quadraticBezierTo(0, size.height, 0, size.height - _radius);
+    // Left edge up, with notch at midpoint
+    path.lineTo(0, notchCy + _notchRadius);
+    path.arcToPoint(
+      Offset(0, notchCy - _notchRadius),
+      radius: const Radius.circular(_notchRadius),
+      clockwise: true,
+    );
+    path.lineTo(0, _radius);
+    path.close();
+
+    // Cut out top and bottom notches at divider line
+    final notchTop = Path()
+      ..addOval(Rect.fromCircle(
+        center: Offset(notchCx, 0),
+        radius: _notchRadius,
+      ));
+    final notchBottom = Path()
+      ..addOval(Rect.fromCircle(
+        center: Offset(notchCx, size.height),
+        radius: _notchRadius,
+      ));
+
+    return Path.combine(
+      PathOperation.difference,
+      Path.combine(PathOperation.difference, path, notchTop),
+      notchBottom,
+    );
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}
+
+/// Paints a vertical dashed line filling the available height.
+class _DashedLinePainter extends CustomPainter {
+  final Color color;
+  static const double _dashHeight = 4;
+  static const double _dashSpace = 3;
+
+  _DashedLinePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke;
+
+    double startY = 0;
+    while (startY < size.height) {
+      canvas.drawLine(
+        Offset(0, startY),
+        Offset(0, startY + _dashHeight),
+        paint,
+      );
+      startY += _dashHeight + _dashSpace;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedLinePainter oldDelegate) =>
+      oldDelegate.color != color;
 }
