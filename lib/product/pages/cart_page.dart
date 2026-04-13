@@ -71,6 +71,7 @@ class _CartPageState extends State<CartPage>
   List<SellerGroup>? _cachedSellerGroups;
   CartSummary? _cartSummary;
   bool _isLoading = false;
+  final Map<String, Map<String, dynamic>?> _selectedVouchers = {};
 
   // Track the last cache timestamp to determine if we should refresh
   DateTime? _lastCacheTime;
@@ -1318,6 +1319,12 @@ class _CartPageState extends State<CartPage>
                         sellerData: {'initialTab': 'products'},
                       );
                     },
+                    selectedVoucher: _selectedVouchers[sellerGroup.sellerId],
+                    onVoucherSelected: (voucher) {
+                      setState(() {
+                        _selectedVouchers[sellerGroup.sellerId] = voucher;
+                      });
+                    },
                   );
                 }, childCount: sellerGroups.length),
               ),
@@ -1348,6 +1355,12 @@ class _CartPageState extends State<CartPage>
                 sellerGroup.sellerId,
                 sellerData: {'initialTab': 'products'},
               );
+            },
+            selectedVoucher: _selectedVouchers[sellerGroup.sellerId],
+            onVoucherSelected: (voucher) {
+              setState(() {
+                _selectedVouchers[sellerGroup.sellerId] = voucher;
+              });
             },
           );
         },

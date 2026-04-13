@@ -3408,7 +3408,7 @@ class _ProductListingPageState extends State<ProductListingPage>
     _sellerVouchersFetching.add(sellerId);
     try {
       final snapshot = await FirebaseFirestore.instance
-          .collection('vouchers')
+          .collection('Vouchers')
           .where('sellerId', isEqualTo: sellerId)
           .where('status', isEqualTo: 'active')
           .get();

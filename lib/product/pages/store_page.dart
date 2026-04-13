@@ -53,8 +53,6 @@ class _StorePageState extends State<StorePage> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
-  // Store rating
-  double _storeRating = 0.0;
 
   // Version token for cache-busting
   late final String _imageVersionToken;
@@ -161,11 +159,6 @@ class _StorePageState extends State<StorePage> {
           address = (data['address'] as String?) ?? 'No address provided';
         }
 
-        // Store rating
-        final rating = data['rating'];
-        if (rating is num) {
-          _storeRating = rating.toDouble();
-        }
 
         return {
           'shopName': storeName,
@@ -352,8 +345,7 @@ class _StorePageState extends State<StorePage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildBannerSection(),
-                      _buildStoreInfo(),
+                      _buildBannerAndStoreHeader(),
                       _buildVoucherSection(),
                       _buildSearchBar(),
                       if (_categories.isNotEmpty) _buildCategoriesSection(),
@@ -383,79 +375,220 @@ class _StorePageState extends State<StorePage> {
     );
   }
 
-  // ── Banner Section ──────────────────────────────────────────────────────
+  // ── Banner + Store Header (combined) ────────────────────────────────────
 
-  Widget _buildBannerSection() {
+  Widget _buildBannerAndStoreHeader() {
     final coverImageURL = _storeData['coverImageURL'] as String? ?? '';
+    final profileImageURL = _storeData['profileImageURL'] as String? ?? '';
+    final storeName = _storeData['shopName'] ?? 'Store Name';
+
     final coverImageURLWithCache = coverImageURL.isNotEmpty
         ? (coverImageURL.contains('?')
             ? '$coverImageURL&v=$_imageVersionToken'
             : '$coverImageURL?v=$_imageVersionToken')
         : '';
+    final profileImageURLWithCache = profileImageURL.isNotEmpty
+        ? (profileImageURL.contains('?')
+            ? '$profileImageURL&v=$_imageVersionToken'
+            : '$profileImageURL?v=$_imageVersionToken')
+        : '';
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: AspectRatio(
-          aspectRatio: 8 / 3,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // Cover image or fallback gradient
-              if (coverImageURL.isNotEmpty)
-                CachedNetworkImage(
-                  imageUrl: coverImageURLWithCache,
-                  fit: BoxFit.cover,
-                  cacheKey: coverImageURL,
-                  placeholder: (context, url) => Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
+    const double iconDiameter = 80.0;
+    const double iconRadius = iconDiameter / 2;
+
+    return Column(
+      children: [
+        // Banner with overlapping store icon
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // Banner
+            Container(
+              margin: const EdgeInsets.only(left: 16, right: 16, top: 12),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: AspectRatio(
+                  aspectRatio: 8 / 3,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (coverImageURL.isNotEmpty)
+                        CachedNetworkImage(
+                          imageUrl: coverImageURLWithCache,
+                          fit: BoxFit.cover,
+                          cacheKey: coverImageURL,
+                          placeholder: (context, url) => Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
+                              ),
+                            ),
+                            child: const Center(
+                              child: CircularProgressIndicator(color: Colors.white),
+                            ),
+                          ),
+                          errorWidget: (context, url, error) => _buildBannerGradient(),
+                        )
+                      else
+                        _buildBannerGradient(),
+                      // Back button
+                      Positioned(
+                        top: 12,
+                        left: 12,
+                        child: _buildCircleButton(
+                          icon: Icons.arrow_back,
+                          onPressed: () {
+                            if (Navigator.canPop(context)) {
+                              Navigator.pop(context);
+                            } else {
+                              Navigator.pushReplacementNamed(context, '/');
+                            }
+                          },
+                        ),
                       ),
-                    ),
-                    child: const Center(
-                      child: CircularProgressIndicator(color: Colors.white),
-                    ),
+                      // Share button
+                      Positioned(
+                        top: 12,
+                        right: 12,
+                        child: _buildCircleButton(
+                          icon: Icons.share,
+                          onPressed: _shareStore,
+                        ),
+                      ),
+                    ],
                   ),
-                  errorWidget: (context, url, error) => _buildBannerGradient(),
-                )
-              else
-                _buildBannerGradient(),
-
-              // Back button (top-left)
-              Positioned(
-                top: 12,
-                left: 12,
-                child: _buildCircleButton(
-                  icon: Icons.arrow_back,
-                  onPressed: () {
-                    if (Navigator.canPop(context)) {
-                      Navigator.pop(context);
-                    } else {
-                      Navigator.pushReplacementNamed(context, '/');
-                    }
-                  },
                 ),
               ),
-
-              // Share button (top-right)
-              Positioned(
-                top: 12,
-                right: 12,
-                child: _buildCircleButton(
-                  icon: Icons.share,
-                  onPressed: _shareStore,
+            ),
+            // Store icon overlapping bottom center of banner
+            Positioned(
+              bottom: -iconRadius,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  width: iconDiameter,
+                  height: iconDiameter,
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.white, width: 3),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.12),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(11),
+                    child: profileImageURL.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: profileImageURLWithCache,
+                            fit: BoxFit.cover,
+                            cacheKey: profileImageURL,
+                            placeholder: (context, url) => const Center(
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            errorWidget: (context, url, error) =>
+                                const Icon(Icons.store, size: 36, color: AppColors.primary),
+                          )
+                        : const Icon(Icons.store, size: 36, color: AppColors.primary),
+                  ),
                 ),
               ),
-            ],
+            ),
+          ],
+        ),
+        // Space for the overlapping icon
+        const SizedBox(height: iconRadius + 10),
+        // Store name
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Text(
+            storeName,
+            style: AppTextStyles.titleMedium.copyWith(
+              fontWeight: FontWeight.bold,
+              color: AppColors.onSurface,
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
-      ),
+        // Rating + Location row
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Left: Rating
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.star, size: 15, color: Colors.amber),
+                    const SizedBox(width: 3),
+                    Text(
+                      '4.8',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '(10,000+ ratings)',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    fontSize: 10,
+                    color: AppColors.onSurface.withValues(alpha: 0.55),
+                  ),
+                ),
+              ],
+            ),
+            // Vertical divider
+            Container(
+              height: 30,
+              width: 1,
+              margin: const EdgeInsets.symmetric(horizontal: 14),
+              color: AppColors.onSurface.withValues(alpha: 0.18),
+            ),
+            // Right: Location
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.location_on, size: 13, color: AppColors.primary),
+                const SizedBox(width: 3),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 140),
+                  child: Text(
+                    (_storeData['address'] as String? ?? '').isNotEmpty
+                        ? _storeData['address'] as String
+                        : 'Location unavailable',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.onSurface.withValues(alpha: 0.7),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+      ],
     );
   }
+
 
   Widget _buildBannerGradient() {
     return Container(
@@ -484,121 +617,11 @@ class _StorePageState extends State<StorePage> {
     );
   }
 
-  // ── Store Info Section ──────────────────────────────────────────────────
-
-  Widget _buildStoreInfo() {
-    final profileImageURL = _storeData['profileImageURL'] as String? ?? '';
-    final storeName = _storeData['shopName'] ?? 'Store Name';
-    final address = _storeData['address'] ?? 'Not available';
-    final profileImageURLWithCache = profileImageURL.isNotEmpty
-        ? (profileImageURL.contains('?')
-            ? '$profileImageURL&v=$_imageVersionToken'
-            : '$profileImageURL?v=$_imageVersionToken')
-        : '';
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Store Icon
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: AppColors.primary.withValues(alpha: 0.2),
-                width: 2,
-              ),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: profileImageURL.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: profileImageURLWithCache,
-                      fit: BoxFit.cover,
-                      cacheKey: profileImageURL,
-                      placeholder: (context, url) => const Center(
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      errorWidget: (context, url, error) =>
-                          const Icon(Icons.store, size: 28, color: AppColors.primary),
-                    )
-                  : const Icon(Icons.store, size: 28, color: AppColors.primary),
-            ),
-          ),
-          const SizedBox(width: 16),
-          // Store Name, Location, and Rating
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  storeName,
-                  style: AppTextStyles.titleMedium.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.onSurface,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 8),
-                // Location + Rating row
-                Row(
-                  children: [
-                    const Icon(Icons.location_on, size: 14, color: AppColors.primary),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        address,
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.onSurface.withValues(alpha: 0.7),
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (_storeRating > 0) ...[
-                      const SizedBox(width: 8),
-                      const Icon(Icons.star, size: 14, color: Colors.amber),
-                      const SizedBox(width: 2),
-                      Text(
-                        _storeRating.toStringAsFixed(1),
-                        style: AppTextStyles.bodySmall.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.onSurface,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   // ── Voucher Section ─────────────────────────────────────────────────────
 
   Widget _buildVoucherSection() {
     final stream = FirebaseFirestore.instance
-        .collection('vouchers')
+        .collection('Vouchers')
         .where('sellerId', isEqualTo: widget.sellerId)
         .where('status', isEqualTo: 'active')
         .snapshots();
@@ -623,12 +646,12 @@ class _StorePageState extends State<StorePage> {
         if (vouchers.isEmpty) return const SizedBox.shrink();
 
         return Padding(
-          padding: const EdgeInsets.only(top: 8, bottom: 4),
+          padding: const EdgeInsets.only(top: 4, bottom: 2),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                padding: const EdgeInsets.fromLTRB(16, 2, 16, 6),
                 child: Text(
                   'Vouchers',
                   style: AppTextStyles.titleMedium.copyWith(
@@ -638,7 +661,7 @@ class _StorePageState extends State<StorePage> {
                 ),
               ),
               SizedBox(
-                height: 88,
+                height: 64,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -664,7 +687,6 @@ class _StorePageState extends State<StorePage> {
 
   Widget _buildVoucherTicket(Map<String, dynamic> voucher) {
     final code = (voucher['code'] as String?) ?? '';
-    final name = (voucher['name'] as String?) ?? '';
     final minAmount = voucher['minimumOrderAmount'];
     final double? minSpend = (minAmount is num) ? minAmount.toDouble() : null;
 
@@ -684,10 +706,10 @@ class _StorePageState extends State<StorePage> {
         ),
         child: Row(
           children: [
-            // Left section — Code
+            // Left section — Min. Spend (green)
             Container(
-              width: 96,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              width: 110,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
               decoration: BoxDecoration(
                 color: AppColors.primary.withValues(alpha: 0.12),
               ),
@@ -695,14 +717,22 @@ class _StorePageState extends State<StorePage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  const Icon(Icons.local_offer, size: 18, color: AppColors.primary),
-                  const SizedBox(height: 4),
                   Text(
-                    code,
-                    style: AppTextStyles.bodyMedium.copyWith(
+                    'Min. Spend',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.primary.withValues(alpha: 0.8),
+                      fontSize: 10,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    minSpend != null
+                        ? CurrencyFormatter.formatWithPeso(minSpend)
+                        : 'No min.',
+                    style: AppTextStyles.bodySmall.copyWith(
                       fontWeight: FontWeight.w800,
                       color: AppColors.primary,
-                      letterSpacing: 0.5,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -721,34 +751,27 @@ class _StorePageState extends State<StorePage> {
                 ),
               ),
             ),
-            // Right section — Name + min spend
+            // Right section — Code (white)
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
+                    const Icon(Icons.local_offer, size: 14, color: AppColors.primary),
+                    const SizedBox(height: 3),
                     Text(
-                      name,
+                      code,
                       style: AppTextStyles.bodyMedium.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.onSurface,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.primary,
+                        letterSpacing: 0.5,
                       ),
-                      maxLines: 2,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
                     ),
-                    if (minSpend != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        'Min. Spend: ${CurrencyFormatter.formatWithPeso(minSpend)}',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.onSurface.withValues(alpha: 0.65),
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -805,7 +828,7 @@ class _StorePageState extends State<StorePage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
           child: Text(
             'Categories',
             style: AppTextStyles.titleMedium.copyWith(
@@ -871,7 +894,7 @@ class _StorePageState extends State<StorePage> {
     }
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: GridView.builder(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
