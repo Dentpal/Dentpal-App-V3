@@ -33,6 +33,7 @@ class CheckoutService {
     String? cancelUrl,
     Map<String, double> sellerShippingCosts = const {},
     bool isExpress = true,
+    Map<String, Map<String, dynamic>?> selectedVouchers = const {},
   }) async {
     try {
       AppLogger.d('Creating order with checkout session for ${cartItemIds.length} items');
@@ -54,6 +55,7 @@ class CheckoutService {
         cancelUrl: cancelUrl,
         sellerShippingCosts: sellerShippingCosts,
         isExpress: isExpress,
+        selectedVouchers: selectedVouchers,
       );
 
       // Call Firebase Function via HTTP
@@ -330,6 +332,7 @@ class CheckoutService {
     String? notes,
     Map<String, double> sellerShippingCosts = const {},
     bool isExpress = true,
+    Map<String, Map<String, dynamic>?> selectedVouchers = const {},
   }) async {
     try {
       AppLogger.d('Creating Cash on Delivery order for ${cartItemIds.length} items');
@@ -349,6 +352,12 @@ class CheckoutService {
         'payment_method': 'cash_on_delivery',
         'seller_shipping_costs': sellerShippingCosts,
         'is_express': isExpress,
+        'selected_vouchers': selectedVouchers.map((sellerId, voucher) =>
+          MapEntry(sellerId, voucher != null ? {
+            'code': voucher['code'],
+            'seller_id': voucher['sellerId'],
+            'discount_type': voucher['discountType'],
+          } : null)),
       };
 
       // Call Firebase Function via HTTP

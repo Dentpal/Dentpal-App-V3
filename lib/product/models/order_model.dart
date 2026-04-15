@@ -108,7 +108,9 @@ class Order {
       AppLogger.d('Order.fromFirestore - Parsing paymongo...');
       final paymongoData = data['paymongo'] ?? data['paymentInfo'];
       AppLogger.d('Order.fromFirestore - Paymongo data: $paymongoData');
-      final paymongo = PaymongoData.fromMap(paymongoData as Map<String, dynamic>);
+      final paymongo = paymongoData != null
+          ? PaymongoData.fromMap(paymongoData as Map<String, dynamic>)
+          : PaymongoData.empty();
       
       // Parse status
       AppLogger.d('Order.fromFirestore - Parsing status...');
@@ -125,7 +127,9 @@ class Order {
       AppLogger.d('Order.fromFirestore - CreatedAt: ${data['createdAt']} (type: ${data['createdAt'].runtimeType})');
       AppLogger.d('Order.fromFirestore - UpdatedAt: ${data['updatedAt']} (type: ${data['updatedAt'].runtimeType})');
       final createdAt = (data['createdAt'] as Timestamp).toDate();
-      final updatedAt = (data['updatedAt'] as Timestamp).toDate();
+      final updatedAt = data['updatedAt'] != null
+          ? (data['updatedAt'] as Timestamp).toDate()
+          : createdAt;
       
       // Parse status history
       AppLogger.d('Order.fromFirestore - Parsing statusHistory...');
@@ -460,6 +464,15 @@ class PaymongoData {
     this.paidAt,
     this.failureReason,
   });
+
+  factory PaymongoData.empty() {
+    return PaymongoData(
+      paymentMethod: PaymentMethod.cashOnDelivery,
+      paymentStatus: PaymentStatus.pending,
+      amount: 0.0,
+      currency: 'PHP',
+    );
+  }
 
   factory PaymongoData.fromMap(Map<String, dynamic> map) {
     AppLogger.d('PaymongoData.fromMap - Raw map: $map');

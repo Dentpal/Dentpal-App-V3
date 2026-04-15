@@ -1546,8 +1546,36 @@ class _CartPageState extends State<CartPage>
     );
   }
 
+  /// Compute the total voucher discount across all selected sellers.
+  double _calculateTotalCartDiscount() {
+    if (_cachedSellerGroups == null) return 0.0;
+    double total = 0.0;
+    for (final group in _cachedSellerGroups!) {
+      final voucher = _selectedVouchers[group.sellerId];
+      if (voucher == null) continue;
+
+      final sellerSubtotal = group.selectedItemsTotal;
+      final discountType = voucher['discountType'] as String? ?? '';
+      final discountValue = (voucher['discountValue'] as num? ?? 0).toDouble();
+      final minimumOrderAmount = (voucher['minimumOrderAmount'] as num? ?? 0).toDouble();
+      final maximumSpend = (voucher['maximumSpend'] as num?)?.toDouble();
+
+      if (sellerSubtotal < minimumOrderAmount) continue;
+
+      if (discountType == 'percentage') {
+        double discount = sellerSubtotal * (discountValue / 100.0);
+        if (maximumSpend != null && discount > maximumSpend) discount = maximumSpend;
+        total += discount.clamp(0.0, sellerSubtotal);
+      } else if (discountType == 'fixed') {
+        total += discountValue.clamp(0.0, sellerSubtotal);
+      }
+    }
+    return total;
+  }
+
   Widget _buildCheckoutSection() {
     final summary = _cartSummary!;
+    final totalDiscount = _calculateTotalCartDiscount();
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -1610,12 +1638,36 @@ class _CartPageState extends State<CartPage>
                         '₱${summary.selectedItemsTotal.toStringAsFixed(2)}',
                         style: AppTextStyles.bodyMedium.copyWith(
                           fontWeight: FontWeight.w600,
-                          fontFamily: 'Roboto', // Use Roboto for peso sign
+                          fontFamily: 'Roboto',
                         ),
                       ),
                     ],
                   ),
-                  
+
+                  // Voucher discount row
+                  if (totalDiscount > 0) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Shop Voucher Applied',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.success,
+                          ),
+                        ),
+                        Text(
+                          '-₱${totalDiscount.toStringAsFixed(2)}',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'Roboto',
+                            color: AppColors.success,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+
                   if (summary.sellersWithSelectedItems.length > 1) ...[
                     const SizedBox(height: 8),
                     Container(
@@ -1658,11 +1710,11 @@ class _CartPageState extends State<CartPage>
                         ),
                       ),
                       Text(
-                        '₱${summary.selectedItemsTotal.toStringAsFixed(2)}',
+                        '₱${(summary.selectedItemsTotal - totalDiscount).toStringAsFixed(2)}',
                         style: AppTextStyles.titleLarge.copyWith(
                           color: AppColors.primary,
                           fontWeight: FontWeight.w700,
-                          fontFamily: 'Roboto', // Use Roboto for peso sign
+                          fontFamily: 'Roboto',
                         ),
                       ),
                     ],
@@ -1916,6 +1968,13 @@ class _CartPageState extends State<CartPage>
       return;
     }
 
+    // Filter vouchers to only include sellers with selected items
+    final relevantVouchers = Map<String, Map<String, dynamic>?>.fromEntries(
+      _selectedVouchers.entries.where(
+        (e) => selectedItems.any((item) => item.sellerId == e.key),
+      ),
+    );
+
     // Navigate to checkout page
     Navigator.push(
       context,
@@ -1923,6 +1982,7 @@ class _CartPageState extends State<CartPage>
         builder: (context) => CheckoutPage(
           cartItems: selectedItems,
           cartSummary: _cartSummary!,
+          selectedVouchers: relevantVouchers,
           onOrderComplete: () {
             // Refresh cart after successful order
             _refreshCart();

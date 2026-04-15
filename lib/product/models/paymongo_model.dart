@@ -679,6 +679,7 @@ class CreateCheckoutOrderRequest {
   final String? cancelUrl;
   final Map<String, double> sellerShippingCosts;
   final bool isExpress;
+  final Map<String, Map<String, dynamic>?> selectedVouchers;
 
   CreateCheckoutOrderRequest({
     required this.cartItemIds,
@@ -689,6 +690,7 @@ class CreateCheckoutOrderRequest {
     this.cancelUrl,
     this.sellerShippingCosts = const {},
     this.isExpress = true,
+    this.selectedVouchers = const {},
   });
 
   Map<String, dynamic> toJson() {
@@ -701,6 +703,12 @@ class CreateCheckoutOrderRequest {
       'cancel_url': cancelUrl,
       'seller_shipping_costs': sellerShippingCosts,
       'is_express': isExpress,
+      'selected_vouchers': selectedVouchers.map((sellerId, voucher) =>
+        MapEntry(sellerId, voucher != null ? {
+          'code': voucher['code'],
+          'seller_id': voucher['sellerId'],
+          'discount_type': voucher['discountType'],
+        } : null)),
     };
   }
 }

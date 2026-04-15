@@ -68,7 +68,7 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
       if (mounted) {
         setState(() {
           if (snapshot.docs.isNotEmpty) {
-            _freeDeliveryVoucher = snapshot.docs.first.data();
+            _freeDeliveryVoucher = {...snapshot.docs.first.data(), 'id': snapshot.docs.first.id};
           } else {
             _freeDeliveryVoucher = null;
           }
@@ -96,7 +96,7 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
 
       if (mounted) {
         setState(() {
-          _allVouchers = snapshot.docs.map((d) => d.data()).toList();
+          _allVouchers = snapshot.docs.map((d) => {...d.data(), 'id': d.id}).toList();
           _allVouchersLoaded = true;
         });
       }
@@ -274,6 +274,7 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
               style: AppTextStyles.bodySmall.copyWith(
                 color: AppColors.onSurface.withValues(alpha: 0.7),
                 fontSize: 12,
+                fontFamily: 'Roboto'
               ),
             )
           else
@@ -345,6 +346,7 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
               'Add Shop Voucher Code',
               style: AppTextStyles.bodyMedium.copyWith(
                 fontWeight: FontWeight.w500,
+                fontFamily: 'Roboto'
               ),
             ),
             const Spacer(),
@@ -354,6 +356,7 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
                 style: AppTextStyles.bodySmall.copyWith(
                   color: AppColors.primary,
                   fontWeight: FontWeight.w700,
+                  fontFamily: 'Roboto'
                 ),
               ),
               const SizedBox(width: 8),
@@ -1062,6 +1065,7 @@ class _VoucherBottomSheetState extends State<_VoucherBottomSheet> {
                       Text(
                         titleText,
                         style: AppTextStyles.bodyMedium.copyWith(
+                          fontFamily: 'Roboto',
                           fontWeight: FontWeight.w700,
                           color: AppColors.onSurface,
                         ),
@@ -1071,6 +1075,7 @@ class _VoucherBottomSheetState extends State<_VoucherBottomSheet> {
                         Text(
                           subtitle1Text,
                           style: AppTextStyles.bodySmall.copyWith(
+                            fontFamily: 'Roboto',
                             color: AppColors.onSurface.withValues(alpha: 0.65),
                           ),
                         ),
@@ -1080,6 +1085,7 @@ class _VoucherBottomSheetState extends State<_VoucherBottomSheet> {
                         Text(
                           subtitle2Text,
                           style: AppTextStyles.bodySmall.copyWith(
+                            fontFamily: 'Roboto',
                             color: AppColors.onSurface.withValues(alpha: 0.65),
                           ),
                         ),

@@ -14,6 +14,11 @@ import {
   SellerFeeBreakdown,
   MultiSellerBreakdown
 } from './utils/jrsShippingHelper';
+import {
+  validateAndApplyVoucher,
+  checkFreeDeliveryEligibility,
+  incrementVoucherUsage,
+} from './utils/voucherHelper';
 import cors = require('cors');
 
 
@@ -393,6 +398,12 @@ export const createCheckoutSession = onRequest(
         const isExpress: boolean =
           typeof request.body.is_express === 'boolean' ? request.body.is_express : true;
 
+        // Selected vouchers per seller (sent from frontend for server-side validation)
+        const selectedVouchers: Record<string, { code: string; seller_id: string; discount_type: string } | null> =
+          (request.body.selected_vouchers && typeof request.body.selected_vouchers === 'object')
+            ? request.body.selected_vouchers
+            : {};
+
         console.log(`Creating checkout session for user ${userId} with ${cartItemIds.length} cart items`);
         
         // Get user's cart items with validation
@@ -555,9 +566,16 @@ export const createCheckoutSession = onRequest(
           sellerName: string;
           shippingCost: number;
           cartValue: number;
-          isFallbackShipping: boolean; // Track if fallback shipping was used
-          shippingError?: string; // Store error message if JRS API failed
-          platformFeePercentage?: number; // Custom platform fee percentage for this seller
+          isFallbackShipping: boolean;
+          shippingError?: string;
+          platformFeePercentage?: number;
+          // Voucher fields
+          discountAmount: number;
+          postDiscountCartValue: number;
+          freeShippingFromVoucher: boolean;
+          voucherCode?: string;
+          voucherDocId?: string;
+          freeDeliveryVoucherDocId?: string;
         }
         
         const sellerShippingPromises: Promise<SellerShippingData>[] = Object.entries(itemsBySeller).map(async ([sellerId, sellerItems]) => {
@@ -578,7 +596,29 @@ export const createCheckoutSession = onRequest(
           
           // Calculate cart value for this seller's items
           const sellerCartValue = sellerItems.reduce((sum, item) => sum + item.total, 0);
-          
+
+          // Validate and apply selected voucher for this seller
+          const voucherResult = await validateAndApplyVoucher(
+            sellerId,
+            selectedVouchers[sellerId] || null,
+            sellerCartValue,
+            db
+          );
+          const discountAmount = voucherResult.discountAmount;
+          const postDiscountCartValue = sellerCartValue - discountAmount;
+
+          // Check free_delivery voucher (independent of discount voucher)
+          let freeShippingFromVoucher = voucherResult.freeShipping;
+          let freeDeliveryVoucherDocId: string | undefined;
+
+          if (!freeShippingFromVoucher) {
+            const freeDeliveryResult = await checkFreeDeliveryEligibility(sellerId, postDiscountCartValue, db);
+            freeShippingFromVoucher = freeDeliveryResult.freeShipping;
+            freeDeliveryVoucherDocId = freeDeliveryResult.voucherDocId || undefined;
+          }
+
+          console.log(`Seller ${sellerId} voucher: discount=₱${discountAmount}, postDiscount=₱${postDiscountCartValue}, freeShipping=${freeShippingFromVoucher}`);
+
           // Validate item dimensions and filter out items with missing dimensions
           const validItems = [];
           for (const item of sellerItems) {
@@ -608,7 +648,13 @@ export const createCheckoutSession = onRequest(
               cartValue: sellerCartValue,
               isFallbackShipping: true,
               shippingError: 'No items have required dimensions for shipping calculation',
-              platformFeePercentage
+              platformFeePercentage,
+              discountAmount,
+              postDiscountCartValue,
+              freeShippingFromVoucher,
+              voucherCode: voucherResult.voucherCode || undefined,
+              voucherDocId: voucherResult.voucherDocId || undefined,
+              freeDeliveryVoucherDocId,
             };
           }
           
@@ -659,7 +705,13 @@ export const createCheckoutSession = onRequest(
               shippingCost: providedCost,
               cartValue: sellerCartValue,
               isFallbackShipping: false,
-              platformFeePercentage
+              platformFeePercentage,
+              discountAmount,
+              postDiscountCartValue,
+              freeShippingFromVoucher,
+              voucherCode: voucherResult.voucherCode || undefined,
+              voucherDocId: voucherResult.voucherDocId || undefined,
+              freeDeliveryVoucherDocId,
             };
           }
 
@@ -689,7 +741,13 @@ export const createCheckoutSession = onRequest(
             cartValue: sellerCartValue,
             isFallbackShipping: shippingResult.isFallback,
             shippingError: shippingResult.error,
-            platformFeePercentage
+            platformFeePercentage,
+            discountAmount,
+            postDiscountCartValue,
+            freeShippingFromVoucher,
+            voucherCode: voucherResult.voucherCode || undefined,
+            voucherDocId: voucherResult.voucherDocId || undefined,
+            freeDeliveryVoucherDocId,
           };
         });
         
@@ -723,26 +781,52 @@ export const createCheckoutSession = onRequest(
         // - Payment Fee: Based on buyer's total for this seller (cart + buyer's shipping portion)
         // - Platform Fee: 8.88% of this seller's cart value
         // - Net Payout: Cart Value - Payment Fee - Platform Fee - Seller's Shipping
+        // Pass postDiscountCartValue as cartValue so the 10% shipping threshold
+        // and platform fee use the discounted amount.
+        const adjustedSellerData = sellerShippingData.map(s => ({
+          ...s,
+          cartValue: s.postDiscountCartValue,
+        }));
+
         const defaultPaymentMethod = paymentMethodTypes[0] || 'card';
-        const multiSellerBreakdown = calculateMultiSellerBreakdown(sellerShippingData, defaultPaymentMethod);
-        
-        // Log minimal breakdown info (avoid exposing sensitive financial details in production)
-        console.log(`Multi-Seller Breakdown: ${multiSellerBreakdown.sellerBreakdowns.length} seller(s), total charged: ₱${multiSellerBreakdown.grandTotalChargedToBuyer.toFixed(2)}`);
-        
-        // Extract totals from multi-seller breakdown
-        const buyerShippingCharge = multiSellerBreakdown.totalBuyerShippingCharge;
-        const sellerShippingCharge = multiSellerBreakdown.totalSellerShippingCharge;
-        const totalChargedToBuyer = multiSellerBreakdown.grandTotalChargedToBuyer;
-        const paymentProcessingFee = multiSellerBreakdown.totalPaymentProcessingFee;
-        const platformFee = multiSellerBreakdown.totalPlatformFee;
-        const totalSellerFees = multiSellerBreakdown.totalSellerFees;
-        const netPayoutToSeller = multiSellerBreakdown.totalNetPayoutToSellers;
-        
+        const multiSellerBreakdown = calculateMultiSellerBreakdown(adjustedSellerData, defaultPaymentMethod);
+
+        // Post-process: override shipping split for sellers with free shipping from voucher.
+        // Also recalculate per-breakdown fee fields because totalChargedToBuyer changed.
+        for (let i = 0; i < sellerShippingData.length; i++) {
+          if (sellerShippingData[i].freeShippingFromVoucher) {
+            const breakdown = multiSellerBreakdown.sellerBreakdowns[i];
+            const actualShippingCost = sellerShippingData[i].shippingCost;
+            breakdown.buyerShippingCharge = 0;
+            breakdown.sellerShippingCharge = actualShippingCost;
+            breakdown.shippingSplitRule = 'seller_pays_full';
+            breakdown.totalChargedToBuyer = breakdown.cartValue; // buyer pays no shipping
+            // Payment fee is based on what the buyer actually pays
+            breakdown.paymentProcessingFee = calculatePaymentProcessingFee(breakdown.totalChargedToBuyer, defaultPaymentMethod);
+            breakdown.totalSellerFees = breakdown.paymentProcessingFee + breakdown.platformFee + breakdown.sellerShippingCharge;
+            breakdown.netPayoutToSeller = breakdown.cartValue - breakdown.paymentProcessingFee - breakdown.platformFee - breakdown.sellerShippingCharge;
+          }
+        }
+
+        // Recalculate totals from updated per-breakdown values
+        const buyerShippingCharge = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.buyerShippingCharge, 0);
+        const sellerShippingCharge = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.sellerShippingCharge, 0);
+        const totalChargedToBuyer = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.totalChargedToBuyer, 0);
+        const paymentProcessingFee = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.paymentProcessingFee, 0);
+        const platformFee = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.platformFee, 0);
+        const totalSellerFees = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.totalSellerFees, 0);
+        const netPayoutToSeller = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.netPayoutToSeller, 0);
+
+        // Total discount across all sellers
+        const totalDiscountAmount = sellerShippingData.reduce((s, d) => s + d.discountAmount, 0);
+
+        // Log minimal breakdown info
+        console.log(`Multi-Seller Breakdown: ${multiSellerBreakdown.sellerBreakdowns.length} seller(s), total charged: ₱${totalChargedToBuyer.toFixed(2)}, total discount: ₱${totalDiscountAmount.toFixed(2)}`);
+
         // Determine overall shipping split rule
-        // If all sellers have the same rule, use that; otherwise 'per_seller'
         const uniqueRules = [...new Set(multiSellerBreakdown.sellerBreakdowns.map(s => s.shippingSplitRule))];
         const shippingSplitRule = uniqueRules.length === 1 ? uniqueRules[0] : 'per_seller';
-        
+
         // Total amount to charge buyer
         const totalAmount = totalChargedToBuyer;
 
@@ -771,14 +855,13 @@ export const createCheckoutSession = onRequest(
             subtotal: subtotal,
             shippingCost: shippingCost,
             taxAmount: 0,
-            discountAmount: 0,
+            discountAmount: totalDiscountAmount,
             total: totalAmount,
             totalItems: orderItems.reduce((sum, item) => sum + item.quantity, 0),
             sellerShippingCharge: sellerShippingCharge,
             buyerShippingCharge: buyerShippingCharge,
             shippingSplitRule: shippingSplitRule,
             isExpressDelivery: isExpress,
-            // Track if fallback shipping was used (JRS API was unavailable)
             usedFallbackShipping: sellersWithFallback.length > 0,
             fallbackShippingSellerCount: sellersWithFallback.length,
           },
@@ -789,10 +872,14 @@ export const createCheckoutSession = onRequest(
             paymentMethod: defaultPaymentMethod, // Will be updated when payment is completed
           },
           // Per-seller fee breakdowns for accurate payout calculation
-          sellerFeeBreakdowns: multiSellerBreakdown.sellerBreakdowns.map(s => ({
+          sellerFeeBreakdowns: multiSellerBreakdown.sellerBreakdowns.map((s, index) => ({
             sellerId: s.sellerId,
             sellerName: s.sellerName,
-            cartValue: s.cartValue,
+            cartValue: sellerShippingData[index].cartValue, // original pre-discount value
+            postDiscountCartValue: sellerShippingData[index].postDiscountCartValue,
+            discountAmount: sellerShippingData[index].discountAmount,
+            voucherCode: sellerShippingData[index].voucherCode || null,
+            freeShippingFromVoucher: sellerShippingData[index].freeShippingFromVoucher,
             shippingCost: s.shippingCost,
             buyerShippingCharge: s.buyerShippingCharge,
             sellerShippingCharge: s.sellerShippingCharge,
@@ -835,15 +922,42 @@ export const createCheckoutSession = onRequest(
           },
         });
 
-        // Prepare line items for Paymongo checkout
-        const lineItems = orderItems.map(item => ({
-          name: item.productName,
-          quantity: item.quantity,
-          amount: Math.round(item.price * 100), // Convert to centavos
-          currency: 'PHP',
-          description: `Product ID: ${item.productId}`,
-          images: item.productImage ? [item.productImage] : undefined,
-        }));
+        // Increment voucher usage counts
+        const voucherDocIdsToIncrement: string[] = [];
+        for (const seller of sellerShippingData) {
+          if (seller.voucherDocId) voucherDocIdsToIncrement.push(seller.voucherDocId);
+          if (seller.freeDeliveryVoucherDocId) voucherDocIdsToIncrement.push(seller.freeDeliveryVoucherDocId);
+        }
+        if (voucherDocIdsToIncrement.length > 0) {
+          await incrementVoucherUsage(voucherDocIdsToIncrement, db);
+          console.log(`Incremented usage for ${voucherDocIdsToIncrement.length} voucher(s)`);
+        }
+
+        // Build a discount ratio map per seller so item prices reflect the voucher discount.
+        // PayMongo does not support negative line item amounts, so we proportionally reduce
+        // each item's unit price instead.
+        const sellerDiscountRatio: Record<string, number> = {};
+        for (const seller of sellerShippingData) {
+          if (seller.discountAmount > 0 && seller.cartValue > 0) {
+            sellerDiscountRatio[seller.sellerId] = seller.postDiscountCartValue / seller.cartValue;
+          } else {
+            sellerDiscountRatio[seller.sellerId] = 1;
+          }
+        }
+
+        // Prepare line items for Paymongo checkout (prices adjusted for voucher discounts)
+        const lineItems = orderItems.map(item => {
+          const ratio = sellerDiscountRatio[item.sellerId] ?? 1;
+          const discountedPrice = item.price * ratio;
+          return {
+            name: item.productName,
+            quantity: item.quantity,
+            amount: Math.round(discountedPrice * 100), // Convert to centavos
+            currency: 'PHP',
+            description: `Product ID: ${item.productId}`,
+            images: item.productImage ? [item.productImage] : undefined,
+          };
+        });
 
         // Add shipping as a line item (only buyer's portion)
         if (buyerShippingCharge > 0) {
@@ -888,7 +1002,9 @@ export const createCheckoutSession = onRequest(
               billing: {
                 name: userData?.displayName || shippingAddress?.fullName,
                 email: userData?.email,
-                phone: shippingAddress?.phoneNumber,
+                phone: shippingAddress?.phoneNumber
+                  ? shippingAddress.phoneNumber.replace(/^\+63/, '')
+                  : undefined,
                 address: {
                   line1: shippingAddress?.addressLine1,
                   line2: shippingAddress?.addressLine2,

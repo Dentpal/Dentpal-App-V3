@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import '../models/cart_model.dart';
@@ -18,12 +19,14 @@ import '../../core/app_theme/app_text_styles.dart';
 class CheckoutPage extends StatefulWidget {
   final List<CartItem> cartItems;
   final CartSummary cartSummary;
+  final Map<String, Map<String, dynamic>?> selectedVouchers;
   final VoidCallback? onOrderComplete;
 
   const CheckoutPage({
     super.key,
     required this.cartItems,
     required this.cartSummary,
+    this.selectedVouchers = const {},
     this.onOrderComplete,
   });
 
@@ -53,9 +56,16 @@ class _CheckoutPageState extends State<CheckoutPage> {
   
   final TextEditingController _notesController = TextEditingController();
 
+  // Per-seller voucher discounts
+  Map<String, double> _sellerDiscountAmounts = {};
+  Map<String, Map<String, dynamic>?> _sellerFreeDeliveryVouchers = {};
+  bool _freeDeliveryVouchersLoaded = false;
+
   @override
   void initState() {
     super.initState();
+    _computeVoucherDiscounts();
+    _fetchFreeDeliveryVouchers();
     _loadPaymentMethods();
   }
 
@@ -77,6 +87,111 @@ class _CheckoutPageState extends State<CheckoutPage> {
     } catch (e) {
       AppLogger.d('Error loading payment methods: $e');
     }
+  }
+
+  /// Compute per-seller discount amounts from selected vouchers (for display).
+  void _computeVoucherDiscounts() {
+    _sellerDiscountAmounts.clear();
+
+    final Map<String, List<CartItem>> sellerGroups = {};
+    for (final item in widget.cartItems) {
+      final sellerId = item.sellerId ?? 'unknown';
+      sellerGroups.putIfAbsent(sellerId, () => []).add(item);
+    }
+
+    for (final entry in sellerGroups.entries) {
+      final sellerId = entry.key;
+      final items = entry.value;
+      final sellerSubtotal = items.fold<double>(
+        0.0, (sum, item) => sum + ((item.productPrice ?? 0) * item.quantity));
+
+      final voucher = widget.selectedVouchers[sellerId];
+      if (voucher == null) {
+        _sellerDiscountAmounts[sellerId] = 0.0;
+        continue;
+      }
+
+      final discountType = voucher['discountType'] as String? ?? '';
+      final discountValue = (voucher['discountValue'] as num? ?? 0).toDouble();
+      final minimumOrderAmount = (voucher['minimumOrderAmount'] as num? ?? 0).toDouble();
+      final maximumSpend = (voucher['maximumSpend'] as num?)?.toDouble();
+
+      if (sellerSubtotal < minimumOrderAmount) {
+        _sellerDiscountAmounts[sellerId] = 0.0;
+        continue;
+      }
+
+      if (discountType == 'percentage') {
+        double discount = sellerSubtotal * (discountValue / 100.0);
+        if (maximumSpend != null && discount > maximumSpend) {
+          discount = maximumSpend;
+        }
+        _sellerDiscountAmounts[sellerId] = discount.clamp(0.0, sellerSubtotal);
+      } else if (discountType == 'fixed') {
+        _sellerDiscountAmounts[sellerId] = discountValue.clamp(0.0, sellerSubtotal);
+      } else {
+        // free_delivery or unknown — no monetary discount
+        _sellerDiscountAmounts[sellerId] = 0.0;
+      }
+    }
+  }
+
+  /// Fetch free_delivery vouchers per seller from Firestore.
+  Future<void> _fetchFreeDeliveryVouchers() async {
+    final sellerIds = widget.cartItems
+        .map((item) => item.sellerId ?? 'unknown')
+        .toSet();
+
+    for (final sellerId in sellerIds) {
+      try {
+        final snapshot = await FirebaseFirestore.instance
+            .collection('Vouchers')
+            .where('sellerId', isEqualTo: sellerId)
+            .where('discountType', isEqualTo: 'free_delivery')
+            .where('status', isEqualTo: 'active')
+            .limit(1)
+            .get();
+
+        if (snapshot.docs.isNotEmpty) {
+          _sellerFreeDeliveryVouchers[sellerId] = {
+            ...snapshot.docs.first.data(),
+            'id': snapshot.docs.first.id,
+          };
+        }
+      } catch (e) {
+        AppLogger.d('Error fetching free delivery voucher for seller $sellerId: $e');
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _freeDeliveryVouchersLoaded = true;
+      });
+    }
+  }
+
+  /// Check if a seller qualifies for free shipping (post-discount subtotal >= threshold).
+  bool _isFreeShippingEligible(String sellerId) {
+    final voucher = _sellerFreeDeliveryVouchers[sellerId];
+    if (voucher == null) return false;
+
+    final minimumOrderAmount = (voucher['minimumOrderAmount'] as num? ?? 0).toDouble();
+
+    // Calculate seller subtotal
+    final sellerItems = widget.cartItems.where((item) => item.sellerId == sellerId);
+    final sellerSubtotal = sellerItems.fold<double>(
+      0.0, (sum, item) => sum + ((item.productPrice ?? 0) * item.quantity));
+
+    // Use post-discount amount for threshold check
+    final discount = _sellerDiscountAmounts[sellerId] ?? 0.0;
+    final postDiscountSubtotal = sellerSubtotal - discount;
+
+    return postDiscountSubtotal >= minimumOrderAmount;
+  }
+
+  /// Total discount across all sellers.
+  double _calculateTotalDiscount() {
+    return _sellerDiscountAmounts.values.fold(0.0, (sum, d) => sum + d);
   }
 
   Future<void> _processCheckout() async {
@@ -110,6 +225,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
           notes: _orderNotes,
           sellerShippingCosts: _sellerShippingCosts,
           isExpress: _isExpressShipping,
+          selectedVouchers: widget.selectedVouchers,
         );
 
         AppLogger.d('COD order created successfully');
@@ -129,6 +245,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
           cancelUrl: 'https://dentpal-store.web.app/payment-failed', // Updated cancel URL
           sellerShippingCosts: _sellerShippingCosts,
           isExpress: _isExpressShipping,
+          selectedVouchers: widget.selectedVouchers,
         );
 
         AppLogger.d('Order created successfully');
@@ -265,6 +382,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
       _sellerTotalShippingCosts = Map.from(
           _isExpressShipping ? _expressSellerTotalShippingCosts : _standardSellerTotalShippingCosts);
 
+      // Override buyer's shipping to 0 for sellers eligible for free shipping via voucher
+      _applyFreeShippingOverrides();
+
       setState(() {
         _isCalculatingShipping = false;
       });
@@ -285,6 +405,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
     }
   }
 
+  /// No-op: free shipping is now handled purely via _isFreeShippingEligible().
+  /// _sellerShippingCosts intentionally keeps the actual JRS cost so the backend
+  /// can assign it as sellerShippingCharge when freeShippingFromVoucher is true.
+  void _applyFreeShippingOverrides() {
+    // Intentionally left empty — do not zero out _sellerShippingCosts.
+  }
+
   /// Switch active shipping costs when the express checkbox is toggled
   void _onExpressShippingToggled(bool value) {
     setState(() {
@@ -293,14 +420,19 @@ class _CheckoutPageState extends State<CheckoutPage> {
           value ? _expressSellerShippingCosts : _standardSellerShippingCosts);
       _sellerTotalShippingCosts = Map.from(
           value ? _expressSellerTotalShippingCosts : _standardSellerTotalShippingCosts);
+      _applyFreeShippingOverrides();
     });
   }
 
 
-  /// Get total buyer's portion of shipping cost across all sellers
+  /// Get total buyer's portion of shipping cost across all sellers.
+  /// Sellers with free shipping from a voucher contribute 0 (seller absorbs their cost).
   double _calculateBuyerShippingPortion() {
     if (_sellerShippingCosts.isEmpty) return 0.0;
-    return _sellerShippingCosts.values.fold(0.0, (sum, cost) => sum + cost);
+    return _sellerShippingCosts.entries.fold(0.0, (sum, entry) {
+      if (_isFreeShippingEligible(entry.key)) return sum;
+      return sum + entry.value;
+    });
   }
 
   /// Get total shipping cost (including seller's portion) across all sellers
@@ -309,11 +441,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
     return _sellerTotalShippingCosts.values.fold(0.0, (sum, cost) => sum + cost);
   }
 
-  /// Calculate total including only buyer's shipping portion
+  /// Calculate total including only buyer's shipping portion, minus voucher discounts
   double _calculateTotalWithShipping() {
     final subtotal = widget.cartSummary.selectedItemsTotal;
+    final totalDiscount = _calculateTotalDiscount();
     final buyerShippingPortion = _calculateBuyerShippingPortion();
-    return subtotal + buyerShippingPortion;
+    return subtotal - totalDiscount + buyerShippingPortion;
   }
 
   Future<void> _navigateToPaymongoCheckout(CreateOrderResponse orderResponse) async {
@@ -954,6 +1087,28 @@ class _CheckoutPageState extends State<CheckoutPage> {
                             color: _isExpressShipping ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.6),
                           ),
                         ),
+                        const Spacer(),
+                        if (_isCalculatingShipping)
+                          SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.5,
+                              color: AppColors.onSurface.withValues(alpha: 0.4),
+                            ),
+                          )
+                        else
+                          Text(
+                            () {
+                              final cost = _expressSellerShippingCosts.values.fold(0.0, (s, c) => s + c);
+                              return cost > 0 ? '₱${cost.toStringAsFixed(2)}' : 'FREE';
+                            }(),
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              fontFamily: 'Roboto',
+                              fontWeight: _isExpressShipping ? FontWeight.w600 : FontWeight.normal,
+                              color: _isExpressShipping ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.6),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -965,21 +1120,25 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     padding: const EdgeInsets.only(left: 40),
                     child: Row(
                       children: [
+                        Icon(Icons.local_shipping_outlined, size: 16, color: !_isExpressShipping ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.4)),
+                        const SizedBox(width: 4),
                         Text(
-                          'Non-Express: ',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.onSurface.withValues(alpha: 0.45),
+                          'Standard Delivery',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: !_isExpressShipping ? FontWeight.w600 : FontWeight.normal,
+                            color: !_isExpressShipping ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.5),
                           ),
                         ),
+                        const Spacer(),
                         Text(
                           () {
                             final cost = _standardSellerShippingCosts.values.fold(0.0, (s, c) => s + c);
                             return cost > 0 ? '₱${cost.toStringAsFixed(2)}' : 'FREE';
                           }(),
-                          style: AppTextStyles.bodySmall.copyWith(
+                          style: AppTextStyles.bodyMedium.copyWith(
                             fontFamily: 'Roboto',
-                            color: AppColors.onSurface.withValues(alpha: 0.45),
                             fontWeight: !_isExpressShipping ? FontWeight.w600 : FontWeight.normal,
+                            color: !_isExpressShipping ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.5),
                           ),
                         ),
                       ],
@@ -1102,28 +1261,25 @@ class _CheckoutPageState extends State<CheckoutPage> {
       0.0,
       (sum, item) => sum + ((item.productPrice ?? 0) * item.quantity),
     );
-    
+
+    // Per-seller voucher discount
+    final sellerDiscount = _sellerDiscountAmounts[sellerId] ?? 0.0;
+
     // Get buyer's portion of shipping cost
     final buyerShippingCost = _sellerShippingCosts[sellerId] ?? 0.0;
-    
+
     // Get total shipping cost (for display when free)
     final totalShippingCost = _sellerTotalShippingCosts[sellerId] ?? 0.0;
-    
-    // Determine if shipping is free for buyer
-    final shippingIsFree = buyerShippingCost == 0.0 && totalShippingCost > 0.0;
-    
-    // Determine who pays shipping based on buyer's portion
-    final buyerPaysShipping = buyerShippingCost > 0.0;
-    
+
+    // Determine if shipping is free for buyer (free delivery voucher or 10% rule)
+    final shippingIsFree = _isFreeShippingEligible(sellerId) || (buyerShippingCost == 0.0 && totalShippingCost > 0.0);
+
+    // Buyer pays shipping only when there is a non-zero cost AND no free shipping applies
+    final buyerPaysShipping = buyerShippingCost > 0.0 && !shippingIsFree;
+
     // Debug logging
-    AppLogger.d('Seller: $sellerName, Subtotal: $sellerSubtotal, Total Shipping: $totalShippingCost, Buyer Pays: $buyerShippingCost, Free: $shippingIsFree');
-    
-    // Calculate how much to add to cart to reach free shipping
-    // Only show this if buyer is currently paying for shipping
-    final amountToAddForFreeShipping = buyerPaysShipping
-        ? ((buyerShippingCost / 0.10) - sellerSubtotal).clamp(0.0, double.infinity)
-        : 0.0;
-    
+    AppLogger.d('Seller: $sellerName, Subtotal: $sellerSubtotal, Discount: $sellerDiscount, Total Shipping: $totalShippingCost, Buyer Pays: $buyerShippingCost, Free: $shippingIsFree');
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1225,8 +1381,32 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     ),
                   ],
                 ),
+
+                // Voucher discount row (per seller)
+                if (sellerDiscount > 0) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Voucher Discount',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.onSurface.withValues(alpha: 0.7),
+                        ),
+                      ),
+                      Text(
+                        '-₱${sellerDiscount.toStringAsFixed(2)}',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'Roboto',
+                          color: AppColors.success,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 8),
-                
+
                 // Shipping row
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1291,35 +1471,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   ],
                 ),
                 
-                // Free shipping indicator text with green background
-                if (!_isCalculatingShipping && buyerPaysShipping && amountToAddForFreeShipping > 0) ...[
-                  const SizedBox(height: 8),
-                  Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: AppColors.success.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: AppColors.success.withValues(alpha: 0.3),
-                          width: 1,
-                        ),
-                      ),
-                      child: Text(
-                        'Add ₱${amountToAddForFreeShipping.toStringAsFixed(2)} more to get FREE Shipping!',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.success,
-                          fontWeight: FontWeight.w600,
-                          fontFamily: 'Roboto',
-                          fontSize: 12,
-                        ),
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
@@ -1668,8 +1819,32 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 ),
               ],
             ),
+
+            // Voucher discount row (grand total)
+            if (_calculateTotalDiscount() > 0) ...[
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Voucher Discount',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.onSurface.withValues(alpha: 0.7),
+                    ),
+                  ),
+                  Text(
+                    '-₱${_calculateTotalDiscount().toStringAsFixed(2)}',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'Roboto',
+                      color: AppColors.success,
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 8),
-            
+
             // Shipping row — reflects active selection (express or standard)
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
