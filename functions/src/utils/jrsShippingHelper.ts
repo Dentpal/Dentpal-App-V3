@@ -556,7 +556,8 @@ export function determineProductName(shipmentItems: ShipmentItem[]): string | un
 }
 
 /**
- * Calculates JRS shipping cost for given order items between two addresses
+ * Calculates JRS shipping cost for given order items between two addresses.
+ * Returns both the shipping cost and the packaging name as reported by the JRS API.
  */
 export async function calculateJRSShippingCost(
   sellerAddress: string,
@@ -565,7 +566,7 @@ export async function calculateJRSShippingCost(
   jrsApiKey?: string,
   jrsApiUrl?: string,
   express: boolean = true
-): Promise<number> {
+): Promise<{ shippingCost: number; packagingName?: string }> {
   if (!jrsApiKey || !jrsApiUrl) {
     throw new Error('JRS API configuration missing - API key and URL are required');
   }
@@ -682,16 +683,17 @@ export async function calculateJRSShippingCost(
     });
 
     if (response.status === 200 && response.data) {
-      // Extract shipping cost from JRS response
+      // Extract shipping cost and packaging name from JRS response
       const shippingCost = extractShippingCostFromJRS(response.data);
-      
+      const packagingName = extractPackagingNameFromJRS(response.data);
+
       if (shippingCost > 0) {
-        logger.info(`✅ JRS shipping cost calculated: ₱${shippingCost}`);
-        return shippingCost;
+        logger.info(`✅ JRS shipping cost calculated: ₱${shippingCost}`, { packagingName: packagingName ?? 'unknown' });
+        return { shippingCost, packagingName };
       } else {
-        logger.error('JRS API returned invalid shipping cost', { 
-          shippingCost, 
-          responseData: JSON.stringify(response.data).substring(0, 500) // Log first 500 chars
+        logger.error('JRS API returned invalid shipping cost', {
+          shippingCost,
+          responseData: JSON.stringify(response.data).substring(0, 500)
         });
         throw new Error(`JRS API returned invalid shipping cost: ${shippingCost}`);
       }
@@ -761,7 +763,7 @@ export async function calculateJRSShippingCostWithFallback(
   fallbackCost: number = DEFAULT_FALLBACK_SHIPPING_COST,
   allowConfigFallback: boolean = false,
   express: boolean = true
-): Promise<{ shippingCost: number; isFallback: boolean; error?: string }> {
+): Promise<{ shippingCost: number; isFallback: boolean; error?: string; packagingName?: string }> {
   // Fail fast on configuration issues unless explicitly allowed to fallback
   if (!jrsApiKey || !jrsApiUrl) {
     const missingConfig = [];
@@ -793,7 +795,7 @@ export async function calculateJRSShippingCostWithFallback(
   }
 
   try {
-    const shippingCost = await calculateJRSShippingCost(
+    const result = await calculateJRSShippingCost(
       sellerAddress,
       recipientAddress,
       orderItems,
@@ -801,9 +803,10 @@ export async function calculateJRSShippingCostWithFallback(
       jrsApiUrl,
       express
     );
-    
+
     return {
-      shippingCost,
+      shippingCost: result.shippingCost,
+      packagingName: result.packagingName,
       isFallback: false
     };
   } catch (error: any) {
@@ -836,23 +839,23 @@ export function extractShippingCostFromJRS(responseData: any): number {
     if (responseData.TotalShippingRate && typeof responseData.TotalShippingRate === 'number') {
       return responseData.TotalShippingRate;
     }
-    
+
     if (responseData.BaseRate && typeof responseData.BaseRate === 'number') {
       return responseData.BaseRate;
     }
-    
+
     if (responseData.rate && typeof responseData.rate === 'number') {
       return responseData.rate;
     }
-    
+
     if (responseData.totalAmount && typeof responseData.totalAmount === 'number') {
       return responseData.totalAmount;
     }
-    
+
     if (responseData.shippingCost && typeof responseData.shippingCost === 'number') {
       return responseData.shippingCost;
     }
-    
+
     // Check nested objects
     if (responseData.rateResponse) {
       if (responseData.rateResponse.TotalShippingRate && typeof responseData.rateResponse.TotalShippingRate === 'number') {
@@ -862,16 +865,47 @@ export function extractShippingCostFromJRS(responseData: any): number {
         return responseData.rateResponse.BaseRate;
       }
     }
-    
+
     if (responseData.data && responseData.data.rate && typeof responseData.data.rate === 'number') {
       return responseData.data.rate;
     }
-    
+
     logger.warn('Could not extract shipping cost from JRS response:', responseData);
     return 0;
-    
+
   } catch (error) {
     logger.error('Error extracting shipping cost from JRS response:', error);
     return 0;
+  }
+}
+
+/**
+ * Extract the packaging/product name from the JRS API response.
+ * JRS returns the chosen packaging as a "Name" (or similar) field alongside the rate.
+ * Returns undefined if the field is not present in the response.
+ */
+export function extractPackagingNameFromJRS(responseData: any): string | undefined {
+  try {
+    // Direct top-level fields
+    if (responseData.Name && typeof responseData.Name === 'string') return responseData.Name;
+    if (responseData.ProductName && typeof responseData.ProductName === 'string') return responseData.ProductName;
+    if (responseData.packageType && typeof responseData.packageType === 'string') return responseData.packageType;
+    if (responseData.PackageType && typeof responseData.PackageType === 'string') return responseData.PackageType;
+
+    // Nested under rateResponse
+    if (responseData.rateResponse) {
+      if (responseData.rateResponse.Name && typeof responseData.rateResponse.Name === 'string') return responseData.rateResponse.Name;
+      if (responseData.rateResponse.ProductName && typeof responseData.rateResponse.ProductName === 'string') return responseData.rateResponse.ProductName;
+    }
+
+    // Nested under data
+    if (responseData.data) {
+      if (responseData.data.Name && typeof responseData.data.Name === 'string') return responseData.data.Name;
+      if (responseData.data.ProductName && typeof responseData.data.ProductName === 'string') return responseData.data.ProductName;
+    }
+
+    return undefined;
+  } catch {
+    return undefined;
   }
 }

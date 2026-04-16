@@ -392,6 +392,13 @@ export const createCheckoutSession = onRequest(
             ? request.body.seller_shipping_costs
             : {};
 
+        // Packaging names as determined by the JRS API on the frontend (optional).
+        // Used when the backend skips its own JRS call (seller_shipping_costs provided).
+        const sellerPackagingSizes: Record<string, string> =
+          (request.body.seller_packaging_sizes && typeof request.body.seller_packaging_sizes === 'object')
+            ? request.body.seller_packaging_sizes
+            : {};
+
         // Express delivery preference chosen by the user on the checkout page.
         // Used when the backend must fall back to its own JRS call (no pre-calculated cost
         // provided for a seller), and stored on the order document for fulfilment.
@@ -569,6 +576,7 @@ export const createCheckoutSession = onRequest(
           isFallbackShipping: boolean;
           shippingError?: string;
           platformFeePercentage?: number;
+          packagingName?: string;
           // Voucher fields
           discountAmount: number;
           postDiscountCartValue: number;
@@ -698,7 +706,8 @@ export const createCheckoutSession = onRequest(
           // directly and skip the redundant JRS API call.
           if (sellerShippingCosts[sellerId] !== undefined) {
             const providedCost = sellerShippingCosts[sellerId];
-            console.log(`Seller ${sellerId} shipping cost: ₱${providedCost} (from frontend, JRS call skipped), cart value: ₱${sellerCartValue}`);
+            const providedPackaging = sellerPackagingSizes[sellerId] || undefined;
+            console.log(`Seller ${sellerId} shipping cost: ₱${providedCost} (from frontend, JRS call skipped), packaging: ${providedPackaging ?? 'unknown'}, cart value: ₱${sellerCartValue}`);
             return {
               sellerId,
               sellerName,
@@ -706,6 +715,7 @@ export const createCheckoutSession = onRequest(
               cartValue: sellerCartValue,
               isFallbackShipping: false,
               platformFeePercentage,
+              packagingName: providedPackaging,
               discountAmount,
               postDiscountCartValue,
               freeShippingFromVoucher,
@@ -731,7 +741,7 @@ export const createCheckoutSession = onRequest(
           if (shippingResult.isFallback) {
             console.warn(`JRS API failed for seller ${sellerId}, using fallback shipping cost of ₱${shippingResult.shippingCost}. Error: ${shippingResult.error}`);
           } else {
-            console.log(`Seller ${sellerId} shipping cost: ₱${shippingResult.shippingCost}, cart value: ₱${sellerCartValue}`);
+            console.log(`Seller ${sellerId} shipping cost: ₱${shippingResult.shippingCost}, packaging: ${shippingResult.packagingName ?? 'unknown'}, cart value: ₱${sellerCartValue}`);
           }
 
           return {
@@ -742,6 +752,7 @@ export const createCheckoutSession = onRequest(
             isFallbackShipping: shippingResult.isFallback,
             shippingError: shippingResult.error,
             platformFeePercentage,
+            packagingName: shippingResult.packagingName,
             discountAmount,
             postDiscountCartValue,
             freeShippingFromVoucher,
@@ -836,6 +847,12 @@ export const createCheckoutSession = onRequest(
         // Check if any items are fragile
         const hasFragileItems = orderItems.some(item => item.isFragile);
 
+        // Derive overall packaging label for the order (join unique packaging names across sellers)
+        const uniquePackagingNames = [...new Set(
+          sellerShippingData.map(s => s.packagingName).filter(Boolean) as string[]
+        )];
+        const overallPackagingSize = uniquePackagingNames.length > 0 ? uniquePackagingNames.join(', ') : undefined;
+
         // Create order document with per-seller fee breakdowns
         const orderRef = await db.collection('Order').add({
           userId: userId,
@@ -864,6 +881,7 @@ export const createCheckoutSession = onRequest(
             isExpressDelivery: isExpress,
             usedFallbackShipping: sellersWithFallback.length > 0,
             fallbackShippingSellerCount: sellersWithFallback.length,
+            packagingSize: overallPackagingSize,
           },
           fees: {
             paymentProcessingFee: paymentProcessingFee,
@@ -890,6 +908,7 @@ export const createCheckoutSession = onRequest(
             platformFeePercentage: s.platformFeePercentage,
             totalSellerFees: s.totalSellerFees,
             netPayoutToSeller: s.netPayoutToSeller,
+            packagingSize: sellerShippingData[index].packagingName || null,
           })),
           payout: {
             netPayoutToSeller: netPayoutToSeller,
@@ -907,6 +926,7 @@ export const createCheckoutSession = onRequest(
             phoneNumber: shippingAddress?.phoneNumber,
             notes: notes,
             isExpress: isExpress,
+            packagingSize: overallPackagingSize,
           },
           status: 'pending',
           createdAt: admin.firestore.FieldValue.serverTimestamp(),

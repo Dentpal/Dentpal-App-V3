@@ -168,6 +168,12 @@ export const createCodOrder = onRequest(
             ? request.body.seller_shipping_costs
             : {};
 
+        // Packaging names as determined by the JRS API on the frontend (optional)
+        const sellerPackagingSizes: Record<string, string> =
+          (request.body.seller_packaging_sizes && typeof request.body.seller_packaging_sizes === 'object')
+            ? request.body.seller_packaging_sizes
+            : {};
+
         // Express delivery preference chosen by the user on the checkout page
         const isExpress: boolean =
           typeof request.body.is_express === 'boolean' ? request.body.is_express : true;
@@ -352,6 +358,7 @@ export const createCodOrder = onRequest(
           isFallbackShipping: boolean;
           shippingError?: string;
           platformFeePercentage?: number;
+          packagingName?: string;
           // Voucher fields
           discountAmount: number;
           postDiscountCartValue: number;
@@ -413,8 +420,9 @@ export const createCodOrder = onRequest(
           const shippingCost = (sellerShippingCosts[sellerId] !== undefined)
             ? sellerShippingCosts[sellerId]
             : 200;
+          const packagingName = sellerPackagingSizes[sellerId] || undefined;
 
-          console.log(`Seller ${sellerId} shipping cost: ₱${shippingCost} (${sellerShippingCosts[sellerId] !== undefined ? 'from frontend' : 'fallback'})`);
+          console.log(`Seller ${sellerId} shipping cost: ₱${shippingCost} (${sellerShippingCosts[sellerId] !== undefined ? 'from frontend' : 'fallback'}), packaging: ${packagingName ?? 'unknown'}`);
 
           return {
             sellerId,
@@ -423,6 +431,7 @@ export const createCodOrder = onRequest(
             cartValue: sellerCartValue,
             isFallbackShipping: sellerShippingCosts[sellerId] === undefined,
             platformFeePercentage,
+            packagingName,
             discountAmount,
             postDiscountCartValue,
             freeShippingFromVoucher,
@@ -481,6 +490,12 @@ export const createCodOrder = onRequest(
         const totalSellerFees = paymentProcessingFee + platformFee + sellerShippingCharge;
         const netPayoutToSeller = postDiscountSubtotal - totalSellerFees;
 
+        // Derive overall packaging label for the order (join unique packaging names across sellers)
+        const uniquePackagingNames = [...new Set(
+          sellerShippingData.map(s => s.packagingName).filter(Boolean) as string[]
+        )];
+        const overallPackagingSize = uniquePackagingNames.length > 0 ? uniquePackagingNames.join(', ') : undefined;
+
         // Fetch user data for billing info
         const userDoc = await db.collection('User').doc(userId).get();
         const userData = userDoc.data();
@@ -512,6 +527,7 @@ export const createCodOrder = onRequest(
             isExpressDelivery: isExpress,
             usedFallbackShipping: false,
             fallbackShippingSellerCount: 0,
+            packagingSize: overallPackagingSize,
           },
           fees: {
             paymentProcessingFee: paymentProcessingFee,
@@ -537,6 +553,7 @@ export const createCodOrder = onRequest(
             platformFeePercentage: s.platformFeePercentage,
             totalSellerFees: s.platformFee + s.sellerShippingCharge,
             netPayoutToSeller: s.cartValue - (s.platformFee + s.sellerShippingCharge),
+            packagingSize: sellerShippingData[index].packagingName || null,
           })),
           payout: {
             netPayoutToSeller: netPayoutToSeller,
@@ -554,6 +571,7 @@ export const createCodOrder = onRequest(
             phoneNumber: shippingAddress?.phoneNumber,
             notes: notes,
             isExpress: isExpress,
+            packagingSize: overallPackagingSize,
           },
           status: 'confirmed',
           createdAt: admin.firestore.FieldValue.serverTimestamp(),

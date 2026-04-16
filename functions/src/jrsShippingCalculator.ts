@@ -28,7 +28,8 @@ interface JRSShippingResponse {
   data: {
     shippingCost?: number;
     totalAmount?: number;
-    productName?: string; // JRS packaging type used for rate calculation
+    productName?: string; // locally-resolved packaging type (determineProductName)
+    packagingSize?: string; // packaging name returned by the JRS API
     sellerBreakdown?: SellerShippingCalculation[];
     sellerFeeBreakdowns?: SellerFeeBreakdown[];
     sellerShippingCharge?: number;
@@ -76,6 +77,7 @@ interface SellerShippingCalculation {
   shippingCost: number;
   cartValue: number;
   platformFeePercentage?: number;
+  packagingName?: string; // packaging name returned by the JRS API
 }
 
 const verifyAuthToken = async (authorizationHeader: string | undefined): Promise<DecodedIdToken> => {
@@ -164,6 +166,7 @@ async function handleOldInterface(request: CallableRequest<CalculateShippingRequ
     );
 
     const shippingCost = shippingResult.shippingCost;
+    const jrsPackagingName = shippingResult.packagingName;
 
     if (shippingResult.isFallback) {
       logger.warn('JRS API failed, using fallback shipping cost', {
@@ -183,6 +186,7 @@ async function handleOldInterface(request: CallableRequest<CalculateShippingRequ
 
     logger.info('Old interface shipping calculation completed', {
       shippingCost,
+      packagingSize: jrsPackagingName ?? 'unknown',
       subtotal,
       paymentMethod,
       isFallback: shippingResult.isFallback,
@@ -195,6 +199,7 @@ async function handleOldInterface(request: CallableRequest<CalculateShippingRequ
         shippingCost: shippingCost,
         totalAmount: shippingCost,
         productName: resolvedProductName ?? 'auto',
+        packagingSize: jrsPackagingName,
         sellerShippingCharge: breakdown.sellerShippingCharge,
         buyerShippingCharge: breakdown.buyerShippingCharge,
         shippingSplitRule: breakdown.shippingSplitRule,
@@ -430,7 +435,7 @@ export const calculateJRSShipping = onCall(
         });
 
         // Calculate shipping cost for this seller's items
-        const sellerShippingCost = await calculateJRSShippingCost(
+        const jrsResult = await calculateJRSShippingCost(
           sellerAddress,
           recipientAddress,
           sellerItems,
@@ -444,14 +449,16 @@ export const calculateJRSShipping = onCall(
 
         return {
           resolvedProductName: resolvedProductName ?? 'auto',
+          jrsPackagingName: jrsResult.packagingName,
           result: {
             sellerId,
             sellerName,
             sellerAddress,
             items: sellerItems,
-            shippingCost: sellerShippingCost,
+            shippingCost: jrsResult.shippingCost,
             cartValue: sellerCartValue,
-            platformFeePercentage
+            platformFeePercentage,
+            packagingName: jrsResult.packagingName,
           } as SellerShippingCalculation
         };
       });
@@ -460,9 +467,15 @@ export const calculateJRSShipping = onCall(
       const sellerShippingResultsWithProduct = await Promise.all(sellerShippingPromises);
       const sellerShippingResults = sellerShippingResultsWithProduct.map(r => r.result);
       const resolvedProductNames = sellerShippingResultsWithProduct.map(r => r.resolvedProductName);
-      
-      // Use the first seller's product name for the response (most orders are single-seller)
+
+      // Use the first seller's locally-resolved product name for the response (backward compat)
       const primaryProductName = resolvedProductNames.find(n => n !== undefined) ?? 'auto';
+
+      // Aggregate JRS-returned packaging names across all sellers
+      const uniqueJrsPackagingNames = [...new Set(
+        sellerShippingResultsWithProduct.map(r => r.jrsPackagingName).filter(Boolean) as string[]
+      )];
+      const overallPackagingSize = uniqueJrsPackagingNames.length > 0 ? uniqueJrsPackagingNames.join(', ') : undefined;
 
       // Calculate total shipping cost
       const totalShippingCost = sellerShippingResults.reduce((total, seller) => total + seller.shippingCost, 0);
@@ -511,6 +524,7 @@ export const calculateJRSShipping = onCall(
           shippingCost: totalShippingCost,
           totalAmount: totalShippingCost,
           productName: primaryProductName,
+          packagingSize: overallPackagingSize,
           sellerBreakdown: sellerShippingResults,
           sellerFeeBreakdowns: multiSellerBreakdown.sellerBreakdowns,
           // Use totals from multi-seller breakdown
