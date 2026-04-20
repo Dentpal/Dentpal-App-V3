@@ -55,6 +55,13 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
     }
   }
 
+  DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is String) return DateTime.tryParse(value);
+    return null;
+  }
+
   Future<void> _fetchFreeDeliveryVoucher() async {
     try {
       final snapshot = await FirebaseFirestore.instance
@@ -66,9 +73,18 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
           .get();
 
       if (mounted) {
+        final now = DateTime.now();
+        final validDocs = snapshot.docs.where((d) {
+          final data = d.data();
+          final start = _parseDate(data['startDate']);
+          final end = _parseDate(data['endDate']);
+          if (start != null && now.isBefore(start)) return false;
+          if (end != null && now.isAfter(end)) return false;
+          return true;
+        }).toList();
         setState(() {
-          if (snapshot.docs.isNotEmpty) {
-            _freeDeliveryVoucher = {...snapshot.docs.first.data(), 'id': snapshot.docs.first.id};
+          if (validDocs.isNotEmpty) {
+            _freeDeliveryVoucher = {...validDocs.first.data(), 'id': validDocs.first.id};
           } else {
             _freeDeliveryVoucher = null;
           }
@@ -95,8 +111,17 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
           .get();
 
       if (mounted) {
+        final now = DateTime.now();
+        final validVouchers = snapshot.docs.where((d) {
+          final data = d.data();
+          final start = _parseDate(data['startDate']);
+          final end = _parseDate(data['endDate']);
+          if (start != null && now.isBefore(start)) return false;
+          if (end != null && now.isAfter(end)) return false;
+          return true;
+        }).toList();
         setState(() {
-          _allVouchers = snapshot.docs.map((d) => {...d.data(), 'id': d.id}).toList();
+          _allVouchers = validVouchers.map((d) => {...d.data(), 'id': d.id}).toList();
           _allVouchersLoaded = true;
         });
       }

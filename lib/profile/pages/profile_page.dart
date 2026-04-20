@@ -14,6 +14,7 @@ import 'chats_page.dart';
 import 'settings/settings_page.dart';
 import 'settings/notifications_page.dart';
 import 'settings/manage_sub_accounts_page.dart';
+import 'reward_points_page.dart';
 import 'package:dentpal/utils/app_logger.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -316,21 +317,8 @@ class _ProfilePageState extends State<ProfilePage> {
                     // ),
                     // _buildDivider(),
                   ],
-                  _buildProfileOption(
-                    context,
-                    'Settings',
-                    Icons.settings_outlined,
-                    () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => const SettingsPage(),
-                        ),
-                      );
-                    },
-                  ),
                   // Show Manage Sub Accounts for main accounts and sub accounts with permission
                   if (SubAccountSessionManager.canManageSubAccounts) ...[
-                    _buildDivider(),
                     _buildProfileOption(
                       context,
                       'Manage Sub Accounts',
@@ -343,16 +331,16 @@ class _ProfilePageState extends State<ProfilePage> {
                         );
                       },
                     ),
+                    _buildDivider(),
                   ],
-                  _buildDivider(),
                   _buildProfileOption(
                     context,
-                    'Notifications',
-                    Icons.notifications_outlined,
+                    'Reward Points',
+                    Icons.star_outline,
                     () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (context) => const NotificationsPage(),
+                          builder: (context) => RewardPointsPage(userData: userData),
                         ),
                       );
                     },
@@ -416,9 +404,26 @@ class _ProfilePageState extends State<ProfilePage> {
         ),
         actions: [
           IconButton(
-            icon: Icon(Icons.logout, color: AppColors.error),
-            onPressed: () => _showSignOutConfirmation(context),
-            tooltip: 'Sign Out',
+            icon: Icon(Icons.notifications_outlined, color: AppColors.onSurface),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const NotificationsPage(),
+                ),
+              );
+            },
+            tooltip: 'Notifications',
+          ),
+          IconButton(
+            icon: Icon(Icons.settings_outlined, color: AppColors.onSurface),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const SettingsPage(),
+                ),
+              );
+            },
+            tooltip: 'Settings',
           ),
         ],
       ),
@@ -465,26 +470,54 @@ class _ProfilePageState extends State<ProfilePage> {
     final role = userData?['role'] ?? 'buyer';
 
     if (role == 'buyer') {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: AppColors.primary.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.shopping_cart, size: 16, color: AppColors.primary),
-            const SizedBox(width: 4),
-            Text(
-              'Buyer',
-              style: AppTextStyles.bodySmall.copyWith(
-                color: AppColors.primary,
-                fontWeight: FontWeight.w600,
-              ),
+      final rewardPoints = userData?['rewardPoints'] ?? 0;
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(20),
             ),
-          ],
-        ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.shopping_cart, size: 16, color: AppColors.primary),
+                const SizedBox(width: 4),
+                Text(
+                  'Buyer',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.success.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.star, size: 16, color: AppColors.success),
+                const SizedBox(width: 4),
+                Text(
+                  '$rewardPoints Points',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.success,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       );
     } else if (role == 'seller') {
       final isActive = sellerData?['isActive'] ?? false;

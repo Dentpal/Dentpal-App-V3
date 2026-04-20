@@ -36,6 +36,13 @@ class CheckoutPage extends StatefulWidget {
 
 class _CheckoutPageState extends State<CheckoutPage> {
   final CheckoutService _checkoutService = CheckoutService();
+
+  DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is String) return DateTime.tryParse(value);
+    return null;
+  }
   
   ShippingAddress? _selectedAddress;
   PaymentMethod? _selectedPaymentMethod;
@@ -153,10 +160,21 @@ class _CheckoutPageState extends State<CheckoutPage> {
             .get();
 
         if (snapshot.docs.isNotEmpty) {
-          _sellerFreeDeliveryVouchers[sellerId] = {
-            ...snapshot.docs.first.data(),
-            'id': snapshot.docs.first.id,
-          };
+          final now = DateTime.now();
+          final validDoc = snapshot.docs.cast<QueryDocumentSnapshot<Map<String, dynamic>>>().where((d) {
+            final data = d.data();
+            final start = _parseDate(data['startDate']);
+            final end = _parseDate(data['endDate']);
+            if (start != null && now.isBefore(start)) return false;
+            if (end != null && now.isAfter(end)) return false;
+            return true;
+          }).firstOrNull;
+          if (validDoc != null) {
+            _sellerFreeDeliveryVouchers[sellerId] = {
+              ...validDoc.data(),
+              'id': validDoc.id,
+            };
+          }
         }
       } catch (e) {
         AppLogger.d('Error fetching free delivery voucher for seller $sellerId: $e');

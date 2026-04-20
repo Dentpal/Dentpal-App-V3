@@ -21,7 +21,6 @@ import 'signup_controller.dart';
 class IdOcrService {
   static final TextRecognizer _textRecognizer = TextRecognizer();
   
-  // Create iOS-optimized face detector
   static FaceDetector _createFaceDetector({double minFaceSize = 0.1}) {
     return FaceDetector(
       options: FaceDetectorOptions(
