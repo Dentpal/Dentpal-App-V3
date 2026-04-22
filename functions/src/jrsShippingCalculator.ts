@@ -3,16 +3,13 @@ import * as logger from 'firebase-functions/logger';
 import { getAuth } from 'firebase-admin/auth';
 import { DecodedIdToken } from 'firebase-admin/lib/auth/token-verifier';
 import * as admin from 'firebase-admin';
-import { 
+import {
   calculateJRSShippingCost,
   calculateJRSShippingCostWithFallback,
   DEFAULT_FALLBACK_SHIPPING_COST,
-  extractShippingCostFromJRS,
-  calculateCompleteBreakdown,
   calculateMultiSellerBreakdown,
   determineProductName,
   SellerFeeBreakdown,
-  MultiSellerBreakdown
 } from './utils/jrsShippingHelper';
 
 // Initialize Firebase Admin if not already initialized
@@ -27,20 +24,15 @@ interface JRSShippingResponse {
   success: boolean;
   data: {
     shippingCost?: number;
-    totalAmount?: number;
-    productName?: string; // locally-resolved packaging type (determineProductName)
-    packagingSize?: string; // packaging name returned by the JRS API
+    // Single unified packaging name: our local rule wins; JRS name used only when our rule returned nothing
+    packagingSize?: string | null;
+    insuranceCost?: number | null;
+    evaluationCost?: number | null;
+    isFallback?: boolean;
+    fallbackError?: string | null;
+    // New-interface (multi-seller) fields only
     sellerBreakdown?: SellerShippingCalculation[];
     sellerFeeBreakdowns?: SellerFeeBreakdown[];
-    sellerShippingCharge?: number;
-    buyerShippingCharge?: number;
-    shippingSplitRule?: 'buyer_pays_full' | 'seller_pays_full' | 'per_seller';
-    // Fee breakdown (totals across all sellers)
-    totalChargedToBuyer?: number;
-    paymentProcessingFee?: number;
-    platformFee?: number;
-    totalSellerFees?: number;
-    netPayoutToSeller?: number;
   };
   error?: string;
 }
@@ -113,6 +105,8 @@ async function handleOldInterface(request: CallableRequest<CalculateShippingRequ
     
     const { sellerAddress, cartItems, recipientAddress } = request.data;
     const express: boolean = typeof request.data.express === 'boolean' ? request.data.express : true;
+    const insurance: boolean = typeof request.data.insurance === 'boolean' ? request.data.insurance : true;
+    const valuation: boolean = typeof request.data.valuation === 'boolean' ? request.data.valuation : true;
     
     if (!sellerAddress || !cartItems || cartItems.length === 0) {
       throw new HttpsError('invalid-argument', 'Missing required shipping data');
@@ -162,11 +156,15 @@ async function handleOldInterface(request: CallableRequest<CalculateShippingRequ
       process.env.JRS_GETRATE_API_URL,
       DEFAULT_FALLBACK_SHIPPING_COST,
       false,
-      express
+      express,
+      insurance,
+      valuation
     );
 
     const shippingCost = shippingResult.shippingCost;
     const jrsPackagingName = shippingResult.packagingName;
+    const jrsInsuranceCost = shippingResult.insuranceCost;
+    const jrsEvaluationCost = shippingResult.evaluationCost;
 
     if (shippingResult.isFallback) {
       logger.warn('JRS API failed, using fallback shipping cost', {
@@ -175,55 +173,34 @@ async function handleOldInterface(request: CallableRequest<CalculateShippingRequ
       });
     }
 
-    // Calculate subtotal for shipping allocation
-    const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
-    // Get payment method from request, default to 'card'
-    const paymentMethod = request.data.paymentMethod || 'card';
-
-    // Calculate complete breakdown including all fees
-    const breakdown = calculateCompleteBreakdown(subtotal, shippingCost, paymentMethod);
+    // Use our local rule if it matched; fall back to JRS's own name only when we had no rule
+    const packagingSize = resolvedProductName ?? jrsPackagingName ?? null;
 
     logger.info('Old interface shipping calculation completed', {
       shippingCost,
-      packagingSize: jrsPackagingName ?? 'unknown',
-      subtotal,
-      paymentMethod,
+      packagingSize: packagingSize ?? 'unknown',
+      packagingSource: resolvedProductName ? 'local-rule' : 'jrs-api',
       isFallback: shippingResult.isFallback,
-      ...breakdown
     });
 
     return {
       success: true,
       data: {
-        shippingCost: shippingCost,
-        totalAmount: shippingCost,
-        productName: resolvedProductName ?? 'auto',
-        packagingSize: jrsPackagingName,
-        sellerShippingCharge: breakdown.sellerShippingCharge,
-        buyerShippingCharge: breakdown.buyerShippingCharge,
-        shippingSplitRule: breakdown.shippingSplitRule,
-        totalChargedToBuyer: breakdown.totalChargedToBuyer,
-        paymentProcessingFee: breakdown.paymentProcessingFee,
-        platformFee: breakdown.platformFee,
-        totalSellerFees: breakdown.totalSellerFees,
-        netPayoutToSeller: breakdown.netPayoutToSeller
+        shippingCost,
+        packagingSize,
+        insuranceCost: jrsInsuranceCost ?? null,
+        evaluationCost: jrsEvaluationCost ?? null,
+        isFallback: shippingResult.isFallback,
+        fallbackError: shippingResult.error ?? null,
       }
     };
 
   } catch (error: any) {
     logger.error('Error in old interface shipping calculation', error);
-    
-    // Even if there's an unexpected error, return fallback values
-    const fallbackCost = DEFAULT_FALLBACK_SHIPPING_COST;
     return {
       success: false,
       error: error.message || 'Failed to calculate shipping cost',
-      data: {
-        shippingCost: fallbackCost,
-        sellerShippingCharge: 0, // Buyer pays full fallback cost
-        buyerShippingCharge: fallbackCost
-      }
+      data: { shippingCost: DEFAULT_FALLBACK_SHIPPING_COST, isFallback: true }
     };
   }
 }
@@ -513,44 +490,22 @@ export const calculateJRSShipping = onCall(
         }))
       });
 
-      // Determine overall shipping split rule
-      // If all sellers have the same rule, use that; otherwise 'per_seller'
-      const uniqueRules = [...new Set(multiSellerBreakdown.sellerBreakdowns.map(s => s.shippingSplitRule))];
-      const shippingSplitRule = uniqueRules.length === 1 ? uniqueRules[0] : 'per_seller';
-
       return {
         success: true,
         data: {
           shippingCost: totalShippingCost,
-          totalAmount: totalShippingCost,
-          productName: primaryProductName,
-          packagingSize: overallPackagingSize,
+          packagingSize: primaryProductName ?? overallPackagingSize ?? null,
           sellerBreakdown: sellerShippingResults,
           sellerFeeBreakdowns: multiSellerBreakdown.sellerBreakdowns,
-          // Use totals from multi-seller breakdown
-          sellerShippingCharge: multiSellerBreakdown.totalSellerShippingCharge,
-          buyerShippingCharge: multiSellerBreakdown.totalBuyerShippingCharge,
-          shippingSplitRule: shippingSplitRule,
-          totalChargedToBuyer: multiSellerBreakdown.grandTotalChargedToBuyer,
-          paymentProcessingFee: multiSellerBreakdown.totalPaymentProcessingFee,
-          platformFee: multiSellerBreakdown.totalPlatformFee,
-          totalSellerFees: multiSellerBreakdown.totalSellerFees,
-          netPayoutToSeller: multiSellerBreakdown.totalNetPayoutToSellers
         }
       };
 
     } catch (error: any) {
       logger.error('Error calculating JRS shipping', error);
-      
-      // Return fallback shipping cost instead of throwing error
       return {
         success: false,
         error: error.message || 'Failed to calculate shipping cost',
-        data: {
-          shippingCost: 250.0, // Fallback shipping cost
-          sellerShippingCharge: 0, // Buyer pays full fallback cost
-          buyerShippingCharge: 250.0
-        }
+        data: { shippingCost: DEFAULT_FALLBACK_SHIPPING_COST, isFallback: true }
       };
     }
   }

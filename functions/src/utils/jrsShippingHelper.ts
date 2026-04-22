@@ -119,6 +119,9 @@ export interface SellerFeeBreakdown {
   platformFeePercentage: number; // The actual percentage used for this seller
   totalSellerFees: number;
   netPayoutToSeller: number;
+  hasInsuranceAndEvaluation?: boolean;
+  insuranceCost?: number | null;
+  evaluationCost?: number | null;
 }
 
 // Multi-seller order breakdown
@@ -142,8 +145,8 @@ interface JRSShippingRequest {
   requestType: 'getrate';
   apiShippingRequest: {
     express: boolean;
-    insurance: boolean;
-    valuation: boolean;
+    insurance?: true; // Omit (or set true) — JRS returns 500 when sent as false
+    valuation?: true;
     codAmountToCollect: number;
     productName?: string; // Optional: Specify package type (e.g., "1 Pounder") to bypass automatic selection
     shipperAddressLine1: string;
@@ -565,8 +568,10 @@ export async function calculateJRSShippingCost(
   orderItems: CartItemData[],
   jrsApiKey?: string,
   jrsApiUrl?: string,
-  express: boolean = true
-): Promise<{ shippingCost: number; packagingName?: string }> {
+  express: boolean = true,
+  insurance: boolean = true,
+  valuation: boolean = true
+): Promise<{ shippingCost: number; packagingName?: string; insuranceCost?: number; evaluationCost?: number }> {
   if (!jrsApiKey || !jrsApiUrl) {
     throw new Error('JRS API configuration missing - API key and URL are required');
   }
@@ -620,8 +625,8 @@ export async function calculateJRSShippingCost(
       requestType: 'getrate',
       apiShippingRequest: {
         express,
-        insurance: true,
-        valuation: true,
+        ...(insurance ? { insurance: true as const } : {}),
+        ...(valuation ? { valuation: true as const } : {}),
         codAmountToCollect: 0,
         // productName intentionally omitted — let JRS API choose packaging based on
         // the express flag + item dimensions so express/non-express rates differ correctly
@@ -671,7 +676,7 @@ export async function calculateJRSShippingCost(
         'Cache-Control': 'no-cache',
         'Ocp-Apim-Subscription-Key': jrsApiKey
       },
-      timeout: 60000 // 60 seconds timeout
+      timeout: 30000 // 30 seconds
     });
 
     // Log successful response
@@ -686,10 +691,12 @@ export async function calculateJRSShippingCost(
       // Extract shipping cost and packaging name from JRS response
       const shippingCost = extractShippingCostFromJRS(response.data);
       const packagingName = extractPackagingNameFromJRS(response.data);
+      const insuranceCost = insurance ? extractInsuranceCostFromJRS(response.data) : undefined;
+      const evaluationCost = valuation ? extractEvaluationCostFromJRS(response.data) : undefined;
 
       if (shippingCost > 0) {
         logger.info(`✅ JRS shipping cost calculated: ₱${shippingCost}`, { packagingName: packagingName ?? 'unknown' });
-        return { shippingCost, packagingName };
+        return { shippingCost, packagingName, insuranceCost, evaluationCost };
       } else {
         logger.error('JRS API returned invalid shipping cost', {
           shippingCost,
@@ -727,10 +734,11 @@ export async function calculateJRSShippingCost(
     } else if (error.request) {
       errorContext.requestMade = true;
       errorContext.noResponse = true;
+      errorContext.errorCode = error.code; // e.g. ECONNABORTED for timeout, ECONNREFUSED, etc.
     }
-    
+
     logger.error('Failed to calculate JRS shipping cost:', errorContext);
-    throw new Error(`JRS shipping calculation failed: ${error.message}`);
+    throw new Error(`JRS shipping calculation failed: [${error.code ?? 'unknown'}] ${error.message}`);
   }
 }
 
@@ -762,8 +770,10 @@ export async function calculateJRSShippingCostWithFallback(
   jrsApiUrl?: string,
   fallbackCost: number = DEFAULT_FALLBACK_SHIPPING_COST,
   allowConfigFallback: boolean = false,
-  express: boolean = true
-): Promise<{ shippingCost: number; isFallback: boolean; error?: string; packagingName?: string }> {
+  express: boolean = true,
+  insurance: boolean = true,
+  valuation: boolean = true
+): Promise<{ shippingCost: number; isFallback: boolean; error?: string; packagingName?: string; insuranceCost?: number; evaluationCost?: number }> {
   // Fail fast on configuration issues unless explicitly allowed to fallback
   if (!jrsApiKey || !jrsApiUrl) {
     const missingConfig = [];
@@ -801,12 +811,16 @@ export async function calculateJRSShippingCostWithFallback(
       orderItems,
       jrsApiKey,
       jrsApiUrl,
-      express
+      express,
+      insurance,
+      valuation
     );
 
     return {
       shippingCost: result.shippingCost,
       packagingName: result.packagingName,
+      insuranceCost: result.insuranceCost,
+      evaluationCost: result.evaluationCost,
       isFallback: false
     };
   } catch (error: any) {
@@ -835,39 +849,41 @@ export async function calculateJRSShippingCostWithFallback(
  */
 export function extractShippingCostFromJRS(responseData: any): number {
   try {
-    // Check various possible fields for shipping cost
-    if (responseData.TotalShippingRate && typeof responseData.TotalShippingRate === 'number') {
-      return responseData.TotalShippingRate;
+    // JRS wraps the rate object under a "response" key
+    const d = responseData.response ?? responseData;
+
+    if (d.TotalShippingRate && typeof d.TotalShippingRate === 'number') {
+      return d.TotalShippingRate;
     }
 
-    if (responseData.BaseRate && typeof responseData.BaseRate === 'number') {
-      return responseData.BaseRate;
+    if (d.BaseRate && typeof d.BaseRate === 'number') {
+      return d.BaseRate;
     }
 
-    if (responseData.rate && typeof responseData.rate === 'number') {
-      return responseData.rate;
+    if (d.rate && typeof d.rate === 'number') {
+      return d.rate;
     }
 
-    if (responseData.totalAmount && typeof responseData.totalAmount === 'number') {
-      return responseData.totalAmount;
+    if (d.totalAmount && typeof d.totalAmount === 'number') {
+      return d.totalAmount;
     }
 
-    if (responseData.shippingCost && typeof responseData.shippingCost === 'number') {
-      return responseData.shippingCost;
+    if (d.shippingCost && typeof d.shippingCost === 'number') {
+      return d.shippingCost;
     }
 
-    // Check nested objects
-    if (responseData.rateResponse) {
-      if (responseData.rateResponse.TotalShippingRate && typeof responseData.rateResponse.TotalShippingRate === 'number') {
-        return responseData.rateResponse.TotalShippingRate;
+    // Legacy nested keys
+    if (d.rateResponse) {
+      if (d.rateResponse.TotalShippingRate && typeof d.rateResponse.TotalShippingRate === 'number') {
+        return d.rateResponse.TotalShippingRate;
       }
-      if (responseData.rateResponse.BaseRate && typeof responseData.rateResponse.BaseRate === 'number') {
-        return responseData.rateResponse.BaseRate;
+      if (d.rateResponse.BaseRate && typeof d.rateResponse.BaseRate === 'number') {
+        return d.rateResponse.BaseRate;
       }
     }
 
-    if (responseData.data && responseData.data.rate && typeof responseData.data.rate === 'number') {
-      return responseData.data.rate;
+    if (d.data && d.data.rate && typeof d.data.rate === 'number') {
+      return d.data.rate;
     }
 
     logger.warn('Could not extract shipping cost from JRS response:', responseData);
@@ -881,29 +897,74 @@ export function extractShippingCostFromJRS(responseData: any): number {
 
 /**
  * Extract the packaging/product name from the JRS API response.
- * JRS returns the chosen packaging as a "Name" (or similar) field alongside the rate.
- * Returns undefined if the field is not present in the response.
+ * JRS returns the chosen packaging as a "Name" field alongside the rate,
+ * typically wrapped under a "response" key.
  */
 export function extractPackagingNameFromJRS(responseData: any): string | undefined {
   try {
-    // Direct top-level fields
-    if (responseData.Name && typeof responseData.Name === 'string') return responseData.Name;
-    if (responseData.ProductName && typeof responseData.ProductName === 'string') return responseData.ProductName;
-    if (responseData.packageType && typeof responseData.packageType === 'string') return responseData.packageType;
-    if (responseData.PackageType && typeof responseData.PackageType === 'string') return responseData.PackageType;
+    // JRS wraps the rate object under a "response" key
+    const d = responseData.response ?? responseData;
 
-    // Nested under rateResponse
-    if (responseData.rateResponse) {
-      if (responseData.rateResponse.Name && typeof responseData.rateResponse.Name === 'string') return responseData.rateResponse.Name;
-      if (responseData.rateResponse.ProductName && typeof responseData.rateResponse.ProductName === 'string') return responseData.rateResponse.ProductName;
+    if (d.Name && typeof d.Name === 'string') return d.Name;
+    if (d.ProductName && typeof d.ProductName === 'string') return d.ProductName;
+    if (d.packageType && typeof d.packageType === 'string') return d.packageType;
+    if (d.PackageType && typeof d.PackageType === 'string') return d.PackageType;
+
+    // Legacy nested keys
+    if (d.rateResponse) {
+      if (d.rateResponse.Name && typeof d.rateResponse.Name === 'string') return d.rateResponse.Name;
+      if (d.rateResponse.ProductName && typeof d.rateResponse.ProductName === 'string') return d.rateResponse.ProductName;
     }
 
-    // Nested under data
-    if (responseData.data) {
-      if (responseData.data.Name && typeof responseData.data.Name === 'string') return responseData.data.Name;
-      if (responseData.data.ProductName && typeof responseData.data.ProductName === 'string') return responseData.data.ProductName;
+    if (d.data) {
+      if (d.data.Name && typeof d.data.Name === 'string') return d.data.Name;
+      if (d.data.ProductName && typeof d.data.ProductName === 'string') return d.data.ProductName;
     }
 
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Extract the insurance cost from the JRS API response.
+ * JRS returns this as "Insurance" inside the "response" wrapper.
+ */
+export function extractInsuranceCostFromJRS(responseData: any): number | undefined {
+  try {
+    const d = responseData.response ?? responseData;
+    const fields = ['Insurance', 'InsuranceFee', 'insuranceFee', 'insurance_fee', 'InsuranceCost', 'insuranceCost'];
+    for (const f of fields) {
+      if (typeof d[f] === 'number') return d[f];
+    }
+    if (d.rateResponse) {
+      for (const f of fields) {
+        if (typeof d.rateResponse[f] === 'number') return d.rateResponse[f];
+      }
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Extract the evaluation/valuation cost from the JRS API response.
+ * JRS returns this as "Valuation" inside the "response" wrapper.
+ */
+export function extractEvaluationCostFromJRS(responseData: any): number | undefined {
+  try {
+    const d = responseData.response ?? responseData;
+    const fields = ['Valuation', 'EvaluationFee', 'evaluationFee', 'evaluation_fee', 'ValuationFee', 'valuationFee', 'EvaluationCost', 'evaluationCost'];
+    for (const f of fields) {
+      if (typeof d[f] === 'number') return d[f];
+    }
+    if (d.rateResponse) {
+      for (const f of fields) {
+        if (typeof d.rateResponse[f] === 'number') return d.rateResponse[f];
+      }
+    }
     return undefined;
   } catch {
     return undefined;

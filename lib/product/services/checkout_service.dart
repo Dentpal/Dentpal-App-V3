@@ -32,6 +32,9 @@ class CheckoutService {
     String? successUrl,
     String? cancelUrl,
     Map<String, double> sellerShippingCosts = const {},
+    Map<String, double> sellerInsuranceCosts = const {},
+    Map<String, double> sellerEvaluationCosts = const {},
+    Map<String, String> sellerPackagingSizes = const {},
     bool isExpress = true,
     Map<String, Map<String, dynamic>?> selectedVouchers = const {},
   }) async {
@@ -43,7 +46,7 @@ class CheckoutService {
       if (user == null) {
         throw Exception('User not authenticated');
       }
-      
+
       final idToken = await user.getIdToken();
 
       final createCheckoutRequest = CreateCheckoutOrderRequest(
@@ -54,6 +57,9 @@ class CheckoutService {
         successUrl: successUrl,
         cancelUrl: cancelUrl,
         sellerShippingCosts: sellerShippingCosts,
+        sellerInsuranceCosts: sellerInsuranceCosts,
+        sellerEvaluationCosts: sellerEvaluationCosts,
+        sellerPackagingSizes: sellerPackagingSizes,
         isExpress: isExpress,
         selectedVouchers: selectedVouchers,
       );
@@ -160,8 +166,8 @@ class CheckoutService {
   }
 
   // Calculate shipping cost using JRS Express for checkout
-  // Returns a Map with 'buyerCost' and 'totalCost'
-  Future<Map<String, double>> calculateShippingCostDetailed({
+  // Returns a Map with 'buyerCost', 'totalCost', 'insuranceCost', 'evaluationCost', and 'packagingName'.
+  Future<Map<String, dynamic>> calculateShippingCostDetailed({
     required List<CartItem> items,
     required ShippingAddress address,
     bool express = true,
@@ -184,29 +190,35 @@ class CheckoutService {
       
       double totalBuyerCost = 0.0;
       double totalShippingCost = 0.0;
-      
+      double totalInsuranceCost = 0.0;
+      double totalEvaluationCost = 0.0;
+      String? packagingName; // first seller's packaging name (caller groups items per-seller)
+
       // Calculate shipping for each seller separately
       for (var entry in sellerItemsMap.entries) {
         final sellerId = entry.key;
         final sellerItems = entry.value;
-        
+
         try {
           // Create CartService instance to use the new JRS shipping calculation
           final cartService = CartService();
           final recipientAddress = '${address.city}, ${address.state}';
-          
+
           final result = await cartService.calculateShippingCostWithAddress(
             sellerId: sellerId,
             items: sellerItems,
             recipientAddress: recipientAddress,
             express: express,
           );
-          
+
           totalBuyerCost += result.buyerShippingCharge;
           totalShippingCost += result.shippingCost;
-          
-          AppLogger.d('Seller $sellerId - Full: ₱${result.shippingCost}, Buyer pays: ₱${result.buyerShippingCharge}');
-          
+          totalInsuranceCost += result.insuranceCost ?? 0.0;
+          totalEvaluationCost += result.evaluationCost ?? 0.0;
+          packagingName ??= result.packagingName;
+
+          AppLogger.d('Seller $sellerId - Full: ₱${result.shippingCost}, Buyer pays: ₱${result.buyerShippingCharge}, Packaging: ${result.packagingName ?? 'unknown'}');
+
         } catch (e) {
           AppLogger.d('Error calculating shipping for seller $sellerId: $e');
           // Fallback to default shipping cost when JRS API fails
@@ -215,11 +227,14 @@ class CheckoutService {
           totalShippingCost += fallbackCost;
         }
       }
-      
+
       AppLogger.d('Total shipping - Full: ₱$totalShippingCost, Buyer pays: ₱$totalBuyerCost');
       return {
         'buyerCost': totalBuyerCost,
         'totalCost': totalShippingCost,
+        'insuranceCost': totalInsuranceCost,
+        'evaluationCost': totalEvaluationCost,
+        'packagingName': packagingName,
       };
 
     } catch (e) {
@@ -242,7 +257,7 @@ class CheckoutService {
       items: items,
       address: address,
     );
-    return result['buyerCost'] ?? 0.0;
+    return (result['buyerCost'] as double?) ?? 0.0;
   }
 
   // Validate checkout data before creating order
@@ -331,6 +346,9 @@ class CheckoutService {
     required String addressId,
     String? notes,
     Map<String, double> sellerShippingCosts = const {},
+    Map<String, double> sellerInsuranceCosts = const {},
+    Map<String, double> sellerEvaluationCosts = const {},
+    Map<String, String> sellerPackagingSizes = const {},
     bool isExpress = true,
     Map<String, Map<String, dynamic>?> selectedVouchers = const {},
   }) async {
@@ -342,7 +360,7 @@ class CheckoutService {
       if (user == null) {
         throw Exception('User not authenticated');
       }
-      
+
       final idToken = await user.getIdToken();
 
       final createCodOrderRequest = {
@@ -351,6 +369,9 @@ class CheckoutService {
         'notes': notes,
         'payment_method': 'cash_on_delivery',
         'seller_shipping_costs': sellerShippingCosts,
+        'seller_insurance_costs': sellerInsuranceCosts,
+        'seller_evaluation_costs': sellerEvaluationCosts,
+        'seller_packaging_sizes': sellerPackagingSizes,
         'is_express': isExpress,
         'selected_vouchers': selectedVouchers.map((sellerId, voucher) =>
           MapEntry(sellerId, voucher != null ? {

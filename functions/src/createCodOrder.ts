@@ -174,6 +174,16 @@ export const createCodOrder = onRequest(
             ? request.body.seller_packaging_sizes
             : {};
 
+        // Per-seller insurance & evaluation costs from the frontend JRS call.
+        const sellerInsuranceCostsFromFrontend: Record<string, number> =
+          (request.body.seller_insurance_costs && typeof request.body.seller_insurance_costs === 'object')
+            ? request.body.seller_insurance_costs
+            : {};
+        const sellerEvaluationCostsFromFrontend: Record<string, number> =
+          (request.body.seller_evaluation_costs && typeof request.body.seller_evaluation_costs === 'object')
+            ? request.body.seller_evaluation_costs
+            : {};
+
         // Express delivery preference chosen by the user on the checkout page
         const isExpress: boolean =
           typeof request.body.is_express === 'boolean' ? request.body.is_express : true;
@@ -314,6 +324,7 @@ export const createCodOrder = onRequest(
             height: dimensions.height,
             weight: dimensions.weight,
             isFragile: isFragile,
+            insuranceAndEvaluation: product?.insuranceAndEvaluation === true,
           };
         });
 
@@ -366,6 +377,10 @@ export const createCodOrder = onRequest(
           voucherCode?: string;
           voucherDocId?: string;
           freeDeliveryVoucherDocId?: string;
+          // Insurance & evaluation
+          insuranceAndEvaluation: boolean;
+          insuranceCost: number | null;
+          evaluationCost: number | null;
         }
         
         const sellerShippingPromises: Promise<SellerShippingData>[] = Object.entries(itemsBySeller).map(async ([sellerId, sellerItems]) => {
@@ -385,6 +400,9 @@ export const createCodOrder = onRequest(
           
           // Calculate cart value for this seller's items
           const sellerCartValue = sellerItems.reduce((sum, item) => sum + item.total, 0);
+
+          // Determine if any item from this seller requires insurance & evaluation
+          const sellerInsuranceAndEvaluation = (sellerItems as any[]).some(item => item.insuranceAndEvaluation === true);
 
           // Validate and apply selected voucher for this seller
           const voucherResult = await validateAndApplyVoucher(
@@ -438,6 +456,9 @@ export const createCodOrder = onRequest(
             voucherCode: voucherResult.voucherCode || undefined,
             voucherDocId: voucherResult.voucherDocId || undefined,
             freeDeliveryVoucherDocId,
+            insuranceAndEvaluation: sellerInsuranceAndEvaluation,
+            insuranceCost: sellerInsuranceCostsFromFrontend[sellerId] ?? null,
+            evaluationCost: sellerEvaluationCostsFromFrontend[sellerId] ?? null,
           };
         });
         
@@ -477,6 +498,10 @@ export const createCodOrder = onRequest(
         // Total discount across all sellers
         const totalDiscountAmount = sellerShippingData.reduce((s, d) => s + d.discountAmount, 0);
         const postDiscountSubtotal = subtotal - totalDiscountAmount;
+
+        // Total insurance & evaluation fees across all sellers (COD always null, sum = 0)
+        const totalInsuranceFee = sellerShippingData.reduce((s, d) => s + (d.insuranceCost ?? 0), 0);
+        const totalEvaluationFee = sellerShippingData.reduce((s, d) => s + (d.evaluationCost ?? 0), 0);
 
         // Determine overall shipping split rule based on seller breakdowns
         const shippingSplitRules = multiSellerBreakdown.sellerBreakdowns.map(s => s.shippingSplitRule);
@@ -532,6 +557,8 @@ export const createCodOrder = onRequest(
           fees: {
             paymentProcessingFee: paymentProcessingFee,
             platformFee: platformFee,
+            insuranceFee: totalInsuranceFee,
+            evaluationFee: totalEvaluationFee,
             totalSellerFees: totalSellerFees,
             paymentMethod: 'cash_on_delivery',
           },
@@ -554,6 +581,9 @@ export const createCodOrder = onRequest(
             totalSellerFees: s.platformFee + s.sellerShippingCharge,
             netPayoutToSeller: s.cartValue - (s.platformFee + s.sellerShippingCharge),
             packagingSize: sellerShippingData[index].packagingName || null,
+            hasInsuranceAndEvaluation: sellerShippingData[index].insuranceAndEvaluation,
+            insuranceCost: sellerShippingData[index].insuranceCost,
+            evaluationCost: sellerShippingData[index].evaluationCost,
           })),
           payout: {
             netPayoutToSeller: netPayoutToSeller,

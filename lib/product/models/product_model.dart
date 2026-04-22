@@ -25,6 +25,7 @@ class Product {
   final String? dangerousGoods;
   final String? brand;
   final bool allowInquiry;
+  final bool insuranceAndEvaluation;
 
   Product({
     required this.productId,
@@ -50,6 +51,7 @@ class Product {
     this.dangerousGoods,
     this.brand,
     required this.allowInquiry,
+    this.insuranceAndEvaluation = false,
   });
 
   factory Product.fromFirestore(DocumentSnapshot doc) {
@@ -125,6 +127,7 @@ class Product {
       dangerousGoods: dangerousGoods,
       brand: brand,
       allowInquiry: data['allowInquiry'] ?? false,
+      insuranceAndEvaluation: data['insuranceAndEvaluation'] == true,
     );
   }
 

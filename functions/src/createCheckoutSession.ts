@@ -399,6 +399,16 @@ export const createCheckoutSession = onRequest(
             ? request.body.seller_packaging_sizes
             : {};
 
+        // Per-seller insurance & evaluation costs from the frontend JRS call.
+        const sellerInsuranceCostsFromFrontend: Record<string, number> =
+          (request.body.seller_insurance_costs && typeof request.body.seller_insurance_costs === 'object')
+            ? request.body.seller_insurance_costs
+            : {};
+        const sellerEvaluationCostsFromFrontend: Record<string, number> =
+          (request.body.seller_evaluation_costs && typeof request.body.seller_evaluation_costs === 'object')
+            ? request.body.seller_evaluation_costs
+            : {};
+
         // Express delivery preference chosen by the user on the checkout page.
         // Used when the backend must fall back to its own JRS call (no pre-calculated cost
         // provided for a seller), and stored on the order document for fulfilment.
@@ -537,6 +547,7 @@ export const createCheckoutSession = onRequest(
             height: dimensions.height,
             weight: dimensions.weight,
             isFragile: isFragile,
+            insuranceAndEvaluation: product?.insuranceAndEvaluation === true,
           };
         });
 
@@ -584,6 +595,10 @@ export const createCheckoutSession = onRequest(
           voucherCode?: string;
           voucherDocId?: string;
           freeDeliveryVoucherDocId?: string;
+          // Insurance & evaluation
+          insuranceAndEvaluation: boolean;
+          insuranceCost: number | null;
+          evaluationCost: number | null;
         }
         
         const sellerShippingPromises: Promise<SellerShippingData>[] = Object.entries(itemsBySeller).map(async ([sellerId, sellerItems]) => {
@@ -604,6 +619,9 @@ export const createCheckoutSession = onRequest(
           
           // Calculate cart value for this seller's items
           const sellerCartValue = sellerItems.reduce((sum, item) => sum + item.total, 0);
+
+          // Determine if any item from this seller requires insurance & evaluation
+          const sellerInsuranceAndEvaluation = (sellerItems as any[]).some(item => item.insuranceAndEvaluation === true);
 
           // Validate and apply selected voucher for this seller
           const voucherResult = await validateAndApplyVoucher(
@@ -663,6 +681,9 @@ export const createCheckoutSession = onRequest(
               voucherCode: voucherResult.voucherCode || undefined,
               voucherDocId: voucherResult.voucherDocId || undefined,
               freeDeliveryVoucherDocId,
+              insuranceAndEvaluation: sellerInsuranceAndEvaluation,
+              insuranceCost: null,
+              evaluationCost: null,
             };
           }
           
@@ -707,6 +728,8 @@ export const createCheckoutSession = onRequest(
           if (sellerShippingCosts[sellerId] !== undefined) {
             const providedCost = sellerShippingCosts[sellerId];
             const providedPackaging = sellerPackagingSizes[sellerId] || undefined;
+            const providedInsurance = sellerInsuranceCostsFromFrontend[sellerId] ?? null;
+            const providedEvaluation = sellerEvaluationCostsFromFrontend[sellerId] ?? null;
             console.log(`Seller ${sellerId} shipping cost: ₱${providedCost} (from frontend, JRS call skipped), packaging: ${providedPackaging ?? 'unknown'}, cart value: ₱${sellerCartValue}`);
             return {
               sellerId,
@@ -722,6 +745,9 @@ export const createCheckoutSession = onRequest(
               voucherCode: voucherResult.voucherCode || undefined,
               voucherDocId: voucherResult.voucherDocId || undefined,
               freeDeliveryVoucherDocId,
+              insuranceAndEvaluation: sellerInsuranceAndEvaluation,
+              insuranceCost: providedInsurance,
+              evaluationCost: providedEvaluation,
             };
           }
 
@@ -735,7 +761,9 @@ export const createCheckoutSession = onRequest(
             JRS_GETRATE_API_URL,
             DEFAULT_FALLBACK_SHIPPING_COST,
             false,
-            isExpress
+            isExpress,
+            sellerInsuranceAndEvaluation,
+            sellerInsuranceAndEvaluation
           );
 
           if (shippingResult.isFallback) {
@@ -759,6 +787,9 @@ export const createCheckoutSession = onRequest(
             voucherCode: voucherResult.voucherCode || undefined,
             voucherDocId: voucherResult.voucherDocId || undefined,
             freeDeliveryVoucherDocId,
+            insuranceAndEvaluation: sellerInsuranceAndEvaluation,
+            insuranceCost: shippingResult.insuranceCost ?? null,
+            evaluationCost: shippingResult.evaluationCost ?? null,
           };
         });
         
@@ -831,6 +862,10 @@ export const createCheckoutSession = onRequest(
         // Total discount across all sellers
         const totalDiscountAmount = sellerShippingData.reduce((s, d) => s + d.discountAmount, 0);
 
+        // Total insurance & evaluation fees across all sellers (null-safe)
+        const totalInsuranceFee = sellerShippingData.reduce((s, d) => s + (d.insuranceCost ?? 0), 0);
+        const totalEvaluationFee = sellerShippingData.reduce((s, d) => s + (d.evaluationCost ?? 0), 0);
+
         // Log minimal breakdown info
         console.log(`Multi-Seller Breakdown: ${multiSellerBreakdown.sellerBreakdowns.length} seller(s), total charged: ₱${totalChargedToBuyer.toFixed(2)}, total discount: ₱${totalDiscountAmount.toFixed(2)}`);
 
@@ -886,6 +921,8 @@ export const createCheckoutSession = onRequest(
           fees: {
             paymentProcessingFee: paymentProcessingFee,
             platformFee: platformFee,
+            insuranceFee: totalInsuranceFee,
+            evaluationFee: totalEvaluationFee,
             totalSellerFees: totalSellerFees,
             paymentMethod: defaultPaymentMethod, // Will be updated when payment is completed
           },
@@ -909,6 +946,9 @@ export const createCheckoutSession = onRequest(
             totalSellerFees: s.totalSellerFees,
             netPayoutToSeller: s.netPayoutToSeller,
             packagingSize: sellerShippingData[index].packagingName || null,
+            hasInsuranceAndEvaluation: sellerShippingData[index].insuranceAndEvaluation,
+            insuranceCost: sellerShippingData[index].insuranceCost,
+            evaluationCost: sellerShippingData[index].evaluationCost,
           })),
           payout: {
             netPayoutToSeller: netPayoutToSeller,

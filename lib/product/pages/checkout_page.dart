@@ -60,6 +60,19 @@ class _CheckoutPageState extends State<CheckoutPage> {
   Map<String, double> _expressSellerTotalShippingCosts = {};
   Map<String, double> _standardSellerShippingCosts = {};
   Map<String, double> _standardSellerTotalShippingCosts = {};
+
+  // Per-seller insurance & evaluation costs (from JRS response)
+  Map<String, double> _sellerInsuranceCosts = {};
+  Map<String, double> _sellerEvaluationCosts = {};
+  Map<String, double> _expressSellerInsuranceCosts = {};
+  Map<String, double> _expressSellerEvaluationCosts = {};
+  Map<String, double> _standardSellerInsuranceCosts = {};
+  Map<String, double> _standardSellerEvaluationCosts = {};
+
+  // Per-seller packaging size (locally-resolved productName from JRS calculator)
+  Map<String, String> _sellerPackagingSizes = {};
+  Map<String, String> _expressSellerPackagingSizes = {};
+  Map<String, String> _standardSellerPackagingSizes = {};
   
   final TextEditingController _notesController = TextEditingController();
 
@@ -242,6 +255,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
           addressId: _selectedAddress!.id,
           notes: _orderNotes,
           sellerShippingCosts: _sellerShippingCosts,
+          sellerInsuranceCosts: _sellerInsuranceCosts,
+          sellerEvaluationCosts: _sellerEvaluationCosts,
+          sellerPackagingSizes: _sellerPackagingSizes,
           isExpress: _isExpressShipping,
           selectedVouchers: widget.selectedVouchers,
         );
@@ -259,9 +275,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
           addressId: _selectedAddress!.id,
           notes: _orderNotes,
           paymentMethodTypes: [_selectedPaymentMethod!.paymongoType],
-          successUrl: 'https://dentpal-store.web.app/payment-success', // Updated success URL
-          cancelUrl: 'https://dentpal-store.web.app/payment-failed', // Updated cancel URL
+          successUrl: 'https://dentpal-store.web.app/payment-success',
+          cancelUrl: 'https://dentpal-store.web.app/payment-failed',
           sellerShippingCosts: _sellerShippingCosts,
+          sellerInsuranceCosts: _sellerInsuranceCosts,
+          sellerEvaluationCosts: _sellerEvaluationCosts,
+          sellerPackagingSizes: _sellerPackagingSizes,
           isExpress: _isExpressShipping,
           selectedVouchers: widget.selectedVouchers,
         );
@@ -345,6 +364,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
       _standardSellerTotalShippingCosts.clear();
       _sellerShippingCosts.clear();
       _sellerTotalShippingCosts.clear();
+      _expressSellerInsuranceCosts.clear();
+      _expressSellerEvaluationCosts.clear();
+      _standardSellerInsuranceCosts.clear();
+      _standardSellerEvaluationCosts.clear();
+      _sellerInsuranceCosts.clear();
+      _sellerEvaluationCosts.clear();
+      _expressSellerPackagingSizes.clear();
+      _standardSellerPackagingSizes.clear();
+      _sellerPackagingSizes.clear();
     });
 
     try {
@@ -379,18 +407,34 @@ class _CheckoutPageState extends State<CheckoutPage> {
           final expressDetails = results[0];
           final standardDetails = results[1];
 
-          _expressSellerShippingCosts[sellerId] = expressDetails['buyerCost'] ?? 0.0;
-          _expressSellerTotalShippingCosts[sellerId] = expressDetails['totalCost'] ?? 0.0;
-          _standardSellerShippingCosts[sellerId] = standardDetails['buyerCost'] ?? 0.0;
-          _standardSellerTotalShippingCosts[sellerId] = standardDetails['totalCost'] ?? 0.0;
+          _expressSellerShippingCosts[sellerId] = (expressDetails['buyerCost'] as double?) ?? 0.0;
+          _expressSellerTotalShippingCosts[sellerId] = (expressDetails['totalCost'] as double?) ?? 0.0;
+          _expressSellerInsuranceCosts[sellerId] = (expressDetails['insuranceCost'] as double?) ?? 0.0;
+          _expressSellerEvaluationCosts[sellerId] = (expressDetails['evaluationCost'] as double?) ?? 0.0;
+          final expressPackaging = expressDetails['packagingName'] as String?;
+          if (expressPackaging != null && expressPackaging.isNotEmpty) {
+            _expressSellerPackagingSizes[sellerId] = expressPackaging;
+          }
+          _standardSellerShippingCosts[sellerId] = (standardDetails['buyerCost'] as double?) ?? 0.0;
+          _standardSellerTotalShippingCosts[sellerId] = (standardDetails['totalCost'] as double?) ?? 0.0;
+          _standardSellerInsuranceCosts[sellerId] = (standardDetails['insuranceCost'] as double?) ?? 0.0;
+          _standardSellerEvaluationCosts[sellerId] = (standardDetails['evaluationCost'] as double?) ?? 0.0;
+          final standardPackaging = standardDetails['packagingName'] as String?;
+          if (standardPackaging != null && standardPackaging.isNotEmpty) {
+            _standardSellerPackagingSizes[sellerId] = standardPackaging;
+          }
 
           AppLogger.d('Seller $sellerId - Express: ₱${expressDetails['totalCost']}, Standard: ₱${standardDetails['totalCost']}');
         } catch (e) {
           AppLogger.d('Error calculating shipping for seller $sellerId: $e');
           _expressSellerShippingCosts[sellerId] = 0.0;
           _expressSellerTotalShippingCosts[sellerId] = 0.0;
+          _expressSellerInsuranceCosts[sellerId] = 0.0;
+          _expressSellerEvaluationCosts[sellerId] = 0.0;
           _standardSellerShippingCosts[sellerId] = 0.0;
           _standardSellerTotalShippingCosts[sellerId] = 0.0;
+          _standardSellerInsuranceCosts[sellerId] = 0.0;
+          _standardSellerEvaluationCosts[sellerId] = 0.0;
         }
       }
 
@@ -399,6 +443,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
           _isExpressShipping ? _expressSellerShippingCosts : _standardSellerShippingCosts);
       _sellerTotalShippingCosts = Map.from(
           _isExpressShipping ? _expressSellerTotalShippingCosts : _standardSellerTotalShippingCosts);
+      _sellerInsuranceCosts = Map.from(
+          _isExpressShipping ? _expressSellerInsuranceCosts : _standardSellerInsuranceCosts);
+      _sellerPackagingSizes = Map.from(
+          _isExpressShipping ? _expressSellerPackagingSizes : _standardSellerPackagingSizes);
+      _sellerEvaluationCosts = Map.from(
+          _isExpressShipping ? _expressSellerEvaluationCosts : _standardSellerEvaluationCosts);
 
       // Override buyer's shipping to 0 for sellers eligible for free shipping via voucher
       _applyFreeShippingOverrides();
@@ -438,6 +488,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
           value ? _expressSellerShippingCosts : _standardSellerShippingCosts);
       _sellerTotalShippingCosts = Map.from(
           value ? _expressSellerTotalShippingCosts : _standardSellerTotalShippingCosts);
+      _sellerInsuranceCosts = Map.from(
+          value ? _expressSellerInsuranceCosts : _standardSellerInsuranceCosts);
+      _sellerPackagingSizes = Map.from(
+          value ? _expressSellerPackagingSizes : _standardSellerPackagingSizes);
+      _sellerEvaluationCosts = Map.from(
+          value ? _expressSellerEvaluationCosts : _standardSellerEvaluationCosts);
       _applyFreeShippingOverrides();
     });
   }

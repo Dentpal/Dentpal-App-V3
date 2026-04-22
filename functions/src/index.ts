@@ -45,3 +45,6 @@ export { retryPendingRefunds } from './retryPendingRefunds';
 
 // Export the migration function for confirmed orders
 export { migrateConfirmedOrders } from './migrateConfirmedOrders';
+
+// Export the scheduled function to deactivate products with all-zero-stock variations
+export { deactivateOutOfStockProducts } from './deactivateOutOfStockProducts';

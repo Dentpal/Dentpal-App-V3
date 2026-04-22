@@ -233,7 +233,8 @@ class CartService {
           item.productName = product.name;
           item.productImage = product.imageURL;
           item.sellerId = product.sellerId;
-          item.isProductActive = product.isActive; // Set product active status
+          item.isProductActive = product.isActive;
+          item.insuranceAndEvaluation = product.insuranceAndEvaluation;
           
           // Get seller info from cache
           final sellerData = sellersMap[product.sellerId];
@@ -648,14 +649,17 @@ class CartService {
       AppLogger.d(' Seller address: $sellerAddress');
       AppLogger.d(' Recipient address: $formattedRecipientAddress');
 
+      // Only pass insurance/valuation when at least one item requires it
+      final needsInsuranceAndEvaluation = items.any((item) => item.insuranceAndEvaluation);
+
       // Calculate shipping using JRS API
       final result = await JRSShippingService.calculateShippingCost(
         sellerAddress: sellerAddress,
         recipientAddress: formattedRecipientAddress,
         cartItems: items,
         express: express,
-        insurance: true,
-        valuation: true,
+        insurance: needsInsuranceAndEvaluation,
+        valuation: needsInsuranceAndEvaluation,
       );
 
       AppLogger.d('JRS shipping result: $result');

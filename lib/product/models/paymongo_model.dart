@@ -678,6 +678,9 @@ class CreateCheckoutOrderRequest {
   final String? successUrl;
   final String? cancelUrl;
   final Map<String, double> sellerShippingCosts;
+  final Map<String, double> sellerInsuranceCosts;
+  final Map<String, double> sellerEvaluationCosts;
+  final Map<String, String> sellerPackagingSizes;
   final bool isExpress;
   final Map<String, Map<String, dynamic>?> selectedVouchers;
 
@@ -689,6 +692,9 @@ class CreateCheckoutOrderRequest {
     this.successUrl,
     this.cancelUrl,
     this.sellerShippingCosts = const {},
+    this.sellerInsuranceCosts = const {},
+    this.sellerEvaluationCosts = const {},
+    this.sellerPackagingSizes = const {},
     this.isExpress = true,
     this.selectedVouchers = const {},
   });
@@ -702,6 +708,9 @@ class CreateCheckoutOrderRequest {
       'success_url': successUrl,
       'cancel_url': cancelUrl,
       'seller_shipping_costs': sellerShippingCosts,
+      'seller_insurance_costs': sellerInsuranceCosts,
+      'seller_evaluation_costs': sellerEvaluationCosts,
+      'seller_packaging_sizes': sellerPackagingSizes,
       'is_express': isExpress,
       'selected_vouchers': selectedVouchers.map((sellerId, voucher) =>
         MapEntry(sellerId, voucher != null ? {

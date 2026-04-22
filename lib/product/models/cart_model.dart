@@ -36,6 +36,9 @@ class CartItem {
   double? width; // Width in cm
   double? height; // Height in cm
   
+  // Whether the product requires insurance and evaluation in JRS shipping
+  bool insuranceAndEvaluation;
+
   // Selection state for multi-seller checkout
   bool isSelected;
   
@@ -70,6 +73,7 @@ class CartItem {
     this.width,
     this.height,
     this.isSelected = true, // Default to selected
+    this.insuranceAndEvaluation = false,
   });
 
   factory CartItem.fromFirestore(DocumentSnapshot doc) {
