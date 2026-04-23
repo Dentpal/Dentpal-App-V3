@@ -12,11 +12,10 @@ class WebFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Only render on web platform
-    if (!kIsWeb) return const SizedBox.shrink();
-
     final screenWidth = MediaQuery.of(context).size.width;
-    final isWideWeb = screenWidth >= 900;
+    // Only use the wide multi-column layout on web desktop widths.
+    // Native mobile (and narrow web) uses the stacked mobile layout.
+    final isWideWeb = kIsWeb && screenWidth >= 900;
 
     return Container(
       width: double.infinity,
@@ -96,15 +95,20 @@ class WebFooter extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildBrandingSection(context),
-        const SizedBox(height: 40),
-        _buildCustomerServiceSection(context),
         const SizedBox(height: 32),
-        _buildLegalSection(context),
-        const SizedBox(height: 32),
-        _buildDownloadAppSection(context),
+        // Customer Service (left) | Legal (right)
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: _buildCustomerServiceSection(context)),
+            const SizedBox(width: 16),
+            Expanded(child: _buildLegalSection(context)),
+          ],
+        ),
       ],
     );
   }
+
 
   Widget _buildBrandingSection(BuildContext context) {
     return Column(
@@ -497,9 +501,11 @@ class WebFooter extends StatelessWidget {
     return Text(
       '© ${DateTime.now().year} DentPal. All rights reserved.',
       style: AppTextStyles.bodySmall.copyWith(
-        color: AppColors.grey600,
+        color: AppColors.grey700,
         fontSize: 13,
+        fontWeight: FontWeight.w700,
       ),
+      textAlign: TextAlign.center,
     );
   }
 }

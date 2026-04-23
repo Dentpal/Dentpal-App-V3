@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
@@ -251,53 +252,72 @@ class _RewardPointsPageState extends State<RewardPointsPage>
           ),
         ),
       ),
-      body: Column(
-        children: [
-          Container(
-            color: AppColors.surface,
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: CustomPaint(
-                    painter: _CardDotsPainter(
-                      dotColor: AppColors.primary.withValues(alpha: 0.28),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWideWeb = kIsWeb && constraints.maxWidth > 800;
+          final content = Column(
+            children: [
+              Container(
+                color: AppColors.surface,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: CustomPaint(
+                        painter: _CardDotsPainter(
+                          dotColor: AppColors.primary.withValues(alpha: 0.28),
+                        ),
+                      ),
                     ),
-                  ),
+                    _buildInfoCard(rewardPoints, memberSince, registrationNo),
+                  ],
                 ),
-                _buildInfoCard(rewardPoints, memberSince, registrationNo),
-              ],
-            ),
-          ),
-          Container(
-            color: AppColors.surface,
-            child: TabBar(
-              controller: _tabController,
-              labelColor: AppColors.primary,
-              unselectedLabelColor: AppColors.onSurface.withValues(alpha: 0.6),
-              indicatorColor: AppColors.primary,
-              labelStyle: AppTextStyles.labelLarge.copyWith(
-                fontWeight: FontWeight.w600,
               ),
-              unselectedLabelStyle: AppTextStyles.labelLarge,
-              tabs: const [
-                Tab(text: 'Overview'),
-                Tab(text: 'Past Activity'),
-                Tab(text: 'Awards'),
-              ],
-            ),
-          ),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildOverviewTab(rewardPoints),
-                _buildPastActivityTab(),
-                _buildAwardsTab(),
-              ],
-            ),
-          ),
-        ],
+              Container(
+                color: AppColors.surface,
+                child: TabBar(
+                  controller: _tabController,
+                  labelColor: AppColors.primary,
+                  unselectedLabelColor:
+                      AppColors.onSurface.withValues(alpha: 0.6),
+                  indicatorColor: AppColors.primary,
+                  labelStyle: AppTextStyles.labelLarge.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                  unselectedLabelStyle: AppTextStyles.labelLarge,
+                  tabs: const [
+                    Tab(text: 'Overview'),
+                    Tab(text: 'Past Activity'),
+                    Tab(text: 'Awards'),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildOverviewTab(rewardPoints),
+                    _buildPastActivityTab(),
+                    _buildAwardsTab(),
+                  ],
+                ),
+              ),
+            ],
+          );
+
+          if (isWideWeb) {
+            return Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 640),
+                child: Material(
+                  color: AppColors.background,
+                  child: content,
+                ),
+              ),
+            );
+          }
+          return content;
+        },
       ),
     );
   }

@@ -124,12 +124,10 @@ class _ProductListingPageState extends State<ProductListingPage>
   // Filter state
   String _selectedShippedFrom = 'All';
   String _selectedPriceSort = 'All';
-  String _selectedRating = 'All';
 
   // Filter options
-  final List<String> _shippedFromOptions = ['All', 'Metro Manila', 'NCR', 'Luzon', 'Visayas', 'Mindanao'];
+  final List<String> _shippedFromOptions = ['All', 'Nearest You', 'NCR', 'Luzon', 'Visayas', 'Mindanao'];
   final List<String> _priceSortOptions = ['All', 'Low to High', 'High to Low'];
-  final List<String> _ratingOptions = ['All', '4★ & up', '3★ & up', '2★ & up'];
 
   // Inline search state
   final TextEditingController _searchController = TextEditingController();
@@ -3440,23 +3438,6 @@ class _ProductListingPageState extends State<ProductListingPage>
                 _loadFirstPage();
               },
             ),
-            const SizedBox(width: 8),
-            // Rating Filter
-            _buildFilterChip(
-              icon: Icons.star_rounded,
-              label: 'Rating',
-              value: _selectedRating,
-              options: _ratingOptions,
-              onSelected: (value) {
-                setState(() {
-                  _selectedRating = value;
-                  _products = [];
-                  _lastDocument = null;
-                  _hasMore = true;
-                });
-                _loadFirstPage();
-              },
-            ),
           ],
         ),
       ),
@@ -3767,32 +3748,22 @@ class _ProductListingPageState extends State<ProductListingPage>
       productsBySeller.putIfAbsent(sellerId, () => []).add(product);
     }
 
-    // Apply Shipped From filter — based on seller province from cache
+    // Apply Shipped From filter — based on seller region classified from
+    // vendor.company.address.location. "Nearest You" matches the current
+    // user's region; the four named regions filter strictly.
     List<String> sellerIds = productsBySeller.keys.toList();
-    if (_selectedShippedFrom != 'All') {
-      sellerIds = sellerIds.where((sid) {
-        final raw = _sellerDataCache[sid];
-        final vendor = raw?['vendor'] is Map ? raw!['vendor'] as Map<String, dynamic> : <String, dynamic>{};
-        final company = vendor['company'] is Map ? vendor['company'] as Map<String, dynamic> : <String, dynamic>{};
-        final address = company['address'] is Map ? company['address'] as Map<String, dynamic> : <String, dynamic>{};
-        final province = ((address['province'] as String?) ?? (raw?['address'] as String?) ?? '').toLowerCase();
-        final filter = _selectedShippedFrom.toLowerCase();
-        // NCR and Metro Manila are treated as the same region
-        if (filter == 'ncr' || filter == 'metro manila') {
-          return province.contains('ncr') || province.contains('metro manila') || province.contains('manila');
-        }
-        return province.contains(filter);
-      }).toList();
+    final String? targetRegion;
+    if (_selectedShippedFrom == 'All') {
+      targetRegion = null;
+    } else if (_selectedShippedFrom == 'Nearest You') {
+      targetRegion = _userRegion;
+    } else {
+      targetRegion = _selectedShippedFrom;
     }
-
-    // Apply Rating filter
-    if (_selectedRating != 'All') {
-      final minRating = _selectedRating.startsWith('4') ? 4.0 : _selectedRating.startsWith('3') ? 3.0 : 2.0;
-      sellerIds = sellerIds.where((sid) {
-        final raw = _sellerDataCache[sid];
-        final rating = (raw?['rating'] as num?)?.toDouble() ?? 0.0;
-        return rating >= minRating;
-      }).toList();
+    if (targetRegion != null) {
+      sellerIds = sellerIds
+          .where((sid) => _sellerRegion(sid) == targetRegion)
+          .toList();
     }
 
     // Apply Price Sort — sort sellers by their minimum product price
