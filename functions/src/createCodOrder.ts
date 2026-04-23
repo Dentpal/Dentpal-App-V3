@@ -603,7 +603,8 @@ export const createCodOrder = onRequest(
             isExpress: isExpress,
             packagingSize: overallPackagingSize,
           },
-          status: 'confirmed',
+          status: 'to_ship',
+          fulfillmentStage: 'to-pack',
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           statusHistory: [
@@ -616,7 +617,12 @@ export const createCodOrder = onRequest(
               status: 'confirmed',
               timestamp: new Date(),
               note: 'COD order confirmed',
-            }
+            },
+            {
+              status: 'to_ship',
+              timestamp: new Date(),
+              note: 'Order ready to be packed and shipped',
+            },
           ],
           metadata: {
             cart_item_ids: cartItemIds,
