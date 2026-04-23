@@ -1,7 +1,6 @@
 // ignore_for_file: deprecated_member_use
 
 import 'package:flutter/material.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
@@ -392,74 +391,22 @@ class _SignupNewStep2PersonalDetailsState extends State<SignupNewStep2PersonalDe
                   final now = DateTime.now();
                   final minDate = DateTime(1900, 1, 1);
                   final initialDate = _controller.selectedBirthdate ?? DateTime(now.year - 18, now.month, now.day);
-                  final picked = await showModalBottomSheet<DateTime>(
+                  final picked = await showDatePicker(
                     context: context,
-                    backgroundColor: Colors.transparent,
-                    builder: (context) {
-                      DateTime tempPicked = initialDate;
-                      return Container(
-                        height: 300,
-                        decoration: const BoxDecoration(
-                          color: AppColors.surface,
-                          borderRadius: BorderRadius.only(
-                            topLeft: Radius.circular(16),
-                            topRight: Radius.circular(16),
-                          ),
+                    initialDate: initialDate,
+                    firstDate: minDate,
+                    lastDate: now,
+                    initialEntryMode: DatePickerEntryMode.calendar,
+                    helpText: 'Select your birthdate',
+                    builder: (context, child) {
+                      return Theme(
+                        data: Theme.of(context).copyWith(
+                          colorScheme: Theme.of(context).colorScheme.copyWith(
+                                primary: AppColors.primary,
+                                onPrimary: AppColors.onPrimary,
+                              ),
                         ),
-                        child: Column(
-                          children: [
-                            // Header
-                            Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Text(
-                                'Select Birthdate',
-                                style: AppTextStyles.labelLarge.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            const Divider(height: 1),
-                            Expanded(
-                              child: CupertinoTheme(
-                                data: const CupertinoThemeData(
-                                  brightness: Brightness.light,
-                                  textTheme: CupertinoTextThemeData(
-                                    dateTimePickerTextStyle: TextStyle(color: AppColors.onSurface, fontSize: 22),
-                                  ),
-                                ),
-                                child: CupertinoDatePicker(
-                                  mode: CupertinoDatePickerMode.date,
-                                  initialDateTime: initialDate,
-                                  minimumDate: minDate,
-                                  maximumDate: now,
-                                  onDateTimeChanged: (date) {
-                                    tempPicked = date;
-                                  },
-                                ),
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 16.0, left: 16.0, right: 16.0),
-                              child: SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton(
-                                  onPressed: () {
-                                    Navigator.of(context).pop(tempPicked);
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.primary,
-                                    foregroundColor: AppColors.onPrimary,
-                                    padding: const EdgeInsets.symmetric(vertical: 16),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                  child: const Text('Select'),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                        child: child!,
                       );
                     },
                   );
@@ -544,7 +491,7 @@ class _SignupNewStep2PersonalDetailsState extends State<SignupNewStep2PersonalDe
                 ),
                 style: AppTextStyles.inputText,
                 icon: const Icon(Icons.arrow_drop_down, color: AppColors.grey400),
-                items: ['NC', 'Luzon', 'Visayas', 'Mindanao'].map((String location) {
+                items: ['NCR', 'Luzon', 'Visayas', 'Mindanao'].map((String location) {
                   return DropdownMenuItem<String>(
                     value: location,
                     child: Text(location),

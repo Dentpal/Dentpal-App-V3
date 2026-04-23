@@ -26,6 +26,7 @@ import '../services/product_search_service.dart';
 import '../../login_page.dart';
 import 'package:flutter/services.dart';
 import '../../profile/pages/profile_page.dart';
+import '../../profile/services/address_service.dart';
 import 'package:dentpal/core/widgets/web_footer.dart';
 
 // Custom cache manager with web compatibility
@@ -86,6 +87,7 @@ class _ProductListingPageState extends State<ProductListingPage>
 
   bool _isSeller = false;
   String _userFirstName = 'User';
+  String? _userRegion; // Classified region: 'NCR' | 'Luzon' | 'Visayas' | 'Mindanao'
 
   // Cart item count for badge
   int _cartItemCount = 0;
@@ -156,6 +158,7 @@ class _ProductListingPageState extends State<ProductListingPage>
     _loadFirstPage();
     _checkSellerStatus();
     _loadUserName();
+    _loadUserRegion();
     _loadActiveBanner(); // Load active banner image from Realtime Database
     _listenToCartCount(); // Listen to cart item count for badge
     _loadStoresForBrandSection(); // Load sellers for brand/store section
@@ -521,6 +524,189 @@ class _ProductListingPageState extends State<ProductListingPage>
         _userFirstName = firstName;
       });
     }
+  }
+
+  // ── Delivery estimation ────────────────────────────────────────────────
+  // Mapping: FROM seller region → TO user region → estimated days label.
+  static const Map<String, Map<String, String>> _deliveryEstimateMap = {
+    'NCR': {
+      'NCR': '2-4 days',
+      'Luzon': '3-5 days',
+      'Visayas': '6-8 days',
+      'Mindanao': '6-10 days',
+    },
+    'Luzon': {
+      'NCR': '3-5 days',
+      'Luzon': '3-5 days',
+      'Visayas': '6-8 days',
+      'Mindanao': '6-8 days',
+    },
+    'Visayas': {
+      'NCR': '5-7 days',
+      'Luzon': '5-8 days',
+      'Visayas': '5-8 days',
+      'Mindanao': '6-9 days',
+    },
+    'Mindanao': {
+      'NCR': '5-7 days',
+      'Luzon': '5-8 days',
+      'Visayas': '7-11 days',
+      'Mindanao': '3-6 days',
+    },
+  };
+
+  static const String _defaultDeliveryLabel = '3-7 days';
+
+  // Philippine province / city → region lookup (lowercased keys).
+  static const Map<String, String> _provinceToRegion = {
+    // NCR cities / municipalities
+    'manila': 'NCR', 'quezon city': 'NCR', 'makati': 'NCR', 'pasig': 'NCR',
+    'taguig': 'NCR', 'pasay': 'NCR', 'caloocan': 'NCR', 'mandaluyong': 'NCR',
+    'muntinlupa': 'NCR', 'parañaque': 'NCR', 'paranaque': 'NCR',
+    'las piñas': 'NCR', 'las pinas': 'NCR', 'marikina': 'NCR',
+    'san juan': 'NCR', 'valenzuela': 'NCR', 'malabon': 'NCR',
+    'navotas': 'NCR', 'pateros': 'NCR',
+
+    // Luzon
+    'ilocos norte': 'Luzon', 'ilocos sur': 'Luzon', 'la union': 'Luzon',
+    'pangasinan': 'Luzon', 'cagayan': 'Luzon', 'isabela': 'Luzon',
+    'nueva vizcaya': 'Luzon', 'quirino': 'Luzon', 'batanes': 'Luzon',
+    'abra': 'Luzon', 'apayao': 'Luzon', 'benguet': 'Luzon',
+    'ifugao': 'Luzon', 'kalinga': 'Luzon', 'mountain province': 'Luzon',
+    'aurora': 'Luzon', 'bataan': 'Luzon', 'bulacan': 'Luzon',
+    'nueva ecija': 'Luzon', 'pampanga': 'Luzon', 'tarlac': 'Luzon',
+    'zambales': 'Luzon', 'batangas': 'Luzon', 'cavite': 'Luzon',
+    'laguna': 'Luzon', 'quezon': 'Luzon', 'rizal': 'Luzon',
+    'marinduque': 'Luzon', 'occidental mindoro': 'Luzon',
+    'oriental mindoro': 'Luzon', 'palawan': 'Luzon', 'romblon': 'Luzon',
+    'albay': 'Luzon', 'camarines norte': 'Luzon', 'camarines sur': 'Luzon',
+    'catanduanes': 'Luzon', 'masbate': 'Luzon', 'sorsogon': 'Luzon',
+
+    // Visayas
+    'aklan': 'Visayas', 'antique': 'Visayas', 'capiz': 'Visayas',
+    'guimaras': 'Visayas', 'iloilo': 'Visayas',
+    'negros occidental': 'Visayas', 'bohol': 'Visayas', 'cebu': 'Visayas',
+    'negros oriental': 'Visayas', 'siquijor': 'Visayas',
+    'biliran': 'Visayas', 'eastern samar': 'Visayas', 'leyte': 'Visayas',
+    'northern samar': 'Visayas', 'samar': 'Visayas',
+    'southern leyte': 'Visayas',
+
+    // Mindanao
+    'zamboanga del norte': 'Mindanao', 'zamboanga del sur': 'Mindanao',
+    'zamboanga sibugay': 'Mindanao', 'bukidnon': 'Mindanao',
+    'camiguin': 'Mindanao', 'lanao del norte': 'Mindanao',
+    'misamis occidental': 'Mindanao', 'misamis oriental': 'Mindanao',
+    'davao de oro': 'Mindanao', 'davao del norte': 'Mindanao',
+    'davao del sur': 'Mindanao', 'davao occidental': 'Mindanao',
+    'davao oriental': 'Mindanao', 'cotabato': 'Mindanao',
+    'sarangani': 'Mindanao', 'south cotabato': 'Mindanao',
+    'sultan kudarat': 'Mindanao', 'agusan del norte': 'Mindanao',
+    'agusan del sur': 'Mindanao', 'dinagat islands': 'Mindanao',
+    'surigao del norte': 'Mindanao', 'surigao del sur': 'Mindanao',
+    'basilan': 'Mindanao', 'lanao del sur': 'Mindanao',
+    'maguindanao': 'Mindanao', 'sulu': 'Mindanao', 'tawi-tawi': 'Mindanao',
+  };
+
+  /// Classifies a free-form location string into one of NCR / Luzon /
+  /// Visayas / Mindanao. Returns null if it cannot be classified.
+  String? _classifyRegion(String? raw) {
+    if (raw == null) return null;
+    final v = raw.trim().toLowerCase();
+    if (v.isEmpty) return null;
+
+    // Direct region names
+    if (v.contains('ncr') ||
+        v.contains('metro manila') ||
+        v.contains('national capital')) {
+      return 'NCR';
+    }
+    if (v.contains('luzon')) return 'Luzon';
+    if (v.contains('visayas')) return 'Visayas';
+    if (v.contains('mindanao')) return 'Mindanao';
+
+    // Exact province / city match
+    final direct = _provinceToRegion[v];
+    if (direct != null) return direct;
+
+    // Substring match (handles values like "Bulacan, Philippines" or
+    // "Cebu City"). Longest keys first so "negros occidental" wins over
+    // "negros oriental" by specificity.
+    final keys = _provinceToRegion.keys.toList()
+      ..sort((a, b) => b.length.compareTo(a.length));
+    for (final key in keys) {
+      if (v.contains(key)) return _provinceToRegion[key];
+    }
+    return null;
+  }
+
+  Future<void> _loadUserRegion() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      // Priority 1: use the default address's `location` when one exists.
+      try {
+        final defaultAddress = await AddressService.getDefaultAddress();
+        if (defaultAddress != null && defaultAddress.location.isNotEmpty) {
+          final region = _classifyRegion(defaultAddress.location);
+          if (mounted && region != null) {
+            setState(() {
+              _userRegion = region;
+            });
+            return;
+          }
+        }
+      } catch (e) {
+        AppLogger.d('Error reading default address for region: $e');
+        // Fall through to legacy User.location.
+      }
+
+      // Priority 2: legacy User.location fallback.
+      final doc = await FirebaseFirestore.instance
+          .collection('User')
+          .doc(user.uid)
+          .get();
+      if (!doc.exists) return;
+      final data = doc.data();
+      final location = data?['location'] as String?;
+      final region = _classifyRegion(location);
+      if (mounted && region != null) {
+        setState(() {
+          _userRegion = region;
+        });
+      }
+    } catch (e) {
+      AppLogger.d('Error loading user region: $e');
+    }
+  }
+
+  /// Extracts the seller's region from cached seller data using
+  /// vendor.company.address.location, falling back to address.province.
+  String? _sellerRegion(String sellerId) {
+    final raw = _sellerDataCache[sellerId];
+    if (raw == null) return null;
+    final vendor = raw['vendor'] is Map
+        ? raw['vendor'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final company = vendor['company'] is Map
+        ? vendor['company'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final address = company['address'] is Map
+        ? company['address'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final location = (address['location'] as String?) ??
+        (address['province'] as String?);
+    return _classifyRegion(location);
+  }
+
+  /// Returns a delivery-estimate label for shipping FROM the seller TO the
+  /// current user. Falls back to [_defaultDeliveryLabel] when either side's
+  /// region cannot be determined.
+  String _estimateDelivery(String sellerId) {
+    final from = _sellerRegion(sellerId);
+    final to = _userRegion;
+    if (from == null || to == null) return _defaultDeliveryLabel;
+    return _deliveryEstimateMap[from]?[to] ?? _defaultDeliveryLabel;
   }
 
   void _showLoginRequiredDialog() {
@@ -1481,6 +1667,12 @@ class _ProductListingPageState extends State<ProductListingPage>
 
   Widget _buildScaffold() {
     final isWideScreen = MediaQuery.of(context).size.width >= 900;
+    const double traderListMaxWidth = 720;
+    final double tradersHorizontalPadding = (kIsWeb && isWideScreen)
+        ? (MediaQuery.of(context).size.width - traderListMaxWidth) / 2
+        : (MediaQuery.of(context).size.width >= 900
+            ? (MediaQuery.of(context).size.width - 1100) / 2
+            : 16);
     return Scaffold(
       backgroundColor: AppColors.background,
       body: RefreshIndicator(
@@ -1975,9 +2167,7 @@ class _ProductListingPageState extends State<ProductListingPage>
               else
                 SliverPadding(
                   padding: EdgeInsets.symmetric(
-                    horizontal: MediaQuery.of(context).size.width >= 900
-                        ? (MediaQuery.of(context).size.width - 1100) / 2
-                        : 16,
+                    horizontal: tradersHorizontalPadding,
                   ),
                   sliver: _buildSearchTradersList(),
                 ),
@@ -2269,9 +2459,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                 ? SliverFillRemaining(child: _buildEmptyState())
                 : SliverPadding(
                     padding: EdgeInsets.symmetric(
-                      horizontal: MediaQuery.of(context).size.width >= 900
-                          ? (MediaQuery.of(context).size.width - 1100) / 2
-                          : 16,
+                      horizontal: tradersHorizontalPadding,
                     ),
                     sliver: _buildTradersList(),
                   ),
@@ -4020,7 +4208,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              '1-3 days',
+                              _estimateDelivery(sellerId),
                               style: AppTextStyles.bodySmall.copyWith(
                                 color: AppColors.primary,
                                 fontWeight: FontWeight.w600,

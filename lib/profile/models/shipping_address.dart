@@ -14,6 +14,7 @@ class ShippingAddress {
   final double? longitude;
   final String? notes;
   final bool isDefault;
+  final String location;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -31,6 +32,7 @@ class ShippingAddress {
     this.longitude,
     this.notes,
     this.isDefault = false,
+    required this.location,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -51,6 +53,7 @@ class ShippingAddress {
       'longitude': longitude,
       'notes': notes,
       'isDefault': isDefault,
+      'location': location,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };
@@ -72,6 +75,7 @@ class ShippingAddress {
       longitude: map['longitude']?.toDouble(),
       notes: map['notes'],
       isDefault: map['isDefault'] ?? false,
+      location: map['location'] ?? '',
       createdAt: DateTime.parse(map['createdAt']),
       updatedAt: DateTime.parse(map['updatedAt']),
     );
@@ -109,6 +113,7 @@ class ShippingAddress {
     double? longitude,
     String? notes,
     bool? isDefault,
+    String? location,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -126,6 +131,7 @@ class ShippingAddress {
       longitude: longitude ?? this.longitude,
       notes: notes ?? this.notes,
       isDefault: isDefault ?? this.isDefault,
+      location: location ?? this.location,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
