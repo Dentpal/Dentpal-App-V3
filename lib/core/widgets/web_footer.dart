@@ -158,27 +158,33 @@ class WebFooter extends StatelessWidget {
         // Social Media Icons
         Row(
           children: [
-            _buildSocialIcon(Icons.facebook, () {
-              // TODO: Add Facebook link
+            _buildSocialIcon(Icons.facebook, () async {
+              final uri = Uri.parse('https://www.facebook.com/p/DentPal-100064135209127/');
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
             }),
             const SizedBox(width: 12),
             _buildSocialIcon(Icons.email, () async {
-              final uri = Uri.parse('mailto:admin@dentpal.shop');
+              final uri = Uri.parse('mailto:admin@dental.shop');
               final success = await launchUrl(uri);
               if (!success) {
                 final scaffold = ScaffoldMessenger.of(context);
                 scaffold.showSnackBar(
-                  SnackBar(
+                  const SnackBar(
                     content: Text('Could not open mail app. Email copied to clipboard.'),
                     duration: Duration(seconds: 3),
                   ),
                 );
-                Clipboard.setData(ClipboardData(text: 'admin@ddentpal.shop'));
+                Clipboard.setData(const ClipboardData(text: 'admin@dental.shop'));
               }
             }),
             const SizedBox(width: 12),
-            _buildSocialIcon(Icons.phone, () {
-              // TODO: Add Phone link
+            _buildSocialIcon(Icons.phone, () async {
+              final uri = Uri.parse('tel:09178287353');
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
             }),
           ],
         ),
