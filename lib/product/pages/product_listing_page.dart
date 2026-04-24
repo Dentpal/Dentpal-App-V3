@@ -3924,17 +3924,17 @@ class _ProductListingPageState extends State<ProductListingPage>
 
   // Build individual Trader/Business Card (Foodpanda style)
   Widget _buildTraderCard(String sellerId, List<Product> products) {
-    // Price range indicator from average of product prices
-    final prices = products.map((p) => p.lowestPrice ?? 0).where((p) => p > 0).toList();
-    String priceIndicator = '₱';
-    if (prices.isNotEmpty) {
-      final avgPrice = prices.reduce((a, b) => a + b) / prices.length;
-      if (avgPrice > 5000) {
-        priceIndicator = '₱₱₱';
-      } else if (avgPrice > 1000) {
-        priceIndicator = '₱₱';
-      }
-    }
+    // Price range indicator (₱/₱₱/₱₱₱) — hidden per request, leaving logic commented for future use.
+    // final prices = products.map((p) => p.lowestPrice ?? 0).where((p) => p > 0).toList();
+    // String priceIndicator = '₱';
+    // if (prices.isNotEmpty) {
+    //   final avgPrice = prices.reduce((a, b) => a + b) / prices.length;
+    //   if (avgPrice > 5000) {
+    //     priceIndicator = '₱₱₱';
+    //   } else if (avgPrice > 1000) {
+    //     priceIndicator = '₱₱';
+    //   }
+    // }
 
     // Read vendor data from cache (populated by pre-fetch before build)
     final stillLoading = !_sellerDataCache.containsKey(sellerId);
@@ -4116,21 +4116,22 @@ class _ProductListingPageState extends State<ProductListingPage>
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppColors.accent.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          priceIndicator,
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.accent,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
+                      // Price range badge (₱/₱₱/₱₱₱) — hidden per request.
+                      // const SizedBox(width: 8),
+                      // Container(
+                      //   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      //   decoration: BoxDecoration(
+                      //     color: AppColors.accent.withValues(alpha: 0.1),
+                      //     borderRadius: BorderRadius.circular(6),
+                      //   ),
+                      //   child: Text(
+                      //     priceIndicator,
+                      //     style: AppTextStyles.bodySmall.copyWith(
+                      //       color: AppColors.accent,
+                      //       fontWeight: FontWeight.bold,
+                      //     ),
+                      //   ),
+                      // ),
                     ],
                   ),
 
