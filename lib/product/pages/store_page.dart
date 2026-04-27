@@ -1040,57 +1040,69 @@ class _StorePageState extends State<StorePage> {
     return GestureDetector(
       onTap: _showFiltersSheet,
       behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: isActive ? AppColors.primary : AppColors.surface,
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: isActive
-                ? AppColors.primary
-                : AppColors.onSurface.withValues(alpha: 0.2),
-          ),
-        ),
-        child: Stack(
-          clipBehavior: Clip.none,
-          alignment: Alignment.center,
-          children: [
-            Icon(
-              Icons.tune_rounded,
-              size: 18,
-              color: isActive
-                  ? AppColors.onPrimary
-                  : AppColors.onSurface.withValues(alpha: 0.7),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            height: 36,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: isActive ? AppColors.primary : AppColors.surface,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isActive
+                    ? AppColors.primary
+                    : AppColors.onSurface.withValues(alpha: 0.2),
+              ),
             ),
-            if (isActive)
-              Positioned(
-                top: -4,
-                right: -4,
-                child: Container(
-                  padding: const EdgeInsets.all(3),
-                  constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.primary, width: 1.5),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.tune_rounded,
+                  size: 16,
+                  color: isActive
+                      ? AppColors.onPrimary
+                      : AppColors.onSurface.withValues(alpha: 0.7),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Filter',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: isActive ? AppColors.onPrimary : AppColors.onSurface,
+                    fontWeight: FontWeight.w600,
                   ),
-                  child: Center(
-                    child: Text(
-                      '$count',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.primary,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
-                        height: 1,
-                      ),
+                ),
+              ],
+            ),
+          ),
+          if (isActive)
+            Positioned(
+              top: -4,
+              right: -4,
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.primary, width: 1.5),
+                ),
+                child: Center(
+                  child: Text(
+                    '$count',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.primary,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      height: 1,
                     ),
                   ),
                 ),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
