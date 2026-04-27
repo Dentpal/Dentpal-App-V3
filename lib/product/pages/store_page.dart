@@ -53,6 +53,11 @@ class _StorePageState extends State<StorePage> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
+  // Price sort + range (client-side on loaded products)
+  String _selectedPriceSort = 'All';
+  double? _minPrice;
+  double? _maxPrice;
+
 
   // Version token for cache-busting
   late final String _imageVersionToken;
@@ -300,13 +305,41 @@ class _StorePageState extends State<StorePage> {
     setState(() { _searchQuery = query; });
   }
 
-  /// Products to display — apply client-side search on top of loaded products
+  /// Products to display — apply client-side search + price sort on top of loaded products
   List<Product> get _displayedProducts {
-    if (_searchQuery.isEmpty) return _products;
-    final q = _searchQuery.toLowerCase();
-    return _products.where((p) =>
-        p.name.toLowerCase().contains(q) ||
-        p.description.toLowerCase().contains(q)).toList();
+    List<Product> list;
+    if (_searchQuery.isEmpty) {
+      list = List<Product>.from(_products);
+    } else {
+      final q = _searchQuery.toLowerCase();
+      list = _products.where((p) =>
+          p.name.toLowerCase().contains(q) ||
+          p.description.toLowerCase().contains(q)).toList();
+    }
+
+    if (_minPrice != null || _maxPrice != null) {
+      list = list.where((p) {
+        final price = p.lowestPrice ?? 0.0;
+        if (_minPrice != null && price < _minPrice!) return false;
+        if (_maxPrice != null && price > _maxPrice!) return false;
+        return true;
+      }).toList();
+    }
+
+    if (_selectedPriceSort == 'Low to High') {
+      list.sort((a, b) => (a.lowestPrice ?? 0.0).compareTo(b.lowestPrice ?? 0.0));
+    } else if (_selectedPriceSort == 'High to Low') {
+      list.sort((a, b) => (b.lowestPrice ?? 0.0).compareTo(a.lowestPrice ?? 0.0));
+    }
+
+    return list;
+  }
+
+  int get _activeFilterCount {
+    int count = 0;
+    if (_selectedPriceSort != 'All') count++;
+    if (_minPrice != null || _maxPrice != null) count++;
+    return count;
   }
 
   void _shareStore() {
@@ -941,12 +974,19 @@ class _StorePageState extends State<StorePage> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
-          child: Text(
-            'Categories',
-            style: AppTextStyles.titleMedium.copyWith(
-              fontWeight: FontWeight.bold,
-              color: AppColors.onSurface,
-            ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Categories',
+                  style: AppTextStyles.titleMedium.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.onSurface,
+                  ),
+                ),
+              ),
+              _buildFilterIconButton(),
+            ],
           ),
         ),
         SizedBox(
@@ -988,6 +1028,368 @@ class _StorePageState extends State<StorePage> {
           ),
         ),
       ],
+    );
+  }
+
+  // ── Filter Icon + Bottom Sheet ──────────────────────────────────────────
+
+  Widget _buildFilterIconButton() {
+    final count = _activeFilterCount;
+    final isActive = count > 0;
+
+    return GestureDetector(
+      onTap: _showFiltersSheet,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: isActive ? AppColors.primary : AppColors.surface,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: isActive
+                ? AppColors.primary
+                : AppColors.onSurface.withValues(alpha: 0.2),
+          ),
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            Icon(
+              Icons.tune_rounded,
+              size: 18,
+              color: isActive
+                  ? AppColors.onPrimary
+                  : AppColors.onSurface.withValues(alpha: 0.7),
+            ),
+            if (isActive)
+              Positioned(
+                top: -4,
+                right: -4,
+                child: Container(
+                  padding: const EdgeInsets.all(3),
+                  constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.primary, width: 1.5),
+                  ),
+                  child: Center(
+                    child: Text(
+                      '$count',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.primary,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        height: 1,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showFiltersSheet() {
+    String draftSort = _selectedPriceSort;
+    final minController = TextEditingController(
+      text: _minPrice != null ? _minPrice!.toStringAsFixed(0) : '',
+    );
+    final maxController = TextEditingController(
+      text: _maxPrice != null ? _maxPrice!.toStringAsFixed(0) : '',
+    );
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            Widget sortOption(String label) {
+              final selected = draftSort == label;
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => setSheetState(() => draftSort = label),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? AppColors.primary.withValues(alpha: 0.08)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: selected
+                          ? AppColors.primary
+                          : AppColors.onSurface.withValues(alpha: 0.15),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        selected
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_off,
+                        size: 20,
+                        color: selected
+                            ? AppColors.primary
+                            : AppColors.onSurface.withValues(alpha: 0.5),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        label,
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: selected ? AppColors.primary : AppColors.onSurface,
+                          fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
+              ),
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(24),
+                    topRight: Radius.circular(24),
+                  ),
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          margin: const EdgeInsets.only(top: 12),
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: AppColors.onSurface.withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 16, 12, 4),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(
+                                Icons.tune_rounded,
+                                color: AppColors.primary,
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Filters',
+                                style: AppTextStyles.titleLarge.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.onSurface,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () => Navigator.pop(sheetContext),
+                              icon: const Icon(Icons.close),
+                              iconSize: 20,
+                              color: AppColors.onSurface,
+                            ),
+                          ],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+                        child: Text(
+                          'SORT BY PRICE',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.onSurface.withValues(alpha: 0.6),
+                            letterSpacing: 0.8,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Column(
+                          children: [
+                            sortOption('All'),
+                            const SizedBox(height: 8),
+                            sortOption('Low to High'),
+                            const SizedBox(height: 8),
+                            sortOption('High to Low'),
+                          ],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+                        child: Text(
+                          'PRICE RANGE',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.onSurface.withValues(alpha: 0.6),
+                            letterSpacing: 0.8,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _buildPriceField(
+                                controller: minController,
+                                hint: 'Min',
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              '—',
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                color: AppColors.onSurface.withValues(alpha: 0.5),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildPriceField(
+                                controller: maxController,
+                                hint: 'Max',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () {
+                                  setSheetState(() {
+                                    draftSort = 'All';
+                                    minController.clear();
+                                    maxController.clear();
+                                  });
+                                },
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  side: BorderSide(
+                                    color: AppColors.onSurface.withValues(alpha: 0.25),
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: Text(
+                                  'Reset',
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    color: AppColors.onSurface,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  final minVal = double.tryParse(minController.text.trim());
+                                  final maxVal = double.tryParse(maxController.text.trim());
+                                  setState(() {
+                                    _selectedPriceSort = draftSort;
+                                    _minPrice = minVal;
+                                    _maxPrice = maxVal;
+                                  });
+                                  Navigator.pop(sheetContext);
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primary,
+                                  foregroundColor: AppColors.onPrimary,
+                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  elevation: 0,
+                                ),
+                                child: Text(
+                                  'Apply',
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    color: AppColors.onPrimary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildPriceField({
+    required TextEditingController controller,
+    required String hint,
+  }) {
+    return TextField(
+      controller: controller,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      style: AppTextStyles.bodyMedium,
+      decoration: InputDecoration(
+        prefixText: '₱ ',
+        prefixStyle: AppTextStyles.bodyMedium.copyWith(
+          color: AppColors.onSurface.withValues(alpha: 0.6),
+        ),
+        hintText: hint,
+        hintStyle: AppTextStyles.bodyMedium.copyWith(
+          color: AppColors.onSurface.withValues(alpha: 0.4),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(
+            color: AppColors.onSurface.withValues(alpha: 0.2),
+          ),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(
+            color: AppColors.onSurface.withValues(alpha: 0.2),
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.primary),
+        ),
+      ),
     );
   }
 

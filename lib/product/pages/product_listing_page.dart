@@ -123,11 +123,9 @@ class _ProductListingPageState extends State<ProductListingPage>
 
   // Filter state
   String _selectedShippedFrom = 'All';
-  String _selectedPriceSort = 'All';
 
   // Filter options
   final List<String> _shippedFromOptions = ['All', 'Nearest You', 'NCR', 'Luzon', 'Visayas', 'Mindanao'];
-  final List<String> _priceSortOptions = ['All', 'Low to High', 'High to Low'];
 
   // Inline search state
   final TextEditingController _searchController = TextEditingController();
@@ -3421,23 +3419,6 @@ class _ProductListingPageState extends State<ProductListingPage>
                 _loadFirstPage();
               },
             ),
-            const SizedBox(width: 8),
-            // Price Sort Filter
-            _buildFilterChip(
-              icon: Icons.attach_money_rounded,
-              label: 'Price',
-              value: _selectedPriceSort,
-              options: _priceSortOptions,
-              onSelected: (value) {
-                setState(() {
-                  _selectedPriceSort = value;
-                  _products = [];
-                  _lastDocument = null;
-                  _hasMore = true;
-                });
-                _loadFirstPage();
-              },
-            ),
           ],
         ),
       ),
@@ -3764,21 +3745,6 @@ class _ProductListingPageState extends State<ProductListingPage>
       sellerIds = sellerIds
           .where((sid) => _sellerRegion(sid) == targetRegion)
           .toList();
-    }
-
-    // Apply Price Sort — sort sellers by their minimum product price
-    if (_selectedPriceSort == 'Low to High') {
-      sellerIds.sort((a, b) {
-        final aMin = (productsBySeller[a] ?? []).map((p) => p.lowestPrice ?? 0.0).fold(double.infinity, (m, v) => v < m ? v : m);
-        final bMin = (productsBySeller[b] ?? []).map((p) => p.lowestPrice ?? 0.0).fold(double.infinity, (m, v) => v < m ? v : m);
-        return aMin.compareTo(bMin);
-      });
-    } else if (_selectedPriceSort == 'High to Low') {
-      sellerIds.sort((a, b) {
-        final aMin = (productsBySeller[a] ?? []).map((p) => p.lowestPrice ?? 0.0).fold(0.0, (m, v) => v > m ? v : m);
-        final bMin = (productsBySeller[b] ?? []).map((p) => p.lowestPrice ?? 0.0).fold(0.0, (m, v) => v > m ? v : m);
-        return bMin.compareTo(aMin);
-      });
     }
 
     if (sellerIds.isEmpty) {
