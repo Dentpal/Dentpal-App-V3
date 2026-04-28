@@ -53,6 +53,7 @@ function checkRateLimit(identifier: string): boolean {
 // Configure CORS
 const corsHandler = cors({ 
   origin: [
+    'https://dentpal.shop',
     'https://dentpal-store.web.app',
     'https://dentpal-store-sandbox-testing.web.app',
     'https://dentpal-161e5.web.app',

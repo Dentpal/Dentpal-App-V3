@@ -5,6 +5,7 @@ import 'package:dentpal/core/services/sub_account_service.dart';
 import '../models/cart_model.dart';
 import '../services/cart_service.dart';
 import '../widgets/seller_group_widget.dart';
+import '../widgets/voucher_picker_sheet.dart';
 import 'checkout_page.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
@@ -71,7 +72,8 @@ class _CartPageState extends State<CartPage>
   List<SellerGroup>? _cachedSellerGroups;
   CartSummary? _cartSummary;
   bool _isLoading = false;
-  final Map<String, Map<String, dynamic>?> _selectedVouchers = {};
+  final Map<String, Map<String, dynamic>?> _selectedDiscountVouchers = {};
+  final Map<String, Map<String, dynamic>?> _selectedShippingVouchers = {};
 
   // Track the last cache timestamp to determine if we should refresh
   DateTime? _lastCacheTime;
@@ -973,6 +975,18 @@ class _CartPageState extends State<CartPage>
                 sellerData: {'initialTab': 'products'},
               );
             },
+            selectedDiscountVoucher: _selectedDiscountVouchers[sellerGroup.sellerId],
+            onDiscountVoucherSelected: (voucher) {
+              setState(() {
+                _selectedDiscountVouchers[sellerGroup.sellerId] = voucher;
+              });
+            },
+            selectedShippingVoucher: _selectedShippingVouchers[sellerGroup.sellerId],
+            onShippingVoucherSelected: (voucher) {
+              setState(() {
+                _selectedShippingVouchers[sellerGroup.sellerId] = voucher;
+              });
+            },
           ),
         );
       },
@@ -980,6 +994,8 @@ class _CartPageState extends State<CartPage>
   }
 
   Widget _buildWebCartSummary() {
+    final totalDiscount = _calculateTotalCartDiscount();
+    final shippingVoucherLabels = _selectedShippingVoucherLabels();
     return Column(
       children: [
         // Summary header
@@ -1052,7 +1068,56 @@ class _CartPageState extends State<CartPage>
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+
+                  if (totalDiscount > 0) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Shop Voucher Applied',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.success,
+                          ),
+                        ),
+                        Text(
+                          '-₱${totalDiscount.toStringAsFixed(2)}',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'Roboto',
+                            color: AppColors.success,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  if (shippingVoucherLabels.isNotEmpty) ...[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Shipping Voucher',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.success,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            shippingVoucherLabels.join(', '),
+                            textAlign: TextAlign.right,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.success,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                  ],
 
                   // Divider
                   Divider(
@@ -1072,7 +1137,7 @@ class _CartPageState extends State<CartPage>
                         ),
                       ),
                       Text(
-                        '₱${_cartSummary!.selectedItemsTotal.toStringAsFixed(2)}',
+                        '₱${(_cartSummary!.selectedItemsTotal - totalDiscount).toStringAsFixed(2)}',
                         style: AppTextStyles.titleMedium.copyWith(
                           fontWeight: FontWeight.w700,
                           color: AppColors.primary,
@@ -1319,10 +1384,16 @@ class _CartPageState extends State<CartPage>
                         sellerData: {'initialTab': 'products'},
                       );
                     },
-                    selectedVoucher: _selectedVouchers[sellerGroup.sellerId],
-                    onVoucherSelected: (voucher) {
+                    selectedDiscountVoucher: _selectedDiscountVouchers[sellerGroup.sellerId],
+                    onDiscountVoucherSelected: (voucher) {
                       setState(() {
-                        _selectedVouchers[sellerGroup.sellerId] = voucher;
+                        _selectedDiscountVouchers[sellerGroup.sellerId] = voucher;
+                      });
+                    },
+                    selectedShippingVoucher: _selectedShippingVouchers[sellerGroup.sellerId],
+                    onShippingVoucherSelected: (voucher) {
+                      setState(() {
+                        _selectedShippingVouchers[sellerGroup.sellerId] = voucher;
                       });
                     },
                   );
@@ -1356,10 +1427,16 @@ class _CartPageState extends State<CartPage>
                 sellerData: {'initialTab': 'products'},
               );
             },
-            selectedVoucher: _selectedVouchers[sellerGroup.sellerId],
-            onVoucherSelected: (voucher) {
+            selectedDiscountVoucher: _selectedDiscountVouchers[sellerGroup.sellerId],
+            onDiscountVoucherSelected: (voucher) {
               setState(() {
-                _selectedVouchers[sellerGroup.sellerId] = voucher;
+                _selectedDiscountVouchers[sellerGroup.sellerId] = voucher;
+              });
+            },
+            selectedShippingVoucher: _selectedShippingVouchers[sellerGroup.sellerId],
+            onShippingVoucherSelected: (voucher) {
+              setState(() {
+                _selectedShippingVouchers[sellerGroup.sellerId] = voucher;
               });
             },
           );
@@ -1551,7 +1628,7 @@ class _CartPageState extends State<CartPage>
     if (_cachedSellerGroups == null) return 0.0;
     double total = 0.0;
     for (final group in _cachedSellerGroups!) {
-      final voucher = _selectedVouchers[group.sellerId];
+      final voucher = _selectedDiscountVouchers[group.sellerId];
       if (voucher == null) continue;
 
       final sellerSubtotal = group.selectedItemsTotal;
@@ -1573,9 +1650,33 @@ class _CartPageState extends State<CartPage>
     return total;
   }
 
+  String _shippingVoucherSummaryLabel(Map<String, dynamic> voucher) {
+    final modes = parseShippingCoverage(voucher['shippingOption']);
+    if (modes.contains('standard') && modes.contains('express')) {
+      return 'Free Standard/Express Shipping';
+    }
+    if (modes.contains('express')) {
+      return 'Free Express Shipping';
+    }
+    return 'Free Standard Shipping';
+  }
+
+  List<String> _selectedShippingVoucherLabels() {
+    if (_cachedSellerGroups == null) return const [];
+    final labels = <String>[];
+    for (final group in _cachedSellerGroups!) {
+      if (!group.hasSelectedItems) continue;
+      final voucher = _selectedShippingVouchers[group.sellerId];
+      if (voucher == null) continue;
+      labels.add(_shippingVoucherSummaryLabel(voucher));
+    }
+    return labels;
+  }
+
   Widget _buildCheckoutSection() {
     final summary = _cartSummary!;
     final totalDiscount = _calculateTotalCartDiscount();
+    final shippingVoucherLabels = _selectedShippingVoucherLabels();
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -1694,6 +1795,32 @@ class _CartPageState extends State<CartPage>
                           ),
                         ],
                       ),
+                    ),
+                  ],
+
+                  if (shippingVoucherLabels.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Shipping Voucher',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.success,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            shippingVoucherLabels.join(', '),
+                            textAlign: TextAlign.right,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.success,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
 
@@ -1952,6 +2079,9 @@ class _CartPageState extends State<CartPage>
       for (final group in _cachedSellerGroups!) {
         for (final item in group.items) {
           if (item.isSelected) {
+            if (item.sellerId == null || item.sellerId!.isEmpty) {
+              item.sellerId = group.sellerId;
+            }
             selectedItems.add(item);
           }
         }
@@ -1969,9 +2099,18 @@ class _CartPageState extends State<CartPage>
     }
 
     // Filter vouchers to only include sellers with selected items
-    final relevantVouchers = Map<String, Map<String, dynamic>?>.fromEntries(
-      _selectedVouchers.entries.where(
-        (e) => selectedItems.any((item) => item.sellerId == e.key),
+    final selectedSellerIds = (_cachedSellerGroups ?? const <SellerGroup>[])
+        .where((group) => group.hasSelectedItems)
+        .map((group) => group.sellerId)
+        .toSet();
+    final relevantDiscountVouchers = Map<String, Map<String, dynamic>?>.fromEntries(
+      _selectedDiscountVouchers.entries.where(
+        (e) => selectedSellerIds.contains(e.key),
+      ),
+    );
+    final relevantShippingVouchers = Map<String, Map<String, dynamic>?>.fromEntries(
+      _selectedShippingVouchers.entries.where(
+        (e) => selectedSellerIds.contains(e.key),
       ),
     );
 
@@ -1982,7 +2121,18 @@ class _CartPageState extends State<CartPage>
         builder: (context) => CheckoutPage(
           cartItems: selectedItems,
           cartSummary: _cartSummary!,
-          selectedVouchers: relevantVouchers,
+          selectedDiscountVouchers: relevantDiscountVouchers,
+          selectedShippingVouchers: relevantShippingVouchers,
+          onVouchersChanged: (discountVouchers, shippingVouchers) {
+            setState(() {
+              _selectedDiscountVouchers
+                ..clear()
+                ..addAll(discountVouchers);
+              _selectedShippingVouchers
+                ..clear()
+                ..addAll(shippingVouchers);
+            });
+          },
           onOrderComplete: () {
             // Refresh cart after successful order
             _refreshCart();

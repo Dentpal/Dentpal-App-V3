@@ -112,7 +112,7 @@ export interface SellerFeeBreakdown {
   shippingCost: number;
   buyerShippingCharge: number;
   sellerShippingCharge: number;
-  shippingSplitRule: 'buyer_pays_full' | 'seller_pays_full';
+  shippingSplitRule: 'buyer_pays_full' | 'seller_pays_full' | 'shipping_voucher_partial';
   totalChargedToBuyer: number; // Cart value + buyer's shipping portion
   paymentProcessingFee: number; // Based on buyer's total for this seller
   platformFee: number; // Custom % or default 8.88% of this seller's cart value
@@ -483,7 +483,8 @@ export async function calculateJRSShippingCost(
   jrsApiUrl?: string,
   express: boolean = true,
   insurance: boolean = true,
-  valuation: boolean = true
+  valuation: boolean = true,
+  codAmountToCollect?: number
 ): Promise<{ shippingCost: number; packagingName?: string; insuranceCost?: number; evaluationCost?: number }> {
   if (!jrsApiKey || !jrsApiUrl) {
     throw new Error('JRS API configuration missing - API key and URL are required');
@@ -534,13 +535,17 @@ export async function calculateJRSShippingCost(
     // and non-express calls to return the same rate.
     const productName = determineProductName(shipmentItems);
 
+    const resolvedCodAmount = typeof codAmountToCollect === 'number' && codAmountToCollect > 0
+      ? codAmountToCollect
+      : 0;
+
     const jrsRequest: JRSShippingRequest = {
       requestType: 'getrate',
       apiShippingRequest: {
         express,
         ...(insurance ? { insurance: true as const } : {}),
         ...(valuation ? { valuation: true as const } : {}),
-        codAmountToCollect: 0,
+        codAmountToCollect: resolvedCodAmount,
         // productName intentionally omitted — let JRS API choose packaging based on
         // the express flag + item dimensions so express/non-express rates differ correctly
         shipperAddressLine1: shipperAddress,
@@ -560,6 +565,7 @@ export async function calculateJRSShippingCost(
       itemCount: itemSummary.count,
       totalWeight: itemSummary.totalWeight,
       totalDeclaredValue: itemSummary.totalDeclaredValue,
+      codAmountToCollect: resolvedCodAmount,
       apiUrl: jrsApiUrl ? 'configured' : 'NOT CONFIGURED',
       apiKey: jrsApiKey ? 'configured' : 'NOT CONFIGURED'
     });
@@ -571,6 +577,7 @@ export async function calculateJRSShippingCost(
         express: jrsRequest.apiShippingRequest.express,
         insurance: jrsRequest.apiShippingRequest.insurance,
         valuation: jrsRequest.apiShippingRequest.valuation,
+        codAmountToCollect: jrsRequest.apiShippingRequest.codAmountToCollect,
         shipperAddressMasked: maskAddress(jrsRequest.apiShippingRequest.shipperAddressLine1),
         recipientAddressMasked: maskAddress(jrsRequest.apiShippingRequest.recipientAddressLine1),
         shipmentItemsCount: jrsRequest.apiShippingRequest.shipmentItems.length,
@@ -685,7 +692,8 @@ export async function calculateJRSShippingCostWithFallback(
   allowConfigFallback: boolean = false,
   express: boolean = true,
   insurance: boolean = true,
-  valuation: boolean = true
+  valuation: boolean = true,
+  codAmountToCollect?: number
 ): Promise<{ shippingCost: number; isFallback: boolean; error?: string; packagingName?: string; insuranceCost?: number; evaluationCost?: number }> {
   // Fail fast on configuration issues unless explicitly allowed to fallback
   if (!jrsApiKey || !jrsApiUrl) {
@@ -726,7 +734,8 @@ export async function calculateJRSShippingCostWithFallback(
       jrsApiUrl,
       express,
       insurance,
-      valuation
+      valuation,
+      codAmountToCollect
     );
 
     return {

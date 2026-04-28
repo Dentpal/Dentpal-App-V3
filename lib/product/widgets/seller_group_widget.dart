@@ -5,6 +5,7 @@ import '../models/cart_model.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import 'package:dentpal/utils/app_logger.dart';
+import 'voucher_picker_sheet.dart';
 
 class SellerGroupWidget extends StatefulWidget {
   final SellerGroup sellerGroup;
@@ -13,8 +14,10 @@ class SellerGroupWidget extends StatefulWidget {
   final Function(CartItem, bool) onToggleItemSelection;
   final Function(SellerGroup) onToggleGroupSelection;
   final VoidCallback? onSellerNameTap;
-  final Map<String, dynamic>? selectedVoucher;
-  final void Function(Map<String, dynamic>?)? onVoucherSelected;
+  final Map<String, dynamic>? selectedDiscountVoucher;
+  final void Function(Map<String, dynamic>?)? onDiscountVoucherSelected;
+  final Map<String, dynamic>? selectedShippingVoucher;
+  final void Function(Map<String, dynamic>?)? onShippingVoucherSelected;
 
   const SellerGroupWidget({
     super.key,
@@ -24,8 +27,10 @@ class SellerGroupWidget extends StatefulWidget {
     required this.onToggleItemSelection,
     required this.onToggleGroupSelection,
     this.onSellerNameTap,
-    this.selectedVoucher,
-    this.onVoucherSelected,
+    this.selectedDiscountVoucher,
+    this.onDiscountVoucherSelected,
+    this.selectedShippingVoucher,
+    this.onShippingVoucherSelected,
   });
 
   @override
@@ -35,8 +40,6 @@ class SellerGroupWidget extends StatefulWidget {
 class _SellerGroupWidgetState extends State<SellerGroupWidget> {
   Map<String, dynamic>? _freeDeliveryVoucher;
   bool _voucherLoading = true;
-  List<Map<String, dynamic>> _allVouchers = [];
-  bool _allVouchersLoaded = false;
 
   @override
   void initState() {
@@ -50,7 +53,6 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
     if (oldWidget.sellerGroup.sellerId != widget.sellerGroup.sellerId) {
       _freeDeliveryVoucher = null;
       _voucherLoading = true;
-      _allVouchersLoaded = false;
       _fetchFreeDeliveryVoucher();
     }
   }
@@ -102,40 +104,6 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
     }
   }
 
-  Future<void> _fetchAllVouchers() async {
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('Vouchers')
-          .where('sellerId', isEqualTo: widget.sellerGroup.sellerId)
-          .where('status', isEqualTo: 'active')
-          .get();
-
-      if (mounted) {
-        final now = DateTime.now();
-        final validVouchers = snapshot.docs.where((d) {
-          final data = d.data();
-          final start = _parseDate(data['startDate']);
-          final end = _parseDate(data['endDate']);
-          if (start != null && now.isBefore(start)) return false;
-          if (end != null && now.isAfter(end)) return false;
-          return true;
-        }).toList();
-        setState(() {
-          _allVouchers = validVouchers.map((d) => {...d.data(), 'id': d.id}).toList();
-          _allVouchersLoaded = true;
-        });
-      }
-    } catch (e) {
-      AppLogger.d('Error fetching vouchers: $e');
-      if (mounted) {
-        setState(() {
-          _allVouchers = [];
-          _allVouchersLoaded = true;
-        });
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -161,7 +129,9 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
             const Divider(height: 1, color: AppColors.grey200),
             _buildSellerSummary(),
             const Divider(height: 1, color: AppColors.grey200),
-            _buildVoucherCodeRow(),
+            _buildDiscountVoucherRow(),
+            const Divider(height: 1, color: AppColors.grey200),
+            _buildShippingVoucherRow(),
           ],
         ],
       ),
@@ -169,6 +139,7 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
   }
 
   Widget _buildSellerHeader() {
+    final hideProgressBar = widget.selectedShippingVoucher != null;
     return Container(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -268,8 +239,8 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
                         color: AppColors.onSurface.withValues(alpha: 0.6),
                       ),
                     ),
-                    // Free Shipping Progress Bar
-                    if (!_voucherLoading && _freeDeliveryVoucher != null)
+                    // Free Shipping Progress Bar — hidden when a shipping voucher is already selected
+                    if (!_voucherLoading && _freeDeliveryVoucher != null && !hideProgressBar)
                       _buildFreeShippingProgressBar(),
                   ],
                 ),
@@ -346,46 +317,79 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
     );
   }
 
-  Widget _buildVoucherCodeRow() {
-    String? discountLabel;
-    if (widget.selectedVoucher != null) {
-      final discountType = widget.selectedVoucher!['discountType'] as String? ?? '';
-      final discountValue = widget.selectedVoucher!['discountValue'] as num? ?? 0;
+  String _voucherCodeSuffix(Map<String, dynamic> voucher) {
+    final code = (voucher['code'] as String?)?.trim();
+    if (code == null || code.isEmpty) return '';
+    return ' ($code)';
+  }
 
-      if (discountType == 'percentage') {
-        discountLabel = '-${discountValue.toStringAsFixed(0)}%';
-      } else if (discountType == 'fixed') {
-        discountLabel = '-₱${discountValue.toStringAsFixed(2)}';
-      }
+  String? _formatDiscountVoucherLabel(Map<String, dynamic>? voucher) {
+    if (voucher == null) return null;
+    final discountType = voucher['discountType'] as String? ?? '';
+    final discountValue = voucher['discountValue'] as num? ?? 0;
+
+    String? benefit;
+    if (discountType == 'percentage') {
+      benefit = '-${discountValue.toStringAsFixed(0)}%';
+    } else if (discountType == 'fixed') {
+      benefit = '-₱${discountValue.toStringAsFixed(2)}';
     }
 
+    if (benefit == null) return null;
+    return '$benefit${_voucherCodeSuffix(voucher)}';
+  }
+
+  String? _formatShippingVoucherLabel(Map<String, dynamic>? voucher) {
+    if (voucher == null) return null;
+    final modes = parseShippingCoverage(voucher['shippingOption']);
+
+    String label;
+    if (modes.contains('standard') && modes.contains('express')) {
+      label = 'Free Standard/Express Shipping';
+    } else if (modes.contains('express')) {
+      label = 'Free Express Shipping';
+    } else {
+      label = 'Free Standard Shipping';
+    }
+
+    return '$label${_voucherCodeSuffix(voucher)}';
+  }
+
+  Widget _buildDiscountVoucherRow() {
+    final discountLabel = _formatDiscountVoucherLabel(widget.selectedDiscountVoucher);
+    final baseStyle = AppTextStyles.bodyMedium.copyWith(
+      fontWeight: FontWeight.w500,
+      fontFamily: 'Roboto',
+    );
+    final selectedStyle = baseStyle.copyWith(
+      color: AppColors.primary,
+      fontWeight: FontWeight.w700,
+    );
+
     return InkWell(
-      onTap: () => _showVoucherBottomSheet(context),
+      onTap: () => _openVoucherPicker(VoucherPickerMode.discount),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
             Icon(Icons.local_offer_outlined, color: AppColors.primary, size: 18),
             const SizedBox(width: 8),
-            Text(
-              'Add Shop Voucher Code',
-              style: AppTextStyles.bodyMedium.copyWith(
-                fontWeight: FontWeight.w500,
-                fontFamily: 'Roboto'
+            Expanded(
+              child: Text.rich(
+                TextSpan(
+                  text: 'Add Shop Voucher Code',
+                  style: baseStyle,
+                  children: discountLabel == null
+                      ? const []
+                      : [
+                          const TextSpan(text: ' - '),
+                          TextSpan(text: discountLabel, style: selectedStyle),
+                        ],
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-            const Spacer(),
-            if (discountLabel != null) ...[
-              Text(
-                discountLabel,
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.w700,
-                  fontFamily: 'Roboto'
-                ),
-              ),
-              const SizedBox(width: 8),
-            ],
+            const SizedBox(width: 8),
             Icon(
               Icons.chevron_right,
               color: AppColors.grey400,
@@ -397,27 +401,66 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
     );
   }
 
-  void _showVoucherBottomSheet(BuildContext context) async {
-    if (!_allVouchersLoaded) {
-      await _fetchAllVouchers();
-    }
+  Widget _buildShippingVoucherRow() {
+    final shippingLabel = _formatShippingVoucherLabel(widget.selectedShippingVoucher);
+    final baseStyle = AppTextStyles.bodyMedium.copyWith(
+      fontWeight: FontWeight.w500,
+      fontFamily: 'Roboto',
+    );
+    final selectedStyle = baseStyle.copyWith(
+      color: AppColors.primary,
+      fontWeight: FontWeight.w700,
+    );
 
-    if (!mounted) return;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _VoucherBottomSheet(
-        sellerName: widget.sellerGroup.sellerName,
-        allVouchers: _allVouchers,
-        selectedItemsTotal: widget.sellerGroup.selectedItemsTotal,
-        currentSelectedVoucher: widget.selectedVoucher,
-        onVoucherSelected: (voucher) {
-          widget.onVoucherSelected?.call(voucher);
-          Navigator.pop(context);
-        },
+    return InkWell(
+      onTap: () => _openVoucherPicker(VoucherPickerMode.shipping),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Icon(Icons.local_shipping_outlined, color: AppColors.primary, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text.rich(
+                TextSpan(
+                  text: 'Add Shipping Voucher Code',
+                  style: baseStyle,
+                  children: shippingLabel == null
+                      ? const []
+                      : [
+                          const TextSpan(text: ' - '),
+                          TextSpan(text: shippingLabel, style: selectedStyle),
+                        ],
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              Icons.chevron_right,
+              color: AppColors.grey400,
+              size: 20,
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  void _openVoucherPicker(VoucherPickerMode mode) {
+    final isShipping = mode == VoucherPickerMode.shipping;
+    final current = isShipping ? widget.selectedShippingVoucher : widget.selectedDiscountVoucher;
+    final callback = isShipping ? widget.onShippingVoucherSelected : widget.onDiscountVoucherSelected;
+    VoucherPickerSheet.show(
+      context: context,
+      mode: mode,
+      sellerId: widget.sellerGroup.sellerId,
+      sellerName: widget.sellerGroup.sellerName,
+      selectedItemsTotal: widget.sellerGroup.selectedItemsTotal,
+      currentSelectedVoucher: current,
+      onVoucherSelected: (voucher) {
+        callback?.call(voucher);
+      },
     );
   }
 
@@ -858,289 +901,6 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _VoucherBottomSheet extends StatefulWidget {
-  final String sellerName;
-  final List<Map<String, dynamic>> allVouchers;
-  final double selectedItemsTotal;
-  final Map<String, dynamic>? currentSelectedVoucher;
-  final void Function(Map<String, dynamic>?) onVoucherSelected;
-
-  const _VoucherBottomSheet({
-    required this.sellerName,
-    required this.allVouchers,
-    required this.selectedItemsTotal,
-    this.currentSelectedVoucher,
-    required this.onVoucherSelected,
-  });
-
-  @override
-  State<_VoucherBottomSheet> createState() => _VoucherBottomSheetState();
-}
-
-class _VoucherBottomSheetState extends State<_VoucherBottomSheet> {
-  late Map<String, dynamic>? _tempSelected;
-  String _searchQuery = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _tempSelected = widget.currentSelectedVoucher;
-  }
-
-  List<Map<String, dynamic>> get _filteredVouchers {
-    if (_searchQuery.isEmpty) return widget.allVouchers;
-    final query = _searchQuery.toLowerCase();
-    return widget.allVouchers.where((v) {
-      final code = (v['code'] as String? ?? '').toLowerCase();
-      final type = (v['discountType'] as String? ?? '').toLowerCase();
-      final value = v['discountValue'].toString().toLowerCase();
-      return code.contains(query) || type.contains(query) || value.contains(query);
-    }).toList();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return DraggableScrollableSheet(
-      initialChildSize: 0.6,
-      minChildSize: 0.5,
-      maxChildSize: 0.85,
-      builder: (context, scrollController) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            children: [
-              // Header
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: const BoxDecoration(
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      '${widget.sellerName} - Vouchers',
-                      style: AppTextStyles.titleMedium.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, size: 24),
-                      onPressed: () => Navigator.pop(context),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1, color: AppColors.grey200),
-              // Search bar
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: TextField(
-                  onChanged: (value) => setState(() => _searchQuery = value),
-                  decoration: InputDecoration(
-                    hintText: 'Please enter shop voucher code',
-                    hintStyle: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.onSurface.withValues(alpha: 0.5),
-                    ),
-                    prefixIcon: const Icon(Icons.search, size: 20, color: AppColors.primary),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? GestureDetector(
-                            onTap: () => setState(() => _searchQuery = ''),
-                            child: const Icon(Icons.close, size: 18, color: AppColors.primary),
-                          )
-                        : null,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppColors.grey300),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppColors.grey300),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppColors.primary, width: 2),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  style: AppTextStyles.bodySmall,
-                ),
-              ),
-              // Vouchers list
-              Expanded(
-                child: _filteredVouchers.isEmpty
-                    ? Center(
-                        child: Text(
-                          'No vouchers available',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            color: AppColors.onSurface.withValues(alpha: 0.5),
-                          ),
-                        ),
-                      )
-                    : ListView.builder(
-                        controller: scrollController,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: _filteredVouchers.length,
-                        itemBuilder: (context, index) {
-                          final voucher = _filteredVouchers[index];
-                          final isDisabled = widget.selectedItemsTotal < (voucher['minimumOrderAmount'] as num? ?? 0);
-                          final isSelected = _tempSelected?['code'] == voucher['code'];
-
-                          return _buildVoucherTile(voucher, isSelected, isDisabled);
-                        },
-                      ),
-              ),
-              // Apply button
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: ElevatedButton(
-                  onPressed: () {
-                    widget.onVoucherSelected(_tempSelected);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    minimumSize: const Size(double.infinity, 48),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(
-                    'Apply',
-                    style: AppTextStyles.labelLarge.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildVoucherTile(
-    Map<String, dynamic> voucher,
-    bool isSelected,
-    bool isDisabled,
-  ) {
-    final discountType = voucher['discountType'] as String? ?? '';
-    final discountValue = voucher['discountValue'] as num? ?? 0;
-    final minimumOrderAmount = voucher['minimumOrderAmount'] as num? ?? 0;
-    final maximumSpend = voucher['maximumSpend'] as num?;
-
-    String titleText;
-    String subtitle1Text;
-    String? subtitle2Text;
-
-    if (discountType == 'percentage') {
-      titleText = '${discountValue.toStringAsFixed(0)}% OFF';
-      subtitle1Text = maximumSpend != null ? 'Max ₱${maximumSpend.toStringAsFixed(2)} OFF' : '';
-      subtitle2Text = 'Min Spend ₱${minimumOrderAmount.toStringAsFixed(2)}';
-    } else {
-      titleText = '₱${discountValue.toStringAsFixed(2)} OFF';
-      subtitle1Text = 'Min Spend ₱${minimumOrderAmount.toStringAsFixed(2)}';
-      subtitle2Text = null;
-    }
-
-    return Opacity(
-      opacity: isDisabled ? 0.4 : 1.0,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        child: InkWell(
-          onTap: isDisabled
-              ? null
-              : () {
-                  setState(() {
-                    if (isSelected) {
-                      _tempSelected = null;
-                    } else {
-                      _tempSelected = voucher;
-                    }
-                  });
-                },
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: isSelected ? AppColors.warning : AppColors.grey300,
-                width: isSelected ? 2 : 1,
-              ),
-              borderRadius: BorderRadius.circular(12),
-              color: AppColors.surface,
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        titleText,
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          fontFamily: 'Roboto',
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.onSurface,
-                        ),
-                      ),
-                      if (subtitle1Text.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          subtitle1Text,
-                          style: AppTextStyles.bodySmall.copyWith(
-                            fontFamily: 'Roboto',
-                            color: AppColors.onSurface.withValues(alpha: 0.65),
-                          ),
-                        ),
-                      ],
-                      if (subtitle2Text != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          subtitle2Text,
-                          style: AppTextStyles.bodySmall.copyWith(
-                            fontFamily: 'Roboto',
-                            color: AppColors.onSurface.withValues(alpha: 0.65),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: isSelected && !isDisabled ? AppColors.warning : AppColors.grey400,
-                      width: 2,
-                    ),
-                  ),
-                  child: isSelected && !isDisabled
-                      ? Icon(
-                          Icons.check,
-                          size: 14,
-                          color: AppColors.warning,
-                        )
-                      : null,
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }

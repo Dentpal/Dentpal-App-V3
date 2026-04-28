@@ -681,8 +681,13 @@ class CreateCheckoutOrderRequest {
   final Map<String, double> sellerInsuranceCosts;
   final Map<String, double> sellerEvaluationCosts;
   final Map<String, String> sellerPackagingSizes;
-  final bool isExpress;
-  final Map<String, Map<String, dynamic>?> selectedVouchers;
+  final Map<String, bool> sellerExpressShipping;
+  final Map<String, double> expressSellerShippingCosts;
+  final Map<String, double> standardSellerShippingCosts;
+  final Map<String, double> expressSellerTotalShippingCosts;
+  final Map<String, double> standardSellerTotalShippingCosts;
+  final Map<String, Map<String, dynamic>?> selectedDiscountVouchers;
+  final Map<String, Map<String, dynamic>?> selectedShippingVouchers;
 
   CreateCheckoutOrderRequest({
     required this.cartItemIds,
@@ -695,8 +700,13 @@ class CreateCheckoutOrderRequest {
     this.sellerInsuranceCosts = const {},
     this.sellerEvaluationCosts = const {},
     this.sellerPackagingSizes = const {},
-    this.isExpress = true,
-    this.selectedVouchers = const {},
+    this.sellerExpressShipping = const {},
+    this.expressSellerShippingCosts = const {},
+    this.standardSellerShippingCosts = const {},
+    this.expressSellerTotalShippingCosts = const {},
+    this.standardSellerTotalShippingCosts = const {},
+    this.selectedDiscountVouchers = const {},
+    this.selectedShippingVouchers = const {},
   });
 
   Map<String, dynamic> toJson() {
@@ -711,12 +721,23 @@ class CreateCheckoutOrderRequest {
       'seller_insurance_costs': sellerInsuranceCosts,
       'seller_evaluation_costs': sellerEvaluationCosts,
       'seller_packaging_sizes': sellerPackagingSizes,
-      'is_express': isExpress,
-      'selected_vouchers': selectedVouchers.map((sellerId, voucher) =>
+      'seller_express_shipping': sellerExpressShipping,
+      'express_seller_shipping_costs': expressSellerShippingCosts,
+      'standard_seller_shipping_costs': standardSellerShippingCosts,
+      'express_seller_total_shipping_costs': expressSellerTotalShippingCosts,
+      'standard_seller_total_shipping_costs': standardSellerTotalShippingCosts,
+      'selected_discount_vouchers': selectedDiscountVouchers.map((sellerId, voucher) =>
         MapEntry(sellerId, voucher != null ? {
           'code': voucher['code'],
           'seller_id': voucher['sellerId'],
           'discount_type': voucher['discountType'],
+        } : null)),
+      'selected_shipping_vouchers': selectedShippingVouchers.map((sellerId, voucher) =>
+        MapEntry(sellerId, voucher != null ? {
+          'code': voucher['code'],
+          'seller_id': voucher['sellerId'],
+          'discount_type': voucher['discountType'],
+          'shipping_option': voucher['shippingOption'],
         } : null)),
     };
   }

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import '../models/cart_model.dart';
@@ -10,23 +9,33 @@ import '../models/paymongo_model.dart';
 import '../services/checkout_service.dart';
 import '../services/cart_service.dart';
 import '../widgets/address_selection_widget.dart';
+import '../widgets/voucher_picker_sheet.dart';
 import 'paymongo_webview_page.dart';
 import '../../profile/models/shipping_address.dart';
 import '../../profile/services/platform_policies_service.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 
+typedef VouchersChangedCallback = void Function(
+  Map<String, Map<String, dynamic>?> discountVouchers,
+  Map<String, Map<String, dynamic>?> shippingVouchers,
+);
+
 class CheckoutPage extends StatefulWidget {
   final List<CartItem> cartItems;
   final CartSummary cartSummary;
-  final Map<String, Map<String, dynamic>?> selectedVouchers;
+  final Map<String, Map<String, dynamic>?> selectedDiscountVouchers;
+  final Map<String, Map<String, dynamic>?> selectedShippingVouchers;
+  final VouchersChangedCallback? onVouchersChanged;
   final VoidCallback? onOrderComplete;
 
   const CheckoutPage({
     super.key,
     required this.cartItems,
     required this.cartSummary,
-    this.selectedVouchers = const {},
+    this.selectedDiscountVouchers = const {},
+    this.selectedShippingVouchers = const {},
+    this.onVouchersChanged,
     this.onOrderComplete,
   });
 
@@ -37,56 +46,76 @@ class CheckoutPage extends StatefulWidget {
 class _CheckoutPageState extends State<CheckoutPage> {
   final CheckoutService _checkoutService = CheckoutService();
 
-  DateTime? _parseDate(dynamic value) {
-    if (value == null) return null;
-    if (value is Timestamp) return value.toDate();
-    if (value is String) return DateTime.tryParse(value);
-    return null;
-  }
-  
   ShippingAddress? _selectedAddress;
   PaymentMethod? _selectedPaymentMethod;
   String? _orderNotes;
   bool _isProcessing = false;
-  
-  // Per-seller shipping costs
-  Map<String, double> _sellerShippingCosts = {}; // sellerId -> active buyer's portion (express or standard)
-  Map<String, double> _sellerTotalShippingCosts = {}; // sellerId -> active total cost (for display)
-  bool _isCalculatingShipping = false; // Track if shipping calculation is in progress
 
-  // Express vs standard shipping
-  bool _isExpressShipping = true; // checkbox default: express
+  // Local mutable copies of the voucher maps (so checkout-side edits flow back via callback).
+  late Map<String, Map<String, dynamic>?> _discountVouchers;
+  late Map<String, Map<String, dynamic>?> _shippingVouchers;
+
+  // Per-seller shipping mode: true = express, false = standard.
+  // Replaces the old global `_isExpressShipping` so vouchers can lock one seller
+  // independently of the others.
+  final Map<String, bool> _sellerExpressShipping = {};
+
+  // Per-seller shipping costs (active = chosen mode per seller)
+  final Map<String, double> _sellerShippingCosts = {}; // sellerId -> active buyer's portion
+  final Map<String, double> _sellerTotalShippingCosts = {}; // sellerId -> active total cost
+  bool _isCalculatingShipping = false;
+
   Map<String, double> _expressSellerShippingCosts = {};
   Map<String, double> _expressSellerTotalShippingCosts = {};
   Map<String, double> _standardSellerShippingCosts = {};
   Map<String, double> _standardSellerTotalShippingCosts = {};
 
   // Per-seller insurance & evaluation costs (from JRS response)
-  Map<String, double> _sellerInsuranceCosts = {};
-  Map<String, double> _sellerEvaluationCosts = {};
+  final Map<String, double> _sellerInsuranceCosts = {};
+  final Map<String, double> _sellerEvaluationCosts = {};
   Map<String, double> _expressSellerInsuranceCosts = {};
   Map<String, double> _expressSellerEvaluationCosts = {};
   Map<String, double> _standardSellerInsuranceCosts = {};
   Map<String, double> _standardSellerEvaluationCosts = {};
 
   // Per-seller packaging size (locally-resolved productName from JRS calculator)
-  Map<String, String> _sellerPackagingSizes = {};
+  final Map<String, String> _sellerPackagingSizes = {};
   Map<String, String> _expressSellerPackagingSizes = {};
   Map<String, String> _standardSellerPackagingSizes = {};
-  
+
   final TextEditingController _notesController = TextEditingController();
 
   // Per-seller voucher discounts
   Map<String, double> _sellerDiscountAmounts = {};
-  Map<String, Map<String, dynamic>?> _sellerFreeDeliveryVouchers = {};
-  bool _freeDeliveryVouchersLoaded = false;
 
   @override
   void initState() {
     super.initState();
+    _discountVouchers = Map.of(widget.selectedDiscountVouchers);
+    _shippingVouchers = Map.of(widget.selectedShippingVouchers);
+    _initializeSellerShippingModes();
     _computeVoucherDiscounts();
-    _fetchFreeDeliveryVouchers();
     _loadPaymentMethods();
+  }
+
+  /// Set each seller's initial mode based on its (optional) shipping voucher.
+  /// Express-only voucher locks to express; standard-only voucher defaults the
+  /// seller to standard (user can still pick express, in which case the voucher
+  /// covers the standard cost portion only). Otherwise default to express.
+  void _initializeSellerShippingModes() {
+    final sellerIds = widget.cartItems
+        .map((item) => item.sellerId ?? 'unknown')
+        .toSet();
+    for (final sellerId in sellerIds) {
+      final modes = _coveredModes(_shippingVouchers[sellerId]);
+      if (modes.length == 1 && modes.contains('express')) {
+        _sellerExpressShipping[sellerId] = true;
+      } else if (modes.length == 1 && modes.contains('standard')) {
+        _sellerExpressShipping[sellerId] = false;
+      } else {
+        _sellerExpressShipping[sellerId] = true;
+      }
+    }
   }
 
   @override
@@ -125,7 +154,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
       final sellerSubtotal = items.fold<double>(
         0.0, (sum, item) => sum + ((item.productPrice ?? 0) * item.quantity));
 
-      final voucher = widget.selectedVouchers[sellerId];
+      final voucher = _discountVouchers[sellerId];
       if (voucher == null) {
         _sellerDiscountAmounts[sellerId] = 0.0;
         continue;
@@ -156,68 +185,63 @@ class _CheckoutPageState extends State<CheckoutPage> {
     }
   }
 
-  /// Fetch free_delivery vouchers per seller from Firestore.
-  Future<void> _fetchFreeDeliveryVouchers() async {
-    final sellerIds = widget.cartItems
-        .map((item) => item.sellerId ?? 'unknown')
-        .toSet();
-
-    for (final sellerId in sellerIds) {
-      try {
-        final snapshot = await FirebaseFirestore.instance
-            .collection('Vouchers')
-            .where('sellerId', isEqualTo: sellerId)
-            .where('discountType', isEqualTo: 'free_delivery')
-            .where('status', isEqualTo: 'active')
-            .limit(1)
-            .get();
-
-        if (snapshot.docs.isNotEmpty) {
-          final now = DateTime.now();
-          final validDoc = snapshot.docs.cast<QueryDocumentSnapshot<Map<String, dynamic>>>().where((d) {
-            final data = d.data();
-            final start = _parseDate(data['startDate']);
-            final end = _parseDate(data['endDate']);
-            if (start != null && now.isBefore(start)) return false;
-            if (end != null && now.isAfter(end)) return false;
-            return true;
-          }).firstOrNull;
-          if (validDoc != null) {
-            _sellerFreeDeliveryVouchers[sellerId] = {
-              ...validDoc.data(),
-              'id': validDoc.id,
-            };
-          }
-        }
-      } catch (e) {
-        AppLogger.d('Error fetching free delivery voucher for seller $sellerId: $e');
-      }
-    }
-
-    if (mounted) {
-      setState(() {
-        _freeDeliveryVouchersLoaded = true;
-      });
-    }
+  /// Modes covered by a seller's currently-selected shipping voucher.
+  /// Defaults to `{'standard'}` for legacy/missing vouchers.
+  Set<String> _coveredModes(Map<String, dynamic>? voucher) {
+    if (voucher == null) return const {};
+    return parseShippingCoverage(voucher['shippingOption']);
   }
 
-  /// Check if a seller qualifies for free shipping (post-discount subtotal >= threshold).
-  bool _isFreeShippingEligible(String sellerId) {
-    final voucher = _sellerFreeDeliveryVouchers[sellerId];
-    if (voucher == null) return false;
+  bool _hasShippingVoucher(String sellerId) => _shippingVouchers[sellerId] != null;
 
-    final minimumOrderAmount = (voucher['minimumOrderAmount'] as num? ?? 0).toDouble();
+  bool _isLockedToExpress(String sellerId) {
+    final modes = _coveredModes(_shippingVouchers[sellerId]);
+    return modes.length == 1 && modes.contains('express');
+  }
 
-    // Calculate seller subtotal
-    final sellerItems = widget.cartItems.where((item) => item.sellerId == sellerId);
-    final sellerSubtotal = sellerItems.fold<double>(
-      0.0, (sum, item) => sum + ((item.productPrice ?? 0) * item.quantity));
+  bool _isExpressFor(String sellerId) => _sellerExpressShipping[sellerId] ?? true;
 
-    // Use post-discount amount for threshold check
-    final discount = _sellerDiscountAmounts[sellerId] ?? 0.0;
-    final postDiscountSubtotal = sellerSubtotal - discount;
+  /// Buyer's portion of shipping for a seller, after applying any shipping voucher rules.
+  ///
+  /// Rules:
+  /// - No shipping voucher → buyer pays whatever the chosen-mode buyer-portion is.
+  /// - Voucher covers chosen mode → buyer pays 0 (seller absorbs full cost).
+  /// - Chosen express, voucher covers standard only → buyer pays (expressTotal - standardTotal).
+  /// - Otherwise → buyer pays the chosen-mode buyer portion.
+  double _buyerShippingForSeller(String sellerId) {
+    final express = _isExpressFor(sellerId);
+    final expCost = _expressSellerTotalShippingCosts[sellerId] ?? 0.0;
+    final stdCost = _standardSellerTotalShippingCosts[sellerId] ?? 0.0;
+    final buyerNoVoucher = (express
+            ? _expressSellerShippingCosts[sellerId]
+            : _standardSellerShippingCosts[sellerId]) ??
+        0.0;
 
-    return postDiscountSubtotal >= minimumOrderAmount;
+    if (!_hasShippingVoucher(sellerId)) return buyerNoVoucher;
+
+    final modes = _coveredModes(_shippingVouchers[sellerId]);
+    final coversStandard = modes.contains('standard');
+    final coversExpress = modes.contains('express');
+
+    if (express) {
+      if (coversExpress) return 0.0;
+      if (coversStandard) {
+        final diff = expCost - stdCost;
+        return diff > 0 ? double.parse(diff.toStringAsFixed(2)) : 0.0;
+      }
+      return buyerNoVoucher;
+    }
+    if (coversStandard) return 0.0;
+    return buyerNoVoucher;
+  }
+
+  /// Total cost for a seller in the chosen shipping mode (display, before voucher split).
+  double _totalShippingForSeller(String sellerId) {
+    final express = _isExpressFor(sellerId);
+    return (express
+            ? _expressSellerTotalShippingCosts[sellerId]
+            : _standardSellerTotalShippingCosts[sellerId]) ??
+        0.0;
   }
 
   /// Total discount across all sellers.
@@ -247,6 +271,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
       final cartItemIds = widget.cartItems.map((item) => item.cartItemId).toList();
       AppLogger.d('Proceeding with cart items: $cartItemIds');
 
+      // Build per-seller buyer-shipping costs after voucher coverage is applied,
+      // so the backend cross-checks with the same numbers the buyer saw.
+      final adjustedSellerShippingCosts = <String, double>{};
+      for (final sellerId in _sellerShippingCosts.keys) {
+        adjustedSellerShippingCosts[sellerId] = _buyerShippingForSeller(sellerId);
+      }
+
       // Check if Cash on Delivery is selected
       if (_selectedPaymentMethod == PaymentMethod.cashOnDelivery) {
         // Create COD order directly (no PayMongo integration needed)
@@ -254,12 +285,17 @@ class _CheckoutPageState extends State<CheckoutPage> {
           cartItemIds: cartItemIds,
           addressId: _selectedAddress!.id,
           notes: _orderNotes,
-          sellerShippingCosts: _sellerShippingCosts,
+          sellerShippingCosts: adjustedSellerShippingCosts,
           sellerInsuranceCosts: _sellerInsuranceCosts,
           sellerEvaluationCosts: _sellerEvaluationCosts,
           sellerPackagingSizes: _sellerPackagingSizes,
-          isExpress: _isExpressShipping,
-          selectedVouchers: widget.selectedVouchers,
+          sellerExpressShipping: Map.of(_sellerExpressShipping),
+          expressSellerShippingCosts: Map.of(_expressSellerShippingCosts),
+          standardSellerShippingCosts: Map.of(_standardSellerShippingCosts),
+          expressSellerTotalShippingCosts: Map.of(_expressSellerTotalShippingCosts),
+          standardSellerTotalShippingCosts: Map.of(_standardSellerTotalShippingCosts),
+          selectedDiscountVouchers: _discountVouchers,
+          selectedShippingVouchers: _shippingVouchers,
         );
 
         AppLogger.d('COD order created successfully');
@@ -277,12 +313,17 @@ class _CheckoutPageState extends State<CheckoutPage> {
           paymentMethodTypes: [_selectedPaymentMethod!.paymongoType],
           successUrl: 'https://dentpal-store.web.app/payment-success',
           cancelUrl: 'https://dentpal-store.web.app/payment-failed',
-          sellerShippingCosts: _sellerShippingCosts,
+          sellerShippingCosts: adjustedSellerShippingCosts,
           sellerInsuranceCosts: _sellerInsuranceCosts,
           sellerEvaluationCosts: _sellerEvaluationCosts,
           sellerPackagingSizes: _sellerPackagingSizes,
-          isExpress: _isExpressShipping,
-          selectedVouchers: widget.selectedVouchers,
+          sellerExpressShipping: Map.of(_sellerExpressShipping),
+          expressSellerShippingCosts: Map.of(_expressSellerShippingCosts),
+          standardSellerShippingCosts: Map.of(_standardSellerShippingCosts),
+          expressSellerTotalShippingCosts: Map.of(_expressSellerTotalShippingCosts),
+          standardSellerTotalShippingCosts: Map.of(_standardSellerTotalShippingCosts),
+          selectedDiscountVouchers: _discountVouchers,
+          selectedShippingVouchers: _shippingVouchers,
         );
 
         AppLogger.d('Order created successfully');
@@ -438,20 +479,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
         }
       }
 
-      // Set active maps based on current checkbox selection
-      _sellerShippingCosts = Map.from(
-          _isExpressShipping ? _expressSellerShippingCosts : _standardSellerShippingCosts);
-      _sellerTotalShippingCosts = Map.from(
-          _isExpressShipping ? _expressSellerTotalShippingCosts : _standardSellerTotalShippingCosts);
-      _sellerInsuranceCosts = Map.from(
-          _isExpressShipping ? _expressSellerInsuranceCosts : _standardSellerInsuranceCosts);
-      _sellerPackagingSizes = Map.from(
-          _isExpressShipping ? _expressSellerPackagingSizes : _standardSellerPackagingSizes);
-      _sellerEvaluationCosts = Map.from(
-          _isExpressShipping ? _expressSellerEvaluationCosts : _standardSellerEvaluationCosts);
-
-      // Override buyer's shipping to 0 for sellers eligible for free shipping via voucher
-      _applyFreeShippingOverrides();
+      // Set active maps per-seller based on each seller's shipping mode.
+      _refreshAllActiveMaps();
 
       setState(() {
         _isCalculatingShipping = false;
@@ -473,40 +502,73 @@ class _CheckoutPageState extends State<CheckoutPage> {
     }
   }
 
-  /// No-op: free shipping is now handled purely via _isFreeShippingEligible().
-  /// _sellerShippingCosts intentionally keeps the actual JRS cost so the backend
-  /// can assign it as sellerShippingCharge when freeShippingFromVoucher is true.
-  void _applyFreeShippingOverrides() {
-    // Intentionally left empty — do not zero out _sellerShippingCosts.
+  /// Repopulate all active per-seller cost maps from the express/standard caches
+  /// based on each seller's mode. Called after an address calc completes or the
+  /// per-seller toggle flips.
+  void _refreshAllActiveMaps() {
+    _sellerShippingCosts.clear();
+    _sellerTotalShippingCosts.clear();
+    _sellerInsuranceCosts.clear();
+    _sellerEvaluationCosts.clear();
+    _sellerPackagingSizes.clear();
+    final allSellers = <String>{
+      ..._expressSellerShippingCosts.keys,
+      ..._standardSellerShippingCosts.keys,
+    };
+    for (final sellerId in allSellers) {
+      _refreshActiveMapsForSeller(sellerId);
+    }
   }
 
-  /// Switch active shipping costs when the express checkbox is toggled
-  void _onExpressShippingToggled(bool value) {
+  void _refreshActiveMapsForSeller(String sellerId) {
+    final express = _isExpressFor(sellerId);
+    final shipping = express
+        ? _expressSellerShippingCosts[sellerId]
+        : _standardSellerShippingCosts[sellerId];
+    final total = express
+        ? _expressSellerTotalShippingCosts[sellerId]
+        : _standardSellerTotalShippingCosts[sellerId];
+    final insurance = express
+        ? _expressSellerInsuranceCosts[sellerId]
+        : _standardSellerInsuranceCosts[sellerId];
+    final evaluation = express
+        ? _expressSellerEvaluationCosts[sellerId]
+        : _standardSellerEvaluationCosts[sellerId];
+    final packaging = express
+        ? _expressSellerPackagingSizes[sellerId]
+        : _standardSellerPackagingSizes[sellerId];
+    if (shipping != null) _sellerShippingCosts[sellerId] = shipping;
+    if (total != null) _sellerTotalShippingCosts[sellerId] = total;
+    if (insurance != null) _sellerInsuranceCosts[sellerId] = insurance;
+    if (evaluation != null) _sellerEvaluationCosts[sellerId] = evaluation;
+    if (packaging != null && packaging.isNotEmpty) {
+      _sellerPackagingSizes[sellerId] = packaging;
+    }
+  }
+
+  /// Toggle a single seller's shipping mode. No-op if the seller's voucher
+  /// locks the mode (express-only).
+  void _onSellerShippingModeToggled(String sellerId, bool isExpress) {
+    if (_isLockedToExpress(sellerId) && !isExpress) return;
     setState(() {
-      _isExpressShipping = value;
-      _sellerShippingCosts = Map.from(
-          value ? _expressSellerShippingCosts : _standardSellerShippingCosts);
-      _sellerTotalShippingCosts = Map.from(
-          value ? _expressSellerTotalShippingCosts : _standardSellerTotalShippingCosts);
-      _sellerInsuranceCosts = Map.from(
-          value ? _expressSellerInsuranceCosts : _standardSellerInsuranceCosts);
-      _sellerPackagingSizes = Map.from(
-          value ? _expressSellerPackagingSizes : _standardSellerPackagingSizes);
-      _sellerEvaluationCosts = Map.from(
-          value ? _expressSellerEvaluationCosts : _standardSellerEvaluationCosts);
-      _applyFreeShippingOverrides();
+      _sellerExpressShipping[sellerId] = isExpress;
+      _refreshActiveMapsForSeller(sellerId);
     });
   }
 
-
-  /// Get total buyer's portion of shipping cost across all sellers.
-  /// Sellers with free shipping from a voucher contribute 0 (seller absorbs their cost).
+  /// Get total buyer's portion of shipping cost across all sellers, applying
+  /// per-seller shipping voucher coverage rules.
   double _calculateBuyerShippingPortion() {
-    if (_sellerShippingCosts.isEmpty) return 0.0;
-    return _sellerShippingCosts.entries.fold(0.0, (sum, entry) {
-      if (_isFreeShippingEligible(entry.key)) return sum;
-      return sum + entry.value;
-    });
+    if (_sellerShippingCosts.isEmpty && _sellerExpressShipping.isEmpty) return 0.0;
+    final sellerIds = <String>{
+      ..._sellerShippingCosts.keys,
+      ..._sellerExpressShipping.keys,
+    };
+    double total = 0.0;
+    for (final sellerId in sellerIds) {
+      total += _buyerShippingForSeller(sellerId);
+    }
+    return double.parse(total.toStringAsFixed(2));
   }
 
   /// Get total shipping cost (including seller's portion) across all sellers
@@ -1129,96 +1191,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 ..._buildGroupedSellerItems(),
-                const SizedBox(height: 12),
-                const Divider(height: 1),
-                const SizedBox(height: 4),
-                // Express shipping toggle
-                InkWell(
-                  onTap: _isCalculatingShipping
-                      ? null
-                      : () => _onExpressShippingToggled(!_isExpressShipping),
-                  borderRadius: BorderRadius.circular(8),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      children: [
-                        Checkbox(
-                          value: _isExpressShipping,
-                          onChanged: _isCalculatingShipping
-                              ? null
-                              : (v) => _onExpressShippingToggled(v ?? true),
-                          activeColor: AppColors.primary,
-                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        const SizedBox(width: 4),
-                        Icon(Icons.flash_on, size: 16, color: _isExpressShipping ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.4)),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Express Delivery',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            fontWeight: _isExpressShipping ? FontWeight.w600 : FontWeight.normal,
-                            color: _isExpressShipping ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.6),
-                          ),
-                        ),
-                        const Spacer(),
-                        if (_isCalculatingShipping)
-                          SizedBox(
-                            width: 12,
-                            height: 12,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 1.5,
-                              color: AppColors.onSurface.withValues(alpha: 0.4),
-                            ),
-                          )
-                        else
-                          Text(
-                            () {
-                              final cost = _expressSellerShippingCosts.values.fold(0.0, (s, c) => s + c);
-                              return cost > 0 ? '₱${cost.toStringAsFixed(2)}' : 'FREE';
-                            }(),
-                            style: AppTextStyles.bodyMedium.copyWith(
-                              fontFamily: 'Roboto',
-                              fontWeight: _isExpressShipping ? FontWeight.w600 : FontWeight.normal,
-                              color: _isExpressShipping ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.6),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-                // Standard (non-express) comparison line
-                if (!_isCalculatingShipping && _standardSellerShippingCosts.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 40),
-                    child: Row(
-                      children: [
-                        Icon(Icons.local_shipping_outlined, size: 16, color: !_isExpressShipping ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.4)),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Standard Delivery',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            fontWeight: !_isExpressShipping ? FontWeight.w600 : FontWeight.normal,
-                            color: !_isExpressShipping ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.5),
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          () {
-                            final cost = _standardSellerShippingCosts.values.fold(0.0, (s, c) => s + c);
-                            return cost > 0 ? '₱${cost.toStringAsFixed(2)}' : 'FREE';
-                          }(),
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            fontFamily: 'Roboto',
-                            fontWeight: !_isExpressShipping ? FontWeight.w600 : FontWeight.normal,
-                            color: !_isExpressShipping ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.5),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
@@ -1339,20 +1311,17 @@ class _CheckoutPageState extends State<CheckoutPage> {
     // Per-seller voucher discount
     final sellerDiscount = _sellerDiscountAmounts[sellerId] ?? 0.0;
 
-    // Get buyer's portion of shipping cost
-    final buyerShippingCost = _sellerShippingCosts[sellerId] ?? 0.0;
+    // Buyer's portion after shipping voucher coverage rules
+    final buyerShippingCost = _buyerShippingForSeller(sellerId);
 
-    // Get total shipping cost (for display when free)
-    final totalShippingCost = _sellerTotalShippingCosts[sellerId] ?? 0.0;
+    // Total cost in the chosen shipping mode
+    final totalShippingCost = _totalShippingForSeller(sellerId);
 
-    // Determine if shipping is free for buyer (free delivery voucher or 10% rule)
-    final shippingIsFree = _isFreeShippingEligible(sellerId) || (buyerShippingCost == 0.0 && totalShippingCost > 0.0);
+    // Whether the buyer pays anything for shipping
+    final buyerPaysShipping = buyerShippingCost > 0.0;
+    final shippingDiscounted = totalShippingCost > 0.0 && buyerShippingCost < totalShippingCost;
 
-    // Buyer pays shipping only when there is a non-zero cost AND no free shipping applies
-    final buyerPaysShipping = buyerShippingCost > 0.0 && !shippingIsFree;
-
-    // Debug logging
-    AppLogger.d('Seller: $sellerName, Subtotal: $sellerSubtotal, Discount: $sellerDiscount, Total Shipping: $totalShippingCost, Buyer Pays: $buyerShippingCost, Free: $shippingIsFree');
+    AppLogger.d('Seller: $sellerName, Subtotal: $sellerSubtotal, Discount: $sellerDiscount, Total Shipping: $totalShippingCost, Buyer Pays: $buyerShippingCost');
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -1516,8 +1485,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                         : Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              if (shippingIsFree && totalShippingCost >= 0.01) ...[
-                                // Show crossed out original price when shipping is free
+                              if (shippingDiscounted) ...[
                                 Text(
                                   '₱${totalShippingCost.toStringAsFixed(2)}',
                                   style: AppTextStyles.bodySmall.copyWith(
@@ -1531,7 +1499,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                 const SizedBox(width: 6),
                               ],
                               Text(
-                                buyerPaysShipping 
+                                buyerPaysShipping
                                     ? '₱${buyerShippingCost.toStringAsFixed(2)}'
                                     : 'FREE',
                                 style: AppTextStyles.bodyMedium.copyWith(
@@ -1544,12 +1512,283 @@ class _CheckoutPageState extends State<CheckoutPage> {
                           ),
                   ],
                 ),
-                
+                const SizedBox(height: 12),
+                _buildSellerShippingModeToggle(sellerId),
+                const SizedBox(height: 12),
+                _buildSellerVoucherChips(sellerId),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  /// Per-seller express/standard radio. Locks to express when the seller's
+  /// shipping voucher only covers express.
+  Widget _buildSellerShippingModeToggle(String sellerId) {
+    final express = _isExpressFor(sellerId);
+    final lockedExpress = _isLockedToExpress(sellerId);
+    final hasExpressCost = _expressSellerTotalShippingCosts.containsKey(sellerId);
+    final hasStandardCost = _standardSellerTotalShippingCosts.containsKey(sellerId);
+    if (!hasExpressCost && !hasStandardCost) return const SizedBox.shrink();
+
+    final expressTotal = _expressSellerTotalShippingCosts[sellerId] ?? 0.0;
+    final standardTotal = _standardSellerTotalShippingCosts[sellerId] ?? 0.0;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: AppColors.onSurface.withValues(alpha: 0.1),
+        ),
+      ),
+      child: Column(
+        children: [
+          InkWell(
+            onTap: _isCalculatingShipping
+                ? null
+                : () => _onSellerShippingModeToggled(sellerId, true),
+            borderRadius: BorderRadius.circular(6),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Radio<bool>(
+                    value: true,
+                    groupValue: express,
+                    onChanged: _isCalculatingShipping
+                        ? null
+                        : (v) => _onSellerShippingModeToggled(sellerId, true),
+                    activeColor: AppColors.primary,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(Icons.flash_on, size: 16, color: express ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.4)),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Express',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      fontWeight: express ? FontWeight.w600 : FontWeight.normal,
+                      color: express ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.6),
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    expressTotal > 0 ? '₱${expressTotal.toStringAsFixed(2)}' : 'FREE',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      fontFamily: 'Roboto',
+                      fontWeight: express ? FontWeight.w600 : FontWeight.normal,
+                      color: express ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          InkWell(
+            onTap: (_isCalculatingShipping || lockedExpress)
+                ? null
+                : () => _onSellerShippingModeToggled(sellerId, false),
+            borderRadius: BorderRadius.circular(6),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Radio<bool>(
+                    value: false,
+                    groupValue: express,
+                    onChanged: (_isCalculatingShipping || lockedExpress)
+                        ? null
+                        : (v) => _onSellerShippingModeToggled(sellerId, false),
+                    activeColor: AppColors.primary,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(Icons.local_shipping_outlined, size: 16, color: !express ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.4)),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Standard',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      fontWeight: !express ? FontWeight.w600 : FontWeight.normal,
+                      color: !express ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.5),
+                    ),
+                  ),
+                  if (lockedExpress) ...[
+                    const SizedBox(width: 6),
+                    Text(
+                      '(locked by voucher)',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.onSurface.withValues(alpha: 0.5),
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                  const Spacer(),
+                  Text(
+                    standardTotal > 0 ? '₱${standardTotal.toStringAsFixed(2)}' : 'FREE',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      fontFamily: 'Roboto',
+                      fontWeight: !express ? FontWeight.w600 : FontWeight.normal,
+                      color: !express ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Two voucher chips per seller — discount and shipping. Each is editable.
+  Widget _buildSellerVoucherChips(String sellerId) {
+    final sellerName = widget.cartItems
+        .firstWhere((it) => it.sellerId == sellerId, orElse: () => widget.cartItems.first)
+        .sellerName ??
+        'Seller';
+    final sellerSubtotal = widget.cartItems
+        .where((it) => it.sellerId == sellerId)
+        .fold<double>(0.0, (sum, item) => sum + ((item.productPrice ?? 0) * item.quantity));
+    return Column(
+      children: [
+        _buildVoucherChip(
+          icon: Icons.local_offer_outlined,
+          label: 'Discount Voucher',
+          mode: VoucherPickerMode.discount,
+          sellerId: sellerId,
+          sellerName: sellerName,
+          sellerSubtotal: sellerSubtotal,
+          voucher: _discountVouchers[sellerId],
+        ),
+        const SizedBox(height: 6),
+        _buildVoucherChip(
+          icon: Icons.local_shipping_outlined,
+          label: 'Shipping Voucher',
+          mode: VoucherPickerMode.shipping,
+          sellerId: sellerId,
+          sellerName: sellerName,
+          sellerSubtotal: sellerSubtotal,
+          voucher: _shippingVouchers[sellerId],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVoucherChip({
+    required IconData icon,
+    required String label,
+    required VoucherPickerMode mode,
+    required String sellerId,
+    required String sellerName,
+    required double sellerSubtotal,
+    required Map<String, dynamic>? voucher,
+  }) {
+    String trailingLabel;
+    if (voucher == null) {
+      trailingLabel = 'Add';
+    } else if (mode == VoucherPickerMode.shipping) {
+      final modes = parseShippingCoverage(voucher['shippingOption']);
+      if (modes.contains('standard') && modes.contains('express')) {
+        trailingLabel = 'Free Shipping';
+      } else if (modes.contains('express')) {
+        trailingLabel = 'Free Express';
+      } else {
+        trailingLabel = 'Free Standard';
+      }
+    } else {
+      final type = voucher['discountType'] as String? ?? '';
+      final value = voucher['discountValue'] as num? ?? 0;
+      trailingLabel = type == 'percentage'
+          ? '-${value.toStringAsFixed(0)}%'
+          : '-₱${value.toStringAsFixed(2)}';
+    }
+
+    return InkWell(
+      onTap: () => _openCheckoutVoucherPicker(
+        mode: mode,
+        sellerId: sellerId,
+        sellerName: sellerName,
+        sellerSubtotal: sellerSubtotal,
+      ),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: voucher != null
+                ? AppColors.primary.withValues(alpha: 0.4)
+                : AppColors.onSurface.withValues(alpha: 0.1),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 16, color: AppColors.primary),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: AppTextStyles.bodySmall.copyWith(
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              trailingLabel,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: voucher != null ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.6),
+                fontWeight: FontWeight.w600,
+                fontFamily: 'Roboto',
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.edit, size: 14, color: AppColors.onSurface.withValues(alpha: 0.5)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openCheckoutVoucherPicker({
+    required VoucherPickerMode mode,
+    required String sellerId,
+    required String sellerName,
+    required double sellerSubtotal,
+  }) async {
+    await VoucherPickerSheet.show(
+      context: context,
+      mode: mode,
+      sellerId: sellerId,
+      sellerName: sellerName,
+      selectedItemsTotal: sellerSubtotal,
+      currentSelectedVoucher: mode == VoucherPickerMode.shipping
+          ? _shippingVouchers[sellerId]
+          : _discountVouchers[sellerId],
+      onVoucherSelected: (voucher) {
+        setState(() {
+          if (mode == VoucherPickerMode.shipping) {
+            _shippingVouchers[sellerId] = voucher;
+            // Re-evaluate the seller's mode lock when its shipping voucher changes.
+            final modes = _coveredModes(voucher);
+            if (modes.length == 1 && modes.contains('express')) {
+              _sellerExpressShipping[sellerId] = true;
+            } else if (modes.length == 1 && modes.contains('standard')) {
+              _sellerExpressShipping[sellerId] = false;
+            }
+            _refreshActiveMapsForSeller(sellerId);
+          } else {
+            _discountVouchers[sellerId] = voucher;
+            _computeVoucherDiscounts();
+          }
+          widget.onVouchersChanged?.call(_discountVouchers, _shippingVouchers);
+        });
+      },
     );
   }
 

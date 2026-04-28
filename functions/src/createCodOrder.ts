@@ -5,10 +5,11 @@ import {
   calculateMultiSellerBreakdown,
   calculatePaymentProcessingFee,
   calculatePlatformFee,
+  determineProductName,
 } from './utils/jrsShippingHelper';
 import {
   validateAndApplyVoucher,
-  checkFreeDeliveryEligibility,
+  validateAndApplyShippingVoucher,
   incrementVoucherUsage,
 } from './utils/voucherHelper';
 import cors = require('cors');
@@ -62,6 +63,11 @@ function validateAddressId(id: any): string {
     throw new Error('Address ID too long');
   }
   return id;
+}
+
+function isGenericPackagingName(name?: string | null): boolean {
+  if (!name) return true;
+  return name.trim().toLowerCase() === 'general cargo';
 }
 
 function validateRequestBody(body: any): {
@@ -184,14 +190,38 @@ export const createCodOrder = onRequest(
             ? request.body.seller_evaluation_costs
             : {};
 
-        // Express delivery preference chosen by the user on the checkout page
-        const isExpress: boolean =
-          typeof request.body.is_express === 'boolean' ? request.body.is_express : true;
+        // Per-seller shipping mode chosen on the checkout page (true = express).
+        const sellerExpressShipping: Record<string, boolean> =
+          (request.body.seller_express_shipping && typeof request.body.seller_express_shipping === 'object')
+            ? request.body.seller_express_shipping
+            : {};
 
-        // Selected vouchers per seller (sent from frontend for server-side validation)
-        const selectedVouchers: Record<string, { code: string; seller_id: string; discount_type: string } | null> =
-          (request.body.selected_vouchers && typeof request.body.selected_vouchers === 'object')
-            ? request.body.selected_vouchers
+        // Both modes' costs from the frontend, needed for partial-coverage math.
+        const expressSellerShippingCosts: Record<string, number> =
+          (request.body.express_seller_shipping_costs && typeof request.body.express_seller_shipping_costs === 'object')
+            ? request.body.express_seller_shipping_costs
+            : {};
+        const standardSellerShippingCosts: Record<string, number> =
+          (request.body.standard_seller_shipping_costs && typeof request.body.standard_seller_shipping_costs === 'object')
+            ? request.body.standard_seller_shipping_costs
+            : {};
+        const expressSellerTotalShippingCosts: Record<string, number> =
+          (request.body.express_seller_total_shipping_costs && typeof request.body.express_seller_total_shipping_costs === 'object')
+            ? request.body.express_seller_total_shipping_costs
+            : {};
+        const standardSellerTotalShippingCosts: Record<string, number> =
+          (request.body.standard_seller_total_shipping_costs && typeof request.body.standard_seller_total_shipping_costs === 'object')
+            ? request.body.standard_seller_total_shipping_costs
+            : {};
+
+        // Selected discount and shipping vouchers per seller.
+        const selectedDiscountVouchers: Record<string, { code: string; seller_id: string; discount_type: string } | null> =
+          (request.body.selected_discount_vouchers && typeof request.body.selected_discount_vouchers === 'object')
+            ? request.body.selected_discount_vouchers
+            : {};
+        const selectedShippingVouchers: Record<string, { code: string; seller_id: string; discount_type: string; shipping_option?: unknown } | null> =
+          (request.body.selected_shipping_vouchers && typeof request.body.selected_shipping_vouchers === 'object')
+            ? request.body.selected_shipping_vouchers
             : {};
 
         console.log('Creating COD order', { 
@@ -370,13 +400,20 @@ export const createCodOrder = onRequest(
           shippingError?: string;
           platformFeePercentage?: number;
           packagingName?: string;
-          // Voucher fields
+          // Discount voucher fields
           discountAmount: number;
           postDiscountCartValue: number;
-          freeShippingFromVoucher: boolean;
           voucherCode?: string;
           voucherDocId?: string;
-          freeDeliveryVoucherDocId?: string;
+          // Shipping voucher fields
+          shippingVoucherCode?: string;
+          shippingVoucherDocId?: string;
+          coversStandard: boolean;
+          coversExpress: boolean;
+          // Per-seller shipping mode and both modes' costs
+          chosenMode: 'express' | 'standard';
+          expressTotalCost: number;
+          standardTotalCost: number;
           // Insurance & evaluation
           insuranceAndEvaluation: boolean;
           insuranceCost: number | null;
@@ -404,27 +441,34 @@ export const createCodOrder = onRequest(
           // Determine if any item from this seller requires insurance & evaluation
           const sellerInsuranceAndEvaluation = (sellerItems as any[]).some(item => item.insuranceAndEvaluation === true);
 
-          // Validate and apply selected voucher for this seller
-          const voucherResult = await validateAndApplyVoucher(
-            sellerId,
-            selectedVouchers[sellerId] || null,
-            sellerCartValue,
-            db
-          );
+          // Validate discount + shipping vouchers in parallel.
+          const [voucherResult, shippingVoucherResult] = await Promise.all([
+            validateAndApplyVoucher(
+              sellerId,
+              selectedDiscountVouchers[sellerId] || null,
+              sellerCartValue,
+              db,
+            ),
+            validateAndApplyShippingVoucher(
+              sellerId,
+              selectedShippingVouchers[sellerId] || null,
+              sellerCartValue,
+              db,
+            ),
+          ]);
           const discountAmount = voucherResult.discountAmount;
           const postDiscountCartValue = sellerCartValue - discountAmount;
 
-          // Check free_delivery voucher (independent of discount voucher)
-          let freeShippingFromVoucher = voucherResult.freeShipping;
-          let freeDeliveryVoucherDocId: string | undefined;
+          const chosenMode: 'express' | 'standard' =
+            (sellerExpressShipping[sellerId] ?? true) ? 'express' : 'standard';
+          const expressTotalCost = expressSellerTotalShippingCosts[sellerId]
+            ?? expressSellerShippingCosts[sellerId]
+            ?? 0;
+          const standardTotalCost = standardSellerTotalShippingCosts[sellerId]
+            ?? standardSellerShippingCosts[sellerId]
+            ?? 0;
 
-          if (!freeShippingFromVoucher) {
-            const freeDeliveryResult = await checkFreeDeliveryEligibility(sellerId, postDiscountCartValue, db);
-            freeShippingFromVoucher = freeDeliveryResult.freeShipping;
-            freeDeliveryVoucherDocId = freeDeliveryResult.voucherDocId || undefined;
-          }
-
-          console.log(`Seller ${sellerId} voucher: discount=₱${discountAmount}, postDiscount=₱${postDiscountCartValue}, freeShipping=${freeShippingFromVoucher}`);
+          console.log(`Seller ${sellerId} voucher: discount=₱${discountAmount}, postDiscount=₱${postDiscountCartValue}, shippingVoucher=${shippingVoucherResult.voucherCode || 'none'} (covers std=${shippingVoucherResult.coversStandard}, exp=${shippingVoucherResult.coversExpress}), chosenMode=${chosenMode}`);
 
           console.log(`Calculating shipping for seller ${sellerId}:`, {
             sellerAddress,
@@ -432,13 +476,30 @@ export const createCodOrder = onRequest(
             cartValue: sellerCartValue,
             itemCount: sellerItems.length
           });
+
+          const shipmentItemsForName = sellerItems
+            .filter(item => item.length && item.width && item.height && item.weight)
+            .flatMap(item => {
+              const qty = item.quantity ?? 1;
+              return Array.from({ length: qty }, () => ({
+                declaredValue: item.price,
+                length: item.length!,
+                width: item.width!,
+                height: item.height!,
+                weight: item.weight!,
+              }));
+            });
+          const resolvedProductName = determineProductName(shipmentItemsForName);
           
           // Use the pre-calculated shipping cost provided by the frontend (from JRS API).
           // Fall back to 200 only if the frontend did not supply a cost for this seller.
           const shippingCost = (sellerShippingCosts[sellerId] !== undefined)
             ? sellerShippingCosts[sellerId]
             : 200;
-          const packagingName = sellerPackagingSizes[sellerId] || undefined;
+          const providedPackaging = sellerPackagingSizes[sellerId] || undefined;
+          const packagingName = isGenericPackagingName(providedPackaging)
+            ? resolvedProductName
+            : providedPackaging;
 
           console.log(`Seller ${sellerId} shipping cost: ₱${shippingCost} (${sellerShippingCosts[sellerId] !== undefined ? 'from frontend' : 'fallback'}), packaging: ${packagingName ?? 'unknown'}`);
 
@@ -452,10 +513,15 @@ export const createCodOrder = onRequest(
             packagingName,
             discountAmount,
             postDiscountCartValue,
-            freeShippingFromVoucher,
             voucherCode: voucherResult.voucherCode || undefined,
             voucherDocId: voucherResult.voucherDocId || undefined,
-            freeDeliveryVoucherDocId,
+            shippingVoucherCode: shippingVoucherResult.voucherCode || undefined,
+            shippingVoucherDocId: shippingVoucherResult.voucherDocId || undefined,
+            coversStandard: shippingVoucherResult.coversStandard,
+            coversExpress: shippingVoucherResult.coversExpress,
+            chosenMode,
+            expressTotalCost: expressTotalCost || shippingCost,
+            standardTotalCost: standardTotalCost || shippingCost,
             insuranceAndEvaluation: sellerInsuranceAndEvaluation,
             insuranceCost: sellerInsuranceCostsFromFrontend[sellerId] ?? null,
             evaluationCost: sellerEvaluationCostsFromFrontend[sellerId] ?? null,
@@ -475,20 +541,50 @@ export const createCodOrder = onRequest(
         // Calculate multi-seller breakdown
         const multiSellerBreakdown = calculateMultiSellerBreakdown(adjustedSellerData, 'cash_on_delivery');
 
-        // Post-process: override shipping split for sellers with free shipping from voucher.
-        // Also recalculate per-breakdown fee fields because totalChargedToBuyer changed.
+        // Post-process: apply shipping voucher coverage rules per seller.
+        // COD has no payment processing fee, so recalc only platform fee + shipping.
+        const round2 = (n: number) => Math.round(n * 100) / 100;
+        const shippingCoverageTypes: Array<'none' | 'full' | 'partial_express'> = [];
         for (let i = 0; i < sellerShippingData.length; i++) {
-          if (sellerShippingData[i].freeShippingFromVoucher) {
-            const breakdown = multiSellerBreakdown.sellerBreakdowns[i];
-            const actualShippingCost = sellerShippingData[i].shippingCost;
-            breakdown.buyerShippingCharge = 0;
-            breakdown.sellerShippingCharge = actualShippingCost;
-            breakdown.shippingSplitRule = 'seller_pays_full';
-            breakdown.totalChargedToBuyer = breakdown.cartValue; // buyer pays no shipping
-            // COD has no payment processing fee; recalculate seller cost fields
-            breakdown.totalSellerFees = breakdown.platformFee + breakdown.sellerShippingCharge;
-            breakdown.netPayoutToSeller = breakdown.cartValue - breakdown.platformFee - breakdown.sellerShippingCharge;
+          const sd = sellerShippingData[i];
+          const breakdown = multiSellerBreakdown.sellerBreakdowns[i];
+          const stdCost = sd.standardTotalCost ?? sd.shippingCost;
+          const expCost = sd.expressTotalCost ?? sd.shippingCost;
+
+          let coverage: 'none' | 'full' | 'partial_express' = 'none';
+          let buyerCharge: number | null = null;
+          let sellerCharge: number | null = null;
+          let splitRule: 'buyer_pays_full' | 'seller_pays_full' | 'shipping_voucher_partial' | null = null;
+
+          if (sd.chosenMode === 'express' && sd.coversExpress) {
+            buyerCharge = 0;
+            sellerCharge = round2(expCost);
+            splitRule = 'seller_pays_full';
+            coverage = 'full';
+          } else if (sd.chosenMode === 'express' && sd.coversStandard) {
+            const diff = round2(Math.max(0, expCost - stdCost));
+            buyerCharge = diff;
+            sellerCharge = round2(stdCost);
+            splitRule = 'shipping_voucher_partial';
+            coverage = 'partial_express';
+          } else if (sd.chosenMode === 'standard' && sd.coversStandard) {
+            buyerCharge = 0;
+            sellerCharge = round2(stdCost);
+            splitRule = 'seller_pays_full';
+            coverage = 'full';
           }
+
+          if (coverage !== 'none' && buyerCharge !== null && sellerCharge !== null && splitRule !== null) {
+            breakdown.buyerShippingCharge = buyerCharge;
+            breakdown.sellerShippingCharge = sellerCharge;
+            breakdown.shippingSplitRule = splitRule;
+            breakdown.totalChargedToBuyer = round2(breakdown.cartValue + buyerCharge);
+            breakdown.totalSellerFees = round2(breakdown.platformFee + breakdown.sellerShippingCharge);
+            breakdown.netPayoutToSeller = round2(
+              breakdown.cartValue - breakdown.platformFee - breakdown.sellerShippingCharge,
+            );
+          }
+          shippingCoverageTypes.push(coverage);
         }
 
         const shippingCost = multiSellerBreakdown.totalShippingCost;
@@ -549,7 +645,9 @@ export const createCodOrder = onRequest(
             sellerShippingCharge: sellerShippingCharge,
             buyerShippingCharge: buyerShippingCharge,
             shippingSplitRule: shippingSplitRule,
-            isExpressDelivery: isExpress,
+            // Deprecated top-level mode flag — true if any seller is express. Per-seller
+            // mode lives under sellerFeeBreakdowns[].shippingMode.
+            isExpressDelivery: sellerShippingData.some(s => s.chosenMode === 'express'),
             usedFallbackShipping: false,
             fallbackShippingSellerCount: 0,
             packagingSize: overallPackagingSize,
@@ -569,7 +667,12 @@ export const createCodOrder = onRequest(
             postDiscountCartValue: sellerShippingData[index].postDiscountCartValue,
             discountAmount: sellerShippingData[index].discountAmount,
             voucherCode: sellerShippingData[index].voucherCode || null,
-            freeShippingFromVoucher: sellerShippingData[index].freeShippingFromVoucher,
+            shippingVoucherCode: sellerShippingData[index].shippingVoucherCode || null,
+            shippingVoucherDocId: sellerShippingData[index].shippingVoucherDocId || null,
+            shippingCoverageType: shippingCoverageTypes[index],
+            shippingMode: sellerShippingData[index].chosenMode,
+            freeShippingFromVoucher: shippingCoverageTypes[index] === 'full',
+            partialShippingCoverage: shippingCoverageTypes[index] === 'partial_express',
             shippingCost: s.shippingCost,
             buyerShippingCharge: s.buyerShippingCharge,
             sellerShippingCharge: s.sellerShippingCharge,
@@ -600,7 +703,10 @@ export const createCodOrder = onRequest(
             country: shippingAddress?.country,
             phoneNumber: shippingAddress?.phoneNumber,
             notes: notes,
-            isExpress: isExpress,
+            isExpress: sellerShippingData.some(s => s.chosenMode === 'express'),
+            sellerShippingModes: Object.fromEntries(
+              sellerShippingData.map(s => [s.sellerId, s.chosenMode]),
+            ),
             packagingSize: overallPackagingSize,
           },
           status: 'to_ship',
@@ -631,11 +737,11 @@ export const createCodOrder = onRequest(
           },
         });
 
-        // Increment voucher usage counts
+        // Increment voucher usage counts (discount + shipping)
         const voucherDocIdsToIncrement: string[] = [];
         for (const seller of sellerShippingData) {
           if (seller.voucherDocId) voucherDocIdsToIncrement.push(seller.voucherDocId);
-          if (seller.freeDeliveryVoucherDocId) voucherDocIdsToIncrement.push(seller.freeDeliveryVoucherDocId);
+          if (seller.shippingVoucherDocId) voucherDocIdsToIncrement.push(seller.shippingVoucherDocId);
         }
         if (voucherDocIdsToIncrement.length > 0) {
           await incrementVoucherUsage(voucherDocIdsToIncrement, db);

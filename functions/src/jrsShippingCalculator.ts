@@ -30,6 +30,7 @@ interface CalculateShippingRequest {
   express?: boolean;
   insurance?: boolean;
   valuation?: boolean;
+  codAmountToCollect?: number;
 }
 
 interface JRSShippingResponse {
@@ -93,6 +94,9 @@ export const calculateJRSShipping = onCall(
       const express = typeof request.data.express === 'boolean' ? request.data.express : true;
       const insurance = typeof request.data.insurance === 'boolean' ? request.data.insurance : false;
       const valuation = typeof request.data.valuation === 'boolean' ? request.data.valuation : false;
+      const codAmountToCollect = typeof request.data.codAmountToCollect === 'number'
+        ? Math.max(0, request.data.codAmountToCollect)
+        : undefined;
 
       if (!sellerAddress || !recipientAddress || !cartItems || cartItems.length === 0) {
         throw new HttpsError('invalid-argument', 'Missing required shipping data');
@@ -118,6 +122,7 @@ export const calculateJRSShipping = onCall(
         express,
         insurance,
         valuation,
+        codAmountToCollect,
         packaging: resolvedProductName ?? 'auto',
       });
 
@@ -132,6 +137,7 @@ export const calculateJRSShipping = onCall(
         express,
         insurance,
         valuation,
+        codAmountToCollect,
       );
 
       if (result.isFallback) {
@@ -141,8 +147,8 @@ export const calculateJRSShipping = onCall(
         });
       }
 
-      // Prefer our local packaging rule; fall back to JRS-reported name.
-      const packagingSize = resolvedProductName ?? result.packagingName ?? null;
+      // Prefer JRS-reported packaging; fall back to local rule.
+      const packagingSize = result.packagingName ?? resolvedProductName ?? null;
 
       return {
         success: true,

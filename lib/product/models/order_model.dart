@@ -116,7 +116,8 @@ class Order {
       AppLogger.d('Order.fromFirestore - Parsing status...');
       AppLogger.d('Order.fromFirestore - Status value: ${data['status']} (type: ${data['status'].runtimeType})');
       String statusString = (data['status']?.toString() ?? 'pending').replaceAll('-', '_');
-      
+      statusString = _normalizeBackendStatus(statusString);
+
       final status = OrderStatus.values.firstWhere(
         (e) => e.toString().split('.').last == statusString,
         orElse: () => OrderStatus.pending,
@@ -213,6 +214,16 @@ class Order {
       statusHistory: statusHistory ?? this.statusHistory,
       checkoutSessionId: checkoutSessionId ?? this.checkoutSessionId,
     );
+  }
+
+  static String _normalizeBackendStatus(String rawStatus) {
+    switch (rawStatus) {
+      case 'processing':
+      case 'to_hand_over':
+        return 'shipping';
+      default:
+        return rawStatus;
+    }
   }
 }
 

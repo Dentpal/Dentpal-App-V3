@@ -35,8 +35,13 @@ class CheckoutService {
     Map<String, double> sellerInsuranceCosts = const {},
     Map<String, double> sellerEvaluationCosts = const {},
     Map<String, String> sellerPackagingSizes = const {},
-    bool isExpress = true,
-    Map<String, Map<String, dynamic>?> selectedVouchers = const {},
+    Map<String, bool> sellerExpressShipping = const {},
+    Map<String, double> expressSellerShippingCosts = const {},
+    Map<String, double> standardSellerShippingCosts = const {},
+    Map<String, double> expressSellerTotalShippingCosts = const {},
+    Map<String, double> standardSellerTotalShippingCosts = const {},
+    Map<String, Map<String, dynamic>?> selectedDiscountVouchers = const {},
+    Map<String, Map<String, dynamic>?> selectedShippingVouchers = const {},
   }) async {
     try {
       AppLogger.d('Creating order with checkout session for ${cartItemIds.length} items');
@@ -60,8 +65,13 @@ class CheckoutService {
         sellerInsuranceCosts: sellerInsuranceCosts,
         sellerEvaluationCosts: sellerEvaluationCosts,
         sellerPackagingSizes: sellerPackagingSizes,
-        isExpress: isExpress,
-        selectedVouchers: selectedVouchers,
+        sellerExpressShipping: sellerExpressShipping,
+        expressSellerShippingCosts: expressSellerShippingCosts,
+        standardSellerShippingCosts: standardSellerShippingCosts,
+        expressSellerTotalShippingCosts: expressSellerTotalShippingCosts,
+        standardSellerTotalShippingCosts: standardSellerTotalShippingCosts,
+        selectedDiscountVouchers: selectedDiscountVouchers,
+        selectedShippingVouchers: selectedShippingVouchers,
       );
 
       // Call Firebase Function via HTTP
@@ -349,8 +359,13 @@ class CheckoutService {
     Map<String, double> sellerInsuranceCosts = const {},
     Map<String, double> sellerEvaluationCosts = const {},
     Map<String, String> sellerPackagingSizes = const {},
-    bool isExpress = true,
-    Map<String, Map<String, dynamic>?> selectedVouchers = const {},
+    Map<String, bool> sellerExpressShipping = const {},
+    Map<String, double> expressSellerShippingCosts = const {},
+    Map<String, double> standardSellerShippingCosts = const {},
+    Map<String, double> expressSellerTotalShippingCosts = const {},
+    Map<String, double> standardSellerTotalShippingCosts = const {},
+    Map<String, Map<String, dynamic>?> selectedDiscountVouchers = const {},
+    Map<String, Map<String, dynamic>?> selectedShippingVouchers = const {},
   }) async {
     try {
       AppLogger.d('Creating Cash on Delivery order for ${cartItemIds.length} items');
@@ -372,12 +387,23 @@ class CheckoutService {
         'seller_insurance_costs': sellerInsuranceCosts,
         'seller_evaluation_costs': sellerEvaluationCosts,
         'seller_packaging_sizes': sellerPackagingSizes,
-        'is_express': isExpress,
-        'selected_vouchers': selectedVouchers.map((sellerId, voucher) =>
+        'seller_express_shipping': sellerExpressShipping,
+        'express_seller_shipping_costs': expressSellerShippingCosts,
+        'standard_seller_shipping_costs': standardSellerShippingCosts,
+        'express_seller_total_shipping_costs': expressSellerTotalShippingCosts,
+        'standard_seller_total_shipping_costs': standardSellerTotalShippingCosts,
+        'selected_discount_vouchers': selectedDiscountVouchers.map((sellerId, voucher) =>
           MapEntry(sellerId, voucher != null ? {
             'code': voucher['code'],
             'seller_id': voucher['sellerId'],
             'discount_type': voucher['discountType'],
+          } : null)),
+        'selected_shipping_vouchers': selectedShippingVouchers.map((sellerId, voucher) =>
+          MapEntry(sellerId, voucher != null ? {
+            'code': voucher['code'],
+            'seller_id': voucher['sellerId'],
+            'discount_type': voucher['discountType'],
+            'shipping_option': voucher['shippingOption'],
           } : null)),
       };
 
