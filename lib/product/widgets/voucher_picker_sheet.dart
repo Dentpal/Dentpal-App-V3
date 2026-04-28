@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
@@ -82,13 +83,18 @@ class _VoucherPickerSheetState extends State<VoucherPickerSheet> {
 
   Future<void> _fetchVouchers() async {
     try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('Vouchers')
-          .where('sellerId', isEqualTo: widget.sellerId)
-          .where('status', isEqualTo: 'active')
-          .get();
+      final results = await Future.wait([
+        FirebaseFirestore.instance
+            .collection('Vouchers')
+            .where('sellerId', isEqualTo: widget.sellerId)
+            .where('status', isEqualTo: 'active')
+            .get(),
+        _fetchUsedVoucherCodes(),
+      ]);
 
       if (!mounted) return;
+      final snapshot = results[0] as QuerySnapshot<Map<String, dynamic>>;
+      final usedCodes = results[1] as Set<String>;
       final now = DateTime.now();
       final all = snapshot.docs
           .map((d) => {...d.data(), 'id': d.id})
@@ -97,6 +103,8 @@ class _VoucherPickerSheetState extends State<VoucherPickerSheet> {
             final end = _parseDate(data['endDate']);
             if (start != null && now.isBefore(start)) return false;
             if (end != null && now.isAfter(end)) return false;
+            final code = (data['code'] as String? ?? '').trim();
+            if (code.isNotEmpty && usedCodes.contains(code)) return false;
             return true;
           })
           .where(_matchesMode)
@@ -113,6 +121,53 @@ class _VoucherPickerSheetState extends State<VoucherPickerSheet> {
           _loading = false;
         });
       }
+    }
+  }
+
+  /// Collect voucher codes the current user has already redeemed in any order
+  /// for this seller. Cancelled / failed / expired orders don't count, since
+  /// the redemption never effectively occurred.
+  Future<Set<String>> _fetchUsedVoucherCodes() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return {};
+
+    const ignoredStatuses = {
+      'cancelled',
+      'payment_failed',
+      'expired',
+      'refunded',
+    };
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('Order')
+          .where('userId', isEqualTo: user.uid)
+          .get();
+
+      final used = <String>{};
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final status = (data['status']?.toString() ?? '').replaceAll('-', '_');
+        if (ignoredStatuses.contains(status)) continue;
+
+        final breakdowns = data['sellerFeeBreakdowns'];
+        if (breakdowns is! List) continue;
+
+        for (final entry in breakdowns) {
+          if (entry is! Map) continue;
+          if (entry['sellerId'] != widget.sellerId) continue;
+          final code = entry['voucherCode'];
+          final shippingCode = entry['shippingVoucherCode'];
+          if (code is String && code.trim().isNotEmpty) used.add(code.trim());
+          if (shippingCode is String && shippingCode.trim().isNotEmpty) {
+            used.add(shippingCode.trim());
+          }
+        }
+      }
+      return used;
+    } catch (e) {
+      AppLogger.d('Error fetching used voucher codes: $e');
+      return {};
     }
   }
 
