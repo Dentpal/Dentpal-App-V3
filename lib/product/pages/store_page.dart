@@ -48,6 +48,8 @@ class _StorePageState extends State<StorePage> {
   // Categories derived from this store's products
   // Map of categoryId -> display name
   Map<String, String> _categories = {};
+  // Map of categoryId -> image URL (parallel to _categories)
+  final Map<String, String?> _categoryImages = {};
   String? _selectedCategoryId; // null = All
 
   // Search (client-side on loaded products)
@@ -174,6 +176,7 @@ class _StorePageState extends State<StorePage> {
           'isActive': data['isActive'] ?? true,
           'profileImageURL': profileImageURL.isNotEmpty ? profileImageURL : (data['profileImageURL'] ?? ''),
           'coverImageURL': coverImageURL,
+          'Rating': data['Rating'] ?? '',
         };
       }
     } catch (e) {
@@ -188,6 +191,7 @@ class _StorePageState extends State<StorePage> {
       'isActive': true,
       'profileImageURL': '',
       'coverImageURL': '',
+      'Rating': '',
     };
   }
 
@@ -253,14 +257,23 @@ class _StorePageState extends State<StorePage> {
 
       if (uniqueCategoryIds.isEmpty) return;
 
-      // Resolve category names
+      // Resolve category names + images
       final Map<String, String> resolved = {};
+      final Map<String, String?> resolvedImages = {};
       for (final catId in uniqueCategoryIds) {
         final cat = await _categoryService.getCategoryById(catId);
-        if (cat != null) resolved[catId] = cat.categoryName;
+        if (cat != null) {
+          resolved[catId] = cat.categoryName;
+          resolvedImages[catId] = cat.categoryImageUrl;
+        }
       }
 
-      if (mounted) setState(() { _categories = resolved; });
+      if (mounted) setState(() {
+        _categories = resolved;
+        _categoryImages
+          ..clear()
+          ..addAll(resolvedImages);
+      });
       AppLogger.d('StorePage: Derived ${resolved.length} categories from products');
     } catch (e) {
       AppLogger.d('StorePage: Error loading store categories: $e');
@@ -383,6 +396,7 @@ class _StorePageState extends State<StorePage> {
                       _buildVoucherSection(),
                       _buildSearchBar(),
                       if (_categories.isNotEmpty) _buildCategoriesSection(),
+                      if (kIsWeb) const SizedBox(height: 24),
                       _buildProductsGrid(),
                       if (_isFetchingMore)
                         const Padding(
@@ -570,21 +584,16 @@ class _StorePageState extends State<StorePage> {
                     const Icon(Icons.star, size: 15, color: Colors.amber),
                     const SizedBox(width: 3),
                     Text(
-                      '4.8',
+                      () {
+                        final raw = (_storeData['Rating'] as String? ?? '').trim();
+                        return raw.isEmpty ? '0.0' : raw;
+                      }(),
                       style: AppTextStyles.bodySmall.copyWith(
                         fontWeight: FontWeight.w700,
                         color: AppColors.onSurface,
                       ),
                     ),
                   ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '(10,000+ ratings)',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    fontSize: 10,
-                    color: AppColors.onSurface.withValues(alpha: 0.55),
-                  ),
                 ),
               ],
             ),
@@ -883,7 +892,7 @@ class _StorePageState extends State<StorePage> {
           ),
         ),
         SizedBox(
-          height: 36,
+          height: 100,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -892,27 +901,113 @@ class _StorePageState extends State<StorePage> {
               final isAll = index == 0;
               final catId = isAll ? null : entries[index - 1].key;
               final catName = isAll ? 'All' : entries[index - 1].value;
+              final imageUrl = isAll ? null : _categoryImages[catId];
               final isSelected = _selectedCategoryId == catId;
 
-              return GestureDetector(
-                onTap: () => _onCategorySelected(catId),
-                child: Container(
-                  margin: const EdgeInsets.only(right: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: isSelected ? AppColors.primary : AppColors.surface,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: isSelected
-                          ? AppColors.primary
-                          : AppColors.onSurface.withValues(alpha: 0.2),
-                    ),
-                  ),
-                  child: Text(
-                    catName,
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: isSelected ? AppColors.onPrimary : AppColors.onSurface,
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+              return Padding(
+                padding: const EdgeInsets.only(right: 10),
+                child: GestureDetector(
+                  onTap: () => _onCategorySelected(catId),
+                  child: IntrinsicWidth(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minWidth: 80),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        decoration: BoxDecoration(
+                          color: isSelected ? AppColors.primary : AppColors.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSelected
+                                ? AppColors.primary
+                                : AppColors.onSurface.withValues(alpha: 0.12),
+                            width: 1.5,
+                          ),
+                          boxShadow: isSelected
+                              ? [
+                                  BoxShadow(
+                                    color: AppColors.primary.withValues(alpha: 0.25),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ]
+                              : [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.04),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  color: imageUrl != null && imageUrl.isNotEmpty
+                                      ? Colors.transparent
+                                      : isSelected
+                                          ? Colors.white.withValues(alpha: 0.2)
+                                          : AppColors.primary.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: imageUrl != null && imageUrl.isNotEmpty
+                                    ? CachedNetworkImage(
+                                        imageUrl: imageUrl,
+                                        fit: BoxFit.cover,
+                                        placeholder: (context, url) => Center(
+                                          child: Icon(
+                                            Icons.category,
+                                            color: isSelected
+                                                ? Colors.white.withValues(alpha: 0.7)
+                                                : AppColors.primary.withValues(alpha: 0.5),
+                                            size: 20,
+                                          ),
+                                        ),
+                                        errorWidget: (context, url, error) => Center(
+                                          child: Icon(
+                                            Icons.category,
+                                            color: isSelected
+                                                ? Colors.white.withValues(alpha: 0.7)
+                                                : AppColors.primary.withValues(alpha: 0.5),
+                                            size: 20,
+                                          ),
+                                        ),
+                                      )
+                                    : Center(
+                                        child: Icon(
+                                          isAll ? Icons.grid_view_rounded : Icons.category,
+                                          color: isSelected
+                                              ? Colors.white.withValues(alpha: 0.9)
+                                              : AppColors.primary.withValues(alpha: 0.7),
+                                          size: 22,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              child: Text(
+                                catName.length > 17
+                                    ? '${catName.substring(0, 17)}...'
+                                    : catName,
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: isSelected ? AppColors.onPrimary : AppColors.onSurface,
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                  fontSize: 10,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),

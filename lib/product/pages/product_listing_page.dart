@@ -2370,11 +2370,9 @@ class _ProductListingPageState extends State<ProductListingPage>
                       const SizedBox(height: 16),
                       _buildCategoriesSection(),
 
-                      // Filter Section (New - Horizontal Filter Bar)
-                      const SizedBox(height: 16),
-                      _buildFilterSection(),
-
-                      // Subcategories section (grouped by category)
+                      // Subcategories section (grouped by category) — when shown,
+                      // the Shipped From filter is rendered below it; otherwise it
+                      // stays in its default position right under Categories.
                       if (_selectedCategories.isNotEmpty &&
                           _subcategoriesByCategory.isNotEmpty) ...[
                         const SizedBox(height: 16),
@@ -2385,6 +2383,11 @@ class _ProductListingPageState extends State<ProductListingPage>
                             children: _buildGroupedSubcategoriesSection(),
                           ),
                         ),
+                        const SizedBox(height: 16),
+                        _buildFilterSection(),
+                      ] else ...[
+                        const SizedBox(height: 16),
+                        _buildFilterSection(),
                       ],
 
                       const SizedBox(height: 24),
