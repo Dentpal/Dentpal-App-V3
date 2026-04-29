@@ -1,7 +1,6 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions/v2';
-import { deductStockForOrder } from './utils/stockDeductionHelper';
 
 const db = getFirestore();
 
@@ -85,7 +84,6 @@ export const autoCompleteOrders = onSchedule({
             note: 'Order automatically completed after 7 days',
           }),
           autoCompletedAt: FieldValue.serverTimestamp(),
-          stockDeducted: false, // Flag to track if stock has been deducted
         });
 
         processedCount++;
@@ -101,53 +99,6 @@ export const autoCompleteOrders = onSchedule({
         ordersProcessed: processedCount,
         orderIds: ordersToComplete,
       });
-
-      // After committing order status updates, deduct stock for each completed order
-      logger.info(`Starting stock deduction for ${processedCount} completed orders`);
-      
-      for (const orderId of ordersToComplete) {
-        try {
-          // Re-fetch the order to get the items
-          const orderDoc = await db.collection('Order').doc(orderId).get();
-          const orderData = orderDoc.data();
-
-          if (!orderData) {
-            logger.warn(`Order ${orderId} not found for stock deduction`);
-            continue;
-          }
-
-          // Check if stock has already been deducted to prevent double deduction
-          if (orderData.stockDeducted === true) {
-            logger.info(`Stock already deducted for order ${orderId}, skipping`);
-            continue;
-          }
-
-          const orderItems = orderData.items || [];
-
-          if (orderItems.length === 0) {
-            logger.warn(`Order ${orderId} has no items, skipping stock deduction`);
-            continue;
-          }
-
-          // Deduct stock for this order
-          await deductStockForOrder(orderId, orderItems);
-
-          // Mark order as stock deducted
-          await db.collection('Order').doc(orderId).update({
-            stockDeducted: true,
-            stockDeductedAt: FieldValue.serverTimestamp(),
-          });
-
-        } catch (error) {
-          logger.error(`Failed to deduct stock for order ${orderId}`, {
-            error: error instanceof Error ? error.message : 'Unknown error',
-            stack: error instanceof Error ? error.stack : undefined,
-          });
-          // Continue with other orders even if one fails
-        }
-      }
-
-      logger.info(`Stock deduction process completed for ${processedCount} orders`);
     } else {
       logger.info('No orders eligible for auto-completion');
     }

@@ -5,6 +5,7 @@ import { DecodedIdToken } from 'firebase-admin/lib/auth/token-verifier';
 import * as admin from 'firebase-admin';
 import cors = require('cors');
 import axios from 'axios';
+import { restockForOrder } from './utils/stockDeductionHelper';
 
 const db = admin.firestore();
 
@@ -401,14 +402,31 @@ export const cancelOrder = onRequest(
           });
         });
 
-        logger.info('Order cancelled successfully via transaction', { 
-          orderId, 
+        logger.info('Order cancelled successfully via transaction', {
+          orderId,
           userId,
           reason,
           isCodOrder,
           refundProcessed: !!refundResult?.refundId,
           refundId: refundResult?.refundId
         });
+
+        // Restock items if stock was previously deducted (COD at creation, online on payment).
+        // Guard against double-restock by checking stockDeducted === true before restoring.
+        if (preliminaryData?.stockDeducted === true) {
+          try {
+            await restockForOrder(orderId, preliminaryData?.items || []);
+            await orderRef.update({
+              stockDeducted: false,
+              stockRestockedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          } catch (restockError: any) {
+            logger.error('Failed to restock cancelled order', {
+              orderId,
+              error: restockError?.message || restockError,
+            });
+          }
+        }
 
         let responseMessage: string;
         if (isCodOrder) {

@@ -3,7 +3,6 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions/v2';
 import cors from 'cors';
-import { deductStockForOrder } from './utils/stockDeductionHelper';
 
 const db = getFirestore();
 
@@ -137,23 +136,6 @@ export const completeOrder = onRequest(
           return;
         }
 
-        // Check if stock has already been deducted
-        if (orderData?.stockDeducted === true) {
-          logger.warn(`Stock already deducted for order ${orderId}`);
-          response.status(400).json({
-            success: false,
-            error: 'This order has already been completed'
-          } as CompleteOrderResponse);
-          return;
-        }
-
-        // Get order items
-        const orderItems = orderData?.items || [];
-        if (orderItems.length === 0) {
-          logger.warn(`Order ${orderId} has no items`);
-        }
-
-        // Update order status to completed and deduct stock
         await orderRef.update({
           status: 'completed',
           updatedAt: FieldValue.serverTimestamp(),
@@ -163,45 +145,15 @@ export const completeOrder = onRequest(
             note: 'Order manually completed by customer',
           }),
           manuallyCompletedAt: FieldValue.serverTimestamp(),
-          stockDeducted: false, // Will be set to true after stock deduction
         });
 
-        // Deduct stock for this order
-        try {
-          await deductStockForOrder(orderId, orderItems);
+        logger.info('Order completed successfully', { orderId, userId });
 
-          // Mark order as stock deducted
-          await orderRef.update({
-            stockDeducted: true,
-            stockDeductedAt: FieldValue.serverTimestamp(),
-          });
-
-          logger.info('Order completed successfully with stock deduction', { 
-            orderId, 
-            userId,
-            itemCount: orderItems.length
-          });
-
-          response.status(200).json({
-            success: true,
-            message: 'Order completed successfully. Stock has been deducted.',
-            orderId: orderId
-          } as CompleteOrderResponse);
-
-        } catch (stockError) {
-          logger.error('Failed to deduct stock after completing order', { 
-            orderId,
-            error: stockError instanceof Error ? stockError.message : 'Unknown error',
-          });
-
-          // Order is already marked as completed, but stock deduction failed
-          // Return success but with a warning
-          response.status(200).json({
-            success: true,
-            message: 'Order completed, but some stock updates may have failed. Please contact support.',
-            orderId: orderId
-          } as CompleteOrderResponse);
-        }
+        response.status(200).json({
+          success: true,
+          message: 'Order completed successfully.',
+          orderId: orderId
+        } as CompleteOrderResponse);
 
       } catch (error: any) {
         logger.error('Error completing order', { 

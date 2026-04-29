@@ -12,6 +12,7 @@ import {
   validateAndApplyShippingVoucher,
   incrementVoucherUsage,
 } from './utils/voucherHelper';
+import { deductStockForOrder } from './utils/stockDeductionHelper';
 import cors = require('cors');
 
 const db = admin.firestore();
@@ -746,6 +747,19 @@ export const createCodOrder = onRequest(
         if (voucherDocIdsToIncrement.length > 0) {
           await incrementVoucherUsage(voucherDocIdsToIncrement, db);
           console.log(`Incremented usage for ${voucherDocIdsToIncrement.length} voucher(s)`);
+        }
+
+        // Deduct stock immediately — COD orders are committed at creation.
+        try {
+          await deductStockForOrder(orderRef.id, orderItems);
+          await orderRef.update({
+            stockDeducted: true,
+            stockDeductedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        } catch (stockError: any) {
+          console.error(`COD order ${orderRef.id}: stock deduction failed`, {
+            error: stockError?.message || stockError,
+          });
         }
 
         // Delete cart items after successful order creation (from user's Cart subcollection)

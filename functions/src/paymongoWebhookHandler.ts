@@ -3,12 +3,13 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
 import cors = require('cors');
 import * as logger from 'firebase-functions/logger';
-import { 
-  calculatePaymentProcessingFee, 
+import {
+  calculatePaymentProcessingFee,
   calculatePlatformFee,
   calculateNetPayout,
   calculateMultiSellerBreakdown
 } from './utils/jrsShippingHelper';
+import { deductStockForOrder } from './utils/stockDeductionHelper';
 
 // Initialize Firebase Admin if not already initialized
 if (!admin.apps.length) {
@@ -418,10 +419,27 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
 
     // Execute second update - move to to_ship
     await orderRef.update(secondUpdate);
-    
+
     logger.info('Order moved to to_ship status with to-pack fulfillment stage', { orderId });
 
-    logger.info('Order payment processed successfully', { 
+    // Deduct stock now that payment is confirmed. Guard against double-deduction
+    // in case the webhook is delivered more than once.
+    if (finalStatus === 'paid' && orderData?.stockDeducted !== true) {
+      try {
+        await deductStockForOrder(orderId, orderData?.items || []);
+        await orderRef.update({
+          stockDeducted: true,
+          stockDeductedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } catch (stockError) {
+        logger.error('Stock deduction failed after payment confirmation', {
+          orderId,
+          error: stockError instanceof Error ? stockError.message : 'Unknown error',
+        });
+      }
+    }
+
+    logger.info('Order payment processed successfully', {
       orderId, 
       orderStatus, 
       paymentStatus: finalStatus,
