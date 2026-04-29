@@ -3045,9 +3045,11 @@ class _ProductListingPageState extends State<ProductListingPage>
                           _loadFirstPage();
                         }
                       },
-                      child: AnimatedContainer(
+                      child: IntrinsicWidth(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minWidth: 80),
+                          child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
-                        width: 80,
                         decoration: BoxDecoration(
                           color: isSelected ? AppColors.accent : AppColors.surface,
                           borderRadius: BorderRadius.circular(12),
@@ -3099,18 +3101,23 @@ class _ProductListingPageState extends State<ProductListingPage>
                               ),
                             ),
                             const SizedBox(height: 6),
-                            Text(
-                              'All',
-                              style: AppTextStyles.bodySmall.copyWith(
-                                color: isSelected ? AppColors.onPrimary : AppColors.onSurface,
-                                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                                fontSize: 10,
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              child: Text(
+                                'All',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: isSelected ? AppColors.onPrimary : AppColors.onSurface,
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                  fontSize: 10,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
                             ),
                           ],
+                        ),
+                          ),
                         ),
                       ),
                     ),
@@ -3135,9 +3142,11 @@ class _ProductListingPageState extends State<ProductListingPage>
                       });
                       _loadFirstPage();
                     },
-                    child: AnimatedContainer(
+                    child: IntrinsicWidth(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minWidth: 80),
+                        child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
-                      width: 80,
                       decoration: BoxDecoration(
                         color: isSelected ? AppColors.accent : AppColors.surface,
                         borderRadius: BorderRadius.circular(12),
@@ -3215,20 +3224,22 @@ class _ProductListingPageState extends State<ProductListingPage>
                           ),
                           const SizedBox(height: 6),
                           Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
                             child: Text(
-                              brand,
+                              brand.length > 17 ? '${brand.substring(0, 17)}...' : brand,
                               style: AppTextStyles.bodySmall.copyWith(
                                 color: isSelected ? AppColors.onPrimary : AppColors.onSurface,
                                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                                 fontSize: 10,
                               ),
-                              maxLines: 2,
+                              maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               textAlign: TextAlign.center,
                             ),
                           ),
                         ],
+                      ),
+                        ),
                       ),
                     ),
                   ),
@@ -3289,9 +3300,11 @@ class _ProductListingPageState extends State<ProductListingPage>
                   padding: const EdgeInsets.only(right: 10),
                   child: GestureDetector(
                     onTap: () => _onCategorySelected(category),
-                    child: AnimatedContainer(
+                    child: IntrinsicWidth(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minWidth: 80),
+                        child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
-                      width: 80,
                       decoration: BoxDecoration(
                         color: isSelected ? AppColors.primary : AppColors.surface,
                         borderRadius: BorderRadius.circular(12),
@@ -3369,7 +3382,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                           ),
                           const SizedBox(height: 6),
                           Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
                             child: Text(
                               category,
                               style: AppTextStyles.bodySmall.copyWith(
@@ -3377,12 +3390,14 @@ class _ProductListingPageState extends State<ProductListingPage>
                                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                                 fontSize: 10,
                               ),
-                              maxLines: 2,
+                              maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               textAlign: TextAlign.center,
                             ),
                           ),
                         ],
+                      ),
+                        ),
                       ),
                     ),
                   ),
@@ -3398,6 +3413,7 @@ class _ProductListingPageState extends State<ProductListingPage>
   // Build Filter Section (horizontal filter bar with chips)
   Widget _buildFilterSection() {
     return Container(
+      width: double.infinity,
       margin: const EdgeInsets.symmetric(horizontal: 16),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
