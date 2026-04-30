@@ -321,7 +321,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   if (SubAccountSessionManager.canManageSubAccounts) ...[
                     _buildProfileOption(
                       context,
-                      'Manage Sub Accounts',
+                      'Assistants',
                       Icons.people_outline,
                       () {
                         Navigator.of(context).push(
