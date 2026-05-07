@@ -73,6 +73,8 @@ class _ProductListingPageState extends State<ProductListingPage>
   bool _isLoadingMore = false;
   List<String> _selectedCategories = [];
   List<String> _categories = ['All'];
+  bool _showAllCategories = false;
+  bool _categoryGridForceExpanded = false;
   String? _errorMessage;
   List<Product> _products = [];
   DateTime? _cacheTimestamp;
@@ -895,6 +897,8 @@ class _ProductListingPageState extends State<ProductListingPage>
         _selectedCategories = [];
         _selectedSubCategories = [];
         _subcategoriesByCategory.clear();
+        _categoryGridForceExpanded = false;
+        _showAllCategories = false;
         // Reset pagination parameters
         _products = [];
         _lastDocument = null;
@@ -930,6 +934,7 @@ class _ProductListingPageState extends State<ProductListingPage>
             newSelectedCategories.add(category);
           }
           _selectedCategories = newSelectedCategories;
+          _categoryGridForceExpanded = false;
 
           // Reset pagination parameters for the new selection
           _products = [];
@@ -2362,10 +2367,6 @@ class _ProductListingPageState extends State<ProductListingPage>
                           ),
                         ),
 
-                      // Brand Section (New)
-                      const SizedBox(height: 20),
-                      _buildBrandSection(),
-
                       // Modern Categories Section
                       const SizedBox(height: 16),
                       _buildCategoriesSection(),
@@ -2376,11 +2377,14 @@ class _ProductListingPageState extends State<ProductListingPage>
                       if (_selectedCategories.isNotEmpty &&
                           _subcategoriesByCategory.isNotEmpty) ...[
                         const SizedBox(height: 16),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: _buildGroupedSubcategoriesSection(),
+                        SizedBox(
+                          width: double.infinity,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: _buildGroupedSubcategoriesSection(),
+                            ),
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -3255,8 +3259,43 @@ class _ProductListingPageState extends State<ProductListingPage>
     );
   }
 
-  // Build Categories Section (horizontally scrollable)
+  int _categoryCrossAxisCount(BuildContext context) {
+    final w = MediaQuery.of(context).size.width;
+    if (w >= 1200) return 7;
+    if (w >= 900) return 6;
+    if (w >= 600) return 5;
+    return 4;
+  }
+
+  // Build Categories Section (responsive grid)
   Widget _buildCategoriesSection() {
+    final crossAxisCount = _categoryCrossAxisCount(context);
+    const maxCollapsedRows = 2;
+    final collapsedLimit = crossAxisCount * maxCollapsedRows;
+
+    final hasSelection = _selectedCategories.isNotEmpty;
+    final isCollapsedToSelection = hasSelection && !_categoryGridForceExpanded;
+
+    List<int> visibleIndices;
+    if (isCollapsedToSelection) {
+      final selectedRows = <int>{};
+      for (var i = 0; i < _categories.length; i++) {
+        if (_selectedCategories.contains(_categories[i])) {
+          selectedRows.add(i ~/ crossAxisCount);
+        }
+      }
+      visibleIndices = [
+        for (var i = 0; i < _categories.length; i++)
+          if (selectedRows.contains(i ~/ crossAxisCount)) i,
+      ];
+    } else if (_showAllCategories || _categories.length <= collapsedLimit) {
+      visibleIndices = List.generate(_categories.length, (i) => i);
+    } else {
+      visibleIndices = List.generate(collapsedLimit, (i) => i);
+    }
+
+    final hasMoreInDefault = _categories.length > collapsedLimit;
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
@@ -3286,129 +3325,208 @@ class _ProductListingPageState extends State<ProductListingPage>
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 100,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: _categories.length,
-              itemBuilder: (context, index) {
-                final category = _categories[index];
-                final isSelected = category == 'All'
-                    ? _selectedCategories.isEmpty
-                    : _selectedCategories.contains(category);
-                final imageUrl = category == 'All' ? null : _categoryNameToImage[category];
+          const SizedBox(height: 6),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            itemCount: visibleIndices.length,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: crossAxisCount,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              childAspectRatio: 0.85,
+            ),
+            itemBuilder: (context, index) {
+              final categoryIndex = visibleIndices[index];
+              final category = _categories[categoryIndex];
+              final isSelected = category == 'All'
+                  ? _selectedCategories.isEmpty
+                  : _selectedCategories.contains(category);
+              final imageUrl = category == 'All' ? null : _categoryNameToImage[category];
+              return _buildCategoryGridTile(
+                category: category,
+                isSelected: isSelected,
+                imageUrl: imageUrl,
+              );
+            },
+          ),
+          if (isCollapsedToSelection) ...[
+            const SizedBox(height: 8),
+            Center(
+              child: TextButton.icon(
+                onPressed: () {
+                  setState(() => _categoryGridForceExpanded = true);
+                },
+                icon: const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 18,
+                  color: AppColors.primary,
+                ),
+                label: Text(
+                  'Change category',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  minimumSize: const Size(0, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ),
+          ] else if (hasSelection && _categoryGridForceExpanded) ...[
+            const SizedBox(height: 8),
+            Center(
+              child: TextButton.icon(
+                onPressed: () {
+                  setState(() => _categoryGridForceExpanded = false);
+                },
+                icon: const Icon(
+                  Icons.keyboard_arrow_up_rounded,
+                  size: 18,
+                  color: AppColors.primary,
+                ),
+                label: Text(
+                  'Hide other categories',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  minimumSize: const Size(0, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ),
+          ] else if (hasMoreInDefault) ...[
+            const SizedBox(height: 8),
+            Center(
+              child: TextButton.icon(
+                onPressed: () {
+                  setState(() => _showAllCategories = !_showAllCategories);
+                },
+                icon: Icon(
+                  _showAllCategories
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  size: 18,
+                  color: AppColors.primary,
+                ),
+                label: Text(
+                  _showAllCategories
+                      ? 'Show less'
+                      : 'Show all (${_categories.length})',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  minimumSize: const Size(0, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 
-                return Padding(
-                  padding: const EdgeInsets.only(right: 10),
-                  child: GestureDetector(
-                    onTap: () => _onCategorySelected(category),
-                    child: IntrinsicWidth(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(minWidth: 80),
-                        child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      decoration: BoxDecoration(
-                        color: isSelected ? AppColors.primary : AppColors.surface,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: isSelected
-                              ? AppColors.primary
-                              : AppColors.onSurface.withValues(alpha: 0.12),
-                          width: 1.5,
+  Widget _buildCategoryGridTile({
+    required String category,
+    required bool isSelected,
+    required String? imageUrl,
+  }) {
+    return GestureDetector(
+      onTap: () => _onCategorySelected(category),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppColors.primary.withValues(alpha: 0.06)
+              : AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected
+                ? AppColors.primary
+                : AppColors.onSurface.withValues(alpha: 0.08),
+            width: isSelected ? 1.5 : 1,
+          ),
+          boxShadow: isSelected
+              ? null
+              : [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(
+                  alpha: isSelected ? 0.14 : 0.08,
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: imageUrl != null && imageUrl.isNotEmpty
+                  ? CachedNetworkImage(
+                      imageUrl: imageUrl,
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => Center(
+                        child: Icon(
+                          Icons.category,
+                          color: AppColors.primary.withValues(alpha: 0.5),
+                          size: 16,
                         ),
-                        boxShadow: isSelected
-                            ? [
-                                BoxShadow(
-                                  color: AppColors.primary.withValues(alpha: 0.25),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 3),
-                                ),
-                              ]
-                            : [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.04),
-                                  blurRadius: 4,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
                       ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Container(
-                              width: 48,
-                              height: 48,
-                              decoration: BoxDecoration(
-                                color: imageUrl != null && imageUrl.isNotEmpty
-                                    ? Colors.transparent
-                                    : isSelected
-                                        ? Colors.white.withValues(alpha: 0.2)
-                                        : AppColors.primary.withValues(alpha: 0.08),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: imageUrl != null && imageUrl.isNotEmpty
-                                  ? CachedNetworkImage(
-                                      imageUrl: imageUrl,
-                                      fit: BoxFit.cover,
-                                      placeholder: (context, url) => Center(
-                                        child: Icon(
-                                          Icons.category,
-                                          color: isSelected
-                                              ? Colors.white.withValues(alpha: 0.7)
-                                              : AppColors.primary.withValues(alpha: 0.5),
-                                          size: 20,
-                                        ),
-                                      ),
-                                      errorWidget: (context, url, error) => Center(
-                                        child: Icon(
-                                          Icons.category,
-                                          color: isSelected
-                                              ? Colors.white.withValues(alpha: 0.7)
-                                              : AppColors.primary.withValues(alpha: 0.5),
-                                          size: 20,
-                                        ),
-                                      ),
-                                    )
-                                  : Center(
-                                      child: Icon(
-                                        category == 'All' ? Icons.grid_view_rounded : Icons.category,
-                                        color: isSelected
-                                            ? Colors.white.withValues(alpha: 0.9)
-                                            : AppColors.primary.withValues(alpha: 0.7),
-                                        size: 22,
-                                      ),
-                                    ),
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: Text(
-                              category,
-                              style: AppTextStyles.bodySmall.copyWith(
-                                color: isSelected ? AppColors.onPrimary : AppColors.onSurface,
-                                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                                fontSize: 10,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        ],
-                      ),
+                      errorWidget: (context, url, error) => Center(
+                        child: Icon(
+                          Icons.category,
+                          color: AppColors.primary.withValues(alpha: 0.5),
+                          size: 16,
                         ),
+                      ),
+                    )
+                  : Center(
+                      child: Icon(
+                        category == 'All' ? Icons.grid_view_rounded : Icons.category,
+                        color: AppColors.primary,
+                        size: 18,
                       ),
                     ),
-                  ),
-                );
-              },
             ),
-          ),
-        ],
+            const SizedBox(height: 6),
+            Flexible(
+              child: Text(
+                category,
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: isSelected ? AppColors.primary : AppColors.onSurface,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  fontSize: 9.5,
+                  height: 1.15,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

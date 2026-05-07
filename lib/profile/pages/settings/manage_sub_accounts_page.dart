@@ -63,7 +63,7 @@ class _ManageSubAccountsPageState extends State<ManageSubAccountsPage> {
             Icon(Icons.people_outline, color: AppColors.primary, size: 24),
             const SizedBox(width: 8),
             Text(
-              'Manage Sub Accounts',
+              'Manage Assistants',
               style: AppTextStyles.titleLarge.copyWith(
                 fontWeight: FontWeight.w700,
               ),

@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/product_model.dart';
 import '../services/product_service.dart';
 import '../services/category_service.dart';
@@ -51,6 +52,14 @@ class _StorePageState extends State<StorePage> {
   // Map of categoryId -> image URL (parallel to _categories)
   final Map<String, String?> _categoryImages = {};
   String? _selectedCategoryId; // null = All
+
+  // View mode: 'popular' (default landing) or 'category'
+  String _viewMode = 'popular';
+
+  // Subcategories for the currently selected category (loaded lazily)
+  List<SubCategory> _currentSubCategories = [];
+  String? _selectedSubCategoryId; // null = All within the selected category
+  bool _loadingSubCategories = false;
 
   // Search (client-side on loaded products)
   final TextEditingController _searchController = TextEditingController();
@@ -309,10 +318,66 @@ class _StorePageState extends State<StorePage> {
     }
   }
 
-  void _onCategorySelected(String? categoryId) {
-    if (_selectedCategoryId == categoryId) return;
-    setState(() { _selectedCategoryId = categoryId; });
-    _loadSellerProducts(); // Reset pagination + refetch with new categoryId
+  void _selectPopular() {
+    if (_viewMode == 'popular') return;
+    setState(() {
+      _viewMode = 'popular';
+      _selectedCategoryId = null;
+      _selectedSubCategoryId = null;
+      _currentSubCategories = [];
+    });
+    _loadSellerProducts();
+  }
+
+  void _selectCategory(String categoryId) {
+    if (_viewMode == 'category' && _selectedCategoryId == categoryId) return;
+    setState(() {
+      _viewMode = 'category';
+      _selectedCategoryId = categoryId;
+      _selectedSubCategoryId = null;
+      _currentSubCategories = [];
+    });
+    _loadSellerProducts();
+    _loadSubCategoriesFor(categoryId);
+  }
+
+  Future<void> _loadSubCategoriesFor(String categoryId) async {
+    setState(() {
+      _loadingSubCategories = true;
+      _currentSubCategories = [];
+    });
+    try {
+      // Load all subcategories defined for this category, plus the set of
+      // subCategoryIDs actually used by this store's products in this category.
+      final subsFuture = _categoryService.getSubCategories(categoryId);
+      final productSnapFuture = FirebaseFirestore.instance
+          .collection('Product')
+          .where('sellerId', isEqualTo: widget.sellerId)
+          .where('categoryID', isEqualTo: categoryId)
+          .where('isActive', isEqualTo: true)
+          .get();
+
+      final subs = await subsFuture;
+      final productSnap = await productSnapFuture;
+
+      final usedSubIds = productSnap.docs
+          .map((d) => (d.data()['subCategoryID'] as String?) ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet();
+
+      final filtered = subs
+          .where((s) => usedSubIds.contains(s.subCategoryId))
+          .toList();
+
+      if (!mounted) return;
+      setState(() {
+        _currentSubCategories = filtered;
+        _loadingSubCategories = false;
+      });
+    } catch (e) {
+      AppLogger.d('StorePage: Error loading subcategories: $e');
+      if (mounted) setState(() { _loadingSubCategories = false; });
+    }
   }
 
   void _onSearchChanged(String query) {
@@ -331,6 +396,10 @@ class _StorePageState extends State<StorePage> {
           p.description.toLowerCase().contains(q)).toList();
     }
 
+    if (_viewMode == 'category' && _selectedSubCategoryId != null) {
+      list = list.where((p) => p.subCategoryId == _selectedSubCategoryId).toList();
+    }
+
     if (_minPrice != null || _maxPrice != null) {
       list = list.where((p) {
         final price = p.lowestPrice ?? 0.0;
@@ -344,6 +413,9 @@ class _StorePageState extends State<StorePage> {
       list.sort((a, b) => (a.lowestPrice ?? 0.0).compareTo(b.lowestPrice ?? 0.0));
     } else if (_selectedPriceSort == 'High to Low') {
       list.sort((a, b) => (b.lowestPrice ?? 0.0).compareTo(a.lowestPrice ?? 0.0));
+    } else if (_viewMode == 'popular') {
+      list.sort((a, b) => (_soldCounts[b.productId] ?? 0)
+          .compareTo(_soldCounts[a.productId] ?? 0));
     }
 
     return list;
@@ -357,20 +429,296 @@ class _StorePageState extends State<StorePage> {
   }
 
   void _shareStore() {
-    final shareUrl = NavigationUtils.getStoreShareUrl(widget.sellerId);
-    final storeName = _storeData['shopName'] ?? 'DentPal Store';
-    final shareText = '$storeName\n\nCheck out this store on DentPal: $shareUrl';
-
     if (!kIsWeb) {
-      SharePlus.instance.share(ShareParams(text: shareText, subject: 'Check out this store on DentPal'));
+      final shareUrl = NavigationUtils.getStoreShareUrl(widget.sellerId);
+      final storeName = _storeData['shopName'] ?? 'DentPal Store';
+      final shareText =
+          '$storeName\n\nCheck out this store on DentPal: $shareUrl';
+      Share.share(shareText, subject: 'Check out this store on DentPal');
       return;
     }
 
-    // On web, copy to clipboard
-    Clipboard.setData(ClipboardData(text: shareUrl));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Store link copied to clipboard!')),
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => _buildShareBottomSheet(),
     );
+  }
+
+  Widget _buildShareBottomSheet() {
+    final shareUrl = NavigationUtils.getStoreShareUrl(widget.sellerId);
+    final storeName = _storeData['shopName'] ?? 'DentPal Store';
+    final shareText =
+        '$storeName\n\nCheck out this store on DentPal: $shareUrl';
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(24),
+          topRight: Radius.circular(24),
+        ),
+      ),
+      child: SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 12),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.onSurface.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.share,
+                      color: AppColors.primary,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Share Store',
+                    style: AppTextStyles.titleLarge.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.onSurface,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                    iconSize: 20,
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(
+              height: 100,
+              child: Center(
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  shrinkWrap: true,
+                  children: [
+                    _buildShareOption(
+                      icon: Icons.facebook,
+                      label: 'Facebook',
+                      color: const Color(0xFF1877F2),
+                      onTap: () => _shareToFacebook(shareUrl, shareText),
+                    ),
+                    const SizedBox(width: 24),
+                    _buildShareOption(
+                      icon: Icons.messenger,
+                      label: 'Messenger',
+                      color: const Color(0xFF00B2FF),
+                      onTap: () => _shareToMessenger(shareUrl, shareText),
+                    ),
+                    const SizedBox(width: 24),
+                    _buildShareOption(
+                      icon: Icons.email,
+                      label: 'Email',
+                      color: const Color(0xFF34A853),
+                      onTap: () => _shareToEmail(shareUrl, shareText),
+                    ),
+                    const SizedBox(width: 24),
+                    _buildShareOption(
+                      icon: Icons.message,
+                      label: 'SMS',
+                      color: const Color(0xFF0088CC),
+                      onTap: () => _shareToSMS(shareUrl, shareText),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: AppColors.primary.withValues(alpha: 0.2),
+                  ),
+                ),
+                child: ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.link,
+                      color: AppColors.primary,
+                      size: 20,
+                    ),
+                  ),
+                  title: Text(
+                    'Copy Link',
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.onSurface,
+                    ),
+                  ),
+                  subtitle: Text(
+                    shareUrl,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.onSurface.withValues(alpha: 0.6),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: const Icon(
+                    Icons.copy,
+                    color: AppColors.primary,
+                    size: 20,
+                  ),
+                  onTap: () => _copyLinkToClipboard(shareText),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildShareOption({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: color, size: 24),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.onSurface.withValues(alpha: 0.7),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _shareToFacebook(String url, String text) {
+    if (!kIsWeb) {
+      Share.share(text, subject: 'Check out this store on DentPal');
+      Navigator.pop(context);
+      return;
+    }
+    final facebookUrl =
+        'https://www.facebook.com/sharer/sharer.php?u=${Uri.encodeComponent(url)}';
+    _openUrl(facebookUrl);
+  }
+
+  void _shareToMessenger(String url, String text) {
+    if (!kIsWeb) {
+      Share.share(text, subject: 'Check out this store on DentPal');
+      Navigator.pop(context);
+      return;
+    }
+    final messengerUrl =
+        'https://www.messenger.com/new?text=${Uri.encodeComponent(text)}';
+    _openUrl(messengerUrl);
+  }
+
+  void _shareToEmail(String url, String text) {
+    final emailUrl =
+        'mailto:?subject=${Uri.encodeComponent('Check out this store on DentPal')}&body=${Uri.encodeComponent(text)}';
+    _openUrl(emailUrl);
+  }
+
+  void _shareToSMS(String url, String text) {
+    if (!kIsWeb) {
+      Share.share(text, subject: 'Check out this store on DentPal');
+      Navigator.pop(context);
+      return;
+    }
+    final smsUrl = 'sms:?body=${Uri.encodeComponent(text)}';
+    _openUrl(smsUrl);
+  }
+
+  void _openUrl(String url) async {
+    try {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        if (mounted) Navigator.pop(context);
+      } else {
+        _copyLinkToClipboard(url, 'Link copied to clipboard!');
+      }
+    } catch (e) {
+      _copyLinkToClipboard(url, 'Link copied to clipboard!');
+    }
+  }
+
+  void _copyLinkToClipboard(String text, [String? customMessage]) {
+    Clipboard.setData(ClipboardData(text: text)).then((_) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: AppColors.onPrimary, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  customMessage ?? 'Link copied to clipboard!',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.onPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: AppColors.primary,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          margin: const EdgeInsets.all(16),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    });
   }
 
   @override
@@ -395,7 +743,9 @@ class _StorePageState extends State<StorePage> {
                       _buildBannerAndStoreHeader(),
                       _buildVoucherSection(),
                       _buildSearchBar(),
-                      if (_categories.isNotEmpty) _buildCategoriesSection(),
+                      _buildCategoryTabStrip(),
+                      if (_viewMode == 'category' && _selectedCategoryId != null)
+                        _buildSubCategoryRow(),
                       if (kIsWeb) const SizedBox(height: 24),
                       _buildProductsGrid(),
                       if (_isFetchingMore)
@@ -443,6 +793,7 @@ class _StorePageState extends State<StorePage> {
 
     const double iconDiameter = 80.0;
     const double iconRadius = iconDiameter / 2;
+    final double topInset = MediaQuery.of(context).padding.top;
 
     return Column(
       children: [
@@ -450,15 +801,11 @@ class _StorePageState extends State<StorePage> {
         Stack(
           clipBehavior: Clip.none,
           children: [
-            // Banner
-            Container(
-              margin: const EdgeInsets.only(left: 16, right: 16, top: 12),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(24),
-                child: AspectRatio(
-                  aspectRatio: 8 / 3,
-                  child: Stack(
-                    fit: StackFit.expand,
+            // Banner — full-bleed, edge-to-edge, square corners.
+            AspectRatio(
+              aspectRatio: 8 / 3,
+              child: Stack(
+                fit: StackFit.expand,
                     children: [
                       if (coverImageURL.isNotEmpty)
                         CachedNetworkImage(
@@ -481,33 +828,32 @@ class _StorePageState extends State<StorePage> {
                         )
                       else
                         _buildBannerGradient(),
-                      // Back button
-                      Positioned(
-                        top: 12,
-                        left: 12,
-                        child: _buildCircleButton(
-                          icon: Icons.arrow_back,
-                          onPressed: () {
-                            if (Navigator.canPop(context)) {
-                              Navigator.pop(context);
-                            } else {
-                              Navigator.pushReplacementNamed(context, '/');
-                            }
-                          },
-                        ),
-                      ),
-                      // Share button
-                      Positioned(
-                        top: 12,
-                        right: 12,
-                        child: _buildCircleButton(
-                          icon: Icons.share,
-                          onPressed: _shareStore,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                ],
+              ),
+            ),
+            // Back button — positioned in outer Stack so it can sit just below
+            // the status bar regardless of the banner's top margin.
+            Positioned(
+              top: topInset + 12,
+              left: 28,
+              child: _buildCircleButton(
+                icon: Icons.arrow_back,
+                onPressed: () {
+                  if (Navigator.canPop(context)) {
+                    Navigator.pop(context);
+                  } else {
+                    Navigator.pushReplacementNamed(context, '/');
+                  }
+                },
+              ),
+            ),
+            // Share button
+            Positioned(
+              top: topInset + 12,
+              right: 28,
+              child: _buildCircleButton(
+                icon: Icons.share,
+                onPressed: _shareStore,
               ),
             ),
             // Store icon overlapping bottom center of banner
@@ -832,190 +1178,221 @@ class _StorePageState extends State<StorePage> {
   // ── Search Bar ──────────────────────────────────────────────────────────
 
   Widget _buildSearchBar() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.primary.withValues(alpha: 0.15)),
-      ),
-      child: TextField(
-        controller: _searchController,
-        onChanged: _onSearchChanged,
-        decoration: InputDecoration(
-          hintText: 'Search products in this store...',
-          hintStyle: AppTextStyles.bodySmall.copyWith(
-            color: AppColors.onSurface.withValues(alpha: 0.5),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.primary.withValues(alpha: 0.15)),
+              ),
+              child: TextField(
+                controller: _searchController,
+                onChanged: _onSearchChanged,
+                decoration: InputDecoration(
+                  hintText: 'Search products in this store...',
+                  hintStyle: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.onSurface.withValues(alpha: 0.5),
+                  ),
+                  prefixIcon: const Icon(Icons.search, size: 20, color: AppColors.primary),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.close, size: 18),
+                          onPressed: () {
+                            _searchController.clear();
+                            _onSearchChanged('');
+                          },
+                        )
+                      : null,
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+                style: AppTextStyles.bodyMedium,
+              ),
+            ),
           ),
-          prefixIcon: const Icon(Icons.search, size: 20, color: AppColors.primary),
-          suffixIcon: _searchQuery.isNotEmpty
-              ? IconButton(
-                  icon: const Icon(Icons.close, size: 18),
-                  onPressed: () {
-                    _searchController.clear();
-                    _onSearchChanged('');
-                  },
-                )
-              : null,
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        ),
-        style: AppTextStyles.bodyMedium,
+          const SizedBox(width: 8),
+          _buildFilterIconButton(),
+        ],
       ),
     );
   }
 
-  // ── Categories Section (derived from this store's products) ────────────
+  // ── Category Tab Strip + Subcategory Row ───────────────────────────────
 
-  Widget _buildCategoriesSection() {
-    // Build ordered list: entries of [categoryId, categoryName]
+  Widget _buildCategoryTabStrip() {
     final entries = _categories.entries.toList();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Categories',
-                  style: AppTextStyles.titleMedium.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.onSurface,
-                  ),
-                ),
-              ),
-              _buildFilterIconButton(),
-            ],
-          ),
-        ),
-        SizedBox(
-          height: 100,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: entries.length + 1, // +1 for "All"
-            itemBuilder: (context, index) {
-              final isAll = index == 0;
-              final catId = isAll ? null : entries[index - 1].key;
-              final catName = isAll ? 'All' : entries[index - 1].value;
-              final imageUrl = isAll ? null : _categoryImages[catId];
-              final isSelected = _selectedCategoryId == catId;
-
-              return Padding(
-                padding: const EdgeInsets.only(right: 10),
-                child: GestureDetector(
-                  onTap: () => _onCategorySelected(catId),
-                  child: IntrinsicWidth(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(minWidth: 80),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        decoration: BoxDecoration(
-                          color: isSelected ? AppColors.primary : AppColors.surface,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: isSelected
-                                ? AppColors.primary
-                                : AppColors.onSurface.withValues(alpha: 0.12),
-                            width: 1.5,
-                          ),
-                          boxShadow: isSelected
-                              ? [
-                                  BoxShadow(
-                                    color: AppColors.primary.withValues(alpha: 0.25),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 3),
-                                  ),
-                                ]
-                              : [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.04),
-                                    blurRadius: 4,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                width: 48,
-                                height: 48,
-                                decoration: BoxDecoration(
-                                  color: imageUrl != null && imageUrl.isNotEmpty
-                                      ? Colors.transparent
-                                      : isSelected
-                                          ? Colors.white.withValues(alpha: 0.2)
-                                          : AppColors.primary.withValues(alpha: 0.08),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: imageUrl != null && imageUrl.isNotEmpty
-                                    ? CachedNetworkImage(
-                                        imageUrl: imageUrl,
-                                        fit: BoxFit.cover,
-                                        placeholder: (context, url) => Center(
-                                          child: Icon(
-                                            Icons.category,
-                                            color: isSelected
-                                                ? Colors.white.withValues(alpha: 0.7)
-                                                : AppColors.primary.withValues(alpha: 0.5),
-                                            size: 20,
-                                          ),
-                                        ),
-                                        errorWidget: (context, url, error) => Center(
-                                          child: Icon(
-                                            Icons.category,
-                                            color: isSelected
-                                                ? Colors.white.withValues(alpha: 0.7)
-                                                : AppColors.primary.withValues(alpha: 0.5),
-                                            size: 20,
-                                          ),
-                                        ),
-                                      )
-                                    : Center(
-                                        child: Icon(
-                                          isAll ? Icons.grid_view_rounded : Icons.category,
-                                          color: isSelected
-                                              ? Colors.white.withValues(alpha: 0.9)
-                                              : AppColors.primary.withValues(alpha: 0.7),
-                                          size: 22,
-                                        ),
-                                      ),
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                              child: Text(
-                                catName.length > 17
-                                    ? '${catName.substring(0, 17)}...'
-                                    : catName,
-                                style: AppTextStyles.bodySmall.copyWith(
-                                  color: isSelected ? AppColors.onPrimary : AppColors.onSurface,
-                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                                  fontSize: 10,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 4, 0, 4),
+      child: SizedBox(
+        height: 40,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          itemCount: entries.length + 1,
+          separatorBuilder: (_, _) => const SizedBox(width: 18),
+          itemBuilder: (context, index) {
+            if (index == 0) {
+              return _buildTabText(
+                label: 'Popular',
+                icon: Icons.local_fire_department,
+                isSelected: _viewMode == 'popular',
+                onTap: _selectPopular,
               );
-            },
+            }
+            final entry = entries[index - 1];
+            final isSelected = _viewMode == 'category' &&
+                _selectedCategoryId == entry.key;
+            return _buildTabText(
+              label: entry.value,
+              icon: null,
+              isSelected: isSelected,
+              onTap: () => _selectCategory(entry.key),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTabText({
+    required String label,
+    required IconData? icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: IntrinsicWidth(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[
+                  Icon(
+                    icon,
+                    size: 15,
+                    color: isSelected
+                        ? AppColors.primary
+                        : AppColors.onSurface.withValues(alpha: 0.6),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                Text(
+                  label.length > 29 ? '${label.substring(0, 29)}...' : label,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: isSelected
+                        ? AppColors.primary
+                        : AppColors.onSurface.withValues(alpha: 0.75),
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Container(
+              height: 2,
+              decoration: BoxDecoration(
+                color: isSelected ? AppColors.primary : Colors.transparent,
+                borderRadius: BorderRadius.circular(1),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubCategoryRow() {
+    if (_loadingSubCategories) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 2, 16, 0),
+        child: Row(
+          children: [
+            Container(
+              height: 22,
+              width: 80,
+              decoration: BoxDecoration(
+                color: AppColors.onSurface.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_currentSubCategories.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, bottom: 0),
+      child: SizedBox(
+        height: 26,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          itemCount: _currentSubCategories.length + 1,
+          separatorBuilder: (_, _) => const SizedBox(width: 16),
+          itemBuilder: (context, index) {
+            if (index == 0) {
+              final isAll = _selectedSubCategoryId == null;
+              return _buildSubChip(
+                label: 'All',
+                isSelected: isAll,
+                onTap: () {
+                  if (_selectedSubCategoryId == null) return;
+                  setState(() { _selectedSubCategoryId = null; });
+                },
+              );
+            }
+            final sub = _currentSubCategories[index - 1];
+            final isSelected = _selectedSubCategoryId == sub.subCategoryId;
+            return _buildSubChip(
+              label: sub.subCategoryName,
+              isSelected: isSelected,
+              onTap: () {
+                setState(() {
+                  _selectedSubCategoryId = isSelected ? null : sub.subCategoryId;
+                });
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubChip({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Align(
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: AppTextStyles.bodySmall.copyWith(
+            color: isSelected
+                ? AppColors.primary
+                : AppColors.onSurface.withValues(alpha: 0.7),
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+            decoration: isSelected ? TextDecoration.underline : TextDecoration.none,
+            decorationColor: AppColors.primary,
+            decorationThickness: 2,
           ),
         ),
-      ],
+      ),
     );
   }
 
