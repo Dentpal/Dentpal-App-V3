@@ -977,22 +977,35 @@ class _ProductListingPageState extends State<ProductListingPage>
       AppLogger.d(
         'Loading subcategories for category: $categoryName (ID: $categoryId)',
       );
-      final subcategories = await _categoryService.getSubCategories(categoryId);
+      final subcategoriesFuture = _categoryService.getSubCategories(categoryId);
+      // Collect subCategoryIDs actually used by active products in this category.
+      final productSnapFuture = FirebaseFirestore.instance
+          .collection('Product')
+          .where('isActive', isEqualTo: true)
+          .where('categoryID', isEqualTo: categoryId)
+          .get();
+
+      final subcategories = await subcategoriesFuture;
+      final productSnap = await productSnapFuture;
+
+      final usedSubIds = productSnap.docs
+          .map((d) => (d.data()['subCategoryID'] as String?) ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet();
+
+      final filtered = subcategories
+          .where((s) => usedSubIds.contains(s.subCategoryId))
+          .toList();
 
       AppLogger.d(
-        'Loaded ${subcategories.length} subcategories for $categoryName',
+        'Loaded ${filtered.length}/${subcategories.length} subcategories for $categoryName',
       );
-      for (var sub in subcategories) {
-        AppLogger.d('${sub.subCategoryName} (ID: ${sub.subCategoryId})');
-      }
 
-      if (!mounted) return; // Check if widget is still mounted
+      if (!mounted) return;
 
-      if (mounted) {
-        setState(() {
-          _subcategoriesByCategory[categoryId] = subcategories;
-        });
-      }
+      setState(() {
+        _subcategoriesByCategory[categoryId] = filtered;
+      });
     } catch (e) {
       AppLogger.d('Error loading subcategories for $categoryName: $e');
     }
@@ -1273,6 +1286,17 @@ class _ProductListingPageState extends State<ProductListingPage>
       if (_categories.length <= 1) {
         try {
           final allCategories = await _categoryService.getCategories();
+          // Collect categoryIDs that are actually used by active products,
+          // so empty categories don't crowd the grid.
+          final productSnap = await FirebaseFirestore.instance
+              .collection('Product')
+              .where('isActive', isEqualTo: true)
+              .get();
+          final usedCategoryIds = productSnap.docs
+              .map((d) => (d.data()['categoryID'] as String?) ?? '')
+              .where((id) => id.isNotEmpty)
+              .toSet();
+
           if (!mounted) return;
 
           Set<String> categorySet = {'All'};
@@ -1281,6 +1305,7 @@ class _ProductListingPageState extends State<ProductListingPage>
           _categoryNameToImage.clear();
 
           for (var category in allCategories) {
+            if (!usedCategoryIds.contains(category.categoryId)) continue;
             categorySet.add(category.categoryName);
             _categoryNameToId[category.categoryName] = category.categoryId;
             _categoryIdToName[category.categoryId] = category.categoryName;
@@ -4096,10 +4121,19 @@ class _ProductListingPageState extends State<ProductListingPage>
 
     return GestureDetector(
       onTap: () {
+        final initialCategoryIds = _selectedCategories
+            .map((name) => _categoryNameToId[name])
+            .whereType<String>()
+            .toList();
         NavigationUtils.navigateToStore(
           context,
           sellerId,
           sellerData: _sellerDataCache[sellerId],
+          initialCategoryIds:
+              initialCategoryIds.isEmpty ? null : initialCategoryIds,
+          initialSubCategoryIds: _selectedSubCategories.isEmpty
+              ? null
+              : List<String>.from(_selectedSubCategories),
         );
       },
       child: Container(

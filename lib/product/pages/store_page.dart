@@ -18,8 +18,18 @@ import '../widgets/voucher_terms_sheet.dart';
 class StorePage extends StatefulWidget {
   final String sellerId;
   final Map<String, dynamic>? sellerData;
+  // Pre-applied filters carried over from product_listing_page so the user
+  // sees the same category/subcategory filter context they had on home.
+  final List<String>? initialCategoryIds;
+  final List<String>? initialSubCategoryIds;
 
-  const StorePage({super.key, required this.sellerId, this.sellerData});
+  const StorePage({
+    super.key,
+    required this.sellerId,
+    this.sellerData,
+    this.initialCategoryIds,
+    this.initialSubCategoryIds,
+  });
 
   @override
   _StorePageState createState() => _StorePageState();
@@ -61,6 +71,10 @@ class _StorePageState extends State<StorePage> {
   String? _selectedSubCategoryId; // null = All within the selected category
   bool _loadingSubCategories = false;
 
+  // Pending pre-selected subCategoryIds carried over from product_listing_page;
+  // applied after subcategories finish loading, then cleared.
+  List<String>? _pendingInitialSubCategoryIds;
+
   // Search (client-side on loaded products)
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -79,6 +93,7 @@ class _StorePageState extends State<StorePage> {
     super.initState();
     _imageVersionToken = DateTime.now().millisecondsSinceEpoch.toString();
     _scrollController.addListener(_onScroll);
+    _pendingInitialSubCategoryIds = widget.initialSubCategoryIds;
     _loadStoreData();
     NavigationUtils.updatePageUrl('/store/${widget.sellerId}');
   }
@@ -284,6 +299,18 @@ class _StorePageState extends State<StorePage> {
           ..addAll(resolvedImages);
       });
       AppLogger.d('StorePage: Derived ${resolved.length} categories from products');
+
+      // Apply any category pre-selection carried over from product_listing_page.
+      final initialCatIds = widget.initialCategoryIds;
+      if (initialCatIds != null && initialCatIds.isNotEmpty) {
+        final matchedCatId = initialCatIds.firstWhere(
+          (id) => resolved.containsKey(id),
+          orElse: () => '',
+        );
+        if (matchedCatId.isNotEmpty && mounted) {
+          _selectCategory(matchedCatId);
+        }
+      }
     } catch (e) {
       AppLogger.d('StorePage: Error loading store categories: $e');
     }
@@ -370,9 +397,25 @@ class _StorePageState extends State<StorePage> {
           .toList();
 
       if (!mounted) return;
+
+      // Apply any subcategory pre-selection carried over from product_listing_page.
+      String? autoSelectedSubId;
+      final pending = _pendingInitialSubCategoryIds;
+      if (pending != null && pending.isNotEmpty) {
+        final matched = pending.firstWhere(
+          (id) => filtered.any((s) => s.subCategoryId == id),
+          orElse: () => '',
+        );
+        if (matched.isNotEmpty) autoSelectedSubId = matched;
+      }
+
       setState(() {
         _currentSubCategories = filtered;
         _loadingSubCategories = false;
+        if (autoSelectedSubId != null) {
+          _selectedSubCategoryId = autoSelectedSubId;
+        }
+        _pendingInitialSubCategoryIds = null;
       });
     } catch (e) {
       AppLogger.d('StorePage: Error loading subcategories: $e');

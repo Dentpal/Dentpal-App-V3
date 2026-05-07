@@ -53,15 +53,25 @@ class NavigationUtils {
   }
   
   /// Navigate to store page with proper URL updating for web
-  static void navigateToStore(BuildContext context, String sellerId, {Map<String, dynamic>? sellerData}) {
+  static void navigateToStore(
+    BuildContext context,
+    String sellerId, {
+    Map<String, dynamic>? sellerData,
+    List<String>? initialCategoryIds,
+    List<String>? initialSubCategoryIds,
+  }) {
     // Update URL for web deep linking
     updateUrl('/store/$sellerId');
-    
+
     // Navigate to store page
     Navigator.pushNamed(
-      context, 
+      context,
       '/store/$sellerId',
-      arguments: {'sellerData': sellerData},
+      arguments: {
+        'sellerData': sellerData,
+        'initialCategoryIds': initialCategoryIds,
+        'initialSubCategoryIds': initialSubCategoryIds,
+      },
     );
   }
   

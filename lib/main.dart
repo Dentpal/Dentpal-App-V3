@@ -148,11 +148,19 @@ class MyApp extends StatelessWidget {
           final sellerId = settings.name!.split('/')[2];
           final args = settings.arguments as Map<String, dynamic>?;
           final sellerData = args?['sellerData'] as Map<String, dynamic>?;
+          final initialCategoryIds =
+              (args?['initialCategoryIds'] as List?)?.cast<String>();
+          final initialSubCategoryIds =
+              (args?['initialSubCategoryIds'] as List?)?.cast<String>();
 
           return MaterialPageRoute(
             settings: settings,
-            builder: (context) =>
-                StorePage(sellerId: sellerId, sellerData: sellerData),
+            builder: (context) => StorePage(
+              sellerId: sellerId,
+              sellerData: sellerData,
+              initialCategoryIds: initialCategoryIds,
+              initialSubCategoryIds: initialSubCategoryIds,
+            ),
           );
         }
 
