@@ -3,8 +3,6 @@ import * as admin from 'firebase-admin';
 import {
   calculateJRSShippingCostWithFallback,
   calculateMultiSellerBreakdown,
-  calculatePaymentProcessingFee,
-  calculatePlatformFee,
   determineProductName,
 } from './utils/jrsShippingHelper';
 import {
@@ -580,12 +578,27 @@ export const createCodOrder = onRequest(
             breakdown.sellerShippingCharge = sellerCharge;
             breakdown.shippingSplitRule = splitRule;
             breakdown.totalChargedToBuyer = round2(breakdown.cartValue + buyerCharge);
-            breakdown.totalSellerFees = round2(breakdown.platformFee + breakdown.sellerShippingCharge);
-            breakdown.netPayoutToSeller = round2(
-              breakdown.cartValue - breakdown.platformFee - breakdown.sellerShippingCharge,
-            );
           }
           shippingCoverageTypes.push(coverage);
+        }
+
+        // Apply new fee model (COD has paymentProcessingFee = 0):
+        //   shippingVat        = shippingCost * 0.12 (always paid by seller)
+        //   totalSellerFees    = cartValue - ((paymentProcessingFee * 0.12) + ((shippingCost + platformFee) * 1.12))
+        //   netPayoutToSeller  = same as totalSellerFees (seller's payout)
+        // breakdown.cartValue already reflects postDiscountCartValue (see adjustedSellerData above).
+        // Raw, unrounded values — rounding here would cause mismatch with downstream consumers.
+        const shippingVats: number[] = [];
+        for (const breakdown of multiSellerBreakdown.sellerBreakdowns) {
+          breakdown.paymentProcessingFee = 0; // COD: no processing fee
+          const shippingVat = breakdown.shippingCost * 0.12;
+          const dentpalCut =
+            (breakdown.paymentProcessingFee * 0.12) +
+            ((breakdown.shippingCost + breakdown.platformFee) * 1.12);
+          const sellerPayout = breakdown.cartValue - dentpalCut;
+          breakdown.totalSellerFees = sellerPayout;
+          breakdown.netPayoutToSeller = sellerPayout;
+          shippingVats.push(shippingVat);
         }
 
         const shippingCost = multiSellerBreakdown.totalShippingCost;
@@ -605,12 +618,15 @@ export const createCodOrder = onRequest(
         const shippingSplitRule = shippingSplitRules.includes('seller_pays_full') ? 'seller_pays_full' :
                                   (shippingSplitRules.length > 1 ? 'per_seller' : shippingSplitRules[0] || 'buyer_pays_full');
 
-        // Calculate fees (COD typically has no payment processing fee, but keep platform fee)
+        // Aggregate fees from per-seller breakdowns so summary matches breakdown values exactly.
+        // Raw, unrounded values — rounding here would cause mismatch with downstream consumers.
         const totalAmount = postDiscountSubtotal + buyerShippingCharge;
         const paymentProcessingFee = 0; // No processing fee for COD
-        const platformFee = calculatePlatformFee(postDiscountSubtotal);
-        const totalSellerFees = paymentProcessingFee + platformFee + sellerShippingCharge;
-        const netPayoutToSeller = postDiscountSubtotal - totalSellerFees;
+        const platformFee = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.platformFee, 0);
+        const totalSellerFees = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.totalSellerFees, 0);
+        const netPayoutToSeller = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.netPayoutToSeller, 0);
+        const totalDentpalIncome =
+          (paymentProcessingFee * 0.12) + ((shippingCost + platformFee) * 1.12);
 
         // Derive overall packaging label for the order (join unique packaging names across sellers)
         const uniquePackagingNames = [...new Set(
@@ -652,6 +668,7 @@ export const createCodOrder = onRequest(
             usedFallbackShipping: false,
             fallbackShippingSellerCount: 0,
             packagingSize: overallPackagingSize,
+            totalDentpalIncome: totalDentpalIncome,
           },
           fees: {
             paymentProcessingFee: paymentProcessingFee,
@@ -675,15 +692,16 @@ export const createCodOrder = onRequest(
             freeShippingFromVoucher: shippingCoverageTypes[index] === 'full',
             partialShippingCoverage: shippingCoverageTypes[index] === 'partial_express',
             shippingCost: s.shippingCost,
+            shippingVat: shippingVats[index],
             buyerShippingCharge: s.buyerShippingCharge,
             sellerShippingCharge: s.sellerShippingCharge,
             shippingSplitRule: s.shippingSplitRule,
             totalChargedToBuyer: s.totalChargedToBuyer,
-            paymentProcessingFee: 0, // No processing fee for COD
+            paymentProcessingFee: s.paymentProcessingFee,
             platformFee: s.platformFee,
             platformFeePercentage: s.platformFeePercentage,
-            totalSellerFees: s.platformFee + s.sellerShippingCharge,
-            netPayoutToSeller: s.cartValue - (s.platformFee + s.sellerShippingCharge),
+            totalSellerFees: s.totalSellerFees,
+            netPayoutToSeller: s.netPayoutToSeller,
             packagingSize: sellerShippingData[index].packagingName || null,
             hasInsuranceAndEvaluation: sellerShippingData[index].insuranceAndEvaluation,
             insuranceCost: sellerShippingData[index].insuranceCost,

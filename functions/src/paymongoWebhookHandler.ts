@@ -6,7 +6,6 @@ import * as logger from 'firebase-functions/logger';
 import {
   calculatePaymentProcessingFee,
   calculatePlatformFee,
-  calculateNetPayout,
   calculateMultiSellerBreakdown
 } from './utils/jrsShippingHelper';
 import { deductStockForOrder } from './utils/stockDeductionHelper';
@@ -255,30 +254,46 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
       
       // Recalculate with actual payment method
       const multiSellerBreakdown = calculateMultiSellerBreakdown(sellersData, paymentMethod);
-      
-      // Use totals from multi-seller breakdown
+
+      // Apply new fee model (raw values, no rounding):
+      //   shippingVat        = shippingCost * 0.12 (paid by seller)
+      //   totalSellerFees    = cartValue - ((paymentProcessingFee * 0.12) + ((shippingCost + platformFee) * 1.12))
+      //   netPayoutToSeller  = same as totalSellerFees (seller's payout)
+      for (const breakdown of multiSellerBreakdown.sellerBreakdowns) {
+        const dentpalCut =
+          (breakdown.paymentProcessingFee * 0.12) +
+          ((breakdown.shippingCost + breakdown.platformFee) * 1.12);
+        const sellerPayout = breakdown.cartValue - dentpalCut;
+        breakdown.totalSellerFees = sellerPayout;
+        breakdown.netPayoutToSeller = sellerPayout;
+      }
+
+      // Aggregate from per-seller values so summary matches the breakdowns exactly.
       paymentProcessingFee = multiSellerBreakdown.totalPaymentProcessingFee;
-      platformFee = multiSellerBreakdown.totalPlatformFee;
-      totalSellerFees = multiSellerBreakdown.totalSellerFees;
-      netPayoutToSeller = multiSellerBreakdown.totalNetPayoutToSellers;
-      
-      // Update seller fee breakdowns with recalculated values
-      updatedSellerFeeBreakdowns = multiSellerBreakdown.sellerBreakdowns.map(s => ({
-        sellerId: s.sellerId,
-        sellerName: s.sellerName,
-        cartValue: s.cartValue,
-        shippingCost: s.shippingCost,
-        buyerShippingCharge: s.buyerShippingCharge,
-        sellerShippingCharge: s.sellerShippingCharge,
-        shippingSplitRule: s.shippingSplitRule,
-        totalChargedToBuyer: s.totalChargedToBuyer,
-        paymentProcessingFee: s.paymentProcessingFee,
-        platformFee: s.platformFee,
-        platformFeePercentage: s.platformFeePercentage,
-        totalSellerFees: s.totalSellerFees,
-        netPayoutToSeller: s.netPayoutToSeller,
-      }));
-      
+      platformFee = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.platformFee, 0);
+      totalSellerFees = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.totalSellerFees, 0);
+      netPayoutToSeller = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.netPayoutToSeller, 0);
+
+      // Merge recalculated fee values onto the existing breakdown objects so the rich
+      // fields (postDiscountCartValue, voucherCode, packagingSize, etc.) survive.
+      updatedSellerFeeBreakdowns = existingSellerBreakdowns.map((existing: any, idx: number) => {
+        const s = multiSellerBreakdown.sellerBreakdowns[idx];
+        return {
+          ...existing,
+          shippingCost: s.shippingCost,
+          shippingVat: s.shippingCost * 0.12,
+          buyerShippingCharge: s.buyerShippingCharge,
+          sellerShippingCharge: s.sellerShippingCharge,
+          shippingSplitRule: s.shippingSplitRule,
+          totalChargedToBuyer: s.totalChargedToBuyer,
+          paymentProcessingFee: s.paymentProcessingFee,
+          platformFee: s.platformFee,
+          platformFeePercentage: s.platformFeePercentage,
+          totalSellerFees: s.totalSellerFees,
+          netPayoutToSeller: s.netPayoutToSeller,
+        };
+      });
+
       logger.info('Multi-seller fees recalculated', {
         orderId,
         paymentMethod,
@@ -288,17 +303,21 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
         netPayoutToSeller
       });
     } else {
-      // Single-seller order: use simple calculation
+      // Single-seller order: use simple calculation (raw values, no rounding)
       logger.info('Recalculating single-seller fees with actual payment method', {
         orderId,
         paymentMethod,
         subtotal
       });
-      
+
       paymentProcessingFee = calculatePaymentProcessingFee(totalChargedToBuyer, paymentMethod);
       platformFee = calculatePlatformFee(subtotal); // Single seller, no custom fee in old orders
-      totalSellerFees = paymentProcessingFee + platformFee + sellerShippingCharge;
-      netPayoutToSeller = calculateNetPayout(subtotal, paymentProcessingFee, platformFee, sellerShippingCharge);
+      const dentpalCut =
+        (paymentProcessingFee * 0.12) +
+        ((sellerShippingCharge + platformFee) * 1.12);
+      const sellerPayout = subtotal - dentpalCut;
+      totalSellerFees = sellerPayout;
+      netPayoutToSeller = sellerPayout;
     }
     
     logger.info('Fees recalculated with actual payment method', {
@@ -375,11 +394,23 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
       calculatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
 
+    // Recompute summary.totalDentpalIncome since paymentProcessingFee depends on
+    // the actual payment method (which is only known here at webhook time).
+    // Raw, unrounded values — rounding here would cause mismatch with downstream consumers.
+    const summaryShippingCost = orderData?.summary?.shippingCost ?? 0;
+    const totalDentpalIncome =
+      (paymentProcessingFee * 0.12) + ((summaryShippingCost + platformFee) * 1.12);
+    const updatedSummary = {
+      ...(orderData?.summary || {}),
+      totalDentpalIncome,
+    };
+
     // First update: Record payment confirmation with fees and payout
     const firstUpdate: any = {
       paymongo: updatedPaymongo,
       fees: updatedFees,
       payout: updatedPayout,
+      summary: updatedSummary,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       statusHistory: admin.firestore.FieldValue.arrayUnion({
         status: 'confirmed',

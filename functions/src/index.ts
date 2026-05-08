@@ -4,6 +4,9 @@
 // Export the createCheckoutSession function
 export { createCheckoutSession } from './createCheckoutSession';
 
+// Export the callable test GCash order creation function
+export { createGcashTestOrder } from './createGcashTestOrder';
+
 // Export the Cash on Delivery order creation function
 export { createCodOrder } from './createCodOrder';
 

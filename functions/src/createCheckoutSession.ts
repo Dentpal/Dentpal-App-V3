@@ -902,7 +902,6 @@ export const createCheckoutSession = onRequest(
         //   - 'partial_express'  : voucher covers 'standard' but user picked 'express';
         //                          seller pays standardTotal, buyer pays (expressTotal - standardTotal)
         //   - 'none'             : leave whatever calculateMultiSellerBreakdown decided
-        const round2 = (n: number) => Math.round(n * 100) / 100;
         const shippingCoverageTypes: Array<'none' | 'full' | 'partial_express'> = [];
         for (let i = 0; i < sellerShippingData.length; i++) {
           const sd = sellerShippingData[i];
@@ -917,18 +916,18 @@ export const createCheckoutSession = onRequest(
 
           if (sd.chosenMode === 'express' && sd.coversExpress) {
             buyerCharge = 0;
-            sellerCharge = round2(expCost);
+            sellerCharge = expCost;
             splitRule = 'seller_pays_full';
             coverage = 'full';
           } else if (sd.chosenMode === 'express' && sd.coversStandard) {
-            const diff = round2(Math.max(0, expCost - stdCost));
+            const diff = Math.max(0, expCost - stdCost);
             buyerCharge = diff;
-            sellerCharge = round2(stdCost);
+            sellerCharge = stdCost;
             splitRule = 'shipping_voucher_partial';
             coverage = 'partial_express';
           } else if (sd.chosenMode === 'standard' && sd.coversStandard) {
             buyerCharge = 0;
-            sellerCharge = round2(stdCost);
+            sellerCharge = stdCost;
             splitRule = 'seller_pays_full';
             coverage = 'full';
           }
@@ -937,18 +936,31 @@ export const createCheckoutSession = onRequest(
             breakdown.buyerShippingCharge = buyerCharge;
             breakdown.sellerShippingCharge = sellerCharge;
             breakdown.shippingSplitRule = splitRule;
-            breakdown.totalChargedToBuyer = round2(breakdown.cartValue + buyerCharge);
-            breakdown.paymentProcessingFee = round2(
-              calculatePaymentProcessingFee(breakdown.totalChargedToBuyer, defaultPaymentMethod),
-            );
-            breakdown.totalSellerFees = round2(
-              breakdown.paymentProcessingFee + breakdown.platformFee + breakdown.sellerShippingCharge,
-            );
-            breakdown.netPayoutToSeller = round2(
-              breakdown.cartValue - breakdown.paymentProcessingFee - breakdown.platformFee - breakdown.sellerShippingCharge,
+            breakdown.totalChargedToBuyer = breakdown.cartValue + buyerCharge;
+            breakdown.paymentProcessingFee = calculatePaymentProcessingFee(
+              breakdown.totalChargedToBuyer,
+              defaultPaymentMethod,
             );
           }
           shippingCoverageTypes.push(coverage);
+        }
+
+        // Apply new fee model:
+        //   shippingVat        = shippingCost * 0.12 (always paid by seller)
+        //   totalSellerFees    = cartValue - ((paymentProcessingFee * 0.12) + ((shippingCost + platformFee) * 1.12))
+        //   netPayoutToSeller  = same as totalSellerFees (seller's payout)
+        // breakdown.cartValue already reflects postDiscountCartValue (see adjustedSellerData above).
+        // Raw, unrounded values — rounding here would cause mismatch with downstream consumers.
+        const shippingVats: number[] = [];
+        for (const breakdown of multiSellerBreakdown.sellerBreakdowns) {
+          const shippingVat = breakdown.shippingCost * 0.12;
+          const dentpalCut =
+            (breakdown.paymentProcessingFee * 0.12) +
+            ((breakdown.shippingCost + breakdown.platformFee) * 1.12);
+          const sellerPayout = breakdown.cartValue - dentpalCut;
+          breakdown.totalSellerFees = sellerPayout;
+          breakdown.netPayoutToSeller = sellerPayout;
+          shippingVats.push(shippingVat);
         }
 
         // Recalculate totals from updated per-breakdown values
@@ -959,6 +971,9 @@ export const createCheckoutSession = onRequest(
         const platformFee = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.platformFee, 0);
         const totalSellerFees = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.totalSellerFees, 0);
         const netPayoutToSeller = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.netPayoutToSeller, 0);
+        const totalShippingCost = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.shippingCost, 0);
+        const totalDentpalIncome =
+          (paymentProcessingFee * 0.12) + ((totalShippingCost + platformFee) * 1.12);
 
         // Total discount across all sellers
         const totalDiscountAmount = sellerShippingData.reduce((s, d) => s + d.discountAmount, 0);
@@ -999,10 +1014,16 @@ export const createCheckoutSession = onRequest(
             productImage: item.productImage,
             price: item.price,
             quantity: item.quantity,
+            total: item.total,
             variationId: item.variationId,
             sellerId: item.sellerId,
             sellerName: item.sellerName,
+            length: item.length,
+            width: item.width,
+            height: item.height,
+            weight: item.weight,
             isFragile: item.isFragile,
+            insuranceAndEvaluation: item.insuranceAndEvaluation,
           })),
           summary: {
             subtotal: subtotal,
@@ -1020,6 +1041,7 @@ export const createCheckoutSession = onRequest(
             usedFallbackShipping: sellersWithFallback.length > 0,
             fallbackShippingSellerCount: sellersWithFallback.length,
             packagingSize: overallPackagingSize,
+            totalDentpalIncome: totalDentpalIncome,
           },
           fees: {
             paymentProcessingFee: paymentProcessingFee,
@@ -1044,6 +1066,7 @@ export const createCheckoutSession = onRequest(
             freeShippingFromVoucher: shippingCoverageTypes[index] === 'full',
             partialShippingCoverage: shippingCoverageTypes[index] === 'partial_express',
             shippingCost: s.shippingCost,
+            shippingVat: shippingVats[index],
             buyerShippingCharge: s.buyerShippingCharge,
             sellerShippingCharge: s.sellerShippingCharge,
             shippingSplitRule: s.shippingSplitRule,
