@@ -6,6 +6,7 @@ class Product {
   final String name;
   final String description;
   final String imageURL;
+  final List<String> images;
   final String categoryId;
   final String subCategoryId;
   final String sellerId;
@@ -32,6 +33,7 @@ class Product {
     required this.name,
     required this.description,
     required this.imageURL,
+    this.images = const [],
     required this.categoryId,
     required this.subCategoryId,
     required this.sellerId,
@@ -103,11 +105,22 @@ class Product {
       AppLogger.d('Error parsing warranty fields for product ${doc.id}: $e');
     }
 
+    // Defensive parsing of the optional gallery images array
+    List<String> images = const [];
+    final rawImages = data['images'];
+    if (rawImages is List) {
+      images = rawImages
+          .whereType<String>()
+          .where((s) => s.isNotEmpty)
+          .toList();
+    }
+
     return Product(
       productId: doc.id,
       name: data['name'] ?? '',
       description: data['description'] ?? '',
       imageURL: data['imageURL'] ?? '',
+      images: images,
       categoryId: data['categoryID'] ?? '',
       subCategoryId: data['subCategoryID'] ?? '',
       sellerId: data['sellerId'] ?? '',

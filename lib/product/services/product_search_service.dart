@@ -397,6 +397,7 @@ class ProductSearchService {
         name: product.name,
         description: product.description,
         imageURL: product.imageURL,
+        images: product.images,
         categoryId: product.categoryId,
         subCategoryId: product.subCategoryId,
         sellerId: product.sellerId,

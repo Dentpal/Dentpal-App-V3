@@ -377,59 +377,85 @@ class _ProductListingPageState extends State<ProductListingPage>
   // Handle banner click and open URL
   Future<void> _onBannerTap(int index) async {
     AppLogger.d('Banner tapped at index: $index');
-    if (index < _bannerTargetUrls.length) {
-      final targetUrl = _bannerTargetUrls[index];
-      AppLogger.d('Target URL: $targetUrl');
-      if (targetUrl != null && targetUrl.isNotEmpty) {
-        try {
-          // Check if it's a product URL (contains /product/)
-          if (targetUrl.contains('/product/')) {
-            // Extract product ID from URL
-            final uri = Uri.parse(targetUrl);
-            final pathSegments = uri.fragment.isNotEmpty
-                ? uri.fragment.split('/')
-                : uri.pathSegments;
+    if (index >= _bannerTargetUrls.length) return;
 
-            // Find the product ID (comes after 'product')
-            final productIndex = pathSegments.indexOf('product');
-            if (productIndex != -1 && productIndex < pathSegments.length - 1) {
-              final productId = pathSegments[productIndex + 1];
-              AppLogger.d(
-                'Navigating to product detail page with ID: $productId',
-              );
+    final targetUrl = _bannerTargetUrls[index];
+    AppLogger.d('Target URL: $targetUrl');
 
-              // Navigate to product detail page within the app
-              if (mounted) {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) =>
-                        ProductDetailPage(productId: productId),
-                  ),
-                );
-              }
-              return;
-            }
-          }
+    if (targetUrl == null || targetUrl.isEmpty) {
+      _showBannerSnack('No link configured for this banner.');
+      return;
+    }
 
-          // If not a product URL, launch externally
-          final uri = Uri.parse(targetUrl);
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-          AppLogger.d('Successfully launched URL externally: $targetUrl');
-        } catch (e) {
-          AppLogger.d('Error launching banner URL: $e');
-          // Try alternative launch mode if first attempt fails
-          try {
-            final uri = Uri.parse(targetUrl);
-            await launchUrl(uri, mode: LaunchMode.platformDefault);
-            AppLogger.d(
-              'Successfully launched URL with platformDefault mode: $targetUrl',
+    // Normalize URL: if it has no scheme (e.g. "meetperla-ai.com"),
+    // assume https so url_launcher can resolve a browser intent.
+    final normalizedUrl =
+        targetUrl.startsWith(RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]*:'))
+        ? targetUrl
+        : 'https://$targetUrl';
+    if (normalizedUrl != targetUrl) {
+      AppLogger.d('Banner URL had no scheme, normalized to: $normalizedUrl');
+    }
+
+    try {
+      // Check if it's a product URL (contains /product/)
+      if (normalizedUrl.contains('/product/')) {
+        // Extract product ID from URL
+        final uri = Uri.parse(normalizedUrl);
+        final pathSegments = uri.fragment.isNotEmpty
+            ? uri.fragment.split('/')
+            : uri.pathSegments;
+
+        // Find the product ID (comes after 'product')
+        final productIndex = pathSegments.indexOf('product');
+        if (productIndex != -1 && productIndex < pathSegments.length - 1) {
+          final productId = pathSegments[productIndex + 1];
+          AppLogger.d(
+            'Navigating to product detail page with ID: $productId',
+          );
+
+          // Navigate to product detail page within the app
+          if (mounted) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) =>
+                    ProductDetailPage(productId: productId),
+              ),
             );
-          } catch (e2) {
-            AppLogger.d('Error with platformDefault mode: $e2');
           }
+          return;
         }
       }
+
+      // If not a product URL, launch externally
+      final uri = Uri.parse(normalizedUrl);
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      AppLogger.d('Successfully launched URL externally: $normalizedUrl');
+    } catch (e) {
+      AppLogger.d('Error launching banner URL: $e');
+      // Try alternative launch mode if first attempt fails
+      try {
+        final uri = Uri.parse(normalizedUrl);
+        await launchUrl(uri, mode: LaunchMode.platformDefault);
+        AppLogger.d(
+          'Successfully launched URL with platformDefault mode: $normalizedUrl',
+        );
+      } catch (e2) {
+        AppLogger.d('Error with platformDefault mode: $e2');
+        _showBannerSnack('Unable to open the link.');
+      }
     }
+  }
+
+  void _showBannerSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   // Start auto-scrolling banners every 5 seconds
@@ -2262,8 +2288,8 @@ class _ProductListingPageState extends State<ProductListingPage>
                                     itemCount: _bannerImageUrls.length,
                                     itemBuilder: (context, index) {
                                       return GestureDetector(
-                                        behavior: HitTestBehavior.translucent,
-                                        onTapUp: (details) {
+                                        behavior: HitTestBehavior.opaque,
+                                        onTap: () {
                                           AppLogger.d(
                                             'Banner GestureDetector tapped at index: $index',
                                           );

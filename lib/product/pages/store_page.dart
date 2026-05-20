@@ -1928,11 +1928,15 @@ class _StorePageState extends State<StorePage> {
                     children: [
                       Expanded(
                         child: Text(
-                          price != null
-                              ? CurrencyFormatter.formatWithPeso(price)
-                              : 'Price varies',
+                          product.allowInquiry
+                              ? 'Contact for Pricing'
+                              : price != null
+                                  ? CurrencyFormatter.formatWithPeso(price)
+                                  : 'Price varies',
                           style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.primary,
+                            color: product.allowInquiry
+                                ? AppColors.accent
+                                : AppColors.primary,
                             fontWeight: FontWeight.bold,
                           ),
                           maxLines: 1,

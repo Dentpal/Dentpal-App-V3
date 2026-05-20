@@ -117,6 +117,10 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   bool _isAddingToCart = false;
   DateTime? _lastAddToCartTime;
 
+  // Gallery carousel: swipe through product.images first, then into variations.
+  int _galleryImageIndex = 0;
+  bool _inGallery = false;
+
   // Controller for quantity input (web view)
   final TextEditingController _quantityController = TextEditingController();
 
@@ -186,6 +190,10 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           // Update text controller for web view
           _quantityController.text = _quantity.toString();
         }
+
+        // Start in gallery mode if the product has gallery images.
+        _inGallery = product.images.isNotEmpty;
+        _galleryImageIndex = 0;
 
         AppLogger.d('ProductDetailPage: Loaded product ${product.name}');
       }
@@ -1731,68 +1739,129 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   }
 
   Widget _buildWebAddToCartButton(Product product) {
+    final bool isInStock =
+        _selectedVariation != null && _selectedVariation!.stock > 0;
+    final bool showContactAgent = product.allowInquiry;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: LoadingButton(
-        text: _selectedVariation != null && _selectedVariation!.stock > 0
-            ? 'Add to Cart • ${CurrencyFormatter.formatWithPeso(_selectedVariation!.price * _quantity)}'
-            : 'Out of Stock',
-        loadingText: 'Adding to cart...',
-        isLoading: _isAddingToCart,
-        onPressed: _selectedVariation != null && _selectedVariation!.stock > 0
-            ? () => _addToCart(product)
-            : null,
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        textStyle: const TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.w600,
-          fontFamily: 'Roboto',
-        ),
-      ),
+      child: showContactAgent
+          ? ElevatedButton(
+              onPressed: () => _inquireAboutProduct(product),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.accent,
+                foregroundColor: AppColors.onSecondary,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 0,
+              ),
+              child: const Text(
+                'Contact a Sales Agent',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            )
+          : LoadingButton(
+              text: isInStock
+                  ? 'Add to Cart • ${CurrencyFormatter.formatWithPeso(_selectedVariation!.price * _quantity)}'
+                  : 'Out of Stock',
+              loadingText: 'Adding to cart...',
+              isLoading: _isAddingToCart,
+              onPressed: isInStock ? () => _addToCart(product) : null,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              textStyle: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                fontFamily: 'Roboto',
+              ),
+            ),
     );
   }
 
   Widget _buildProductImageSection(Product product) {
-    final imageUrl = _selectedVariation?.imageURL ?? product.imageURL;
+    final hasGallery = product.images.isNotEmpty;
+    final variations = product.variations ?? const <ProductVariation>[];
+    final hasVariations = variations.isNotEmpty;
+
+    final imageUrl = (_inGallery && hasGallery)
+        ? product.images[_galleryImageIndex]
+        : (_selectedVariation?.imageURL ?? product.imageURL);
+
     // Track swipe direction for animation
     Offset _swipeOffset = const Offset(0.2, 0);
 
+    void goToVariation(ProductVariation variation) {
+      _selectedVariation = variation;
+      if (_quantity > variation.stock) {
+        _quantity = variation.stock > 0 ? 1 : 0;
+      }
+      _quantityController.text = _quantity.toString();
+    }
+
     return GestureDetector(
       onHorizontalDragEnd: (details) {
-        if (product.variations == null || product.variations!.isEmpty) return;
-        final currentIndex = product.variations!.indexWhere(
-          (v) => v.variationId == _selectedVariation?.variationId,
-        );
+        final velocity = details.primaryVelocity;
+        if (velocity == null) return;
 
-        if (details.primaryVelocity != null) {
-          // Swipe right (velocity > 0): previous variation
-          if (details.primaryVelocity! > 0) {
-            if (currentIndex > 0) {
+        // Swipe LEFT (next frame): velocity < 0
+        if (velocity < 0) {
+          if (_inGallery && hasGallery) {
+            if (_galleryImageIndex < product.images.length - 1) {
               setState(() {
-                _swipeOffset = const Offset(-0.2, 0); // slide in from left
-                _selectedVariation = product.variations![currentIndex - 1];
-                if (_quantity > _selectedVariation!.stock) {
-                  _quantity = _selectedVariation!.stock > 0 ? 1 : 0;
-                }
-                // Update text controller for web view
-                _quantityController.text = _quantity.toString();
+                _swipeOffset = const Offset(0.2, 0);
+                _galleryImageIndex++;
+              });
+            } else if (hasVariations) {
+              // Past the last gallery image → enter variations.
+              setState(() {
+                _swipeOffset = const Offset(0.2, 0);
+                _inGallery = false;
+                goToVariation(variations.first);
+              });
+            }
+          } else if (hasVariations) {
+            final currentIndex = variations.indexWhere(
+              (v) => v.variationId == _selectedVariation?.variationId,
+            );
+            if (currentIndex < variations.length - 1) {
+              setState(() {
+                _swipeOffset = const Offset(0.2, 0);
+                goToVariation(variations[currentIndex + 1]);
               });
             }
           }
-          // Swipe left (velocity < 0): next variation
-          else if (details.primaryVelocity! < 0) {
-            if (currentIndex < product.variations!.length - 1) {
+          return;
+        }
+
+        // Swipe RIGHT (previous frame): velocity > 0
+        if (velocity > 0) {
+          if (!_inGallery && hasVariations) {
+            final currentIndex = variations.indexWhere(
+              (v) => v.variationId == _selectedVariation?.variationId,
+            );
+            if (currentIndex > 0) {
               setState(() {
-                _swipeOffset = const Offset(0.2, 0); // slide in from right
-                _selectedVariation = product.variations![currentIndex + 1];
-                if (_quantity > _selectedVariation!.stock) {
-                  _quantity = _selectedVariation!.stock > 0 ? 1 : 0;
-                }
-                // Update text controller for web view
-                _quantityController.text = _quantity.toString();
+                _swipeOffset = const Offset(-0.2, 0);
+                goToVariation(variations[currentIndex - 1]);
+              });
+            } else if (hasGallery) {
+              // Back from the first variation → return to the last gallery image.
+              setState(() {
+                _swipeOffset = const Offset(-0.2, 0);
+                _inGallery = true;
+                _galleryImageIndex = product.images.length - 1;
               });
             }
+          } else if (_inGallery && _galleryImageIndex > 0) {
+            setState(() {
+              _swipeOffset = const Offset(-0.2, 0);
+              _galleryImageIndex--;
+            });
           }
         }
       },
@@ -3021,11 +3090,11 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   // }
 
   Widget _buildFixedAddToCartButton(Product product) {
-    // If inquiry is allowed and item is out of stock (or no variation selected),
-    // show "Contact a Sales Agent" instead of the Out of Stock button.
+    // If the product is inquiry-only, replace Add to Cart with
+    // "Contact a Sales Agent" regardless of stock status.
     final bool isInStock =
         _selectedVariation != null && _selectedVariation!.stock > 0;
-    final bool showContactAgent = product.allowInquiry && !isInStock;
+    final bool showContactAgent = product.allowInquiry;
 
     return Positioned(
       bottom: 0,

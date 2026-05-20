@@ -213,6 +213,17 @@ class ProductCard extends StatelessWidget {
 
   // Shared price widget
   Widget _buildPrice(double? lowestPrice, double priceSize, double variesSize) {
+    if (product.allowInquiry) {
+      return Text(
+        'Contact for Pricing',
+        style: AppTextStyles.bodySmall.copyWith(
+          fontWeight: FontWeight.w600,
+          color: AppColors.accent,
+          fontSize: variesSize,
+        ),
+        overflow: TextOverflow.ellipsis,
+      );
+    }
     return lowestPrice != null
         ? Text(
             CurrencyFormatter.formatWithPeso(lowestPrice),
