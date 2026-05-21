@@ -50,6 +50,7 @@ class ProductService {
     bool includeInactive = false,
     bool includeDrafts = false,
     bool includeArchived = false,
+    Set<String>? excludeSellerIds,
   }) async {
     try {
       AppLogger.d('Fetching paginated products from Firestore...');
@@ -110,6 +111,12 @@ class ProductService {
         // Filter subcategory on client side if specified
         if (subCategoryId != null && subCategoryId.isNotEmpty) {
           if (product.subCategoryId != subCategoryId) return false;
+        }
+
+        // Drop products from sellers that have banned the current user
+        if (excludeSellerIds != null &&
+            excludeSellerIds.contains(product.sellerId)) {
+          return false;
         }
 
         return true;

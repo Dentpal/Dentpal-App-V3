@@ -10,6 +10,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/product_model.dart';
 import '../services/product_service.dart';
+import '../services/banned_seller_service.dart';
 import '../services/user_service.dart';
 import '../services/category_service.dart';
 import '../services/cart_service.dart';
@@ -152,8 +153,9 @@ class _ProductListingPageState extends State<ProductListingPage>
   void initState() {
     super.initState();
 
-    // Simple initialization without singleton pattern to avoid rebuild loops
-    _loadFirstPage();
+    // Load the set of sellers that have banned the current user first;
+    // _loadFirstPage will then exclude their products.
+    _loadBannedSellersThenFirstPage();
     _checkSellerStatus();
     _loadUserName();
     _loadUserRegion();
@@ -1250,6 +1252,19 @@ class _ProductListingPageState extends State<ProductListingPage>
     return widgets;
   }
 
+  // Fetch the banned-seller cache for the current user, then trigger the
+  // first product page load. Run sequentially so the first page already
+  // filters banned sellers out instead of showing them then hiding.
+  Future<void> _loadBannedSellersThenFirstPage() async {
+    try {
+      await BannedSellerService.instance.loadForCurrentUser();
+    } catch (e) {
+      AppLogger.d('ProductListingPage: banned seller load failed: $e');
+    }
+    if (!mounted) return;
+    _loadFirstPage();
+  }
+
   // Load the first page of products, accumulating until we have enough unique stores
   Future<void> _loadFirstPage() async {
     if (_isLoading || !mounted) return;
@@ -1289,6 +1304,7 @@ class _ProductListingPageState extends State<ProductListingPage>
           includeInactive: false,
           includeDrafts: false,
           includeArchived: false,
+          excludeSellerIds: BannedSellerService.instance.bannedSellerIds,
         );
 
         if (!mounted) return;
@@ -1307,6 +1323,15 @@ class _ProductListingPageState extends State<ProductListingPage>
         // Stop if we have enough unique sellers or no more data
         if (_loadedSellerIds.length >= _storePageSize || !moreAvailable) break;
       }
+
+      // Confirm ban status for every seller surfaced on this page via direct
+      // doc gets (no composite index needed), then drop any products whose
+      // seller turns out to have banned the current buyer.
+      await BannedSellerService.instance
+          .checkSellers(allFetched.map((p) => p.sellerId));
+      allFetched.removeWhere(
+        (p) => BannedSellerService.instance.isBanned(p.sellerId),
+      );
 
       // Load categories only if they haven't been loaded yet
       if (_categories.length <= 1) {
@@ -1412,6 +1437,7 @@ class _ProductListingPageState extends State<ProductListingPage>
           includeInactive: false,
           includeDrafts: false,
           includeArchived: false,
+          excludeSellerIds: BannedSellerService.instance.bannedSellerIds,
         );
 
         if (!mounted) return;
@@ -1429,6 +1455,14 @@ class _ProductListingPageState extends State<ProductListingPage>
         final newSellers = _loadedSellerIds.length - sellersBefore;
         if (newSellers >= _storePageSize || !moreAvailable) break;
       }
+
+      // Confirm ban status for any new sellers surfaced in this batch, then
+      // drop banned products before they reach the list.
+      await BannedSellerService.instance
+          .checkSellers(allNewProducts.map((p) => p.sellerId));
+      allNewProducts.removeWhere(
+        (p) => BannedSellerService.instance.isBanned(p.sellerId),
+      );
 
       if (mounted) {
         setState(() {
@@ -1526,11 +1560,16 @@ class _ProductListingPageState extends State<ProductListingPage>
         'Current cache: ${currentProducts.length} products, ${currentCategories.length} categories',
       );
 
+      // Refresh banned-seller cache before fetching so newly added bans
+      // take effect on this pull-to-refresh.
+      await BannedSellerService.instance.loadForCurrentUser();
+
       // Fetch fresh data from Firebase
       AppLogger.d('Fetching fresh data from Firebase...');
       final result = await _productService.getProductsPaginated(
         limit: _pageSize,
         categoryId: null,
+        excludeSellerIds: BannedSellerService.instance.bannedSellerIds,
       );
 
       if (!mounted) return; // Check if widget is still mounted
@@ -3914,6 +3953,7 @@ class _ProductListingPageState extends State<ProductListingPage>
     // Group by seller
     for (final product in filteredProducts) {
       final sellerId = product.sellerId.isNotEmpty ? product.sellerId : 'unknown';
+      if (BannedSellerService.instance.isBanned(sellerId)) continue;
       productsBySeller.putIfAbsent(sellerId, () => []).add(product);
     }
 
@@ -3974,6 +4014,7 @@ class _ProductListingPageState extends State<ProductListingPage>
       if (product.isActive == false) continue;
       if (product.isArchived == true) continue;
       final sellerId = product.sellerId.isNotEmpty ? product.sellerId : 'unknown';
+      if (BannedSellerService.instance.isBanned(sellerId)) continue;
       productsBySeller.putIfAbsent(sellerId, () => []).add(product);
     }
 
@@ -4147,6 +4188,16 @@ class _ProductListingPageState extends State<ProductListingPage>
 
     return GestureDetector(
       onTap: () {
+        if (BannedSellerService.instance.isBanned(sellerId)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('This store is not available.'),
+              behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 2),
+            ),
+          );
+          return;
+        }
         final initialCategoryIds = _selectedCategories
             .map((name) => _categoryNameToId[name])
             .whereType<String>()

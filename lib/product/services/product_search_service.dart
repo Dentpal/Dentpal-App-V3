@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dentpal/product/models/product_model.dart';
+import 'package:dentpal/product/services/banned_seller_service.dart';
 import 'package:dentpal/utils/app_logger.dart';
 
 enum SortBy {
@@ -174,7 +175,14 @@ class ProductSearchService {
           AppLogger.d('ProductSearchService: Filtering out inactive/draft/archived product: ${data['name']}');
           return false;
         }
-        
+
+        // Drop products from sellers that have banned the current user
+        final String sellerId = (data['sellerId'] ?? '').toString();
+        if (sellerId.isNotEmpty &&
+            BannedSellerService.instance.isBanned(sellerId)) {
+          return false;
+        }
+
         // Apply text search filter
         String name = (data['name'] ?? '').toString().toLowerCase();
         String description = (data['description'] ?? '').toString().toLowerCase();
@@ -308,7 +316,14 @@ class ProductSearchService {
         bool isDraft = data['isDraft'] ?? false;
         bool isArchived = data['isArchived'] ?? false;
         if (!isActive || isDraft || isArchived) return false;
-        
+
+        // Drop products from sellers that have banned the current user
+        final String sellerId = (data['sellerId'] ?? '').toString();
+        if (sellerId.isNotEmpty &&
+            BannedSellerService.instance.isBanned(sellerId)) {
+          return false;
+        }
+
         // Apply category filter
         if (filters?.categoryIds.isNotEmpty == true) {
           String productCategoryId = data['categoryID'] ?? '';

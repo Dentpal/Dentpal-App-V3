@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/product_model.dart';
 import '../services/product_service.dart';
+import '../services/banned_seller_service.dart';
 import '../services/category_service.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/utils/navigation_utils.dart';
@@ -122,6 +123,23 @@ class _StorePageState extends State<StorePage> {
     try {
       AppLogger.d('StorePage: Loading store data for sellerId: ${widget.sellerId}');
 
+      // Block banned buyers from viewing this store. Confirms against
+      // Firestore so a deep-link or stale cache can't bypass the ban.
+      final banned = await BannedSellerService.instance
+          .refreshAndCheck(widget.sellerId);
+      if (banned) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('This store is not available.'),
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        Navigator.of(context).pop();
+        return;
+      }
+
       // Check if sellerData contains actual store information (not just initialTab)
       if (widget.sellerData != null && widget.sellerData!.containsKey('shopName')) {
         _storeData = widget.sellerData!;
@@ -133,7 +151,7 @@ class _StorePageState extends State<StorePage> {
     } catch (e) {
       AppLogger.d('StorePage: Error loading store data: $e');
     } finally {
-      setState(() { _isLoading = false; });
+      if (mounted) setState(() { _isLoading = false; });
     }
   }
 
@@ -789,7 +807,6 @@ class _StorePageState extends State<StorePage> {
                       _buildCategoryTabStrip(),
                       if (_viewMode == 'category' && _selectedCategoryId != null)
                         _buildSubCategoryRow(),
-                      if (kIsWeb) const SizedBox(height: 24),
                       _buildProductsGrid(),
                       if (_isFetchingMore)
                         const Padding(
@@ -1269,35 +1286,32 @@ class _StorePageState extends State<StorePage> {
   Widget _buildCategoryTabStrip() {
     final entries = _categories.entries.toList();
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(0, 4, 0, 4),
-      child: SizedBox(
-        height: 40,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          itemCount: entries.length + 1,
-          separatorBuilder: (_, _) => const SizedBox(width: 18),
-          itemBuilder: (context, index) {
-            if (index == 0) {
-              return _buildTabText(
-                label: 'Popular',
-                icon: Icons.local_fire_department,
-                isSelected: _viewMode == 'popular',
-                onTap: _selectPopular,
-              );
-            }
-            final entry = entries[index - 1];
-            final isSelected = _viewMode == 'category' &&
-                _selectedCategoryId == entry.key;
+    return SizedBox(
+      height: 24,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: entries.length + 1,
+        separatorBuilder: (_, _) => const SizedBox(width: 18),
+        itemBuilder: (context, index) {
+          if (index == 0) {
             return _buildTabText(
-              label: entry.value,
-              icon: null,
-              isSelected: isSelected,
-              onTap: () => _selectCategory(entry.key),
+              label: 'Popular',
+              icon: Icons.local_fire_department,
+              isSelected: _viewMode == 'popular',
+              onTap: _selectPopular,
             );
-          },
-        ),
+          }
+          final entry = entries[index - 1];
+          final isSelected = _viewMode == 'category' &&
+              _selectedCategoryId == entry.key;
+          return _buildTabText(
+            label: entry.value,
+            icon: null,
+            isSelected: isSelected,
+            onTap: () => _selectCategory(entry.key),
+          );
+        },
       ),
     );
   }
@@ -1313,7 +1327,7 @@ class _StorePageState extends State<StorePage> {
       onTap: onTap,
       child: IntrinsicWidth(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.end,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
@@ -1336,6 +1350,7 @@ class _StorePageState extends State<StorePage> {
                         ? AppColors.primary
                         : AppColors.onSurface.withValues(alpha: 0.75),
                     fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                    height: 1.0,
                   ),
                 ),
               ],
@@ -1867,11 +1882,14 @@ class _StorePageState extends State<StorePage> {
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: AppColors.onSurface.withValues(alpha: 0.06),
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+              color: Colors.black.withValues(alpha: 0.10),
+              blurRadius: 10,
+              offset: const Offset(0, 0),
             ),
           ],
         ),
