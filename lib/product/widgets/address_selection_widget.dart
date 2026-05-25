@@ -59,21 +59,46 @@ class _AddressSelectionWidgetState extends State<AddressSelectionWidget> {
           (addr) => addr.isDefault,
           orElse: () => addresses.first,
         );
-        
-        // Update selected address if:
+
+        // Refresh the widget's selected address with the latest data from the
+        // server for the address that is currently selected (same ID but
+        // potentially edited content like a new city or province).
+        final freshSelected = _selectedAddress != null
+            ? addresses.firstWhere(
+                (addr) => addr.id == _selectedAddress!.id,
+                orElse: () => currentDefault,
+              )
+            : currentDefault;
+
+        // Notify parent (and trigger shipping recalculation) when:
         // 1. No address is currently selected, OR
         // 2. The currently selected address no longer exists in the updated list, OR
-        // 3. There's a new default address that's different from current selection
+        // 3. A different address is now the default, OR
+        // 4. The selected address still exists but its shipping-relevant content
+        //    has changed (e.g. city/province edited while keeping the same ID).
+        final selectedGone =
+            !addresses.any((addr) => addr.id == _selectedAddress?.id);
+        final defaultSwitched =
+            currentDefault.isDefault &&
+            currentDefault.id != _selectedAddress?.id;
+        final contentChanged =
+            _selectedAddress != null &&
+            !selectedGone &&
+            freshSelected.formattedAddress != _selectedAddress!.formattedAddress;
+
         final shouldUpdateSelection = _selectedAddress == null ||
-            !addresses.any((addr) => addr.id == _selectedAddress?.id) ||
-            (currentDefault.isDefault && currentDefault.id != _selectedAddress?.id);
-        
+            selectedGone ||
+            defaultSwitched ||
+            contentChanged;
+
         if (shouldUpdateSelection) {
+          final nextAddress = defaultSwitched || _selectedAddress == null
+              ? currentDefault
+              : freshSelected;
           setState(() {
-            _selectedAddress = currentDefault;
+            _selectedAddress = nextAddress;
           });
-          
-          widget.onAddressSelected(currentDefault);
+          widget.onAddressSelected(nextAddress);
         }
       }
 

@@ -39,6 +39,10 @@ class CartItem {
   // Whether the product requires insurance and evaluation in JRS shipping
   bool insuranceAndEvaluation;
 
+  // Seller-configured checkout options (delivery modes + payment methods).
+  // Populated at runtime from the seller document; null means allow all.
+  Map<String, dynamic>? checkoutOptions;
+
   // Selection state for multi-seller checkout
   bool isSelected;
   
@@ -74,6 +78,7 @@ class CartItem {
     this.height,
     this.isSelected = true, // Default to selected
     this.insuranceAndEvaluation = false,
+    this.checkoutOptions,
   });
 
   factory CartItem.fromFirestore(DocumentSnapshot doc) {

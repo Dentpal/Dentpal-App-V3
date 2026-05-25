@@ -1,8 +1,8 @@
 import { onRequest, Request, HttpsError } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 import {
-  calculateJRSShippingCostWithFallback,
   calculateMultiSellerBreakdown,
+  applyNewFeeModel,
   determineProductName,
 } from './utils/jrsShippingHelper';
 import {
@@ -193,6 +193,13 @@ export const createCodOrder = onRequest(
         const sellerExpressShipping: Record<string, boolean> =
           (request.body.seller_express_shipping && typeof request.body.seller_express_shipping === 'object')
             ? request.body.seller_express_shipping
+            : {};
+
+        // Per-seller pickup selection. When true the buyer picks up in store and
+        // no shipping is calculated / charged for that seller.
+        const sellerPickupSelected: Record<string, boolean> =
+          (request.body.seller_pickup_selected && typeof request.body.seller_pickup_selected === 'object')
+            ? request.body.seller_pickup_selected
             : {};
 
         // Both modes' costs from the frontend, needed for partial-coverage math.
@@ -410,7 +417,7 @@ export const createCodOrder = onRequest(
           coversStandard: boolean;
           coversExpress: boolean;
           // Per-seller shipping mode and both modes' costs
-          chosenMode: 'express' | 'standard';
+          chosenMode: 'express' | 'standard' | 'pickup';
           expressTotalCost: number;
           standardTotalCost: number;
           // Insurance & evaluation
@@ -457,6 +464,34 @@ export const createCodOrder = onRequest(
           ]);
           const discountAmount = voucherResult.discountAmount;
           const postDiscountCartValue = sellerCartValue - discountAmount;
+
+          // Pickup short-circuit: skip JRS entirely; no shipping cost / vouchers apply.
+          if (sellerPickupSelected[sellerId] === true) {
+            console.log(`Seller ${sellerId} is pickup — skipping shipping calculation`);
+            return {
+              sellerId,
+              sellerName,
+              shippingCost: 0,
+              cartValue: sellerCartValue,
+              isFallbackShipping: false,
+              platformFeePercentage,
+              packagingName: undefined,
+              discountAmount,
+              postDiscountCartValue,
+              voucherCode: voucherResult.voucherCode || undefined,
+              voucherDocId: voucherResult.voucherDocId || undefined,
+              shippingVoucherCode: undefined,
+              shippingVoucherDocId: undefined,
+              coversStandard: false,
+              coversExpress: false,
+              chosenMode: 'pickup' as const,
+              expressTotalCost: 0,
+              standardTotalCost: 0,
+              insuranceAndEvaluation: false,
+              insuranceCost: null,
+              evaluationCost: null,
+            };
+          }
 
           const chosenMode: 'express' | 'standard' =
             (sellerExpressShipping[sellerId] ?? true) ? 'express' : 'standard';
@@ -530,15 +565,11 @@ export const createCodOrder = onRequest(
         // Wait for all seller shipping calculations
         const sellerShippingData = await Promise.all(sellerShippingPromises);
         
-        // Pass postDiscountCartValue as cartValue so the 10% shipping threshold
-        // and platform fee use the discounted amount.
-        const adjustedSellerData = sellerShippingData.map(s => ({
-          ...s,
-          cartValue: s.postDiscountCartValue,
-        }));
-
-        // Calculate multi-seller breakdown
-        const multiSellerBreakdown = calculateMultiSellerBreakdown(adjustedSellerData, 'cash_on_delivery');
+        // Calculate multi-seller breakdown.
+        // Fees (platformFee) are intentionally computed on the original pre-discount cartValue so
+        // vouchers do not zero out DentPal's fees. totalChargedToBuyer and seller payout are
+        // corrected to postDiscountCartValue in the fee model loop below.
+        const multiSellerBreakdown = calculateMultiSellerBreakdown(sellerShippingData, 'cash_on_delivery');
 
         // Post-process: apply shipping voucher coverage rules per seller.
         // COD has no payment processing fee, so recalc only platform fee + shipping.
@@ -547,6 +578,19 @@ export const createCodOrder = onRequest(
         for (let i = 0; i < sellerShippingData.length; i++) {
           const sd = sellerShippingData[i];
           const breakdown = multiSellerBreakdown.sellerBreakdowns[i];
+
+          // Pickup: no shipping → no voucher coverage to apply. Zero out shipping
+          // fields and mark the split rule so downstream consumers know.
+          if (sd.chosenMode === 'pickup') {
+            breakdown.shippingCost = 0;
+            breakdown.buyerShippingCharge = 0;
+            breakdown.sellerShippingCharge = 0;
+            breakdown.shippingSplitRule = 'pickup' as any;
+            breakdown.totalChargedToBuyer = sd.postDiscountCartValue;
+            shippingCoverageTypes.push('none');
+            continue;
+          }
+
           const stdCost = sd.standardTotalCost ?? sd.shippingCost;
           const expCost = sd.expressTotalCost ?? sd.shippingCost;
 
@@ -577,28 +621,30 @@ export const createCodOrder = onRequest(
             breakdown.buyerShippingCharge = buyerCharge;
             breakdown.sellerShippingCharge = sellerCharge;
             breakdown.shippingSplitRule = splitRule;
-            breakdown.totalChargedToBuyer = round2(breakdown.cartValue + buyerCharge);
+            breakdown.totalChargedToBuyer = round2(sd.postDiscountCartValue + buyerCharge);
           }
           shippingCoverageTypes.push(coverage);
         }
 
-        // Apply new fee model (COD has paymentProcessingFee = 0):
-        //   shippingVat        = shippingCost * 0.12 (always paid by seller)
-        //   totalSellerFees    = cartValue - ((paymentProcessingFee * 0.12) + ((shippingCost + platformFee) * 1.12))
-        //   netPayoutToSeller  = same as totalSellerFees (seller's payout)
-        // breakdown.cartValue already reflects postDiscountCartValue (see adjustedSellerData above).
-        // Raw, unrounded values — rounding here would cause mismatch with downstream consumers.
-        const shippingVats: number[] = [];
-        for (const breakdown of multiSellerBreakdown.sellerBreakdowns) {
-          breakdown.paymentProcessingFee = 0; // COD: no processing fee
-          const shippingVat = breakdown.shippingCost * 0.12;
-          const dentpalCut =
-            (breakdown.paymentProcessingFee * 0.12) +
-            ((breakdown.shippingCost + breakdown.platformFee) * 1.12);
-          const sellerPayout = breakdown.cartValue - dentpalCut;
-          breakdown.totalSellerFees = sellerPayout;
-          breakdown.netPayoutToSeller = sellerPayout;
-          shippingVats.push(shippingVat);
+        // Apply the new gross-up fee model (COD: paymongo rate = 0, so VAT-only ×1.12
+        // applies to shipping and platform fee bases). sellerShippingCharge is
+        // redefined per the new model. Raw unrounded values.
+        for (let i = 0; i < multiSellerBreakdown.sellerBreakdowns.length; i++) {
+          const breakdown = multiSellerBreakdown.sellerBreakdowns[i];
+          const sd = sellerShippingData[i];
+          let actualShippingCost: number;
+          if (sd.chosenMode === 'pickup') {
+            actualShippingCost = 0;
+          } else if (sd.chosenMode === 'express') {
+            actualShippingCost = sd.expressTotalCost ?? breakdown.shippingCost;
+          } else {
+            actualShippingCost = sd.standardTotalCost ?? breakdown.shippingCost;
+          }
+          applyNewFeeModel(breakdown, {
+            actualShippingCost,
+            postDiscountCartValue: sd.postDiscountCartValue,
+            paymentMethod: 'cash_on_delivery',
+          });
         }
 
         const shippingCost = multiSellerBreakdown.totalShippingCost;
@@ -614,19 +660,24 @@ export const createCodOrder = onRequest(
         const totalEvaluationFee = sellerShippingData.reduce((s, d) => s + (d.evaluationCost ?? 0), 0);
 
         // Determine overall shipping split rule based on seller breakdowns
-        const shippingSplitRules = multiSellerBreakdown.sellerBreakdowns.map(s => s.shippingSplitRule);
-        const shippingSplitRule = shippingSplitRules.includes('seller_pays_full') ? 'seller_pays_full' :
-                                  (shippingSplitRules.length > 1 ? 'per_seller' : shippingSplitRules[0] || 'buyer_pays_full');
+        const uniqueShippingSplitRules = [...new Set(
+          multiSellerBreakdown.sellerBreakdowns.map(s => s.shippingSplitRule)
+        )];
+        const shippingSplitRule = uniqueShippingSplitRules.length === 1
+          ? (uniqueShippingSplitRules[0] || 'buyer_pays_full')
+          : (uniqueShippingSplitRules.includes('seller_pays_full') ? 'seller_pays_full' : 'per_seller');
 
         // Aggregate fees from per-seller breakdowns so summary matches breakdown values exactly.
         // Raw, unrounded values — rounding here would cause mismatch with downstream consumers.
         const totalAmount = postDiscountSubtotal + buyerShippingCharge;
         const paymentProcessingFee = 0; // No processing fee for COD
         const platformFee = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.platformFee, 0);
+        const platformFeeVat = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.platformFeeVat, 0);
+        const totalShippingVat = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.shippingVat, 0);
         const totalSellerFees = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.totalSellerFees, 0);
         const netPayoutToSeller = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.netPayoutToSeller, 0);
-        const totalDentpalIncome =
-          (paymentProcessingFee * 0.12) + ((shippingCost + platformFee) * 1.12);
+        // PayMongo VAT is 0 for COD, so DentPal income = shippingVat + platformFee + platformFeeVat.
+        const totalDentpalIncome = totalShippingVat + platformFee + platformFeeVat;
 
         // Derive overall packaging label for the order (join unique packaging names across sellers)
         const uniquePackagingNames = [...new Set(
@@ -692,13 +743,15 @@ export const createCodOrder = onRequest(
             freeShippingFromVoucher: shippingCoverageTypes[index] === 'full',
             partialShippingCoverage: shippingCoverageTypes[index] === 'partial_express',
             shippingCost: s.shippingCost,
-            shippingVat: shippingVats[index],
+            shippingVat: s.shippingVat,
             buyerShippingCharge: s.buyerShippingCharge,
             sellerShippingCharge: s.sellerShippingCharge,
             shippingSplitRule: s.shippingSplitRule,
             totalChargedToBuyer: s.totalChargedToBuyer,
             paymentProcessingFee: s.paymentProcessingFee,
+            paymentProcessingFeeVat: s.paymentProcessingFeeVat,
             platformFee: s.platformFee,
+            platformFeeVat: s.platformFeeVat,
             platformFeePercentage: s.platformFeePercentage,
             totalSellerFees: s.totalSellerFees,
             netPayoutToSeller: s.netPayoutToSeller,

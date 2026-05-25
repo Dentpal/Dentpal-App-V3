@@ -95,14 +95,30 @@ interface PaymentFeeConfig {
 }
 
 const PAYMENT_PROCESSING_FEES: Record<string, PaymentFeeConfig> = {
-  'card': { percentage: 3.5, fixedFee: 15 },
+  'card': { percentage: 3.125, fixedFee: 13.39 },
   'gcash': { percentage: 2.5 },
-  'paymaya': { percentage: 2.2 },
-  'grab_pay': { percentage: 2.2 },
-  'billease': { percentage: 1.5 },
+  'cash_on_delivery': { percentage: 0 },
 };
 
 const PLATFORM_FEE_PERCENTAGE = 8.88; // 8.88% of cart value
+
+// PayMongo divisor rate per supported payment method. Used by the new fee model
+// to gross-up seller charges via `base × 1.12 / (1 − rate)` so both 12% VAT and
+// the seller's share of the PayMongo cut are absorbed into a single deduction.
+const PAYMONGO_DIVISOR_RATES: Record<string, number> = {
+  'card': 0.03125,
+  'gcash': 0.025,
+  'cash_on_delivery': 0,
+};
+
+export function getPaymongoRate(paymentMethod: string): number {
+  const method = paymentMethod.toLowerCase();
+  if (method in PAYMONGO_DIVISOR_RATES) {
+    return PAYMONGO_DIVISOR_RATES[method];
+  }
+  logger.warn(`Unknown payment method for divisor rate: ${paymentMethod}, defaulting to card`);
+  return PAYMONGO_DIVISOR_RATES['card'];
+}
 
 // Seller fee breakdown interface
 export interface SellerFeeBreakdown {
@@ -110,12 +126,15 @@ export interface SellerFeeBreakdown {
   sellerName: string;
   cartValue: number;
   shippingCost: number;
+  shippingVat: number;
   buyerShippingCharge: number;
   sellerShippingCharge: number;
   shippingSplitRule: 'buyer_pays_full' | 'seller_pays_full' | 'shipping_voucher_partial';
   totalChargedToBuyer: number; // Cart value + buyer's shipping portion
-  paymentProcessingFee: number; // Based on buyer's total for this seller
+  paymentProcessingFee: number; // PayMongo base fee on buyer's total (0 for COD)
+  paymentProcessingFeeVat: number; // VAT portion grossed-up via the new fee model
   platformFee: number; // Custom % or default 8.88% of this seller's cart value
+  platformFeeVat: number;
   platformFeePercentage: number; // The actual percentage used for this seller
   totalSellerFees: number;
   netPayoutToSeller: number;
@@ -279,12 +298,15 @@ export function calculateMultiSellerBreakdown(
       sellerName: seller.sellerName,
       cartValue: seller.cartValue,
       shippingCost: seller.shippingCost,
+      shippingVat: 0, // filled in by applyNewFeeModel
       buyerShippingCharge,
       sellerShippingCharge,
       shippingSplitRule,
       totalChargedToBuyer,
       paymentProcessingFee,
+      paymentProcessingFeeVat: 0, // filled in by applyNewFeeModel
       platformFee,
+      platformFeeVat: 0, // filled in by applyNewFeeModel
       platformFeePercentage,
       totalSellerFees,
       netPayoutToSeller
@@ -344,6 +366,83 @@ export function calculateMultiSellerBreakdown(
 }
 
 /**
+ * Apply the new gross-up seller fee model to a single SellerFeeBreakdown.
+ *
+ * The helper assumes the breakdown has been seeded by `calculateMultiSellerBreakdown`
+ * (which sets `platformFee`, the initial split rule, and the initial buyer/seller
+ * shipping allocation) and that any voucher post-processing pass has already
+ * overwritten `buyerShippingCharge` / `sellerShippingCharge` / `shippingSplitRule`
+ * / `totalChargedToBuyer` as needed.
+ *
+ * For each charge to the seller (shipping, paymongo, platform) we compute
+ * `base × 1.12 / (1 − paymongoRate)` and split it into the base + VAT portion.
+ * `sellerShippingCharge` is then redefined to be the seller's actual shipping
+ * deduction (shipping+VAT when seller_pays_full; VAT-only otherwise; voucher
+ * partial keeps the seller's pre-VAT portion and adds the full shipping VAT).
+ *
+ * Mutates the breakdown in place.
+ */
+export function applyNewFeeModel(
+  breakdown: SellerFeeBreakdown,
+  opts: {
+    actualShippingCost: number;
+    postDiscountCartValue: number;
+    paymentMethod: string;
+  }
+): void {
+  const { actualShippingCost, postDiscountCartValue, paymentMethod } = opts;
+  const rate = getPaymongoRate(paymentMethod);
+  const divisor = 1 - rate;
+
+  // Use the buyer's actual transaction amount (already discounted + voucher-adjusted)
+  // as the PayMongo base. For COD this is informational only (rate = 0).
+  const buyerTotal = postDiscountCartValue + breakdown.buyerShippingCharge;
+  breakdown.shippingCost = actualShippingCost;
+  breakdown.totalChargedToBuyer = buyerTotal;
+
+  // Gross-up helper: turn a seller-borne base into its grossed (× 1.12 ÷ D) total.
+  const gross = (x: number) => (x * 1.12) / divisor;
+
+  // PayMongo base
+  let paymongoBase = 0;
+  const method = paymentMethod.toLowerCase();
+  if (method === 'card') {
+    paymongoBase = buyerTotal * 0.03125 + 13.39;
+  } else if (method === 'gcash') {
+    paymongoBase = buyerTotal * 0.025;
+  } // cash_on_delivery → 0
+
+  const paymongoVat = gross(paymongoBase) - paymongoBase;
+
+  // Shipping VAT — always charged to the seller, regardless of who pays the principal.
+  const shippingVat = actualShippingCost > 0 ? gross(actualShippingCost) - actualShippingCost : 0;
+
+  // Platform fee base: pre-discount cart + actual shipping cost (always, regardless of
+  // who pays the shipping principal). Voucher discounts do not reduce DentPal's commission.
+  const platformBase = (breakdown.cartValue + actualShippingCost) * (breakdown.platformFeePercentage / 100);
+  breakdown.platformFee = platformBase;
+  const platformVat = platformBase > 0 ? gross(platformBase) - platformBase : 0;
+
+  // sellerShippingCharge: redefined as the seller's actual shipping deduction.
+  // For partial voucher coverage the seller is still responsible for the full shipping VAT.
+  const sellerShippingChargePreVat =
+    breakdown.shippingSplitRule === 'shipping_voucher_partial'
+      ? breakdown.sellerShippingCharge
+      : (breakdown.shippingSplitRule === 'seller_pays_full' ? actualShippingCost : 0);
+
+  const sellerShippingCharge = sellerShippingChargePreVat + shippingVat;
+
+  breakdown.shippingVat = shippingVat;
+  breakdown.paymentProcessingFee = paymongoBase;
+  breakdown.paymentProcessingFeeVat = paymongoVat;
+  breakdown.platformFeeVat = platformVat;
+  breakdown.sellerShippingCharge = sellerShippingCharge;
+  breakdown.totalSellerFees =
+    sellerShippingCharge + paymongoBase + paymongoVat + breakdown.platformFee + platformVat;
+  breakdown.netPayoutToSeller = postDiscountCartValue - breakdown.totalSellerFees;
+}
+
+/**
  * Determines the JRS product name based on item dimensions and total weight.
  *
  * The function finds the **smallest package** whose dimensions can accommodate
@@ -360,13 +459,14 @@ export function calculateMultiSellerBreakdown(
  */
 /**
  * Determine the JRS product name (packaging type) based on shipment weight and dimensions.
- * 
- * Rules are checked in order from smallest to largest package.
+ *
+ * Rules are checked in order from smallest to largest package — first match wins.
  * Weight thresholds are MAXIMUM capacities (the item must weigh at or below the limit).
  * Dimension checks are orientation-independent (item can be rotated to fit).
- * Flat mailers (Express Letter, Pounder bags) enforce a maxThickness in addition to
- * their 2D footprint so stacked items cannot match a thin envelope.
- * If no rule matches, returns undefined so the JRS API determines the product automatically.
+ * Express Letter is a flexible pouch (9.5 × 6.3 in / 24.13 × 16.00 cm, max 100g) —
+ *   JRS confirmed no thickness limit applies; any item whose 2D footprint fits qualifies.
+ * Pounder bags (1/3/5 Pounder) enforce a maxThickness for stacked items.
+ * General Cargo is a last resort — returned as undefined so the JRS API decides.
  */
 export function determineProductName(shipmentItems: ShipmentItem[]): string | undefined {
   if (!shipmentItems || shipmentItems.length === 0) {
@@ -404,9 +504,9 @@ export function determineProductName(shipmentItems: ShipmentItem[]): string | un
     itemCount: shipmentItems.length
   });
 
-  // Maximum thickness (cm) for each flat-mailer packaging type.
-  // Items stacked beyond this height cannot fit in the envelope/pouch.
-  const EXPRESS_LETTER_MAX_THICKNESS = 1;   // document envelope
+  // Maximum thickness (cm) for poly mailer packaging types.
+  // Express Letter is a flexible pouch — JRS confirmed it fits any item whose
+  // 2D footprint fits within 9.5 × 6.3 in (24.13 × 16.00 cm), regardless of thickness.
   const ONE_POUNDER_MAX_THICKNESS = 5;      // small poly mailer
   const THREE_POUNDER_MAX_THICKNESS = 7;    // medium poly mailer
   const FIVE_POUNDER_MAX_THICKNESS = 10;    // large poly mailer
@@ -430,8 +530,9 @@ export function determineProductName(shipmentItems: ShipmentItem[]): string | un
     return itemDims[0] <= pkgDims[0] && itemDims[1] <= pkgDims[1] && itemDims[2] <= pkgDims[2];
   };
 
-  // Rule 1: Express Letter (max 100g, fits 24.13 × 16.00 cm, max 1 cm thick)
-  if (totalWeight <= 100 && fitsIn2D(24.13, 16.00, EXPRESS_LETTER_MAX_THICKNESS)) {
+  // Rule 1: Express Letter — JRS pouch 9.5 × 6.3 in (24.13 × 16.00 cm), max 100g.
+  // No thickness limit: the pouch is flexible and fits any item within the 2D footprint.
+  if (totalWeight <= 100 && fitsIn2D(24.13, 16.00)) {
     logger.info('📦 Matched: Express Letter');
     return 'Express Letter';
   }
@@ -461,8 +562,8 @@ export function determineProductName(shipmentItems: ShipmentItem[]): string | un
     return '5 Pounder';
   }
 
-  // No rule matched — let the JRS API determine automatically
-  logger.info('📦 No manual rule matched — API will determine productName automatically', {
+  // No rule matched — General Cargo is the last resort (JRS API determines automatically)
+  logger.info('📦 No rule matched — falling back to General Cargo (JRS API determines)', {
     totalWeight,
     maxShort,
     maxLong,
@@ -528,11 +629,9 @@ export async function calculateJRSShippingCost(
       throw new Error('No items have the required dimensions for shipping calculation');
     }
 
-    // Determine product name based on shipment weight and dimensions for observability only.
-    // productName is NOT sent to the JRS API — when omitted, JRS selects the appropriate
-    // packaging automatically based on the express flag and shipment dimensions.
-    // Sending productName overrides the express flag (JRS ignores it), causing express
-    // and non-express calls to return the same rate.
+    // Determine the correct packaging locally first, then send it to JRS so the
+    // getRate API prices against the right package instead of defaulting to General Cargo.
+    // When productName is undefined (item too large for all known packages), JRS decides.
     const productName = determineProductName(shipmentItems);
 
     const resolvedCodAmount = typeof codAmountToCollect === 'number' && codAmountToCollect > 0
@@ -543,11 +642,15 @@ export async function calculateJRSShippingCost(
       requestType: 'getrate',
       apiShippingRequest: {
         express,
-        ...(insurance ? { insurance: true as const } : {}),
-        ...(valuation ? { valuation: true as const } : {}),
+        // insurance and valuation intentionally omitted from getRate — including them
+        // adds a JRS surcharge to the estimate that isn't applied at actual booking time,
+        // causing the quoted rate to exceed the real shipping charge.
         codAmountToCollect: resolvedCodAmount,
-        // productName intentionally omitted — let JRS API choose packaging based on
-        // the express flag + item dimensions so express/non-express rates differ correctly
+        // productName is only sent for standard (non-express) calls. When sent, JRS
+        // overrides the express flag and returns the same fixed package rate regardless
+        // of delivery speed. For express calls we omit it so JRS prices freely based
+        // on the express flag + dimensions, giving the correct express premium.
+        ...(!express && productName ? { productName } : {}),
         shipperAddressLine1: shipperAddress,
         recipientAddressLine1: recipientFormattedAddress,
         shipmentItems

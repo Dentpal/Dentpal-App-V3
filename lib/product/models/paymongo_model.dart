@@ -682,6 +682,7 @@ class CreateCheckoutOrderRequest {
   final Map<String, double> sellerEvaluationCosts;
   final Map<String, String> sellerPackagingSizes;
   final Map<String, bool> sellerExpressShipping;
+  final Map<String, bool> sellerPickupSelected;
   final Map<String, double> expressSellerShippingCosts;
   final Map<String, double> standardSellerShippingCosts;
   final Map<String, double> expressSellerTotalShippingCosts;
@@ -701,6 +702,7 @@ class CreateCheckoutOrderRequest {
     this.sellerEvaluationCosts = const {},
     this.sellerPackagingSizes = const {},
     this.sellerExpressShipping = const {},
+    this.sellerPickupSelected = const {},
     this.expressSellerShippingCosts = const {},
     this.standardSellerShippingCosts = const {},
     this.expressSellerTotalShippingCosts = const {},
@@ -722,6 +724,7 @@ class CreateCheckoutOrderRequest {
       'seller_evaluation_costs': sellerEvaluationCosts,
       'seller_packaging_sizes': sellerPackagingSizes,
       'seller_express_shipping': sellerExpressShipping,
+      'seller_pickup_selected': sellerPickupSelected,
       'express_seller_shipping_costs': expressSellerShippingCosts,
       'standard_seller_shipping_costs': standardSellerShippingCosts,
       'express_seller_total_shipping_costs': expressSellerTotalShippingCosts,

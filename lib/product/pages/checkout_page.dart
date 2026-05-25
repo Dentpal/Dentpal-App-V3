@@ -60,10 +60,14 @@ class _CheckoutPageState extends State<CheckoutPage> {
   // independently of the others.
   final Map<String, bool> _sellerExpressShipping = {};
 
+  // Per-seller pickup mode: when true the buyer picks up in store (no shipping cost).
+  final Map<String, bool> _sellerPickupSelected = {};
+
   // Per-seller shipping costs (active = chosen mode per seller)
   final Map<String, double> _sellerShippingCosts = {}; // sellerId -> active buyer's portion
   final Map<String, double> _sellerTotalShippingCosts = {}; // sellerId -> active total cost
   bool _isCalculatingShipping = false;
+  int _shippingCalcGeneration = 0;
 
   Map<String, double> _expressSellerShippingCosts = {};
   Map<String, double> _expressSellerTotalShippingCosts = {};
@@ -98,24 +102,104 @@ class _CheckoutPageState extends State<CheckoutPage> {
     _loadPaymentMethods();
   }
 
-  /// Set each seller's initial mode based on its (optional) shipping voucher.
-  /// Express-only voucher locks to express; standard-only voucher defaults the
-  /// seller to standard (user can still pick express, in which case the voucher
-  /// covers the standard cost portion only). Otherwise default to express.
+  /// Set each seller's initial mode based on its (optional) shipping voucher
+  /// and its checkoutOptions (delivery modes). Pickup is initialized to false;
+  /// delivery mode defaults to standard when allowed, else express.
   void _initializeSellerShippingModes() {
     final sellerIds = widget.cartItems
         .map((item) => item.sellerId ?? 'unknown')
         .toSet();
     for (final sellerId in sellerIds) {
-      final modes = _coveredModes(_shippingVouchers[sellerId]);
-      if (modes.length == 1 && modes.contains('express')) {
+      _sellerPickupSelected[sellerId] = false;
+
+      final voucherModes = _coveredModes(_shippingVouchers[sellerId]);
+      if (voucherModes.length == 1 && voucherModes.contains('express')) {
         _sellerExpressShipping[sellerId] = true;
-      } else if (modes.length == 1 && modes.contains('standard')) {
+      } else if (voucherModes.length == 1 && voucherModes.contains('standard')) {
         _sellerExpressShipping[sellerId] = false;
       } else {
-        _sellerExpressShipping[sellerId] = true;
+        // Respect seller's allowed delivery modes: default to standard if
+        // allowed, otherwise express.
+        final allowsStd = _sellerAllowsDelivery(sellerId, 'standard');
+        _sellerExpressShipping[sellerId] = !allowsStd;
       }
     }
+  }
+
+  // ── Checkout-options helpers ────────────────────────────────────────────────
+
+  /// Returns the first cart item's checkoutOptions for the given seller.
+  Map<String, dynamic>? _getSellerCheckoutOptions(String sellerId) {
+    try {
+      return widget.cartItems
+          .firstWhere((it) => (it.sellerId ?? 'unknown') == sellerId)
+          .checkoutOptions;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Whether this seller allows [mode] ('standard', 'express', 'pickup').
+  /// Returns true when checkoutOptions is absent (backwards compat).
+  bool _sellerAllowsDelivery(String sellerId, String mode) {
+    final opts = _getSellerCheckoutOptions(sellerId);
+    if (opts == null) return true;
+    final delivery = opts['delivery'] as Map?;
+    if (delivery == null) return true;
+    return delivery[mode] == true;
+  }
+
+  /// Whether [method] is in the intersection of all sellers' allowed payment
+  /// methods.  Returns true for methods not configurable via checkoutOptions
+  /// (grabpay, paymaya, billEase) so existing hard-coded filters still apply.
+  bool _isPaymentMethodAllowed(PaymentMethod method) {
+    final key = _paymentMethodKey(method);
+    if (key == null) return false; // grabbed / paymaya / billEase — excluded elsewhere
+    return _allowedPaymentKeys.contains(key);
+  }
+
+  static String? _paymentMethodKey(PaymentMethod method) {
+    switch (method) {
+      case PaymentMethod.cashOnDelivery: return 'cod';
+      case PaymentMethod.gcash:          return 'gcash';
+      case PaymentMethod.card:           return 'card';
+      default:                           return null;
+    }
+  }
+
+  /// Payment method keys that are enabled by ALL sellers in the cart.
+  /// When a seller has no checkoutOptions, it imposes no restriction.
+  Set<String> get _allowedPaymentKeys {
+    final sellerIds = widget.cartItems
+        .map((it) => it.sellerId ?? 'unknown')
+        .toSet();
+    Set<String>? intersection;
+    for (final sellerId in sellerIds) {
+      final opts = _getSellerCheckoutOptions(sellerId);
+      final paymentRaw = opts?['payment'];
+      if (paymentRaw is! Map) continue; // no restriction from this seller
+      final allowed = paymentRaw.entries
+          .where((e) => e.value == true)
+          .map((e) => e.key.toString())
+          .toSet();
+      intersection = intersection == null
+          ? allowed
+          : intersection.intersection(allowed);
+    }
+    // Fallback: allow all known keys when no seller has restrictions.
+    return intersection ?? {'cod', 'gcash', 'card'};
+  }
+
+  bool _isPickupSelectedFor(String sellerId) =>
+      _sellerPickupSelected[sellerId] ?? false;
+
+  void _onSellerPickupToggled(String sellerId, bool pickupSelected) {
+    setState(() {
+      _sellerPickupSelected[sellerId] = pickupSelected;
+      // Reset express/standard map when switching to/from pickup so costs
+      // are correctly reflected in the summary.
+      _refreshActiveMapsForSeller(sellerId);
+    });
   }
 
   @override
@@ -126,13 +210,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   Future<void> _loadPaymentMethods() async {
     try {
-      // Auto-select the first payment method
       final paymentMethods = await _checkoutService.getAvailablePaymentMethods();
-      if (paymentMethods.isNotEmpty) {
-        setState(() {
-          _selectedPaymentMethod = paymentMethods.first;
-        });
-      }
+      // Auto-select the first method that all sellers allow.
+      final firstAllowed = paymentMethods.firstWhere(
+        (m) => _isPaymentMethodAllowed(m),
+        orElse: () => paymentMethods.isNotEmpty ? paymentMethods.first : PaymentMethod.cashOnDelivery,
+      );
+      setState(() {
+        _selectedPaymentMethod = firstAllowed;
+      });
     } catch (e) {
       AppLogger.d('Error loading payment methods: $e');
     }
@@ -199,16 +285,18 @@ class _CheckoutPageState extends State<CheckoutPage> {
     return modes.length == 1 && modes.contains('express');
   }
 
-  bool _isExpressFor(String sellerId) => _sellerExpressShipping[sellerId] ?? true;
+  bool _isExpressFor(String sellerId) => _sellerExpressShipping[sellerId] ?? false;
 
   /// Buyer's portion of shipping for a seller, after applying any shipping voucher rules.
   ///
   /// Rules:
+  /// - Pickup selected → 0 (buyer picks up in store).
   /// - No shipping voucher → buyer pays whatever the chosen-mode buyer-portion is.
   /// - Voucher covers chosen mode → buyer pays 0 (seller absorbs full cost).
   /// - Chosen express, voucher covers standard only → buyer pays (expressTotal - standardTotal).
   /// - Otherwise → buyer pays the chosen-mode buyer portion.
   double _buyerShippingForSeller(String sellerId) {
+    if (_isPickupSelectedFor(sellerId)) return 0.0;
     final express = _isExpressFor(sellerId);
     final expCost = _expressSellerTotalShippingCosts[sellerId] ?? 0.0;
     final stdCost = _standardSellerTotalShippingCosts[sellerId] ?? 0.0;
@@ -237,6 +325,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   /// Total cost for a seller in the chosen shipping mode (display, before voucher split).
   double _totalShippingForSeller(String sellerId) {
+    if (_isPickupSelectedFor(sellerId)) return 0.0;
     final express = _isExpressFor(sellerId);
     return (express
             ? _expressSellerTotalShippingCosts[sellerId]
@@ -290,6 +379,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
           sellerEvaluationCosts: _sellerEvaluationCosts,
           sellerPackagingSizes: _sellerPackagingSizes,
           sellerExpressShipping: Map.of(_sellerExpressShipping),
+          sellerPickupSelected: Map.of(_sellerPickupSelected),
           expressSellerShippingCosts: Map.of(_expressSellerShippingCosts),
           standardSellerShippingCosts: Map.of(_standardSellerShippingCosts),
           expressSellerTotalShippingCosts: Map.of(_expressSellerTotalShippingCosts),
@@ -318,6 +408,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
           sellerEvaluationCosts: _sellerEvaluationCosts,
           sellerPackagingSizes: _sellerPackagingSizes,
           sellerExpressShipping: Map.of(_sellerExpressShipping),
+          sellerPickupSelected: Map.of(_sellerPickupSelected),
           expressSellerShippingCosts: Map.of(_expressSellerShippingCosts),
           standardSellerShippingCosts: Map.of(_standardSellerShippingCosts),
           expressSellerTotalShippingCosts: Map.of(_expressSellerTotalShippingCosts),
@@ -396,6 +487,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
   /// Calculate shipping cost when address is selected - per seller
   Future<void> _calculateShippingCost() async {
     if (_selectedAddress == null) return;
+    if (!mounted) return;
+
+    // Generation token: if this function is called again while a prior call is
+    // still in-flight, the prior call detects the mismatch and discards its
+    // stale result instead of clearing the spinner for the new call.
+    final myGeneration = ++_shippingCalcGeneration;
 
     setState(() {
       _isCalculatingShipping = true;
@@ -445,6 +542,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
             ),
           ]);
 
+          // Discard results from a superseded calculation.
+          if (!mounted || _shippingCalcGeneration != myGeneration) return;
+
           final expressDetails = results[0];
           final standardDetails = results[1];
 
@@ -468,6 +568,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
           AppLogger.d('Seller $sellerId - Express: ₱${expressDetails['totalCost']}, Standard: ₱${standardDetails['totalCost']}');
         } catch (e) {
           AppLogger.d('Error calculating shipping for seller $sellerId: $e');
+          if (!mounted || _shippingCalcGeneration != myGeneration) return;
           _expressSellerShippingCosts[sellerId] = 0.0;
           _expressSellerTotalShippingCosts[sellerId] = 0.0;
           _expressSellerInsuranceCosts[sellerId] = 0.0;
@@ -478,6 +579,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
           _standardSellerEvaluationCosts[sellerId] = 0.0;
         }
       }
+
+      if (!mounted || _shippingCalcGeneration != myGeneration) return;
 
       // Set active maps per-seller based on each seller's shipping mode.
       _refreshAllActiveMaps();
@@ -490,6 +593,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
           'Standard total: ₱${_standardSellerShippingCosts.values.fold(0.0, (s, c) => s + c)}');
     } catch (e) {
       AppLogger.d('Error calculating shipping costs: $e');
+      if (!mounted || _shippingCalcGeneration != myGeneration) return;
       setState(() {
         _isCalculatingShipping = false;
         _expressSellerShippingCosts.clear();
@@ -1524,123 +1628,148 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
-  /// Per-seller express/standard radio. Locks to express when the seller's
-  /// shipping voucher only covers express.
+  /// Per-seller delivery mode toggle. Shows only the modes the seller allows
+  /// (standard, express, pickup). Locks to express when the seller's shipping
+  /// voucher only covers express.
   Widget _buildSellerShippingModeToggle(String sellerId) {
-    final express = _isExpressFor(sellerId);
-    final lockedExpress = _isLockedToExpress(sellerId);
-    final hasExpressCost = _expressSellerTotalShippingCosts.containsKey(sellerId);
-    final hasStandardCost = _standardSellerTotalShippingCosts.containsKey(sellerId);
-    if (!hasExpressCost && !hasStandardCost) return const SizedBox.shrink();
+    final allowsStandard = _sellerAllowsDelivery(sellerId, 'standard');
+    final allowsExpress  = _sellerAllowsDelivery(sellerId, 'express');
+    final allowsPickup   = _sellerAllowsDelivery(sellerId, 'pickup');
 
-    final expressTotal = _expressSellerTotalShippingCosts[sellerId] ?? 0.0;
+    final hasExpressCost  = _expressSellerTotalShippingCosts.containsKey(sellerId);
+    final hasStandardCost = _standardSellerTotalShippingCosts.containsKey(sellerId);
+    final hasAnyCost = hasExpressCost || hasStandardCost;
+
+    // Nothing to show when no delivery options exist.
+    if (!allowsStandard && !allowsExpress && !allowsPickup) return const SizedBox.shrink();
+    if (!hasAnyCost && !allowsPickup) return const SizedBox.shrink();
+
+    final isPickup  = _isPickupSelectedFor(sellerId);
+    final isExpress = !isPickup && _isExpressFor(sellerId);
+    final isStandard = !isPickup && !isExpress;
+    final lockedExpress = _isLockedToExpress(sellerId);
+
+    final expressTotal  = _expressSellerTotalShippingCosts[sellerId] ?? 0.0;
     final standardTotal = _standardSellerTotalShippingCosts[sellerId] ?? 0.0;
+
+    Widget radioRow({
+      required bool selected,
+      required bool disabled,
+      required VoidCallback onTap,
+      required IconData icon,
+      required String label,
+      String? sublabel,
+      required Widget trailing,
+    }) {
+      return InkWell(
+        onTap: disabled ? null : onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: [
+              Radio<bool>(
+                value: true,
+                groupValue: selected,
+                onChanged: disabled ? null : (_) => onTap(),
+                activeColor: AppColors.primary,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+              const SizedBox(width: 4),
+              Icon(icon, size: 16,
+                color: selected
+                    ? AppColors.primary
+                    : AppColors.onSurface.withValues(alpha: 0.4)),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Row(
+                  children: [
+                    Text(label,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                        color: selected
+                            ? AppColors.primary
+                            : AppColors.onSurface.withValues(alpha: 0.5),
+                      )),
+                    if (sublabel != null) ...[
+                      const SizedBox(width: 6),
+                      Text(sublabel,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.onSurface.withValues(alpha: 0.5),
+                          fontStyle: FontStyle.italic,
+                        )),
+                    ],
+                  ],
+                ),
+              ),
+              trailing,
+            ],
+          ),
+        ),
+      );
+    }
+
+    Widget costLabel(double cost, bool selected) => Text(
+      cost > 0 ? '₱${cost.toStringAsFixed(2)}' : 'FREE',
+      style: AppTextStyles.bodyMedium.copyWith(
+        fontFamily: 'Roboto',
+        fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+        color: selected
+            ? AppColors.primary
+            : AppColors.onSurface.withValues(alpha: 0.5),
+      ),
+    );
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: AppColors.onSurface.withValues(alpha: 0.1),
-        ),
+        border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.1)),
       ),
       child: Column(
         children: [
-          InkWell(
-            onTap: _isCalculatingShipping
-                ? null
-                : () => _onSellerShippingModeToggled(sellerId, true),
-            borderRadius: BorderRadius.circular(6),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                children: [
-                  Radio<bool>(
-                    value: true,
-                    groupValue: express,
-                    onChanged: _isCalculatingShipping
-                        ? null
-                        : (v) => _onSellerShippingModeToggled(sellerId, true),
-                    activeColor: AppColors.primary,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(Icons.flash_on, size: 16, color: express ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.4)),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Express',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      fontWeight: express ? FontWeight.w600 : FontWeight.normal,
-                      color: express ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.6),
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    expressTotal > 0 ? '₱${expressTotal.toStringAsFixed(2)}' : 'FREE',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      fontFamily: 'Roboto',
-                      fontWeight: express ? FontWeight.w600 : FontWeight.normal,
-                      color: express ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.6),
-                    ),
-                  ),
-                ],
+          if (allowsStandard && hasStandardCost)
+            radioRow(
+              selected: isStandard,
+              disabled: _isCalculatingShipping || lockedExpress,
+              onTap: () {
+                _onSellerPickupToggled(sellerId, false);
+                _onSellerShippingModeToggled(sellerId, false);
+              },
+              icon: Icons.local_shipping_outlined,
+              label: 'Standard',
+              sublabel: lockedExpress ? '(locked by voucher)' : null,
+              trailing: costLabel(standardTotal, isStandard),
+            ),
+          if (allowsExpress && hasExpressCost)
+            radioRow(
+              selected: isExpress,
+              disabled: _isCalculatingShipping,
+              onTap: () {
+                _onSellerPickupToggled(sellerId, false);
+                _onSellerShippingModeToggled(sellerId, true);
+              },
+              icon: Icons.flash_on,
+              label: 'Express',
+              trailing: costLabel(expressTotal, isExpress),
+            ),
+          if (allowsPickup)
+            radioRow(
+              selected: isPickup,
+              disabled: false,
+              onTap: () => _onSellerPickupToggled(sellerId, true),
+              icon: Icons.store_outlined,
+              label: 'Pickup',
+              trailing: Text(
+                'FREE',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  fontWeight: isPickup ? FontWeight.w600 : FontWeight.normal,
+                  color: isPickup ? AppColors.success : AppColors.onSurface.withValues(alpha: 0.5),
+                ),
               ),
             ),
-          ),
-          InkWell(
-            onTap: (_isCalculatingShipping || lockedExpress)
-                ? null
-                : () => _onSellerShippingModeToggled(sellerId, false),
-            borderRadius: BorderRadius.circular(6),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                children: [
-                  Radio<bool>(
-                    value: false,
-                    groupValue: express,
-                    onChanged: (_isCalculatingShipping || lockedExpress)
-                        ? null
-                        : (v) => _onSellerShippingModeToggled(sellerId, false),
-                    activeColor: AppColors.primary,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(Icons.local_shipping_outlined, size: 16, color: !express ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.4)),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Standard',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      fontWeight: !express ? FontWeight.w600 : FontWeight.normal,
-                      color: !express ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.5),
-                    ),
-                  ),
-                  if (lockedExpress) ...[
-                    const SizedBox(width: 6),
-                    Text(
-                      '(locked by voucher)',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.onSurface.withValues(alpha: 0.5),
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ],
-                  const Spacer(),
-                  Text(
-                    standardTotal > 0 ? '₱${standardTotal.toStringAsFixed(2)}' : 'FREE',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      fontFamily: 'Roboto',
-                      fontWeight: !express ? FontWeight.w600 : FontWeight.normal,
-                      color: !express ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.5),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -1843,15 +1972,16 @@ class _CheckoutPageState extends State<CheckoutPage> {
             ),
           ),
 
-          // Payment methods
+          // Payment methods — filtered to the intersection of all sellers' allowed options
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               children: PaymentMethod.values
-                  // Hide GrabPay, BillEase, and PayMaya for now
-                  .where((method) => method != PaymentMethod.grabpay && 
-                                     method != PaymentMethod.billEase && 
-                                     method != PaymentMethod.paymaya)
+                  .where((method) =>
+                      method != PaymentMethod.grabpay &&
+                      method != PaymentMethod.billEase &&
+                      method != PaymentMethod.paymaya &&
+                      _isPaymentMethodAllowed(method))
                   .map((method) {
                 final isSelected = _selectedPaymentMethod == method;
                 

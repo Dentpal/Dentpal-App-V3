@@ -5,7 +5,7 @@ import {
   calculateJRSShippingCostWithFallback,
   DEFAULT_FALLBACK_SHIPPING_COST,
   calculateMultiSellerBreakdown,
-  calculatePaymentProcessingFee,
+  applyNewFeeModel,
   determineProductName,
 } from './utils/jrsShippingHelper';
 import {
@@ -133,7 +133,7 @@ function validatePaymentMethods(methods: any): string[] {
     throw new Error('Payment methods must be an array');
   }
   
-  const validMethods = ['card', 'gcash', 'grab_pay', 'paymaya', 'billease', 'dob', 'dob_ubp'];
+  const validMethods = ['card', 'gcash'];
   const sanitizedMethods = methods.filter(method => 
     typeof method === 'string' && validMethods.includes(method)
   );
@@ -198,7 +198,7 @@ function validateRequestBody(body: any): {
 
   // Validate payment methods
   const paymentMethodTypes = validatePaymentMethods(
-    body.payment_method_types || ['card', 'gcash', 'grab_pay', 'paymaya']
+    body.payment_method_types || ['card', 'gcash']
   );
 
   // Validate URLs (optional)
@@ -417,6 +417,13 @@ export const createCheckoutSession = onRequest(
             ? request.body.seller_express_shipping
             : {};
 
+        // Per-seller pickup selection. When true the buyer picks up in store and
+        // no shipping is calculated / charged for that seller.
+        const sellerPickupSelected: Record<string, boolean> =
+          (request.body.seller_pickup_selected && typeof request.body.seller_pickup_selected === 'object')
+            ? request.body.seller_pickup_selected
+            : {};
+
         // Both modes' costs from the frontend, needed for partial-coverage math
         // (voucher covers standard but user picks express).
         const expressSellerShippingCosts: Record<string, number> =
@@ -625,7 +632,7 @@ export const createCheckoutSession = onRequest(
           coversStandard: boolean;
           coversExpress: boolean;
           // Per-seller shipping mode and both modes' costs (for partial-coverage math)
-          chosenMode: 'express' | 'standard';
+          chosenMode: 'express' | 'standard' | 'pickup';
           expressTotalCost: number;
           standardTotalCost: number;
           // Insurance & evaluation
@@ -673,6 +680,34 @@ export const createCheckoutSession = onRequest(
           ]);
           const discountAmount = voucherResult.discountAmount;
           const postDiscountCartValue = sellerCartValue - discountAmount;
+
+          // Pickup short-circuit: skip JRS entirely; no shipping cost / vouchers apply.
+          if (sellerPickupSelected[sellerId] === true) {
+            console.log(`Seller ${sellerId} is pickup — skipping JRS shipping calculation`);
+            return {
+              sellerId,
+              sellerName,
+              shippingCost: 0,
+              cartValue: sellerCartValue,
+              isFallbackShipping: false,
+              platformFeePercentage,
+              packagingName: undefined,
+              discountAmount,
+              postDiscountCartValue,
+              voucherCode: voucherResult.voucherCode || undefined,
+              voucherDocId: voucherResult.voucherDocId || undefined,
+              shippingVoucherCode: undefined,
+              shippingVoucherDocId: undefined,
+              coversStandard: false,
+              coversExpress: false,
+              chosenMode: 'pickup' as const,
+              expressTotalCost: 0,
+              standardTotalCost: 0,
+              insuranceAndEvaluation: false,
+              insuranceCost: null,
+              evaluationCost: null,
+            };
+          }
 
           const chosenMode: 'express' | 'standard' =
             (sellerExpressShipping[sellerId] ?? true) ? 'express' : 'standard';
@@ -879,22 +914,18 @@ export const createCheckoutSession = onRequest(
         
         // Calculate PER-SELLER fee breakdowns using the multi-seller function
         // This ensures each seller is charged based on THEIR cart value, not the total order
-        // 
+        //
         // Fee Calculation Rules:
         // - Shipping Split: If seller's shipping > 10% of seller's cart value → Buyer pays 100%
         //                   If seller's shipping ≤ 10% of seller's cart value → Seller pays 100%
         // - Payment Fee: Based on buyer's total for this seller (cart + buyer's shipping portion)
         // - Platform Fee: 8.88% of this seller's cart value
         // - Net Payout: Cart Value - Payment Fee - Platform Fee - Seller's Shipping
-        // Pass postDiscountCartValue as cartValue so the 10% shipping threshold
-        // and platform fee use the discounted amount.
-        const adjustedSellerData = sellerShippingData.map(s => ({
-          ...s,
-          cartValue: s.postDiscountCartValue,
-        }));
-
+        // Fees (platformFee, paymentProcessingFee) are intentionally computed on the original
+        // pre-discount cartValue so vouchers do not zero out DentPal's fees.
+        // totalChargedToBuyer and seller payout are corrected to postDiscountCartValue below.
         const defaultPaymentMethod = paymentMethodTypes[0] || 'card';
-        const multiSellerBreakdown = calculateMultiSellerBreakdown(adjustedSellerData, defaultPaymentMethod);
+        const multiSellerBreakdown = calculateMultiSellerBreakdown(sellerShippingData, defaultPaymentMethod);
 
         // Post-process: apply shipping voucher coverage rules per seller.
         // Coverage outcomes:
@@ -906,6 +937,19 @@ export const createCheckoutSession = onRequest(
         for (let i = 0; i < sellerShippingData.length; i++) {
           const sd = sellerShippingData[i];
           const breakdown = multiSellerBreakdown.sellerBreakdowns[i];
+
+          // Pickup: no shipping → no voucher coverage to apply. Zero out shipping
+          // fields and mark the split rule so downstream consumers know.
+          if (sd.chosenMode === 'pickup') {
+            breakdown.shippingCost = 0;
+            breakdown.buyerShippingCharge = 0;
+            breakdown.sellerShippingCharge = 0;
+            breakdown.shippingSplitRule = 'pickup' as any;
+            breakdown.totalChargedToBuyer = sd.postDiscountCartValue;
+            shippingCoverageTypes.push('none');
+            continue;
+          }
+
           const stdCost = sd.standardTotalCost ?? sd.shippingCost;
           const expCost = sd.expressTotalCost ?? sd.shippingCost;
 
@@ -936,31 +980,33 @@ export const createCheckoutSession = onRequest(
             breakdown.buyerShippingCharge = buyerCharge;
             breakdown.sellerShippingCharge = sellerCharge;
             breakdown.shippingSplitRule = splitRule;
-            breakdown.totalChargedToBuyer = breakdown.cartValue + buyerCharge;
-            breakdown.paymentProcessingFee = calculatePaymentProcessingFee(
-              breakdown.totalChargedToBuyer,
-              defaultPaymentMethod,
-            );
+            breakdown.totalChargedToBuyer = sd.postDiscountCartValue + buyerCharge;
           }
           shippingCoverageTypes.push(coverage);
         }
 
-        // Apply new fee model:
-        //   shippingVat        = shippingCost * 0.12 (always paid by seller)
-        //   totalSellerFees    = cartValue - ((paymentProcessingFee * 0.12) + ((shippingCost + platformFee) * 1.12))
-        //   netPayoutToSeller  = same as totalSellerFees (seller's payout)
-        // breakdown.cartValue already reflects postDiscountCartValue (see adjustedSellerData above).
-        // Raw, unrounded values — rounding here would cause mismatch with downstream consumers.
-        const shippingVats: number[] = [];
-        for (const breakdown of multiSellerBreakdown.sellerBreakdowns) {
-          const shippingVat = breakdown.shippingCost * 0.12;
-          const dentpalCut =
-            (breakdown.paymentProcessingFee * 0.12) +
-            ((breakdown.shippingCost + breakdown.platformFee) * 1.12);
-          const sellerPayout = breakdown.cartValue - dentpalCut;
-          breakdown.totalSellerFees = sellerPayout;
-          breakdown.netPayoutToSeller = sellerPayout;
-          shippingVats.push(shippingVat);
+        // Apply the new gross-up fee model. Each seller-borne base (shipping,
+        // paymongo fee, platform fee) is grossed up via base × 1.12 / (1 − rate)
+        // so both 12% VAT and the seller's share of the PayMongo cut are absorbed.
+        // sellerShippingCharge is redefined: shipping+VAT when seller_pays_full,
+        // VAT-only when buyer_pays_full, sellerShipCharge_preVat + full shippingVat
+        // when shipping_voucher_partial. Raw unrounded values.
+        for (let i = 0; i < multiSellerBreakdown.sellerBreakdowns.length; i++) {
+          const breakdown = multiSellerBreakdown.sellerBreakdowns[i];
+          const sd = sellerShippingData[i];
+          let actualShippingCost: number;
+          if (sd.chosenMode === 'pickup') {
+            actualShippingCost = 0;
+          } else if (sd.chosenMode === 'express') {
+            actualShippingCost = sd.expressTotalCost ?? breakdown.shippingCost;
+          } else {
+            actualShippingCost = sd.standardTotalCost ?? breakdown.shippingCost;
+          }
+          applyNewFeeModel(breakdown, {
+            actualShippingCost,
+            postDiscountCartValue: sd.postDiscountCartValue,
+            paymentMethod: defaultPaymentMethod,
+          });
         }
 
         // Recalculate totals from updated per-breakdown values
@@ -968,12 +1014,13 @@ export const createCheckoutSession = onRequest(
         const sellerShippingCharge = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.sellerShippingCharge, 0);
         const totalChargedToBuyer = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.totalChargedToBuyer, 0);
         const paymentProcessingFee = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.paymentProcessingFee, 0);
+        const paymentProcessingFeeVat = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.paymentProcessingFeeVat, 0);
         const platformFee = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.platformFee, 0);
+        const platformFeeVat = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.platformFeeVat, 0);
         const totalSellerFees = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.totalSellerFees, 0);
         const netPayoutToSeller = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.netPayoutToSeller, 0);
-        const totalShippingCost = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.shippingCost, 0);
-        const totalDentpalIncome =
-          (paymentProcessingFee * 0.12) + ((totalShippingCost + platformFee) * 1.12);
+        const totalShippingVat = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.shippingVat, 0);
+        const totalDentpalIncome = totalShippingVat + paymentProcessingFeeVat + platformFee + platformFeeVat;
 
         // Total discount across all sellers
         const totalDiscountAmount = sellerShippingData.reduce((s, d) => s + d.discountAmount, 0);
@@ -1066,13 +1113,15 @@ export const createCheckoutSession = onRequest(
             freeShippingFromVoucher: shippingCoverageTypes[index] === 'full',
             partialShippingCoverage: shippingCoverageTypes[index] === 'partial_express',
             shippingCost: s.shippingCost,
-            shippingVat: shippingVats[index],
+            shippingVat: s.shippingVat,
             buyerShippingCharge: s.buyerShippingCharge,
             sellerShippingCharge: s.sellerShippingCharge,
             shippingSplitRule: s.shippingSplitRule,
             totalChargedToBuyer: s.totalChargedToBuyer,
             paymentProcessingFee: s.paymentProcessingFee,
+            paymentProcessingFeeVat: s.paymentProcessingFeeVat,
             platformFee: s.platformFee,
+            platformFeeVat: s.platformFeeVat,
             platformFeePercentage: s.platformFeePercentage,
             totalSellerFees: s.totalSellerFees,
             netPayoutToSeller: s.netPayoutToSeller,

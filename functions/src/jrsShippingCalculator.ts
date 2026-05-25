@@ -147,8 +147,13 @@ export const calculateJRSShipping = onCall(
         });
       }
 
-      // Prefer JRS-reported packaging; fall back to local rule.
-      const packagingSize = result.packagingName ?? resolvedProductName ?? null;
+      // For standard shipping, prefer our local rule — JRS returns "General Cargo" when
+      // productName is omitted, even for items that fit a 1 Pounder. Our determineProductName
+      // is more accurate for the actual packaging used at booking time.
+      // For express, let the JRS API decide the packaging with no local override.
+      const packagingSize = express
+        ? (result.packagingName ?? null)
+        : (resolvedProductName ?? result.packagingName ?? null);
 
       return {
         success: true,
