@@ -21,6 +21,7 @@ class CartItem {
   int? availableStock;
   String? variationId;
   String? variationName;
+  String? brand;
   
   // Product availability status
   bool isProductActive; // Whether the product is active/available for purchase
@@ -68,6 +69,7 @@ class CartItem {
     this.availableStock,
     this.variationId,
     this.variationName,
+    this.brand,
     this.isProductActive = true, // Default to active
     this.sellerId,
     this.sellerName,

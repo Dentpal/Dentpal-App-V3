@@ -53,6 +53,7 @@ class Order {
   final String? notes;
   final List<OrderStatusUpdate> statusHistory;
   final String? checkoutSessionId;
+  final List<Map<String, dynamic>> sellerFeeBreakdowns;
 
   Order({
     required this.orderId,
@@ -68,7 +69,14 @@ class Order {
     this.notes,
     required this.statusHistory,
     this.checkoutSessionId,
+    this.sellerFeeBreakdowns = const [],
   });
+
+  /// True if any seller in this order is fulfilling via in-store pickup
+  /// (`sellerFeeBreakdowns[*].shippingMode == 'pickup'`).
+  bool get hasPickupShipping => sellerFeeBreakdowns.any(
+        (b) => (b['shippingMode']?.toString().toLowerCase() ?? '') == 'pickup',
+      );
 
   factory Order.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
@@ -144,6 +152,16 @@ class Order {
       
       AppLogger.d('Order.fromFirestore - All parsing completed successfully');
       
+      final sellerFeeBreakdowns = <Map<String, dynamic>>[];
+      final rawBreakdowns = data['sellerFeeBreakdowns'];
+      if (rawBreakdowns is List) {
+        for (final entry in rawBreakdowns) {
+          if (entry is Map) {
+            sellerFeeBreakdowns.add(Map<String, dynamic>.from(entry));
+          }
+        }
+      }
+
       return Order(
         orderId: doc.id,
         userId: userId,
@@ -158,6 +176,7 @@ class Order {
         notes: data['notes'],
         statusHistory: statusHistory,
         checkoutSessionId: data['checkoutSessionId'],
+        sellerFeeBreakdowns: sellerFeeBreakdowns,
       );
     } catch (e, stackTrace) {
       AppLogger.d('Order.fromFirestore - Error occurred: $e');

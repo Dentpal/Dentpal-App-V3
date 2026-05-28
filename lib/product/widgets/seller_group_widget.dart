@@ -57,6 +57,15 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
     }
   }
 
+  Set<String> _cartBrands() {
+    final brands = <String>{};
+    for (final item in widget.sellerGroup.items) {
+      final b = item.brand?.trim().toLowerCase();
+      if (b != null && b.isNotEmpty) brands.add(b);
+    }
+    return brands;
+  }
+
   DateTime? _parseDate(dynamic value) {
     if (value == null) return null;
     if (value is Timestamp) return value.toDate();
@@ -76,12 +85,14 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
 
       if (mounted) {
         final now = DateTime.now();
+        final cartBrands = _cartBrands();
         final validDocs = snapshot.docs.where((d) {
           final data = d.data();
           final start = _parseDate(data['startDate']);
           final end = _parseDate(data['endDate']);
           if (start != null && now.isBefore(start)) return false;
           if (end != null && now.isAfter(end)) return false;
+          if (!voucherMatchesBrands(data, cartBrands)) return false;
           return true;
         }).toList();
         setState(() {
@@ -457,6 +468,7 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
       sellerId: widget.sellerGroup.sellerId,
       sellerName: widget.sellerGroup.sellerName,
       selectedItemsTotal: widget.sellerGroup.selectedItemsTotal,
+      cartBrands: _cartBrands(),
       currentSelectedVoucher: current,
       onVoucherSelected: (voucher) {
         callback?.call(voucher);

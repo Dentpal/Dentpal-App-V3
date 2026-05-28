@@ -17,6 +17,7 @@ class VoucherPickerSheet extends StatefulWidget {
   final String sellerId;
   final String sellerName;
   final double selectedItemsTotal;
+  final Set<String> cartBrands;
   final Map<String, dynamic>? currentSelectedVoucher;
   final void Function(Map<String, dynamic>?) onVoucherSelected;
 
@@ -26,6 +27,7 @@ class VoucherPickerSheet extends StatefulWidget {
     required this.sellerId,
     required this.sellerName,
     required this.selectedItemsTotal,
+    required this.cartBrands,
     this.currentSelectedVoucher,
     required this.onVoucherSelected,
   });
@@ -36,6 +38,7 @@ class VoucherPickerSheet extends StatefulWidget {
     required String sellerId,
     required String sellerName,
     required double selectedItemsTotal,
+    required Set<String> cartBrands,
     Map<String, dynamic>? currentSelectedVoucher,
     required void Function(Map<String, dynamic>?) onVoucherSelected,
   }) {
@@ -48,6 +51,7 @@ class VoucherPickerSheet extends StatefulWidget {
         sellerId: sellerId,
         sellerName: sellerName,
         selectedItemsTotal: selectedItemsTotal,
+        cartBrands: cartBrands,
         currentSelectedVoucher: currentSelectedVoucher,
         onVoucherSelected: (voucher) {
           onVoucherSelected(voucher);
@@ -291,10 +295,18 @@ class _VoucherPickerSheetState extends State<VoucherPickerSheet> {
                             itemCount: _filteredVouchers.length,
                             itemBuilder: (context, index) {
                               final voucher = _filteredVouchers[index];
-                              final isDisabled = widget.selectedItemsTotal <
+                              final isMinSpendUnmet = widget.selectedItemsTotal <
                                   (voucher['minimumOrderAmount'] as num? ?? 0);
+                              final isBrandLocked =
+                                  !voucherMatchesBrands(voucher, widget.cartBrands);
+                              final isDisabled = isMinSpendUnmet || isBrandLocked;
                               final isSelected = _tempSelected?['code'] == voucher['code'];
-                              return _buildVoucherTile(voucher, isSelected, isDisabled);
+                              return _buildVoucherTile(
+                                voucher,
+                                isSelected,
+                                isDisabled,
+                                isBrandLocked,
+                              );
                             },
                           ),
               ),
@@ -331,11 +343,15 @@ class _VoucherPickerSheetState extends State<VoucherPickerSheet> {
     Map<String, dynamic> voucher,
     bool isSelected,
     bool isDisabled,
+    bool isBrandLocked,
   ) {
     final discountType = voucher['discountType'] as String? ?? '';
     final discountValue = voucher['discountValue'] as num? ?? 0;
     final minimumOrderAmount = voucher['minimumOrderAmount'] as num? ?? 0;
     final maximumSpend = voucher['maximumSpend'] as num?;
+    final brandLockLabel = isBrandLocked
+        ? _exclusiveToLabel(_voucherBrandNames(voucher))
+        : '';
 
     String titleText;
     String subtitle1Text;
@@ -417,6 +433,17 @@ class _VoucherPickerSheetState extends State<VoucherPickerSheet> {
                           ),
                         ),
                       ],
+                      if (brandLockLabel.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          brandLockLabel,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            fontFamily: 'Roboto',
+                            color: AppColors.warning,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -471,6 +498,38 @@ class _VoucherPickerSheetState extends State<VoucherPickerSheet> {
     }
     return 'Free Standard Shipping';
   }
+}
+
+/// Returns true if [voucher] applies to at least one of [cartBrands].
+///
+/// A voucher with no `brand` field (or an empty list) is universal and matches
+/// every cart. [cartBrands] must already be normalized (trimmed + lowercased).
+List<String> _voucherBrandNames(Map<String, dynamic> voucher) {
+  final raw = voucher['brand'];
+  if (raw is! List) return const [];
+  return [
+    for (final e in raw)
+      if (e is String && e.trim().isNotEmpty) e.trim(),
+  ];
+}
+
+String _exclusiveToLabel(List<String> brands) {
+  if (brands.isEmpty) return '';
+  if (brands.length <= 3) return 'Exclusive to: ${brands.join(', ')}';
+  final shown = brands.take(3).join(', ');
+  return 'Exclusive to: $shown +${brands.length - 3} more';
+}
+
+bool voucherMatchesBrands(Map<String, dynamic> voucher, Set<String> cartBrands) {
+  final raw = voucher['brand'];
+  if (raw is! List || raw.isEmpty) return true;
+  for (final entry in raw) {
+    if (entry is String) {
+      final b = entry.trim().toLowerCase();
+      if (b.isNotEmpty && cartBrands.contains(b)) return true;
+    }
+  }
+  return false;
 }
 
 /// Parse a voucher's `shippingOption` field into the set of covered modes.

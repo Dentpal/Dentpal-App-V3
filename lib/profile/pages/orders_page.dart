@@ -42,6 +42,9 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     'shipping': [
       order_model.OrderStatus.shipping,
     ],
+    // Pickup membership is determined by `Order.hasPickupShipping`, not by
+    // OrderStatus — the empty list signals filter code to use the predicate.
+    'pickup': const <order_model.OrderStatus>[],
     'delivered': [
       order_model.OrderStatus.delivered,
     ],
@@ -62,10 +65,24 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     'All',
     'Processing',
     'Shipping',
+    'Pick Up',
     'Delivered',
     'Completed',
     'Returns & Cancellations',
   ];
+
+  /// In-funnel pickup orders show only under the "Pick Up" tab. Once they
+  /// reach a terminal state they fall back into the regular tabs.
+  static const Set<order_model.OrderStatus> _inFunnelStatuses = {
+    order_model.OrderStatus.pending,
+    order_model.OrderStatus.confirmed,
+    order_model.OrderStatus.to_ship,
+    order_model.OrderStatus.shipping,
+  };
+
+  bool _isPickupOrder(order_model.Order o) => o.hasPickupShipping;
+  bool _isInFunnelPickup(order_model.Order o) =>
+      _isPickupOrder(o) && _inFunnelStatuses.contains(o.status);
 
   @override
   void initState() {
@@ -127,10 +144,17 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     if (selectedTabFilter != null) {
       final statusesInGroup = tabGroups[selectedTabFilter];
       if (statusesInGroup != null) {
-        // If Processing tab is selected and has a sub-filter, apply it
-        if (selectedTabFilter == 'processing' && selectedProcessingSubFilter != null) {
+        if (selectedTabFilter == 'pickup') {
+          result = result.where(_isInFunnelPickup).toList();
+        } else if (selectedTabFilter == 'processing' && selectedProcessingSubFilter != null) {
           result = result
-              .where((order) => order.status == selectedProcessingSubFilter)
+              .where((order) =>
+                  order.status == selectedProcessingSubFilter && !_isInFunnelPickup(order))
+              .toList();
+        } else if (selectedTabFilter == 'processing' || selectedTabFilter == 'shipping') {
+          result = result
+              .where((order) =>
+                  statusesInGroup.contains(order.status) && !_isInFunnelPickup(order))
               .toList();
         } else {
           result = result
@@ -272,6 +296,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                 child: TabBar(
                   controller: _tabController,
                   isScrollable: !isWideWeb, // wide web: fixed tabs
+                  tabAlignment: isWideWeb ? TabAlignment.fill : TabAlignment.start,
                   labelColor: AppColors.primary,
                   unselectedLabelColor: AppColors.onSurface.withValues(
                     alpha: 0.6,
@@ -296,12 +321,21 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                       // Get the tab key from tabGroups
                       final tabKey = tabGroups.keys.elementAt(index - 1);
                       final statusesInGroup = tabGroups[tabKey]!;
-                      count = orders
-                          .where((order) => statusesInGroup.contains(order.status))
-                          .length;
+                      if (tabKey == 'pickup') {
+                        count = orders.where(_isInFunnelPickup).length;
+                      } else if (tabKey == 'processing' || tabKey == 'shipping') {
+                        count = orders
+                            .where((o) =>
+                                statusesInGroup.contains(o.status) && !_isInFunnelPickup(o))
+                            .length;
+                      } else {
+                        count = orders
+                            .where((order) => statusesInGroup.contains(order.status))
+                            .length;
+                      }
                     }
                     
-                    return Tab(text: '$label ($count)');
+                    return _tabWithBadge(label, count);
                   }).toList(),
                   onTap: (index) {
                     if (index == 0) {
@@ -342,6 +376,41 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
             child: SizedBox(width: constraints.maxWidth, child: pageContent),
           );
         },
+      ),
+    );
+  }
+
+  Widget _tabWithBadge(String label, int count) {
+    final bool isEmpty = count == 0;
+    return Tab(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            constraints: const BoxConstraints(minWidth: 20),
+            decoration: BoxDecoration(
+              color: isEmpty
+                  ? AppColors.grey200
+                  : AppColors.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              '$count',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.labelSmall.copyWith(
+                color: isEmpty
+                    ? AppColors.onSurface.withValues(alpha: 0.5)
+                    : AppColors.primary,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'Roboto',
+                height: 1.0,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

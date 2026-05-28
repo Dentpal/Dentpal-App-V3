@@ -1890,12 +1890,19 @@ class _CheckoutPageState extends State<CheckoutPage> {
     required String sellerName,
     required double sellerSubtotal,
   }) async {
+    final cartBrands = <String>{};
+    for (final item in widget.cartItems) {
+      if (item.sellerId != sellerId) continue;
+      final b = item.brand?.trim().toLowerCase();
+      if (b != null && b.isNotEmpty) cartBrands.add(b);
+    }
     await VoucherPickerSheet.show(
       context: context,
       mode: mode,
       sellerId: sellerId,
       sellerName: sellerName,
       selectedItemsTotal: sellerSubtotal,
+      cartBrands: cartBrands,
       currentSelectedVoucher: mode == VoucherPickerMode.shipping
           ? _shippingVouchers[sellerId]
           : _discountVouchers[sellerId],

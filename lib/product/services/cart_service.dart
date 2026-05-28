@@ -235,6 +235,7 @@ class CartService {
           item.sellerId = product.sellerId;
           item.isProductActive = product.isActive;
           item.insuranceAndEvaluation = product.insuranceAndEvaluation;
+          item.brand = product.brand;
           
           // Get seller info from cache
           final sellerData = sellersMap[product.sellerId];
