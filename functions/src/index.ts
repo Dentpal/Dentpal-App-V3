@@ -48,3 +48,6 @@ export { migrateConfirmedOrders } from './migrateConfirmedOrders';
 
 // Export the scheduled function to deactivate products with all-zero-stock variations
 export { deactivateOutOfStockProducts } from './deactivateOutOfStockProducts';
+
+// Export the Resend email notification triggered when a new Order is created
+export { notifySellerOnNewOrderEmail } from './notifyNewOrderEmail';
