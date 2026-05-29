@@ -9,7 +9,9 @@ import '../../product/pages/cart_page.dart';
 import '../../product/services/cart_service.dart';
 import '../../utils/app_logger.dart';
 import '../services/order_service.dart';
+import '../services/review_service.dart';
 import 'order_details_page.dart';
+import 'add_review_page.dart';
 
 class OrdersPage extends StatefulWidget {
   const OrdersPage({super.key});
@@ -28,6 +30,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
   TabController? _tabController;
   final TextEditingController _searchController = TextEditingController();
   String searchQuery = '';
+  Set<String> _reviewedOrderIds = {};
 
   // Add stream subscription for real-time updates
   late Stream<List<order_model.Order>> _ordersStream;
@@ -118,6 +121,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
               _applyFilter();
               isLoading = false;
             });
+            _loadReviewedOrders();
           }
         },
         onError: (e) {
@@ -134,6 +138,13 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
         error = 'Failed to initialize orders stream: $e';
         isLoading = false;
       });
+    }
+  }
+
+  Future<void> _loadReviewedOrders() async {
+    final reviewed = await ReviewService.getReviewedOrderIds();
+    if (mounted) {
+      setState(() => _reviewedOrderIds = reviewed);
     }
   }
 
@@ -687,17 +698,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                   ]
                   // Completed status: Add Review
                   else if (order.status == order_model.OrderStatus.completed)
-                    ElevatedButton(
-                      onPressed: () => _addReview(order),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: AppColors.onPrimary,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text('Add Review'),
-                    )
+                    _buildReviewButton(order)
                   // Return/Cancelled statuses: Reorder
                   else if (order.status == order_model.OrderStatus.return_requested ||
                       order.status == order_model.OrderStatus.return_approved ||
@@ -790,19 +791,7 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                   ]
                   // Completed status: Add Review
                   else if (order.status == order_model.OrderStatus.completed)
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () => _addReview(order),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: AppColors.onPrimary,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text('Add Review'),
-                      ),
-                    )
+                    Expanded(child: _buildReviewButton(order))
                   // Return/Cancelled statuses: Reorder
                   else if (order.status == order_model.OrderStatus.return_requested ||
                       order.status == order_model.OrderStatus.return_approved ||
@@ -1514,15 +1503,47 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     );
   }
 
-  void _addReview(order_model.Order order) async {
-    // Show message that this feature is coming soon
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Add Review feature coming soon!'),
-        backgroundColor: AppColors.info,
-        duration: const Duration(seconds: 2),
+  Widget _buildReviewButton(order_model.Order order) {
+    final reviewed = _reviewedOrderIds.contains(order.orderId);
+    if (reviewed) {
+      return ElevatedButton.icon(
+        onPressed: null,
+        icon: const Icon(Icons.check_circle, size: 18),
+        label: const Text('Reviewed'),
+        style: ElevatedButton.styleFrom(
+          disabledBackgroundColor: AppColors.grey300,
+          disabledForegroundColor: AppColors.onSurface.withValues(alpha: 0.6),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+    }
+    return ElevatedButton(
+      onPressed: () => _addReview(order),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: AppColors.primary,
+        foregroundColor: AppColors.onPrimary,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
       ),
+      child: const Text('Add Review'),
     );
+  }
+
+  void _addReview(order_model.Order order) async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => AddReviewPage(order: order)),
+    );
+    if (result == true && mounted) {
+      setState(() => _reviewedOrderIds = {..._reviewedOrderIds, order.orderId});
+      _loadReviewedOrders();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Thanks for your review!')),
+      );
+    }
   }
 }
 

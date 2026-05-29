@@ -15,6 +15,8 @@ import 'package:dentpal/utils/currency_formatter.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:dentpal/core/widgets/web_footer.dart';
 import '../widgets/voucher_terms_sheet.dart';
+import '../../profile/services/review_service.dart';
+import 'rating_reviews_page.dart';
 
 class StorePage extends StatefulWidget {
   final String sellerId;
@@ -42,6 +44,8 @@ class _StorePageState extends State<StorePage> {
 
   // Store data
   Map<String, dynamic> _storeData = {};
+  int _reviewCount = 0;
+  double _reviewAverage = 0.0;
   bool _isLoading = true;
 
   // Products (current page — filtered by selected category)
@@ -148,10 +152,21 @@ class _StorePageState extends State<StorePage> {
       }
 
       await _loadSellerProducts();
+      _loadReviewSummary();
     } catch (e) {
       AppLogger.d('StorePage: Error loading store data: $e');
     } finally {
       if (mounted) setState(() { _isLoading = false; });
+    }
+  }
+
+  Future<void> _loadReviewSummary() async {
+    final summary = await ReviewService.getSellerRatingSummary(widget.sellerId);
+    if (mounted) {
+      setState(() {
+        _reviewCount = summary.count;
+        _reviewAverage = summary.average;
+      });
     }
   }
 
@@ -980,28 +995,53 @@ class _StorePageState extends State<StorePage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Left: Rating
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Row(
+            // Left: Rating (tappable → reviews page)
+            InkWell(
+              onTap: _reviewCount > 0
+                  ? () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              RatingReviewsPage(sellerId: widget.sellerId),
+                        ),
+                      );
+                    }
+                  : null,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.star, size: 15, color: Colors.amber),
-                    const SizedBox(width: 3),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.star, size: 15, color: Colors.amber),
+                        const SizedBox(width: 3),
+                        Text(
+                          _reviewAverage.toStringAsFixed(1),
+                          style: AppTextStyles.bodySmall.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
                     Text(
-                      () {
-                        final raw = (_storeData['Rating'] as String? ?? '').trim();
-                        return raw.isEmpty ? '0.0' : raw;
-                      }(),
+                      '($_reviewCount+)',
                       style: AppTextStyles.bodySmall.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.onSurface,
+                        fontWeight: FontWeight.w600,
+                        color: _reviewCount > 0
+                            ? AppColors.primary
+                            : AppColors.onSurface.withValues(alpha: 0.5),
+                        fontSize: 11,
                       ),
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
             // Vertical divider
             Container(
