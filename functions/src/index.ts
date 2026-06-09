@@ -51,3 +51,9 @@ export { deactivateOutOfStockProducts } from './deactivateOutOfStockProducts';
 
 // Export the Resend email notification triggered when a new Order is created
 export { notifySellerOnNewOrderEmail } from './notifyNewOrderEmail';
+
+// Export the Resend email notification triggered when an Order is cancelled
+export { notifyOrderCancellationEmail } from './notifyOrderCancellationEmail';
+
+// Export the Resend email notification triggered when an Order has a return/refund requested
+export { notifyOrderReturnRefundEmail } from './notifyOrderReturnRefundEmail';
