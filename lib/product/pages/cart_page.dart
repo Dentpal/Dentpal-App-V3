@@ -5,6 +5,7 @@ import 'package:dentpal/core/services/sub_account_service.dart';
 import '../models/cart_model.dart';
 import '../services/cart_service.dart';
 import '../widgets/seller_group_widget.dart';
+import '../widgets/voucher_picker_sheet.dart';
 import 'checkout_page.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
@@ -71,6 +72,8 @@ class _CartPageState extends State<CartPage>
   List<SellerGroup>? _cachedSellerGroups;
   CartSummary? _cartSummary;
   bool _isLoading = false;
+  final Map<String, Map<String, dynamic>?> _selectedDiscountVouchers = {};
+  final Map<String, Map<String, dynamic>?> _selectedShippingVouchers = {};
 
   // Track the last cache timestamp to determine if we should refresh
   DateTime? _lastCacheTime;
@@ -615,23 +618,26 @@ class _CartPageState extends State<CartPage>
 
     Widget scaffold = isWebView ? _buildWebScaffold() : _buildScaffold();
 
-    // Only wrap with PopScope if not used within home page navigation
+    // Only wrap with PopScope if used within home page navigation (onBackPressed is set)
+    // When navigated to from other pages (onBackPressed is null), allow normal back navigation
     if (widget.onBackPressed != null) {
-      return scaffold;
+      // Used within home page bottom navigation - show exit dialog
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) async {
+          if (didPop) return;
+          
+          final shouldExit = await _showExitConfirmation();
+          if (shouldExit && context.mounted) {
+            Navigator.of(context).pop();
+          }
+        },
+        child: scaffold,
+      );
     }
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) async {
-        if (didPop) return;
-        
-        final shouldExit = await _showExitConfirmation();
-        if (shouldExit && context.mounted) {
-          Navigator.of(context).pop();
-        }
-      },
-      child: scaffold,
-    );
+    // Navigated from other pages - allow normal back navigation
+    return scaffold;
   }
 
   Widget _buildScaffold() {
@@ -646,34 +652,9 @@ class _CartPageState extends State<CartPage>
             pinned: true,
             elevation: 0,
             backgroundColor: AppColors.surface,
-            // Hide leading icon when used within home page navigation
-            leading: widget.onBackPressed != null ? null : Container(
-              margin: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.1),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: IconButton(
-                onPressed: () {
-                  if (Navigator.canPop(context)) {
-                    Navigator.pop(context);
-                  } else {
-                    // Fallback: try to navigate to the first route
-                    Navigator.of(
-                      context,
-                    ).pushNamedAndRemoveUntil('/', (route) => false);
-                  }
-                },
-                icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
-              ),
-            ),
+            // Hide leading icon when used within home page navigation (onBackPressed is set)
+            // Show back button when navigated from other pages (onBackPressed is null)
+            automaticallyImplyLeading: widget.onBackPressed == null,
             title: Row(
               children: [
                 Icon(Icons.shopping_cart, color: AppColors.primary, size: 24),
@@ -994,6 +975,18 @@ class _CartPageState extends State<CartPage>
                 sellerData: {'initialTab': 'products'},
               );
             },
+            selectedDiscountVoucher: _selectedDiscountVouchers[sellerGroup.sellerId],
+            onDiscountVoucherSelected: (voucher) {
+              setState(() {
+                _selectedDiscountVouchers[sellerGroup.sellerId] = voucher;
+              });
+            },
+            selectedShippingVoucher: _selectedShippingVouchers[sellerGroup.sellerId],
+            onShippingVoucherSelected: (voucher) {
+              setState(() {
+                _selectedShippingVouchers[sellerGroup.sellerId] = voucher;
+              });
+            },
           ),
         );
       },
@@ -1001,6 +994,8 @@ class _CartPageState extends State<CartPage>
   }
 
   Widget _buildWebCartSummary() {
+    final totalDiscount = _calculateTotalCartDiscount();
+    final shippingVoucherLabels = _selectedShippingVoucherLabels();
     return Column(
       children: [
         // Summary header
@@ -1073,7 +1068,56 @@ class _CartPageState extends State<CartPage>
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+
+                  if (totalDiscount > 0) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Shop Voucher Applied',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.success,
+                          ),
+                        ),
+                        Text(
+                          '-₱${totalDiscount.toStringAsFixed(2)}',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'Roboto',
+                            color: AppColors.success,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  if (shippingVoucherLabels.isNotEmpty) ...[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Shipping Voucher',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.success,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            shippingVoucherLabels.join(', '),
+                            textAlign: TextAlign.right,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.success,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                  ],
 
                   // Divider
                   Divider(
@@ -1093,7 +1137,7 @@ class _CartPageState extends State<CartPage>
                         ),
                       ),
                       Text(
-                        '₱${_cartSummary!.selectedItemsTotal.toStringAsFixed(2)}',
+                        '₱${(_cartSummary!.selectedItemsTotal - totalDiscount).toStringAsFixed(2)}',
                         style: AppTextStyles.titleMedium.copyWith(
                           fontWeight: FontWeight.w700,
                           color: AppColors.primary,
@@ -1103,6 +1147,39 @@ class _CartPageState extends State<CartPage>
                     ],
                   ),
                   const SizedBox(height: 32),
+
+                  // Show unavailable items warning
+                  if (_cartSummary!.hasUnavailableItems) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.error.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.error.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.block,
+                            color: AppColors.error,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Some selected items are unavailable (out of stock or no longer available). Please remove them to proceed.',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.error,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
 
                   // Show insufficient stock warning
                   if (_cartSummary!.hasInsufficientStock) ...[
@@ -1175,14 +1252,14 @@ class _CartPageState extends State<CartPage>
                     width: double.infinity,
                     height: 56,
                     child: ElevatedButton(
-                      onPressed: (_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
+                      onPressed: (_cartSummary!.hasUnavailableItems || _cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
                           ? null
                           : _proceedToCheckout,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: (_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
+                        backgroundColor: (_cartSummary!.hasUnavailableItems || _cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
                             ? AppColors.grey300
                             : AppColors.primary,
-                        foregroundColor: (_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
+                        foregroundColor: (_cartSummary!.hasUnavailableItems || _cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
                             ? AppColors.onSurface.withValues(alpha: 0.38)
                             : AppColors.onPrimary,
                         elevation: 0,
@@ -1195,16 +1272,18 @@ class _CartPageState extends State<CartPage>
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon((_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
+                          Icon((_cartSummary!.hasUnavailableItems || _cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
                               ? Icons.block 
                               : Icons.shopping_bag),
                           const SizedBox(width: 8),
                           Text(
-                            _cartSummary!.hasInsufficientStock
-                                ? 'Insufficient Stock'
-                                : _isSubAccountWithoutCheckout()
-                                    ? 'Checkout Not Allowed'
-                                    : 'Checkout',
+                            _cartSummary!.hasUnavailableItems
+                                ? 'Unavailable Items'
+                                : _cartSummary!.hasInsufficientStock
+                                    ? 'Insufficient Stock'
+                                    : _isSubAccountWithoutCheckout()
+                                        ? 'Checkout Not Allowed'
+                                        : 'Checkout',
                             style: AppTextStyles.buttonLarge.copyWith(
                               fontWeight: FontWeight.w600,
                             ),
@@ -1305,6 +1384,18 @@ class _CartPageState extends State<CartPage>
                         sellerData: {'initialTab': 'products'},
                       );
                     },
+                    selectedDiscountVoucher: _selectedDiscountVouchers[sellerGroup.sellerId],
+                    onDiscountVoucherSelected: (voucher) {
+                      setState(() {
+                        _selectedDiscountVouchers[sellerGroup.sellerId] = voucher;
+                      });
+                    },
+                    selectedShippingVoucher: _selectedShippingVouchers[sellerGroup.sellerId],
+                    onShippingVoucherSelected: (voucher) {
+                      setState(() {
+                        _selectedShippingVouchers[sellerGroup.sellerId] = voucher;
+                      });
+                    },
                   );
                 }, childCount: sellerGroups.length),
               ),
@@ -1335,6 +1426,18 @@ class _CartPageState extends State<CartPage>
                 sellerGroup.sellerId,
                 sellerData: {'initialTab': 'products'},
               );
+            },
+            selectedDiscountVoucher: _selectedDiscountVouchers[sellerGroup.sellerId],
+            onDiscountVoucherSelected: (voucher) {
+              setState(() {
+                _selectedDiscountVouchers[sellerGroup.sellerId] = voucher;
+              });
+            },
+            selectedShippingVoucher: _selectedShippingVouchers[sellerGroup.sellerId],
+            onShippingVoucherSelected: (voucher) {
+              setState(() {
+                _selectedShippingVouchers[sellerGroup.sellerId] = voucher;
+              });
             },
           );
         },
@@ -1520,8 +1623,60 @@ class _CartPageState extends State<CartPage>
     );
   }
 
+  /// Compute the total voucher discount across all selected sellers.
+  double _calculateTotalCartDiscount() {
+    if (_cachedSellerGroups == null) return 0.0;
+    double total = 0.0;
+    for (final group in _cachedSellerGroups!) {
+      final voucher = _selectedDiscountVouchers[group.sellerId];
+      if (voucher == null) continue;
+
+      final sellerSubtotal = group.selectedItemsTotal;
+      final discountType = voucher['discountType'] as String? ?? '';
+      final discountValue = (voucher['discountValue'] as num? ?? 0).toDouble();
+      final minimumOrderAmount = (voucher['minimumOrderAmount'] as num? ?? 0).toDouble();
+      final maximumSpend = (voucher['maximumSpend'] as num?)?.toDouble();
+
+      if (sellerSubtotal < minimumOrderAmount) continue;
+
+      if (discountType == 'percentage') {
+        double discount = sellerSubtotal * (discountValue / 100.0);
+        if (maximumSpend != null && discount > maximumSpend) discount = maximumSpend;
+        total += discount.clamp(0.0, sellerSubtotal);
+      } else if (discountType == 'fixed') {
+        total += discountValue.clamp(0.0, sellerSubtotal);
+      }
+    }
+    return total;
+  }
+
+  String _shippingVoucherSummaryLabel(Map<String, dynamic> voucher) {
+    final modes = parseShippingCoverage(voucher['shippingOption']);
+    if (modes.contains('standard') && modes.contains('express')) {
+      return 'Free Standard/Express Shipping';
+    }
+    if (modes.contains('express')) {
+      return 'Free Express Shipping';
+    }
+    return 'Free Standard Shipping';
+  }
+
+  List<String> _selectedShippingVoucherLabels() {
+    if (_cachedSellerGroups == null) return const [];
+    final labels = <String>[];
+    for (final group in _cachedSellerGroups!) {
+      if (!group.hasSelectedItems) continue;
+      final voucher = _selectedShippingVouchers[group.sellerId];
+      if (voucher == null) continue;
+      labels.add(_shippingVoucherSummaryLabel(voucher));
+    }
+    return labels;
+  }
+
   Widget _buildCheckoutSection() {
     final summary = _cartSummary!;
+    final totalDiscount = _calculateTotalCartDiscount();
+    final shippingVoucherLabels = _selectedShippingVoucherLabels();
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -1584,12 +1739,36 @@ class _CartPageState extends State<CartPage>
                         '₱${summary.selectedItemsTotal.toStringAsFixed(2)}',
                         style: AppTextStyles.bodyMedium.copyWith(
                           fontWeight: FontWeight.w600,
-                          fontFamily: 'Roboto', // Use Roboto for peso sign
+                          fontFamily: 'Roboto',
                         ),
                       ),
                     ],
                   ),
-                  
+
+                  // Voucher discount row
+                  if (totalDiscount > 0) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Shop Voucher Applied',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.success,
+                          ),
+                        ),
+                        Text(
+                          '-₱${totalDiscount.toStringAsFixed(2)}',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'Roboto',
+                            color: AppColors.success,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+
                   if (summary.sellersWithSelectedItems.length > 1) ...[
                     const SizedBox(height: 8),
                     Container(
@@ -1619,6 +1798,32 @@ class _CartPageState extends State<CartPage>
                     ),
                   ],
 
+                  if (shippingVoucherLabels.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Shipping Voucher',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.success,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            shippingVoucherLabels.join(', '),
+                            textAlign: TextAlign.right,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.success,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+
                   const SizedBox(height: 12),
                   const Divider(height: 1, color: AppColors.grey300),
                   const SizedBox(height: 12),
@@ -1632,11 +1837,11 @@ class _CartPageState extends State<CartPage>
                         ),
                       ),
                       Text(
-                        '₱${summary.selectedItemsTotal.toStringAsFixed(2)}',
+                        '₱${(summary.selectedItemsTotal - totalDiscount).toStringAsFixed(2)}',
                         style: AppTextStyles.titleLarge.copyWith(
                           color: AppColors.primary,
                           fontWeight: FontWeight.w700,
-                          fontFamily: 'Roboto', // Use Roboto for peso sign
+                          fontFamily: 'Roboto',
                         ),
                       ),
                     ],
@@ -1669,6 +1874,39 @@ class _CartPageState extends State<CartPage>
                     Expanded(
                       child: Text(
                         'Some selected items exceed available stock. Please adjust quantities.',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.error,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            // Show unavailable items warning
+            if (_cartSummary!.hasUnavailableItems) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.error.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppColors.error.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.warning_outlined,
+                      color: AppColors.error,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Some selected items are no longer available. Please remove them to continue.',
                         style: AppTextStyles.bodySmall.copyWith(
                           color: AppColors.error,
                         ),
@@ -1715,14 +1953,14 @@ class _CartPageState extends State<CartPage>
 
             // Checkout button
             ElevatedButton(
-              onPressed: (_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
+              onPressed: (_cartSummary!.hasUnavailableItems || _cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
                   ? null
                   : _proceedToCheckout,
               style: ElevatedButton.styleFrom(
-                backgroundColor: (_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
+                backgroundColor: (_cartSummary!.hasUnavailableItems || _cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
                     ? AppColors.grey300 
                     : AppColors.primary,
-                foregroundColor: (_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
+                foregroundColor: (_cartSummary!.hasUnavailableItems || _cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
                     ? AppColors.onSurface.withValues(alpha: 0.38)
                     : AppColors.onPrimary,
                 padding: const EdgeInsets.symmetric(vertical: 16),
@@ -1736,16 +1974,18 @@ class _CartPageState extends State<CartPage>
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon((_cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
+                  Icon((_cartSummary!.hasUnavailableItems || _cartSummary!.hasInsufficientStock || _isSubAccountWithoutCheckout())
                       ? Icons.block 
                       : Icons.payment),
                   const SizedBox(width: 8),
                   Text(
-                    _cartSummary!.hasInsufficientStock 
-                        ? 'Insufficient Stock'
-                        : _isSubAccountWithoutCheckout()
-                            ? 'Checkout Not Allowed'
-                            : 'Proceed to Checkout',
+                    _cartSummary!.hasUnavailableItems
+                        ? 'Unavailable Items'
+                        : _cartSummary!.hasInsufficientStock 
+                            ? 'Insufficient Stock'
+                            : _isSubAccountWithoutCheckout()
+                                ? 'Checkout Not Allowed'
+                                : 'Proceed to Checkout',
                     style: AppTextStyles.buttonLarge,
                   ),
                 ],
@@ -1793,6 +2033,26 @@ class _CartPageState extends State<CartPage>
       return;
     }
 
+    // Check for unavailable items (inactive or out of stock)
+    if (_cartSummary!.hasUnavailableItems) {
+      final unavailableItems = _cartSummary!.unavailableSelectedItems;
+      final itemNames = unavailableItems
+          .take(3)
+          .map((item) => item.productName ?? 'Unknown')
+          .join(', ');
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Cannot checkout: ${unavailableItems.length} item(s) are no longer available${unavailableItems.length <= 3 ? ' ($itemNames)' : ''}. Please remove them from your cart.',
+          ),
+          backgroundColor: AppColors.error,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
     // Check for insufficient stock
     if (_cartSummary!.hasInsufficientStock) {
       final insufficientItems = _cartSummary!.itemsWithInsufficientStock;
@@ -1819,6 +2079,9 @@ class _CartPageState extends State<CartPage>
       for (final group in _cachedSellerGroups!) {
         for (final item in group.items) {
           if (item.isSelected) {
+            if (item.sellerId == null || item.sellerId!.isEmpty) {
+              item.sellerId = group.sellerId;
+            }
             selectedItems.add(item);
           }
         }
@@ -1835,6 +2098,22 @@ class _CartPageState extends State<CartPage>
       return;
     }
 
+    // Filter vouchers to only include sellers with selected items
+    final selectedSellerIds = (_cachedSellerGroups ?? const <SellerGroup>[])
+        .where((group) => group.hasSelectedItems)
+        .map((group) => group.sellerId)
+        .toSet();
+    final relevantDiscountVouchers = Map<String, Map<String, dynamic>?>.fromEntries(
+      _selectedDiscountVouchers.entries.where(
+        (e) => selectedSellerIds.contains(e.key),
+      ),
+    );
+    final relevantShippingVouchers = Map<String, Map<String, dynamic>?>.fromEntries(
+      _selectedShippingVouchers.entries.where(
+        (e) => selectedSellerIds.contains(e.key),
+      ),
+    );
+
     // Navigate to checkout page
     Navigator.push(
       context,
@@ -1842,6 +2121,18 @@ class _CartPageState extends State<CartPage>
         builder: (context) => CheckoutPage(
           cartItems: selectedItems,
           cartSummary: _cartSummary!,
+          selectedDiscountVouchers: relevantDiscountVouchers,
+          selectedShippingVouchers: relevantShippingVouchers,
+          onVouchersChanged: (discountVouchers, shippingVouchers) {
+            setState(() {
+              _selectedDiscountVouchers
+                ..clear()
+                ..addAll(discountVouchers);
+              _selectedShippingVouchers
+                ..clear()
+                ..addAll(shippingVouchers);
+            });
+          },
           onOrderComplete: () {
             // Refresh cart after successful order
             _refreshCart();

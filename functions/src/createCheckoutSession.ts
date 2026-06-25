@@ -1,19 +1,18 @@
 import { onRequest, Request, HttpsError } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 import axios from 'axios';
-import { 
-  calculateJRSShippingCost,
+import {
   calculateJRSShippingCostWithFallback,
   DEFAULT_FALLBACK_SHIPPING_COST,
-  extractShippingCostFromJRS,
-  calculateCompleteBreakdown,
   calculateMultiSellerBreakdown,
-  calculatePaymentProcessingFee,
-  calculatePlatformFee,
+  applyNewFeeModel,
   determineProductName,
-  SellerFeeBreakdown,
-  MultiSellerBreakdown
 } from './utils/jrsShippingHelper';
+import {
+  validateAndApplyVoucher,
+  validateAndApplyShippingVoucher,
+  incrementVoucherUsage,
+} from './utils/voucherHelper';
 import cors = require('cors');
 
 
@@ -124,12 +123,17 @@ function validateAddressId(id: any): string {
   return id;
 }
 
+function isGenericPackagingName(name?: string | null): boolean {
+  if (!name) return true;
+  return name.trim().toLowerCase() === 'general cargo';
+}
+
 function validatePaymentMethods(methods: any): string[] {
   if (!Array.isArray(methods)) {
     throw new Error('Payment methods must be an array');
   }
   
-  const validMethods = ['card', 'gcash', 'grab_pay', 'paymaya', 'billease', 'dob', 'dob_ubp'];
+  const validMethods = ['card', 'gcash'];
   const sanitizedMethods = methods.filter(method => 
     typeof method === 'string' && validMethods.includes(method)
   );
@@ -194,7 +198,7 @@ function validateRequestBody(body: any): {
 
   // Validate payment methods
   const paymentMethodTypes = validatePaymentMethods(
-    body.payment_method_types || ['card', 'gcash', 'grab_pay', 'paymaya']
+    body.payment_method_types || ['card', 'gcash']
   );
 
   // Validate URLs (optional)
@@ -214,6 +218,7 @@ function validateRequestBody(body: any): {
 // Configure CORS
 const corsHandler = cors({ 
   origin: [
+    'https://dentpal.shop',
     'https://dentpal-store.web.app',
     'https://dentpal-store-sandbox-testing.web.app',
     'https://dentpal-161e5.web.app',
@@ -379,6 +384,76 @@ export const createCheckoutSession = onRequest(
           cancelUrl
         } = validatedInput;
 
+        // Extract pre-calculated per-seller shipping costs from frontend (optional).
+        // When provided, the per-seller JRS API call is skipped to avoid a duplicate
+        // calculation and ensure the order total matches what the user saw on-screen.
+        const sellerShippingCosts: Record<string, number> =
+          (request.body.seller_shipping_costs && typeof request.body.seller_shipping_costs === 'object')
+            ? request.body.seller_shipping_costs
+            : {};
+
+        // Packaging names as determined by the JRS API on the frontend (optional).
+        // Used when the backend skips its own JRS call (seller_shipping_costs provided).
+        const sellerPackagingSizes: Record<string, string> =
+          (request.body.seller_packaging_sizes && typeof request.body.seller_packaging_sizes === 'object')
+            ? request.body.seller_packaging_sizes
+            : {};
+
+        // Per-seller insurance & evaluation costs from the frontend JRS call.
+        const sellerInsuranceCostsFromFrontend: Record<string, number> =
+          (request.body.seller_insurance_costs && typeof request.body.seller_insurance_costs === 'object')
+            ? request.body.seller_insurance_costs
+            : {};
+        const sellerEvaluationCostsFromFrontend: Record<string, number> =
+          (request.body.seller_evaluation_costs && typeof request.body.seller_evaluation_costs === 'object')
+            ? request.body.seller_evaluation_costs
+            : {};
+
+        // Per-seller shipping mode chosen on the checkout page (true = express).
+        // Replaces the old global `is_express` so each seller's mode can be locked
+        // independently by its shipping voucher.
+        const sellerExpressShipping: Record<string, boolean> =
+          (request.body.seller_express_shipping && typeof request.body.seller_express_shipping === 'object')
+            ? request.body.seller_express_shipping
+            : {};
+
+        // Per-seller pickup selection. When true the buyer picks up in store and
+        // no shipping is calculated / charged for that seller.
+        const sellerPickupSelected: Record<string, boolean> =
+          (request.body.seller_pickup_selected && typeof request.body.seller_pickup_selected === 'object')
+            ? request.body.seller_pickup_selected
+            : {};
+
+        // Both modes' costs from the frontend, needed for partial-coverage math
+        // (voucher covers standard but user picks express).
+        const expressSellerShippingCosts: Record<string, number> =
+          (request.body.express_seller_shipping_costs && typeof request.body.express_seller_shipping_costs === 'object')
+            ? request.body.express_seller_shipping_costs
+            : {};
+        const standardSellerShippingCosts: Record<string, number> =
+          (request.body.standard_seller_shipping_costs && typeof request.body.standard_seller_shipping_costs === 'object')
+            ? request.body.standard_seller_shipping_costs
+            : {};
+        const expressSellerTotalShippingCosts: Record<string, number> =
+          (request.body.express_seller_total_shipping_costs && typeof request.body.express_seller_total_shipping_costs === 'object')
+            ? request.body.express_seller_total_shipping_costs
+            : {};
+        const standardSellerTotalShippingCosts: Record<string, number> =
+          (request.body.standard_seller_total_shipping_costs && typeof request.body.standard_seller_total_shipping_costs === 'object')
+            ? request.body.standard_seller_total_shipping_costs
+            : {};
+
+        // Selected discount and shipping vouchers per seller (sent from frontend for
+        // server-side validation).
+        const selectedDiscountVouchers: Record<string, { code: string; seller_id: string; discount_type: string } | null> =
+          (request.body.selected_discount_vouchers && typeof request.body.selected_discount_vouchers === 'object')
+            ? request.body.selected_discount_vouchers
+            : {};
+        const selectedShippingVouchers: Record<string, { code: string; seller_id: string; discount_type: string; shipping_option?: unknown } | null> =
+          (request.body.selected_shipping_vouchers && typeof request.body.selected_shipping_vouchers === 'object')
+            ? request.body.selected_shipping_vouchers
+            : {};
+
         console.log(`Creating checkout session for user ${userId} with ${cartItemIds.length} cart items`);
         
         // Get user's cart items with validation
@@ -505,6 +580,7 @@ export const createCheckoutSession = onRequest(
             height: dimensions.height,
             weight: dimensions.weight,
             isFragile: isFragile,
+            insuranceAndEvaluation: product?.insuranceAndEvaluation === true,
           };
         });
 
@@ -541,9 +617,28 @@ export const createCheckoutSession = onRequest(
           sellerName: string;
           shippingCost: number;
           cartValue: number;
-          isFallbackShipping: boolean; // Track if fallback shipping was used
-          shippingError?: string; // Store error message if JRS API failed
-          platformFeePercentage?: number; // Custom platform fee percentage for this seller
+          isFallbackShipping: boolean;
+          shippingError?: string;
+          platformFeePercentage?: number;
+          packagingName?: string;
+          // Voucher fields (discount)
+          discountAmount: number;
+          postDiscountCartValue: number;
+          voucherCode?: string;
+          voucherDocId?: string;
+          // Voucher fields (shipping)
+          shippingVoucherCode?: string;
+          shippingVoucherDocId?: string;
+          coversStandard: boolean;
+          coversExpress: boolean;
+          // Per-seller shipping mode and both modes' costs (for partial-coverage math)
+          chosenMode: 'express' | 'standard' | 'pickup';
+          expressTotalCost: number;
+          standardTotalCost: number;
+          // Insurance & evaluation
+          insuranceAndEvaluation: boolean;
+          insuranceCost: number | null;
+          evaluationCost: number | null;
         }
         
         const sellerShippingPromises: Promise<SellerShippingData>[] = Object.entries(itemsBySeller).map(async ([sellerId, sellerItems]) => {
@@ -564,7 +659,67 @@ export const createCheckoutSession = onRequest(
           
           // Calculate cart value for this seller's items
           const sellerCartValue = sellerItems.reduce((sum, item) => sum + item.total, 0);
-          
+
+          // Determine if any item from this seller requires insurance & evaluation
+          const sellerInsuranceAndEvaluation = (sellerItems as any[]).some(item => item.insuranceAndEvaluation === true);
+
+          // Validate discount + shipping vouchers in parallel (separate slots).
+          const [voucherResult, shippingVoucherResult] = await Promise.all([
+            validateAndApplyVoucher(
+              sellerId,
+              selectedDiscountVouchers[sellerId] || null,
+              sellerCartValue,
+              db,
+            ),
+            validateAndApplyShippingVoucher(
+              sellerId,
+              selectedShippingVouchers[sellerId] || null,
+              sellerCartValue,
+              db,
+            ),
+          ]);
+          const discountAmount = voucherResult.discountAmount;
+          const postDiscountCartValue = sellerCartValue - discountAmount;
+
+          // Pickup short-circuit: skip JRS entirely; no shipping cost / vouchers apply.
+          if (sellerPickupSelected[sellerId] === true) {
+            console.log(`Seller ${sellerId} is pickup — skipping JRS shipping calculation`);
+            return {
+              sellerId,
+              sellerName,
+              shippingCost: 0,
+              cartValue: sellerCartValue,
+              isFallbackShipping: false,
+              platformFeePercentage,
+              packagingName: undefined,
+              discountAmount,
+              postDiscountCartValue,
+              voucherCode: voucherResult.voucherCode || undefined,
+              voucherDocId: voucherResult.voucherDocId || undefined,
+              shippingVoucherCode: undefined,
+              shippingVoucherDocId: undefined,
+              coversStandard: false,
+              coversExpress: false,
+              chosenMode: 'pickup' as const,
+              expressTotalCost: 0,
+              standardTotalCost: 0,
+              insuranceAndEvaluation: false,
+              insuranceCost: null,
+              evaluationCost: null,
+            };
+          }
+
+          const chosenMode: 'express' | 'standard' =
+            (sellerExpressShipping[sellerId] ?? true) ? 'express' : 'standard';
+          const expressTotalCost = expressSellerTotalShippingCosts[sellerId]
+            ?? expressSellerShippingCosts[sellerId]
+            ?? 0;
+          const standardTotalCost = standardSellerTotalShippingCosts[sellerId]
+            ?? standardSellerShippingCosts[sellerId]
+            ?? 0;
+
+          console.log(`Seller ${sellerId} voucher: discount=₱${discountAmount}, postDiscount=₱${postDiscountCartValue}, shippingVoucher=${shippingVoucherResult.voucherCode || 'none'} (covers std=${shippingVoucherResult.coversStandard}, exp=${shippingVoucherResult.coversExpress}), chosenMode=${chosenMode}`);
+
           // Validate item dimensions and filter out items with missing dimensions
           const validItems = [];
           for (const item of sellerItems) {
@@ -594,7 +749,21 @@ export const createCheckoutSession = onRequest(
               cartValue: sellerCartValue,
               isFallbackShipping: true,
               shippingError: 'No items have required dimensions for shipping calculation',
-              platformFeePercentage
+              platformFeePercentage,
+              discountAmount,
+              postDiscountCartValue,
+              voucherCode: voucherResult.voucherCode || undefined,
+              voucherDocId: voucherResult.voucherDocId || undefined,
+              shippingVoucherCode: shippingVoucherResult.voucherCode || undefined,
+              shippingVoucherDocId: shippingVoucherResult.voucherDocId || undefined,
+              coversStandard: shippingVoucherResult.coversStandard,
+              coversExpress: shippingVoucherResult.coversExpress,
+              chosenMode,
+              expressTotalCost: expressTotalCost || DEFAULT_FALLBACK_SHIPPING_COST,
+              standardTotalCost: standardTotalCost || DEFAULT_FALLBACK_SHIPPING_COST,
+              insuranceAndEvaluation: sellerInsuranceAndEvaluation,
+              insuranceCost: null,
+              evaluationCost: null,
             };
           }
           
@@ -634,6 +803,42 @@ export const createCheckoutSession = onRequest(
             itemCount: shipmentItemsForLog.length
           });
           
+          // If the frontend already calculated this seller's shipping cost, use it
+          // directly and skip the redundant JRS API call.
+          if (sellerShippingCosts[sellerId] !== undefined) {
+            const providedCost = sellerShippingCosts[sellerId];
+            const providedPackaging = sellerPackagingSizes[sellerId] || undefined;
+            const providedInsurance = sellerInsuranceCostsFromFrontend[sellerId] ?? null;
+            const providedEvaluation = sellerEvaluationCostsFromFrontend[sellerId] ?? null;
+            const packagingName = isGenericPackagingName(providedPackaging)
+              ? resolvedProductName
+              : providedPackaging;
+            console.log(`Seller ${sellerId} shipping cost: ₱${providedCost} (from frontend, JRS call skipped), packaging: ${providedPackaging ?? 'unknown'}, cart value: ₱${sellerCartValue}`);
+            return {
+              sellerId,
+              sellerName,
+              shippingCost: providedCost,
+              cartValue: sellerCartValue,
+              isFallbackShipping: false,
+              platformFeePercentage,
+              packagingName,
+              discountAmount,
+              postDiscountCartValue,
+              voucherCode: voucherResult.voucherCode || undefined,
+              voucherDocId: voucherResult.voucherDocId || undefined,
+              shippingVoucherCode: shippingVoucherResult.voucherCode || undefined,
+              shippingVoucherDocId: shippingVoucherResult.voucherDocId || undefined,
+              coversStandard: shippingVoucherResult.coversStandard,
+              coversExpress: shippingVoucherResult.coversExpress,
+              chosenMode,
+              expressTotalCost: expressTotalCost || providedCost,
+              standardTotalCost: standardTotalCost || providedCost,
+              insuranceAndEvaluation: sellerInsuranceAndEvaluation,
+              insuranceCost: providedInsurance,
+              evaluationCost: providedEvaluation,
+            };
+          }
+
           // Calculate shipping cost for this seller's items with fallback support
           // If JRS API fails (500 error, timeout, etc.), use fallback shipping cost
           const shippingResult = await calculateJRSShippingCostWithFallback(
@@ -642,15 +847,23 @@ export const createCheckoutSession = onRequest(
             validItems,
             JRS_API_KEY_SECRET,
             JRS_GETRATE_API_URL,
-            DEFAULT_FALLBACK_SHIPPING_COST
+            DEFAULT_FALLBACK_SHIPPING_COST,
+            false,
+            chosenMode === 'express',
+            sellerInsuranceAndEvaluation,
+            sellerInsuranceAndEvaluation
           );
-          
+
           if (shippingResult.isFallback) {
             console.warn(`JRS API failed for seller ${sellerId}, using fallback shipping cost of ₱${shippingResult.shippingCost}. Error: ${shippingResult.error}`);
           } else {
-            console.log(`Seller ${sellerId} shipping cost: ₱${shippingResult.shippingCost}, cart value: ₱${sellerCartValue}`);
+            console.log(`Seller ${sellerId} shipping cost: ₱${shippingResult.shippingCost}, packaging: ${shippingResult.packagingName ?? 'unknown'}, cart value: ₱${sellerCartValue}`);
           }
-          
+
+          const packagingName = isGenericPackagingName(shippingResult.packagingName)
+            ? resolvedProductName
+            : shippingResult.packagingName;
+
           return {
             sellerId,
             sellerName,
@@ -658,7 +871,23 @@ export const createCheckoutSession = onRequest(
             cartValue: sellerCartValue,
             isFallbackShipping: shippingResult.isFallback,
             shippingError: shippingResult.error,
-            platformFeePercentage
+            platformFeePercentage,
+            packagingName,
+            discountAmount,
+            postDiscountCartValue,
+            voucherCode: voucherResult.voucherCode || undefined,
+            voucherDocId: voucherResult.voucherDocId || undefined,
+            shippingVoucherCode: shippingVoucherResult.voucherCode || undefined,
+            shippingVoucherDocId: shippingVoucherResult.voucherDocId || undefined,
+            coversStandard: shippingVoucherResult.coversStandard,
+            coversExpress: shippingVoucherResult.coversExpress,
+            chosenMode,
+            // Fallback path computed only the chosen mode; treat the other as same.
+            expressTotalCost: expressTotalCost || shippingResult.shippingCost,
+            standardTotalCost: standardTotalCost || shippingResult.shippingCost,
+            insuranceAndEvaluation: sellerInsuranceAndEvaluation,
+            insuranceCost: shippingResult.insuranceCost ?? null,
+            evaluationCost: shippingResult.evaluationCost ?? null,
           };
         });
         
@@ -685,33 +914,128 @@ export const createCheckoutSession = onRequest(
         
         // Calculate PER-SELLER fee breakdowns using the multi-seller function
         // This ensures each seller is charged based on THEIR cart value, not the total order
-        // 
+        //
         // Fee Calculation Rules:
         // - Shipping Split: If seller's shipping > 10% of seller's cart value → Buyer pays 100%
         //                   If seller's shipping ≤ 10% of seller's cart value → Seller pays 100%
         // - Payment Fee: Based on buyer's total for this seller (cart + buyer's shipping portion)
         // - Platform Fee: 8.88% of this seller's cart value
         // - Net Payout: Cart Value - Payment Fee - Platform Fee - Seller's Shipping
+        // Fees (platformFee, paymentProcessingFee) are intentionally computed on the original
+        // pre-discount cartValue so vouchers do not zero out DentPal's fees.
+        // totalChargedToBuyer and seller payout are corrected to postDiscountCartValue below.
         const defaultPaymentMethod = paymentMethodTypes[0] || 'card';
         const multiSellerBreakdown = calculateMultiSellerBreakdown(sellerShippingData, defaultPaymentMethod);
-        
-        // Log minimal breakdown info (avoid exposing sensitive financial details in production)
-        console.log(`Multi-Seller Breakdown: ${multiSellerBreakdown.sellerBreakdowns.length} seller(s), total charged: ₱${multiSellerBreakdown.grandTotalChargedToBuyer.toFixed(2)}`);
-        
-        // Extract totals from multi-seller breakdown
-        const buyerShippingCharge = multiSellerBreakdown.totalBuyerShippingCharge;
-        const sellerShippingCharge = multiSellerBreakdown.totalSellerShippingCharge;
-        const totalChargedToBuyer = multiSellerBreakdown.grandTotalChargedToBuyer;
-        const paymentProcessingFee = multiSellerBreakdown.totalPaymentProcessingFee;
-        const platformFee = multiSellerBreakdown.totalPlatformFee;
-        const totalSellerFees = multiSellerBreakdown.totalSellerFees;
-        const netPayoutToSeller = multiSellerBreakdown.totalNetPayoutToSellers;
-        
+
+        // Post-process: apply shipping voucher coverage rules per seller.
+        // Coverage outcomes:
+        //   - 'full'             : buyer pays 0; seller pays the chosen-mode total
+        //   - 'partial_express'  : voucher covers 'standard' but user picked 'express';
+        //                          seller pays standardTotal, buyer pays (expressTotal - standardTotal)
+        //   - 'none'             : leave whatever calculateMultiSellerBreakdown decided
+        const shippingCoverageTypes: Array<'none' | 'full' | 'partial_express'> = [];
+        for (let i = 0; i < sellerShippingData.length; i++) {
+          const sd = sellerShippingData[i];
+          const breakdown = multiSellerBreakdown.sellerBreakdowns[i];
+
+          // Pickup: no shipping → no voucher coverage to apply. Zero out shipping
+          // fields and mark the split rule so downstream consumers know.
+          if (sd.chosenMode === 'pickup') {
+            breakdown.shippingCost = 0;
+            breakdown.buyerShippingCharge = 0;
+            breakdown.sellerShippingCharge = 0;
+            breakdown.shippingSplitRule = 'pickup' as any;
+            breakdown.totalChargedToBuyer = sd.postDiscountCartValue;
+            shippingCoverageTypes.push('none');
+            continue;
+          }
+
+          const stdCost = sd.standardTotalCost ?? sd.shippingCost;
+          const expCost = sd.expressTotalCost ?? sd.shippingCost;
+
+          let coverage: 'none' | 'full' | 'partial_express' = 'none';
+          let buyerCharge: number | null = null;
+          let sellerCharge: number | null = null;
+          let splitRule: 'buyer_pays_full' | 'seller_pays_full' | 'shipping_voucher_partial' | null = null;
+
+          if (sd.chosenMode === 'express' && sd.coversExpress) {
+            buyerCharge = 0;
+            sellerCharge = expCost;
+            splitRule = 'seller_pays_full';
+            coverage = 'full';
+          } else if (sd.chosenMode === 'express' && sd.coversStandard) {
+            const diff = Math.max(0, expCost - stdCost);
+            buyerCharge = diff;
+            sellerCharge = stdCost;
+            splitRule = 'shipping_voucher_partial';
+            coverage = 'partial_express';
+          } else if (sd.chosenMode === 'standard' && sd.coversStandard) {
+            buyerCharge = 0;
+            sellerCharge = stdCost;
+            splitRule = 'seller_pays_full';
+            coverage = 'full';
+          }
+
+          if (coverage !== 'none' && buyerCharge !== null && sellerCharge !== null && splitRule !== null) {
+            breakdown.buyerShippingCharge = buyerCharge;
+            breakdown.sellerShippingCharge = sellerCharge;
+            breakdown.shippingSplitRule = splitRule;
+            breakdown.totalChargedToBuyer = sd.postDiscountCartValue + buyerCharge;
+          }
+          shippingCoverageTypes.push(coverage);
+        }
+
+        // Apply the new gross-up fee model. Each seller-borne base (shipping,
+        // paymongo fee, platform fee) is grossed up via base × 1.12 / (1 − rate)
+        // so both 12% VAT and the seller's share of the PayMongo cut are absorbed.
+        // sellerShippingCharge is redefined: shipping+VAT when seller_pays_full,
+        // VAT-only when buyer_pays_full, sellerShipCharge_preVat + full shippingVat
+        // when shipping_voucher_partial. Raw unrounded values.
+        for (let i = 0; i < multiSellerBreakdown.sellerBreakdowns.length; i++) {
+          const breakdown = multiSellerBreakdown.sellerBreakdowns[i];
+          const sd = sellerShippingData[i];
+          let actualShippingCost: number;
+          if (sd.chosenMode === 'pickup') {
+            actualShippingCost = 0;
+          } else if (sd.chosenMode === 'express') {
+            actualShippingCost = sd.expressTotalCost ?? breakdown.shippingCost;
+          } else {
+            actualShippingCost = sd.standardTotalCost ?? breakdown.shippingCost;
+          }
+          applyNewFeeModel(breakdown, {
+            actualShippingCost,
+            postDiscountCartValue: sd.postDiscountCartValue,
+            paymentMethod: defaultPaymentMethod,
+          });
+        }
+
+        // Recalculate totals from updated per-breakdown values
+        const buyerShippingCharge = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.buyerShippingCharge, 0);
+        const sellerShippingCharge = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.sellerShippingCharge, 0);
+        const totalChargedToBuyer = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.totalChargedToBuyer, 0);
+        const paymentProcessingFee = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.paymentProcessingFee, 0);
+        const paymentProcessingFeeVat = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.paymentProcessingFeeVat, 0);
+        const platformFee = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.platformFee, 0);
+        const platformFeeVat = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.platformFeeVat, 0);
+        const totalSellerFees = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.totalSellerFees, 0);
+        const netPayoutToSeller = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.netPayoutToSeller, 0);
+        const totalShippingVat = multiSellerBreakdown.sellerBreakdowns.reduce((s, b) => s + b.shippingVat, 0);
+        const totalDentpalIncome = totalShippingVat + paymentProcessingFeeVat + platformFee + platformFeeVat;
+
+        // Total discount across all sellers
+        const totalDiscountAmount = sellerShippingData.reduce((s, d) => s + d.discountAmount, 0);
+
+        // Total insurance & evaluation fees across all sellers (null-safe)
+        const totalInsuranceFee = sellerShippingData.reduce((s, d) => s + (d.insuranceCost ?? 0), 0);
+        const totalEvaluationFee = sellerShippingData.reduce((s, d) => s + (d.evaluationCost ?? 0), 0);
+
+        // Log minimal breakdown info
+        console.log(`Multi-Seller Breakdown: ${multiSellerBreakdown.sellerBreakdowns.length} seller(s), total charged: ₱${totalChargedToBuyer.toFixed(2)}, total discount: ₱${totalDiscountAmount.toFixed(2)}`);
+
         // Determine overall shipping split rule
-        // If all sellers have the same rule, use that; otherwise 'per_seller'
         const uniqueRules = [...new Set(multiSellerBreakdown.sellerBreakdowns.map(s => s.shippingSplitRule))];
         const shippingSplitRule = uniqueRules.length === 1 ? uniqueRules[0] : 'per_seller';
-        
+
         // Total amount to charge buyer
         const totalAmount = totalChargedToBuyer;
 
@@ -720,6 +1044,12 @@ export const createCheckoutSession = onRequest(
 
         // Check if any items are fragile
         const hasFragileItems = orderItems.some(item => item.isFragile);
+
+        // Derive overall packaging label for the order (join unique packaging names across sellers)
+        const uniquePackagingNames = [...new Set(
+          sellerShippingData.map(s => s.packagingName).filter(Boolean) as string[]
+        )];
+        const overallPackagingSize = uniquePackagingNames.length > 0 ? uniquePackagingNames.join(', ') : undefined;
 
         // Create order document with per-seller fee breakdowns
         const orderRef = await db.collection('Order').add({
@@ -731,46 +1061,74 @@ export const createCheckoutSession = onRequest(
             productImage: item.productImage,
             price: item.price,
             quantity: item.quantity,
+            total: item.total,
             variationId: item.variationId,
             sellerId: item.sellerId,
             sellerName: item.sellerName,
+            length: item.length,
+            width: item.width,
+            height: item.height,
+            weight: item.weight,
             isFragile: item.isFragile,
+            insuranceAndEvaluation: item.insuranceAndEvaluation,
           })),
           summary: {
             subtotal: subtotal,
             shippingCost: shippingCost,
             taxAmount: 0,
-            discountAmount: 0,
+            discountAmount: totalDiscountAmount,
             total: totalAmount,
             totalItems: orderItems.reduce((sum, item) => sum + item.quantity, 0),
             sellerShippingCharge: sellerShippingCharge,
             buyerShippingCharge: buyerShippingCharge,
             shippingSplitRule: shippingSplitRule,
-            // Track if fallback shipping was used (JRS API was unavailable)
+            // Deprecated top-level mode flag — true if any seller is express. Per-seller
+            // mode lives under sellerFeeBreakdowns[].shippingMode.
+            isExpressDelivery: sellerShippingData.some(s => s.chosenMode === 'express'),
             usedFallbackShipping: sellersWithFallback.length > 0,
             fallbackShippingSellerCount: sellersWithFallback.length,
+            packagingSize: overallPackagingSize,
+            totalDentpalIncome: totalDentpalIncome,
           },
           fees: {
             paymentProcessingFee: paymentProcessingFee,
             platformFee: platformFee,
+            insuranceFee: totalInsuranceFee,
+            evaluationFee: totalEvaluationFee,
             totalSellerFees: totalSellerFees,
             paymentMethod: defaultPaymentMethod, // Will be updated when payment is completed
           },
           // Per-seller fee breakdowns for accurate payout calculation
-          sellerFeeBreakdowns: multiSellerBreakdown.sellerBreakdowns.map(s => ({
+          sellerFeeBreakdowns: multiSellerBreakdown.sellerBreakdowns.map((s, index) => ({
             sellerId: s.sellerId,
             sellerName: s.sellerName,
-            cartValue: s.cartValue,
+            cartValue: sellerShippingData[index].cartValue, // original pre-discount value
+            postDiscountCartValue: sellerShippingData[index].postDiscountCartValue,
+            discountAmount: sellerShippingData[index].discountAmount,
+            voucherCode: sellerShippingData[index].voucherCode || null,
+            shippingVoucherCode: sellerShippingData[index].shippingVoucherCode || null,
+            shippingVoucherDocId: sellerShippingData[index].shippingVoucherDocId || null,
+            shippingCoverageType: shippingCoverageTypes[index],
+            shippingMode: sellerShippingData[index].chosenMode,
+            freeShippingFromVoucher: shippingCoverageTypes[index] === 'full',
+            partialShippingCoverage: shippingCoverageTypes[index] === 'partial_express',
             shippingCost: s.shippingCost,
+            shippingVat: s.shippingVat,
             buyerShippingCharge: s.buyerShippingCharge,
             sellerShippingCharge: s.sellerShippingCharge,
             shippingSplitRule: s.shippingSplitRule,
             totalChargedToBuyer: s.totalChargedToBuyer,
             paymentProcessingFee: s.paymentProcessingFee,
+            paymentProcessingFeeVat: s.paymentProcessingFeeVat,
             platformFee: s.platformFee,
+            platformFeeVat: s.platformFeeVat,
             platformFeePercentage: s.platformFeePercentage,
             totalSellerFees: s.totalSellerFees,
             netPayoutToSeller: s.netPayoutToSeller,
+            packagingSize: sellerShippingData[index].packagingName || null,
+            hasInsuranceAndEvaluation: sellerShippingData[index].insuranceAndEvaluation,
+            insuranceCost: sellerShippingData[index].insuranceCost,
+            evaluationCost: sellerShippingData[index].evaluationCost,
           })),
           payout: {
             netPayoutToSeller: netPayoutToSeller,
@@ -787,6 +1145,11 @@ export const createCheckoutSession = onRequest(
             country: shippingAddress?.country,
             phoneNumber: shippingAddress?.phoneNumber,
             notes: notes,
+            isExpress: sellerShippingData.some(s => s.chosenMode === 'express'),
+            sellerShippingModes: Object.fromEntries(
+              sellerShippingData.map(s => [s.sellerId, s.chosenMode]),
+            ),
+            packagingSize: overallPackagingSize,
           },
           status: 'pending',
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -802,15 +1165,42 @@ export const createCheckoutSession = onRequest(
           },
         });
 
-        // Prepare line items for Paymongo checkout
-        const lineItems = orderItems.map(item => ({
-          name: item.productName,
-          quantity: item.quantity,
-          amount: Math.round(item.price * 100), // Convert to centavos
-          currency: 'PHP',
-          description: `Product ID: ${item.productId}`,
-          images: item.productImage ? [item.productImage] : undefined,
-        }));
+        // Increment voucher usage counts (discount + shipping)
+        const voucherDocIdsToIncrement: string[] = [];
+        for (const seller of sellerShippingData) {
+          if (seller.voucherDocId) voucherDocIdsToIncrement.push(seller.voucherDocId);
+          if (seller.shippingVoucherDocId) voucherDocIdsToIncrement.push(seller.shippingVoucherDocId);
+        }
+        if (voucherDocIdsToIncrement.length > 0) {
+          await incrementVoucherUsage(voucherDocIdsToIncrement, db);
+          console.log(`Incremented usage for ${voucherDocIdsToIncrement.length} voucher(s)`);
+        }
+
+        // Build a discount ratio map per seller so item prices reflect the voucher discount.
+        // PayMongo does not support negative line item amounts, so we proportionally reduce
+        // each item's unit price instead.
+        const sellerDiscountRatio: Record<string, number> = {};
+        for (const seller of sellerShippingData) {
+          if (seller.discountAmount > 0 && seller.cartValue > 0) {
+            sellerDiscountRatio[seller.sellerId] = seller.postDiscountCartValue / seller.cartValue;
+          } else {
+            sellerDiscountRatio[seller.sellerId] = 1;
+          }
+        }
+
+        // Prepare line items for Paymongo checkout (prices adjusted for voucher discounts)
+        const lineItems = orderItems.map(item => {
+          const ratio = sellerDiscountRatio[item.sellerId] ?? 1;
+          const discountedPrice = item.price * ratio;
+          return {
+            name: item.productName,
+            quantity: item.quantity,
+            amount: Math.round(discountedPrice * 100), // Convert to centavos
+            currency: 'PHP',
+            description: `Product ID: ${item.productId}`,
+            images: item.productImage ? [item.productImage] : undefined,
+          };
+        });
 
         // Add shipping as a line item (only buyer's portion)
         if (buyerShippingCharge > 0) {
@@ -855,7 +1245,9 @@ export const createCheckoutSession = onRequest(
               billing: {
                 name: userData?.displayName || shippingAddress?.fullName,
                 email: userData?.email,
-                phone: shippingAddress?.phoneNumber,
+                phone: shippingAddress?.phoneNumber
+                  ? shippingAddress.phoneNumber.replace(/^\+63/, '')
+                  : undefined,
                 address: {
                   line1: shippingAddress?.addressLine1,
                   line2: shippingAddress?.addressLine2,

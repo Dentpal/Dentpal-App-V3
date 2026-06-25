@@ -233,12 +233,15 @@ class CartService {
           item.productName = product.name;
           item.productImage = product.imageURL;
           item.sellerId = product.sellerId;
+          item.isProductActive = product.isActive;
+          item.insuranceAndEvaluation = product.insuranceAndEvaluation;
+          item.brand = product.brand;
           
           // Get seller info from cache
           final sellerData = sellersMap[product.sellerId];
           if (sellerData != null) {
             item.sellerName = sellerData['shopName'] ?? 'Unknown Seller';
-            
+
             // Get seller's shipping address - handle both Map and String formats
             try {
               final addressField = sellerData['address'];
@@ -265,6 +268,12 @@ class CartService {
                 item.sellerAddress = JRSShippingService.formatShippingAddressForJRS(shippingAddress);
               }
             }
+
+            // Checkout options: prefer root-level, fall back to vendor-level
+            final vendorMap = (sellerData['vendor'] as Map?)?.cast<String, dynamic>();
+            item.checkoutOptions =
+                (sellerData['checkoutOptions'] as Map?)?.cast<String, dynamic>() ??
+                (vendorMap?['checkoutOptions'] as Map?)?.cast<String, dynamic>();
           } else {
             item.sellerName = 'Unknown Seller';
           }
@@ -443,20 +452,20 @@ class CartService {
               .get();
           if (sellerDoc.exists) {
             final sellerData = sellerDoc.data() as Map<String, dynamic>;
-            
+
             // Extract shop name from nested structure: vendor.company.storeName
             final vendor = (sellerData['vendor'] is Map)
                 ? sellerData['vendor'] as Map<String, dynamic>
-                : const {};
+                : const <String, dynamic>{};
             final company = (vendor['company'] is Map)
                 ? vendor['company'] as Map<String, dynamic>
-                : const {};
-            
+                : const <String, dynamic>{};
+
             cartItem.sellerName = (company['storeName'] as String?) ??
                 (sellerData['storeName'] as String?) ??
                 (sellerData['shopName'] as String?) ??
                 'Unknown Seller';
-            
+
             // Get seller's shipping address - handle both Map and String formats
             try {
               final addressField = sellerData['address'];
@@ -483,6 +492,11 @@ class CartService {
                 cartItem.sellerAddress = JRSShippingService.formatShippingAddressForJRS(shippingAddress);
               }
             }
+
+            // Checkout options: prefer root-level, fall back to vendor-level
+            cartItem.checkoutOptions =
+                (sellerData['checkoutOptions'] as Map?)?.cast<String, dynamic>() ??
+                (vendor['checkoutOptions'] as Map?)?.cast<String, dynamic>();
           }
         } catch (e) {
           AppLogger.d('Error fetching seller info: $e');
@@ -581,6 +595,7 @@ class CartService {
     required String sellerId,
     required List<CartItem> items,
     required String recipientAddress,
+    bool express = true,
   }) async {
     try {
       AppLogger.d('Calculating shipping cost with recipient address');
@@ -646,14 +661,17 @@ class CartService {
       AppLogger.d(' Seller address: $sellerAddress');
       AppLogger.d(' Recipient address: $formattedRecipientAddress');
 
+      // Only pass insurance/valuation when at least one item requires it
+      final needsInsuranceAndEvaluation = items.any((item) => item.insuranceAndEvaluation);
+
       // Calculate shipping using JRS API
       final result = await JRSShippingService.calculateShippingCost(
         sellerAddress: sellerAddress,
         recipientAddress: formattedRecipientAddress,
         cartItems: items,
-        express: true,
-        insurance: true,
-        valuation: true,
+        express: express,
+        insurance: needsInsuranceAndEvaluation,
+        valuation: needsInsuranceAndEvaluation,
       );
 
       AppLogger.d('JRS shipping result: $result');

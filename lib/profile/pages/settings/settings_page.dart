@@ -10,7 +10,6 @@ import 'change_mobile_page.dart';
 import 'change_password_page.dart';
 import 'edit_profile_page.dart';
 import 'data_privacy_page.dart';
-import 'manage_sub_accounts_page.dart';
 import 'terms_conditions_page.dart';
 import 'privacy_policy_page.dart';
 
@@ -95,10 +94,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 const SizedBox(height: 8),
 
                 // Account Settings Section
-                // For sub accounts: only show Manage Sub Accounts (if permitted)
-                // For main accounts: show all options
-                if (!SubAccountSessionManager.isSubAccount ||
-                    SubAccountSessionManager.canManageSubAccounts) ...[
+                // Only show for main accounts (not sub accounts)
+                if (!SubAccountSessionManager.isSubAccount) ...[
                 _buildSectionHeader('Account Settings'),
                 const SizedBox(height: 16),
                 Container(
@@ -115,7 +112,6 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   child: Column(
                     children: [
-                      if (!SubAccountSessionManager.isSubAccount) ...[
                       _buildSettingsOption(
                         context,
                         'Change Mobile Number',
@@ -167,25 +163,6 @@ class _SettingsPageState extends State<SettingsPage> {
                             _showComingSoonSnackBar(
                               context,
                               'Edit seller profile',
-                            );
-                          },
-                        ),
-                      ],
-                      ],
-                      // Show Manage Sub Accounts for main accounts and sub accounts with permission
-                      if (SubAccountSessionManager.canManageSubAccounts) ...[
-                        if (!SubAccountSessionManager.isSubAccount)
-                          _buildDivider(),
-                        _buildSettingsOption(
-                          context,
-                          'Manage Sub Accounts',
-                          Icons.people_outline,
-                          () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    const ManageSubAccountsPage(),
-                              ),
                             );
                           },
                         ),

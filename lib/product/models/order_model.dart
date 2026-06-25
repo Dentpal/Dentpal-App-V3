@@ -53,6 +53,7 @@ class Order {
   final String? notes;
   final List<OrderStatusUpdate> statusHistory;
   final String? checkoutSessionId;
+  final List<Map<String, dynamic>> sellerFeeBreakdowns;
 
   Order({
     required this.orderId,
@@ -68,7 +69,14 @@ class Order {
     this.notes,
     required this.statusHistory,
     this.checkoutSessionId,
+    this.sellerFeeBreakdowns = const [],
   });
+
+  /// True if any seller in this order is fulfilling via in-store pickup
+  /// (`sellerFeeBreakdowns[*].shippingMode == 'pickup'`).
+  bool get hasPickupShipping => sellerFeeBreakdowns.any(
+        (b) => (b['shippingMode']?.toString().toLowerCase() ?? '') == 'pickup',
+      );
 
   factory Order.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
@@ -108,13 +116,16 @@ class Order {
       AppLogger.d('Order.fromFirestore - Parsing paymongo...');
       final paymongoData = data['paymongo'] ?? data['paymentInfo'];
       AppLogger.d('Order.fromFirestore - Paymongo data: $paymongoData');
-      final paymongo = PaymongoData.fromMap(paymongoData as Map<String, dynamic>);
+      final paymongo = paymongoData != null
+          ? PaymongoData.fromMap(paymongoData as Map<String, dynamic>)
+          : PaymongoData.empty();
       
       // Parse status
       AppLogger.d('Order.fromFirestore - Parsing status...');
       AppLogger.d('Order.fromFirestore - Status value: ${data['status']} (type: ${data['status'].runtimeType})');
       String statusString = (data['status']?.toString() ?? 'pending').replaceAll('-', '_');
-      
+      statusString = _normalizeBackendStatus(statusString);
+
       final status = OrderStatus.values.firstWhere(
         (e) => e.toString().split('.').last == statusString,
         orElse: () => OrderStatus.pending,
@@ -125,7 +136,9 @@ class Order {
       AppLogger.d('Order.fromFirestore - CreatedAt: ${data['createdAt']} (type: ${data['createdAt'].runtimeType})');
       AppLogger.d('Order.fromFirestore - UpdatedAt: ${data['updatedAt']} (type: ${data['updatedAt'].runtimeType})');
       final createdAt = (data['createdAt'] as Timestamp).toDate();
-      final updatedAt = (data['updatedAt'] as Timestamp).toDate();
+      final updatedAt = data['updatedAt'] != null
+          ? (data['updatedAt'] as Timestamp).toDate()
+          : createdAt;
       
       // Parse status history
       AppLogger.d('Order.fromFirestore - Parsing statusHistory...');
@@ -139,6 +152,16 @@ class Order {
       
       AppLogger.d('Order.fromFirestore - All parsing completed successfully');
       
+      final sellerFeeBreakdowns = <Map<String, dynamic>>[];
+      final rawBreakdowns = data['sellerFeeBreakdowns'];
+      if (rawBreakdowns is List) {
+        for (final entry in rawBreakdowns) {
+          if (entry is Map) {
+            sellerFeeBreakdowns.add(Map<String, dynamic>.from(entry));
+          }
+        }
+      }
+
       return Order(
         orderId: doc.id,
         userId: userId,
@@ -153,6 +176,7 @@ class Order {
         notes: data['notes'],
         statusHistory: statusHistory,
         checkoutSessionId: data['checkoutSessionId'],
+        sellerFeeBreakdowns: sellerFeeBreakdowns,
       );
     } catch (e, stackTrace) {
       AppLogger.d('Order.fromFirestore - Error occurred: $e');
@@ -209,6 +233,16 @@ class Order {
       statusHistory: statusHistory ?? this.statusHistory,
       checkoutSessionId: checkoutSessionId ?? this.checkoutSessionId,
     );
+  }
+
+  static String _normalizeBackendStatus(String rawStatus) {
+    switch (rawStatus) {
+      case 'processing':
+      case 'to_hand_over':
+        return 'shipping';
+      default:
+        return rawStatus;
+    }
   }
 }
 
@@ -460,6 +494,15 @@ class PaymongoData {
     this.paidAt,
     this.failureReason,
   });
+
+  factory PaymongoData.empty() {
+    return PaymongoData(
+      paymentMethod: PaymentMethod.cashOnDelivery,
+      paymentStatus: PaymentStatus.pending,
+      amount: 0.0,
+      currency: 'PHP',
+    );
+  }
 
   factory PaymongoData.fromMap(Map<String, dynamic> map) {
     AppLogger.d('PaymongoData.fromMap - Raw map: $map');

@@ -100,12 +100,18 @@ class ImageUploadService {
   }
 
   /// Resize image to optimal size while maintaining aspect ratio
-  Future<Uint8List?> resizeImage(XFile imageFile, {bool forceSquare = false}) async {
+  Future<Uint8List?> resizeImage(
+    XFile imageFile, {
+    bool forceSquare = false,
+    int maxWidth = 1280,
+    int maxHeight = 720,
+    int quality = 95,
+  }) async {
     try {
       // Read the image file bytes (works on both web and mobile)
       final bytes = await imageFile.readAsBytes();
       final image = img.decodeImage(bytes);
-      
+
       if (image == null) {
         AppLogger.d('Failed to decode image');
         return null;
@@ -119,12 +125,12 @@ class ImageUploadService {
         targetWidth = 1024;
         targetHeight = 1024;
       } else {
-        // Calculate the size to maintain aspect ratio within 1280x720 (720p)
-        targetWidth = 1280;
-        targetHeight = 720;
-        
+        // Calculate the size to maintain aspect ratio within maxWidth x maxHeight
+        targetWidth = maxWidth;
+        targetHeight = maxHeight;
+
         final aspectRatio = image.width / image.height;
-        
+
         if (aspectRatio > 1) {
           // Landscape: width is larger
           targetHeight = (targetWidth / aspectRatio).round();
@@ -132,6 +138,10 @@ class ImageUploadService {
           // Portrait: height is larger
           targetWidth = (targetHeight * aspectRatio).round();
         }
+
+        // Never upscale: cap targets to the source dimensions.
+        if (targetWidth > image.width) targetWidth = image.width;
+        if (targetHeight > image.height) targetHeight = image.height;
       }
 
       // Resize the image
@@ -142,8 +152,8 @@ class ImageUploadService {
         interpolation: img.Interpolation.cubic,
       );
 
-      // Convert to bytes with higher quality for better visual results
-      final resizedBytes = img.encodeJpg(resized, quality: 95);
+      // Convert to bytes at the requested JPEG quality
+      final resizedBytes = img.encodeJpg(resized, quality: quality);
       return Uint8List.fromList(resizedBytes);
     } catch (e) {
       AppLogger.d('Error resizing image: $e');
@@ -185,6 +195,10 @@ class ImageUploadService {
   Future<String?> pickResizeAndUpload({
     required ImageSource source,
     required String storagePath,
+    bool forceSquare = false,
+    int maxWidth = 1280,
+    int maxHeight = 720,
+    int quality = 95,
   }) async {
     try {
       // Pick image
@@ -192,7 +206,13 @@ class ImageUploadService {
       if (pickedFile == null) return null;
 
       // Resize image
-      final resizedBytes = await resizeImage(pickedFile);
+      final resizedBytes = await resizeImage(
+        pickedFile,
+        forceSquare: forceSquare,
+        maxWidth: maxWidth,
+        maxHeight: maxHeight,
+        quality: quality,
+      );
       if (resizedBytes == null) return null;
 
       // Upload to Firebase Storage

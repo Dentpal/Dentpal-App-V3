@@ -1,4 +1,4 @@
-import 'package:dentpal/signup/signup_flow.dart';
+import 'package:dentpal/signup/signup_page_new.dart';
 import 'package:dentpal/forgot_password.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -1176,7 +1176,7 @@ class _LoginPageState extends State<LoginPage> {
                                               Navigator.of(context).push(
                                                 MaterialPageRoute(
                                                   builder: (context) =>
-                                                      const SignupFlow(),
+                                                      const SignUpPageNew(),
                                                 ),
                                               );
                                             },

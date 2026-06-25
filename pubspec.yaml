@@ -4,7 +4,7 @@ description: "Dentpal - The first dental e-commerce store for dental professiona
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 3.2.0+20
+version: 3.2.6+45
 
 environment:
   sdk: ^3.9.0
@@ -34,7 +34,6 @@ dependencies:
   photo_view: ^0.15.0
   google_mlkit_text_recognition: ^0.15.0
   google_mlkit_face_detection: ^0.13.1
-  tensorflow_face_verification: ^0.1.2
   http: ^1.1.0
   camera: ^0.11.2
   path_provider: ^2.1.1
@@ -63,6 +62,8 @@ flutter:
     - lib/assets/icons/facebook-logo.png
     - lib/assets/icons/google-logo.png
     - lib/assets/icons/dentpal_icon.png
+    - lib/assets/icons/qr_ios.jpeg
+    - lib/assets/icons/qr_android.jpeg
 
   fonts:
     - family: Poppins

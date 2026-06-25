@@ -130,3 +130,125 @@ export async function deductStockForOrder(orderId: string, orderItems: any[]): P
     updates: stockUpdates,
   });
 }
+
+/**
+ * Restock items for a cancelled order — reverses a prior deductStockForOrder.
+ * Increments Variation.stock or Product.inStock by the order's item quantities.
+ */
+export async function restockForOrder(orderId: string, orderItems: any[]): Promise<void> {
+  if (!orderItems || orderItems.length === 0) {
+    logger.warn(`No items to restock for order ${orderId}`);
+    return;
+  }
+
+  const stockUpdates: Array<{
+    success: boolean;
+    productId: string;
+    variationId?: string;
+    quantity: number;
+    error?: string
+  }> = [];
+
+  for (const item of orderItems) {
+    try {
+      const productId = item.productId;
+      const variationId = item.variationId;
+      const quantity = Number(item.quantity) || 0;
+
+      if (!productId) {
+        logger.warn(`Order ${orderId}: Item missing productId, skipping restock`, { item });
+        stockUpdates.push({ success: false, productId: 'unknown', quantity, error: 'Missing productId' });
+        continue;
+      }
+
+      if (quantity <= 0) {
+        logger.warn(`Order ${orderId}: Invalid quantity for product ${productId}, skipping restock`, { quantity });
+        stockUpdates.push({ success: false, productId, variationId, quantity, error: 'Invalid quantity' });
+        continue;
+      }
+
+      if (variationId) {
+        const variationRef = db.collection('Product').doc(productId).collection('Variation').doc(variationId);
+        const variationDoc = await variationRef.get();
+
+        if (!variationDoc.exists) {
+          logger.warn(`Order ${orderId}: Variation ${variationId} not found for product ${productId}`, { item });
+          stockUpdates.push({ success: false, productId, variationId, quantity, error: 'Variation not found' });
+          continue;
+        }
+
+        const currentStock = Number(variationDoc.data()?.stock) || 0;
+        const newStock = currentStock + quantity;
+
+        await variationRef.update({
+          stock: newStock,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+
+        logger.info(`Order ${orderId}: Restocked ${quantity} to variation ${variationId} (${currentStock} → ${newStock})`, {
+          productId,
+          variationId,
+          previousStock: currentStock,
+          newStock,
+          restocked: quantity,
+        });
+
+        stockUpdates.push({ success: true, productId, variationId, quantity });
+      } else {
+        const productRef = db.collection('Product').doc(productId);
+        const productDoc = await productRef.get();
+
+        if (!productDoc.exists) {
+          logger.warn(`Order ${orderId}: Product ${productId} not found`, { item });
+          stockUpdates.push({ success: false, productId, quantity, error: 'Product not found' });
+          continue;
+        }
+
+        const currentStock = Number(productDoc.data()?.inStock) || 0;
+        const newStock = currentStock + quantity;
+
+        await productRef.update({
+          inStock: newStock,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+
+        logger.info(`Order ${orderId}: Restocked ${quantity} to product ${productId} (${currentStock} → ${newStock})`, {
+          productId,
+          previousStock: currentStock,
+          newStock,
+          restocked: quantity,
+        });
+
+        stockUpdates.push({ success: true, productId, quantity });
+      }
+
+      const productRef = db.collection('Product').doc(productId);
+      await productRef.update({
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+
+    } catch (error) {
+      logger.error(`Order ${orderId}: Failed to restock item`, {
+        item,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      stockUpdates.push({
+        success: false,
+        productId: item.productId || 'unknown',
+        variationId: item.variationId,
+        quantity: item.quantity,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  const successCount = stockUpdates.filter(u => u.success).length;
+  const failureCount = stockUpdates.filter(u => !u.success).length;
+
+  logger.info(`Order ${orderId}: Restock summary`, {
+    totalItems: orderItems.length,
+    successful: successCount,
+    failed: failureCount,
+    updates: stockUpdates,
+  });
+}

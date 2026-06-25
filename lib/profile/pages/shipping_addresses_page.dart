@@ -5,8 +5,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/shipping_address.dart';
 import '../services/address_service.dart';
-import '../services/geocoding_validator_service.dart';
-import '../widgets/address_map_widget.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import 'package:dentpal/utils/app_logger.dart';
@@ -558,12 +556,16 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
   final _notesController = TextEditingController();
   bool _isDefault = false;
   bool _isLoading = false;
-  bool _isAutoFilling = false; // Track when auto-fill is in progress
-  bool _isValidatingAddress = false; // Track address validation
   AutovalidateMode _autovalidateMode =
       AutovalidateMode.disabled; // Track validation mode
-  double? _latitude;
-  double? _longitude;
+  String? _selectedLocation;
+
+  static const List<String> _locationOptions = [
+    'NCR',
+    'Luzon',
+    'Visayas',
+    'Mindanao',
+  ];
 
   bool get _isEditing => widget.address != null;
 
@@ -576,11 +578,6 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
       _countryController.text = 'Philippines'; // Default country
       _prefillUserName(); // Pre-fill user's name when adding new address
     }
-
-    // Add listeners to update map when address fields change
-    _addressLine1Controller.addListener(_updateMapAddress);
-    _cityController.addListener(_updateMapAddress);
-    _stateController.addListener(_updateMapAddress);
   }
 
   Future<void> _prefillUserName() async {
@@ -629,112 +626,6 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
     }
   }
 
-  void _updateMapAddress() {
-    // Trigger map update when any address field changes
-    setState(() {}); // This will rebuild the widget and update the map
-  }
-
-  void _autoFillAddress(Map<String, String> addressData) {
-    AppLogger.d('_autoFillAddress called with: $addressData');
-
-    // Check if we got any meaningful data
-    bool hasValidData =
-        addressData['city']?.isNotEmpty == true ||
-        addressData['state']?.isNotEmpty == true ||
-        addressData['street']?.isNotEmpty == true;
-
-    if (!hasValidData) {
-      AppLogger.d('No valid address data found');
-      // Show a different message if no data was found
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Location detected but address details not available. You can enter address manually.',
-          ),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-      return;
-    }
-
-    // Check if this is fallback data (no street address)
-    bool isFallbackData = addressData['street']?.isEmpty == true;
-
-    // Show a snackbar to confirm auto-fill is happening
-    if (isFallbackData) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Location detected in ${addressData['city']}! Auto-filling city and state. Street address needs to be entered manually.',
-          ),
-          duration: const Duration(seconds: 4),
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Address detected and auto-filled! City: ${addressData['city']}, State: ${addressData['state']}',
-          ),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    }
-
-    // Directly auto-fill the address fields without showing a popup
-    _fillAddressFields(addressData);
-  }
-
-  void _fillAddressFields(Map<String, String> addressData) {
-    AppLogger.d('_fillAddressFields called with: $addressData');
-
-    setState(() {
-      _isAutoFilling = true; // Set flag to prevent map pin movement
-
-      // Only fill empty fields and ensure the value is not null or empty
-      if (_addressLine1Controller.text.trim().isEmpty &&
-          addressData['street']?.isNotEmpty == true) {
-        _addressLine1Controller.text = addressData['street']!;
-        AppLogger.d('Filled addressLine1: ${addressData['street']}');
-      }
-
-      if (_cityController.text.trim().isEmpty &&
-          addressData['city']?.isNotEmpty == true) {
-        _cityController.text = addressData['city']!;
-        AppLogger.d('Filled city: ${addressData['city']}');
-      }
-
-      if (_stateController.text.trim().isEmpty &&
-          addressData['state']?.isNotEmpty == true) {
-        _stateController.text = addressData['state']!;
-        AppLogger.d('Filled state: ${addressData['state']}');
-      }
-
-      if (_postalCodeController.text.trim().isEmpty &&
-          addressData['postalCode']?.isNotEmpty == true) {
-        _postalCodeController.text = addressData['postalCode']!;
-        AppLogger.d('Filled postalCode: ${addressData['postalCode']}');
-      }
-
-      if (_countryController.text.trim().isEmpty &&
-          addressData['country']?.isNotEmpty == true) {
-        _countryController.text = addressData['country']!;
-        AppLogger.d('Filled country: ${addressData['country']}');
-      }
-
-      AppLogger.d('All fields filled successfully');
-    });
-
-    // Reset the flag after a brief delay to allow the UI to update
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (mounted) {
-        setState(() {
-          _isAutoFilling = false;
-        });
-      }
-    });
-  }
-
   void _populateFields() {
     final address = widget.address!;
     _fullNameController.text = address.fullName;
@@ -753,18 +644,13 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
     }
     _phoneController.text = displayPhone;
 
-    _latitude = address.latitude;
-    _longitude = address.longitude;
     _isDefault = address.isDefault;
+    _selectedLocation =
+        _locationOptions.contains(address.location) ? address.location : null;
   }
 
   @override
   void dispose() {
-    // Remove listeners before disposing controllers
-    _addressLine1Controller.removeListener(_updateMapAddress);
-    _cityController.removeListener(_updateMapAddress);
-    _stateController.removeListener(_updateMapAddress);
-
     _fullNameController.dispose();
     _addressLine1Controller.dispose();
     _addressLine2Controller.dispose();
@@ -787,80 +673,7 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
 
     if (!_formKey.currentState!.validate()) return;
 
-    // Check if location is pinned
-    if (_latitude == null || _longitude == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(
-            'Please pin your exact location on the map before saving',
-          ),
-          backgroundColor: AppColors.error,
-          duration: const Duration(seconds: 3),
-          action: SnackBarAction(
-            label: 'OK',
-            textColor: Colors.white,
-            onPressed: () {},
-          ),
-        ),
-      );
-      return;
-    }
-
-    // Validate address with Google Maps before saving
     setState(() {
-      _isValidatingAddress = true;
-    });
-
-    try {
-      // Validate the address components with geocoding
-      final validationResult = await GeocodingValidatorService.validateAddress(
-        city: _cityController.text.trim(),
-        state: _stateController.text.trim(),
-        postalCode: _postalCodeController.text.trim(),
-      );
-
-      if (!validationResult['isValid']) {
-        setState(() {
-          _isValidatingAddress = false;
-        });
-
-        // Show error dialog with suggestion if available
-        final shouldContinue = await _showValidationErrorDialog(
-          validationResult['message'],
-          suggestion: validationResult['suggestion'],
-          resolvedCity: validationResult['resolvedCity'],
-          resolvedState: validationResult['resolvedState'],
-          resolvedPostal: validationResult['resolvedPostal'],
-        );
-
-        if (!shouldContinue) return;
-      } else {
-        // Update coordinates if validation was successful
-        if (validationResult['latitude'] != null &&
-            validationResult['longitude'] != null) {
-          _latitude = validationResult['latitude'];
-          _longitude = validationResult['longitude'];
-        }
-      }
-    } catch (e) {
-      setState(() {
-        _isValidatingAddress = false;
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Unable to validate address: $e'),
-            backgroundColor: AppColors.error,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-      return;
-    }
-
-    setState(() {
-      _isValidatingAddress = false;
       _isLoading = true;
     });
 
@@ -888,12 +701,13 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
         postalCode: _postalCodeController.text.trim(),
         country: _countryController.text.trim(),
         phoneNumber: formattedPhone,
-        latitude: _latitude,
-        longitude: _longitude,
+        latitude: null,
+        longitude: null,
         notes: _notesController.text.trim().isEmpty
             ? null
             : _notesController.text.trim(),
         isDefault: _isDefault,
+        location: _selectedLocation ?? '',
         createdAt: _isEditing ? widget.address!.createdAt : now,
         updatedAt: now,
       );
@@ -938,149 +752,6 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
         });
       }
     }
-  }
-
-  Future<bool> _showValidationErrorDialog(
-    String message, {
-    String? suggestion,
-    String? resolvedCity,
-    String? resolvedState,
-    String? resolvedPostal,
-  }) async {
-    return await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            backgroundColor: AppColors.surface,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            title: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.error.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.warning_outlined,
-                    color: AppColors.error,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Address Validation',
-                    style: AppTextStyles.titleMedium.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  message,
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.onSurface.withValues(alpha: 0.8),
-                  ),
-                ),
-                if (suggestion != null) ...[
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: AppColors.primary.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.lightbulb_outline,
-                              size: 18,
-                              color: AppColors.primary,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Suggestion:',
-                              style: AppTextStyles.bodyMedium.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(suggestion, style: AppTextStyles.bodyMedium),
-                        if (resolvedCity != null && resolvedState != null) ...[
-                          const SizedBox(height: 12),
-                          ElevatedButton.icon(
-                            onPressed: () {
-                              // Auto-fill with suggested values
-                              if (resolvedCity.isNotEmpty) {
-                                _cityController.text = resolvedCity;
-                              }
-                              if (resolvedState.isNotEmpty) {
-                                _stateController.text = resolvedState;
-                              }
-                              if (resolvedPostal != null &&
-                                  resolvedPostal.isNotEmpty) {
-                                _postalCodeController.text = resolvedPostal;
-                              }
-                              Navigator.of(
-                                context,
-                              ).pop(false); // Close dialog, don't save yet
-                            },
-                            icon: const Icon(Icons.auto_fix_high, size: 18),
-                            label: const Text('Use Suggestion'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: AppColors.onPrimary,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.onSurface.withValues(alpha: 0.6),
-                ),
-                child: Text('Edit Address', style: AppTextStyles.buttonMedium),
-              ),
-              if (suggestion == null)
-                ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.error,
-                    foregroundColor: AppColors.onPrimary,
-                    elevation: 0,
-                  ),
-                  child: Text('Save Anyway', style: AppTextStyles.buttonMedium),
-                ),
-            ],
-          ),
-        ) ??
-        false;
   }
 
   @override
@@ -1159,19 +830,28 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
                       : null,
                 ),
                 const SizedBox(height: 16),
+                _buildLocationDropdown(),
+                const SizedBox(height: 16),
                 _buildTextField(
-                  controller: _addressLine1Controller,
-                  label: 'Address Line 1',
-                  icon: Icons.home_outlined,
+                  controller: _countryController,
+                  label: 'Country',
+                  icon: Icons.public_outlined,
+                  enabled: false,
+                  helperText: 'Currently only Philippines is supported',
                   validator: (value) => (value == null || value.trim().isEmpty)
-                      ? 'Address line 1 is required'
+                      ? 'Country is required'
                       : null,
                 ),
                 const SizedBox(height: 16),
                 _buildTextField(
-                  controller: _addressLine2Controller,
-                  label: 'Address Line 2 (Optional)',
-                  icon: Icons.home_outlined,
+                  controller: _stateController,
+                  label: 'State/Province',
+                  icon: Icons.map_outlined,
+                  enabled: _selectedLocation != null,
+                  helperText: 'Must be a valid province in the Philippines',
+                  validator: (value) => (value == null || value.trim().isEmpty)
+                      ? 'State/Province is required'
+                      : null,
                 ),
                 const SizedBox(height: 16),
                 Row(
@@ -1182,6 +862,7 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
                         controller: _cityController,
                         label: 'City',
                         icon: Icons.location_city_outlined,
+                        enabled: _selectedLocation != null,
                         helperText: 'Must be a valid city in the Philippines',
                         validator: (value) =>
                             (value == null || value.trim().isEmpty)
@@ -1197,6 +878,7 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
                         label: 'Postal Code',
                         icon: Icons.markunread_mailbox_outlined,
                         keyboardType: TextInputType.number,
+                        enabled: _selectedLocation != null,
                         helperText: 'Valid PH postal code',
                         validator: (value) =>
                             (value == null || value.trim().isEmpty)
@@ -1208,25 +890,20 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
                 ),
                 const SizedBox(height: 16),
                 _buildTextField(
-                  controller: _stateController,
-                  label: 'State/Province',
-                  icon: Icons.map_outlined,
-                  helperText: 'Must be a valid province in the Philippines',
+                  controller: _addressLine1Controller,
+                  label: 'Address Line 1',
+                  icon: Icons.home_outlined,
+                  enabled: _selectedLocation != null,
                   validator: (value) => (value == null || value.trim().isEmpty)
-                      ? 'State/Province is required'
+                      ? 'Address line 1 is required'
                       : null,
                 ),
                 const SizedBox(height: 16),
                 _buildTextField(
-                  controller: _countryController,
-                  label: 'Country',
-                  icon: Icons.public_outlined,
-                  enabled:
-                      false, // Disable editing since we only support Philippines
-                  helperText: 'Currently only Philippines is supported',
-                  validator: (value) => (value == null || value.trim().isEmpty)
-                      ? 'Country is required'
-                      : null,
+                  controller: _addressLine2Controller,
+                  label: 'Address Line 2 (Optional)',
+                  icon: Icons.home_outlined,
+                  enabled: _selectedLocation != null,
                 ),
                 const SizedBox(height: 16),
                 _buildTextField(
@@ -1234,6 +911,7 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
                   label: 'Phone Number (09123456789)',
                   icon: Icons.phone_outlined,
                   keyboardType: TextInputType.phone,
+                  enabled: _selectedLocation != null,
                   validator: (value) {
                     if (value == null || value.trim().isEmpty)
                       return 'Phone number is required';
@@ -1245,96 +923,13 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 24),
-
-                // Map widget for location selection
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.location_on,
-                          color: AppColors.error,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Pin your exact location *',
-                          style: AppTextStyles.bodyLarge.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.error,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Required: Tap on the map to pin your exact location for accurate delivery',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.onSurface.withValues(alpha: 0.7),
-                      ),
-                    ),
-                    if (_latitude != null && _longitude != null) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.success.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: AppColors.success.withValues(alpha: 0.3),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.check_circle,
-                              color: AppColors.success,
-                              size: 16,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Location pinned',
-                              style: AppTextStyles.bodySmall.copyWith(
-                                color: AppColors.success,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    AddressMapWidget(
-                      address:
-                          '${_addressLine1Controller.text}, ${_cityController.text}, ${_stateController.text}',
-                      initialLatitude: _latitude,
-                      initialLongitude: _longitude,
-                      preventAutoRepositioning:
-                          _isAutoFilling, // Prevent repositioning during auto-fill
-                      onLocationSelected: (lat, lng) {
-                        setState(() {
-                          _latitude = lat;
-                          _longitude = lng;
-                        });
-                      },
-                      onAddressFound: (data) => _autoFillAddress(data),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                // Notes field
+                const SizedBox(height: 16),
                 _buildTextField(
                   controller: _notesController,
                   label: 'Delivery Notes (Optional)',
                   icon: Icons.note_outlined,
                   maxLines: 3,
+                  enabled: _selectedLocation != null,
                 ),
                 const SizedBox(height: 24),
 
@@ -1379,11 +974,13 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
                       ),
                       Switch(
                         value: _isDefault,
-                        onChanged: (value) {
-                          setState(() {
-                            _isDefault = value;
-                          });
-                        },
+                        onChanged: _selectedLocation == null
+                            ? null
+                            : (value) {
+                                setState(() {
+                                  _isDefault = value;
+                                });
+                              },
                         activeThumbColor: AppColors.primary,
                       ),
                     ],
@@ -1395,9 +992,7 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
                 SizedBox(
                   height: 56,
                   child: ElevatedButton(
-                    onPressed: (_isLoading || _isValidatingAddress)
-                        ? null
-                        : _saveAddress,
+                    onPressed: _isLoading ? null : _saveAddress,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       foregroundColor: AppColors.onPrimary,
@@ -1406,7 +1001,7 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
                         borderRadius: BorderRadius.circular(16),
                       ),
                     ),
-                    child: (_isLoading || _isValidatingAddress)
+                    child: _isLoading
                         ? Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -1420,9 +1015,7 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
                               ),
                               const SizedBox(width: 12),
                               Text(
-                                _isValidatingAddress
-                                    ? 'Validating Address...'
-                                    : 'Saving...',
+                                'Saving...',
                                 style: AppTextStyles.buttonLarge,
                               ),
                             ],
@@ -1448,6 +1041,73 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
           }
           return formContent; // mobile & narrow web
         },
+      ),
+    );
+  }
+
+  Widget _buildLocationDropdown() {
+    return DropdownButtonFormField<String>(
+      initialValue: _selectedLocation,
+      isExpanded: true,
+      items: _locationOptions
+          .map(
+            (loc) => DropdownMenuItem<String>(
+              value: loc,
+              child: Text(loc, style: AppTextStyles.bodyMedium),
+            ),
+          )
+          .toList(),
+      onChanged: (value) {
+        setState(() {
+          _selectedLocation = value;
+        });
+      },
+      validator: (value) =>
+          (value == null || value.isEmpty) ? 'Location is required' : null,
+      decoration: InputDecoration(
+        labelText: 'Location',
+        helperText: _selectedLocation == null
+            ? 'Select your location to continue'
+            : 'NCR, Luzon, Visayas, or Mindanao',
+        helperMaxLines: 2,
+        errorMaxLines: 2,
+        helperStyle: AppTextStyles.bodySmall.copyWith(
+          color: AppColors.primary.withValues(alpha: 0.7),
+        ),
+        errorStyle: AppTextStyles.bodySmall.copyWith(color: AppColors.error),
+        prefixIcon: const Icon(
+          Icons.location_on_outlined,
+          color: AppColors.primary,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(
+            color: AppColors.onSurface.withValues(alpha: 0.2),
+          ),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(
+            color: AppColors.onSurface.withValues(alpha: 0.2),
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppColors.primary, width: 2),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppColors.error, width: 2),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppColors.error, width: 2),
+        ),
+        filled: true,
+        fillColor: AppColors.surface,
+        labelStyle: AppTextStyles.bodyMedium.copyWith(
+          color: AppColors.onSurface.withValues(alpha: 0.7),
+        ),
       ),
     );
   }

@@ -426,6 +426,9 @@ class _AddressMapWidgetState extends State<AddressMapWidget> {
       _userHasManuallySetLocation = true; // User manually tapped the map
     });
     widget.onLocationSelected(position.latitude, position.longitude);
+    
+    // Perform reverse geocoding to auto-fill address fields
+    _reverseGeocode(position.latitude, position.longitude);
   }
 
   @override

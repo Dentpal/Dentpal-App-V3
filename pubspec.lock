@@ -1088,14 +1088,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.0.3"
-  quiver:
-    dependency: transitive
-    description:
-      name: quiver
-      sha256: ea0b925899e64ecdfbf9c7becb60d5b50e706ade44a85b2363be2a22d88117d2
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.2.2"
   rxdart:
     dependency: transitive
     description:
@@ -1285,14 +1277,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.4.0"
-  tensorflow_face_verification:
-    dependency: "direct main"
-    description:
-      name: tensorflow_face_verification
-      sha256: "92186fb14ce4cf0599560b4d5a49cb45a2ae14abe0f0cc0f3dae292f1967093b"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.1.2"
   term_glyph:
     dependency: transitive
     description:
@@ -1309,14 +1293,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.6"
-  tflite_flutter:
-    dependency: transitive
-    description:
-      name: tflite_flutter
-      sha256: "48e6fde2ad97162bb66a16a142f4c4698add9e8cd397ce9d1cc7451b55537ac1"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.11.0"
   timezone:
     dependency: transitive
     description:

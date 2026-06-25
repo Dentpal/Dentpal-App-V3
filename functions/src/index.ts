@@ -4,6 +4,9 @@
 // Export the createCheckoutSession function
 export { createCheckoutSession } from './createCheckoutSession';
 
+// Export the callable test GCash order creation function
+export { createGcashTestOrder } from './createGcashTestOrder';
+
 // Export the Cash on Delivery order creation function
 export { createCodOrder } from './createCodOrder';
 
@@ -12,9 +15,6 @@ export { handlePaymongoWebhook, expirePendingOrders } from './paymongoWebhookHan
 
 // Export the JRS shipping calculator functions
 export { calculateJRSShipping } from './jrsShippingCalculator';
-
-// Export the JRS shipping test functions (for manual testing)
-// export { testJRSShipping, testJRSRawAPI } from './testJRSShipping';
 
 // Export the JRS tracking function
 export { trackJRSShipping } from './trackJRSShipping';
@@ -45,3 +45,15 @@ export { retryPendingRefunds } from './retryPendingRefunds';
 
 // Export the migration function for confirmed orders
 export { migrateConfirmedOrders } from './migrateConfirmedOrders';
+
+// Export the scheduled function to deactivate products with all-zero-stock variations
+export { deactivateOutOfStockProducts } from './deactivateOutOfStockProducts';
+
+// Export the Resend email notification triggered when a new Order is created
+export { notifySellerOnNewOrderEmail } from './notifyNewOrderEmail';
+
+// Export the Resend email notification triggered when an Order is cancelled
+export { notifyOrderCancellationEmail } from './notifyOrderCancellationEmail';
+
+// Export the Resend email notification triggered when an Order has a return/refund requested
+export { notifyOrderReturnRefundEmail } from './notifyOrderReturnRefundEmail';

@@ -39,6 +39,12 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        
+        // Only include ARM architectures for 16KB page size compatibility
+        // Exclude x86 and x86_64 (mainly used for emulators)
+        ndk {
+            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
+        }
     }
 
     signingConfigs {

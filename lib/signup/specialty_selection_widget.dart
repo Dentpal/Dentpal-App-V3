@@ -4,102 +4,75 @@ import 'package:dentpal/core/app_theme/index.dart';
 /// Predefined list of dental specialties
 class DentalSpecialties {
   static const List<String> specialties = [
-    // Recognized Dental Specialties (Core)
-    'General Dentistry',
-    'Prosthodontics',
-    'Orthodontics and Dentofacial Orthopedics',
-    'Periodontics',
+    '3D Printing in Dentistry',
+    'Academic / Teaching Dentistry',
+    'Adult Orthodontics',
+    'Biological Dentistry',
+    'Bone Grafting and Regenerative Surgery',
+    'CAD/CAM Dentistry',
+    'Clear Aligner Therapy',
+    'Clinical Research',
+    'Community Dentistry',
+    'Corporate Dentistry',
+    'Cosmetic / Aesthetic Dentistry',
+    'Crown Lengthening',
+    'Dental Public Health',
+    'Dental Sleep Medicine',
+    'Dentistry for Patients with Disabilities',
+    'Digital Dentistry',
+    'Digital Smile Design',
+    'Early / Interceptive Orthodontics',
+    'Emergency Dentistry',
     'Endodontics',
-    'Oral and Maxillofacial Surgery',
-    'Pediatric Dentistry',
+    'Epidemiology in Dentistry',
+    'Esthetic Dentistry',
+    'Fixed Prosthodontics',
+    'Full Mouth Rehabilitation',
+    'Functional Orthopedics',
+    'General Dentistry',
+    'Geriatric Dentistry',
+    'Gingival Aesthetics',
+    'Guided Tissue Regeneration',
+    'Gum Disease Treatment',
+    'Hard Tissue Surgery',
+    'Holistic Dentistry',
+    'Hospital Dentistry',
+    'Implant Dentistry',
+    'Implant Prosthodontics',
+    'Integrative Dentistry',
+    'Laser Dentistry',
+    'Lingual Orthodontics',
+    'Maxillofacial Prosthetics',
+    'Microscopic Endodontics',
+    'Minimally Invasive Dentistry',
+    'Mobile Dentistry',
+    'Occlusal Rehabilitation',
     'Oral and Maxillofacial Pathology',
     'Oral and Maxillofacial Radiology',
-    'Dental Public Health',
-    
-    // Restorative & Aesthetic Dentistry
-    'Restorative Dentistry',
-    'Cosmetic / Aesthetic Dentistry',
-    'Esthetic Dentistry',
-    'Smile Design',
-    'Full Mouth Rehabilitation',
-    'Minimally Invasive Dentistry',
-    
-    // Surgical & Advanced Procedures
-    'Implant Dentistry',
-    'Oral Implantology',
-    'Bone Grafting and Regenerative Surgery',
-    'Sinus Lift Surgery',
-    'Surgical Extractions',
-    'Soft Tissue Surgery',
-    'Hard Tissue Surgery',
-    
-    // Periodontal Sub-Specialties
-    'Periodontal Surgery',
-    'Gum Disease Treatment',
-    'Gingival Aesthetics',
-    'Crown Lengthening',
-    'Guided Tissue Regeneration',
-    
-    // Endodontic Sub-Specialties
-    'Root Canal Treatment',
-    'Microscopic Endodontics',
-    'Surgical Endodontics (Apicoectomy)',
-    'Regenerative Endodontics',
-    
-    // Prosthodontic Sub-Specialties
-    'Fixed Prosthodontics',
-    'Removable Prosthodontics',
-    'Implant Prosthodontics',
-    'Maxillofacial Prosthetics',
-    'Occlusal Rehabilitation',
-    
-    // Orthodontic Sub-Specialties
-    'Traditional Orthodontics',
-    'Clear Aligner Therapy',
-    'Lingual Orthodontics',
-    'Early / Interceptive Orthodontics',
-    'Adult Orthodontics',
-    'Functional Orthopedics',
-    
-    // Pediatric & Special Care
-    'Special Care Dentistry',
-    'Dentistry for Patients with Disabilities',
-    'Geriatric Dentistry',
-    
-    // Diagnostic & Preventive Dentistry
-    'Preventive Dentistry',
+    'Oral and Maxillofacial Surgery',
     'Oral Diagnosis',
+    'Oral Implantology',
     'Oral Medicine',
-    'Dental Sleep Medicine',
-    'TMJ / TMD Disorders',
     'Orofacial Pain Management',
-    
-    // Public Health, Research & Education
-    'Community Dentistry',
-    'Academic / Teaching Dentistry',
-    'Clinical Research',
-    'Epidemiology in Dentistry',
-    
-    // Digital & Modern Dentistry
-    'Digital Dentistry',
-    'CAD/CAM Dentistry',
-    '3D Printing in Dentistry',
-    'Digital Smile Design',
-    'Laser Dentistry',
-    
-    // Holistic & Alternative Approaches
-    'Holistic Dentistry',
-    'Biological Dentistry',
-    'Integrative Dentistry',
-    
-    // Practice Type / Focus
+    'Orthodontics and Dentofacial Orthopedics',
+    'Pediatric Dentistry',
+    'Periodontal Surgery',
+    'Periodontics',
+    'Preventive Dentistry',
     'Private Practice',
-    'Hospital Dentistry',
-    'Corporate Dentistry',
-    'Mobile Dentistry',
-    'Emergency Dentistry',
-    
-    // Other
+    'Prosthodontics',
+    'Regenerative Endodontics',
+    'Removable Prosthodontics',
+    'Restorative Dentistry',
+    'Root Canal Treatment',
+    'Sinus Lift Surgery',
+    'Smile Design',
+    'Soft Tissue Surgery',
+    'Special Care Dentistry',
+    'Surgical Endodontics (Apicoectomy)',
+    'Surgical Extractions',
+    'TMJ / TMD Disorders',
+    'Traditional Orthodontics',
     'Others',
   ];
 }
@@ -107,13 +80,11 @@ class DentalSpecialties {
 class SpecialtySelectionWidget extends StatefulWidget {
   final List<String> selectedSpecialties;
   final Function(List<String>) onSelectionChanged;
-  final int maxSelections;
 
   const SpecialtySelectionWidget({
     super.key,
     required this.selectedSpecialties,
     required this.onSelectionChanged,
-    this.maxSelections = 5,
   });
 
   @override
@@ -122,6 +93,7 @@ class SpecialtySelectionWidget extends StatefulWidget {
 
 class _SpecialtySelectionWidgetState extends State<SpecialtySelectionWidget> {
   final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _customSpecialtyController = TextEditingController();
   String _searchQuery = '';
   List<String> _filteredSpecialties = List.from(DentalSpecialties.specialties);
   
@@ -141,20 +113,126 @@ class _SpecialtySelectionWidgetState extends State<SpecialtySelectionWidget> {
     if (newSelection.contains(specialty)) {
       newSelection.remove(specialty);
     } else {
-      if (newSelection.length >= widget.maxSelections) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Maximum ${widget.maxSelections} specialties can be selected'),
-            backgroundColor: AppColors.error,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-        return;
-      }
       newSelection.add(specialty);
     }
     
     widget.onSelectionChanged(newSelection);
+  }
+
+  void _showAddCustomSpecialtyDialog(BuildContext parentContext, List<String> currentSelections, Function(String) onAdd) {
+    _customSpecialtyController.clear();
+    
+    showDialog(
+      context: parentContext,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Icon(Icons.add_circle_outline, color: AppColors.primary, size: 24),
+              const SizedBox(width: 8),
+              Text(
+                'Add Custom Specialty',
+                style: AppTextStyles.titleMedium.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Enter a specialty not in the list:',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.grey600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _customSpecialtyController,
+                autofocus: true,
+                textCapitalization: TextCapitalization.words,
+                decoration: InputDecoration(
+                  hintText: 'e.g., Pediatric Oral Surgery',
+                  hintStyle: AppTextStyles.inputHint,
+                  filled: true,
+                  fillColor: AppColors.grey50,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppColors.grey300),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppColors.grey300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppColors.primary, width: 2),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                ),
+                style: AppTextStyles.bodyMedium,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(
+                'Cancel',
+                style: AppTextStyles.buttonMedium.copyWith(
+                  color: AppColors.grey600,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final customSpecialty = _customSpecialtyController.text.trim();
+                if (customSpecialty.isNotEmpty) {
+                  // Check if specialty already exists (case-insensitive)
+                  final alreadyExists = currentSelections.any(
+                    (s) => s.toLowerCase() == customSpecialty.toLowerCase()
+                  ) || DentalSpecialties.specialties.any(
+                    (s) => s.toLowerCase() == customSpecialty.toLowerCase()
+                  );
+                  
+                  if (alreadyExists) {
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      SnackBar(
+                        content: Text('This specialty already exists'),
+                        backgroundColor: AppColors.warning,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  } else {
+                    onAdd(customSpecialty);
+                    Navigator.pop(dialogContext);
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      SnackBar(
+                        content: Text('Added "$customSpecialty"'),
+                        backgroundColor: AppColors.success,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.onPrimary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text('Add'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _showSpecialtyPicker() {
@@ -172,16 +250,6 @@ class _SpecialtySelectionWidgetState extends State<SpecialtySelectionWidget> {
             if (localSelectedSpecialties.contains(specialty)) {
               localSelectedSpecialties.remove(specialty);
             } else {
-              if (localSelectedSpecialties.length >= widget.maxSelections) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Maximum ${widget.maxSelections} specialties can be selected'),
-                    backgroundColor: AppColors.error,
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
-                return;
-              }
               localSelectedSpecialties.add(specialty);
             }
             setModalState(() {});
@@ -232,11 +300,9 @@ class _SpecialtySelectionWidgetState extends State<SpecialtySelectionWidget> {
                             ),
                           ),
                           Text(
-                            '${localSelectedSpecialties.length}/${widget.maxSelections}',
+                            '${localSelectedSpecialties.length} selected',
                             style: AppTextStyles.bodyMedium.copyWith(
-                              color: localSelectedSpecialties.length >= widget.maxSelections 
-                                  ? AppColors.error 
-                                  : AppColors.primary,
+                              color: AppColors.primary,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -315,20 +381,52 @@ class _SpecialtySelectionWidgetState extends State<SpecialtySelectionWidget> {
                     color: AppColors.grey50,
                     border: Border(top: BorderSide(color: AppColors.grey200)),
                   ),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: AppColors.onPrimary,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Add Custom Specialty Button
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            _showAddCustomSpecialtyDialog(context, localSelectedSpecialties, (newSpecialty) {
+                              if (newSpecialty.isNotEmpty && !localSelectedSpecialties.contains(newSpecialty)) {
+                                localSelectedSpecialties.add(newSpecialty);
+                                setModalState(() {});
+                                widget.onSelectionChanged(List.from(localSelectedSpecialties));
+                              }
+                            });
+                          },
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('Add Custom Specialty'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.primary,
+                            side: BorderSide(color: AppColors.primary),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
                         ),
                       ),
-                      child: const Text('Done'),
-                    ),
+                      const SizedBox(height: 8),
+                      // Done Button
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: AppColors.onPrimary,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text('Done'),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -347,6 +445,7 @@ class _SpecialtySelectionWidgetState extends State<SpecialtySelectionWidget> {
   @override
   void dispose() {
     _searchController.dispose();
+    _customSpecialtyController.dispose();
     super.dispose();
   }
 
@@ -363,7 +462,7 @@ class _SpecialtySelectionWidgetState extends State<SpecialtySelectionWidget> {
         ),
         const SizedBox(height: 4),
         Text(
-          'Select at least 1, up to ${widget.maxSelections} specialties',
+          'Select at least 1 specialty',
           style: AppTextStyles.bodySmall.copyWith(
             color: AppColors.grey600,
           ),

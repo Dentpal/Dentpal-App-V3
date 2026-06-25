@@ -18,6 +18,7 @@ import 'edit_product_page.dart';
 import '../../login_page.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/utils/navigation_utils.dart';
+import 'package:dentpal/utils/currency_formatter.dart';
 import 'package:dentpal/services/chat_service.dart';
 import 'package:dentpal/profile/pages/chat_detail_page.dart';
 import 'package:dentpal/core/widgets/web_footer.dart';
@@ -33,160 +34,183 @@ class ProductDetailPage extends StatefulWidget {
 
 class _ProductDetailPageState extends State<ProductDetailPage> {
   void _showFullImagePopup(String imageUrl) {
-  final TransformationController _transformationController =
-      TransformationController();
+    final TransformationController _transformationController =
+        TransformationController();
 
-  showDialog(
-    context: context,
-    barrierDismissible: true,
-    builder: (context) {
-      return GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => Navigator.of(context).pop(), // dismiss when tapping outside
-        child: Stack(
-          children: [
-            Center(
-              child: Container(
-                constraints: const BoxConstraints(maxWidth: 600, maxHeight: 600),
-                child: GestureDetector(
-                  onTap: () {}, // absorb taps on the image
-                  onDoubleTap: () {
-                    // Reset zoom and pan on double tap
-                    _transformationController.value = Matrix4.identity();
-                  },
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: InteractiveViewer(
-                      transformationController: _transformationController,
-                      minScale: 1.0,
-                      maxScale: 4.0,
-                      panEnabled: true,
-                      child: CachedNetworkImage(
-                        imageUrl: imageUrl,
-                        fit: BoxFit.contain,
-                        placeholder: (context, url) =>
-                            const Center(child: CircularProgressIndicator()),
-                        errorWidget: (context, url, error) => const Icon(
-                          Icons.broken_image,
-                          color: AppColors.error,
-                          size: 48,
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () =>
+              Navigator.of(context).pop(), // dismiss when tapping outside
+          child: Stack(
+            children: [
+              Center(
+                child: Container(
+                  constraints: const BoxConstraints(
+                    maxWidth: 600,
+                    maxHeight: 600,
+                  ),
+                  child: GestureDetector(
+                    onTap: () {}, // absorb taps on the image
+                    onDoubleTap: () {
+                      // Reset zoom and pan on double tap
+                      _transformationController.value = Matrix4.identity();
+                    },
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: InteractiveViewer(
+                        transformationController: _transformationController,
+                        minScale: 1.0,
+                        maxScale: 4.0,
+                        panEnabled: true,
+                        child: CachedNetworkImage(
+                          imageUrl: imageUrl,
+                          fit: BoxFit.contain,
+                          placeholder: (context, url) =>
+                              const Center(child: CircularProgressIndicator()),
+                          errorWidget: (context, url, error) => const Icon(
+                            Icons.broken_image,
+                            color: AppColors.error,
+                            size: 48,
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-            Positioned(
-              top: 16,
-              right: 16,
-              child: GestureDetector(
-                onTap: () => Navigator.of(context).pop(),
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: AppColors.error,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Center(
-                    child: Icon(Icons.close, color: Colors.white, size: 28),
+              Positioned(
+                top: 16,
+                right: 16,
+                child: GestureDetector(
+                  onTap: () => Navigator.of(context).pop(),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.error,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Center(
+                      child: Icon(Icons.close, color: Colors.white, size: 28),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
-        ),
-      );
-    },
-  );
-}
-
-
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   final ProductService _productService = ProductService();
   final CartService _cartService = CartService();
   final CategoryService _categoryService = CategoryService();
-  
+
   late Future<Product?> _productFuture;
   int _quantity = 1;
   ProductVariation? _selectedVariation;
   bool _isAddingToCart = false;
   DateTime? _lastAddToCartTime;
-  
+
+  // Gallery carousel: swipe through product.images first, then into variations.
+  int _galleryImageIndex = 0;
+  bool _inGallery = false;
+
   // Controller for quantity input (web view)
   final TextEditingController _quantityController = TextEditingController();
-  
+
   // Cache for category names to avoid repeated Firestore calls
   final Map<String, String> _categoryNames = {};
 
   // Cache for subcategory names to avoid repeated Firestore calls
   final Map<String, String> _subCategoryNames = {};
-  
+
   // Cache for seller data to avoid repeated Firestore calls
   final Map<String, Map<String, dynamic>> _sellerData = {};
-  
+
   // Cache management
   Product? _cachedProduct;
   DateTime? _cacheTimestamp;
-  
+
   // Check if current user is the seller of this product
   bool _isCurrentUserSeller(Product product) {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return false;
     return currentUser.uid == product.sellerId;
   }
-  
+
+  // Navigate back to product listing page and clear URL
+  void _navigateBackToProductListing() {
+    // Clear the URL back to root (clean URL)
+    NavigationUtils.updatePageUrl('/');
+
+    // Pop back to previous page or go to product listing
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    } else {
+      // If no page to pop to, navigate to product listing
+      Navigator.of(context).pushReplacementNamed('/');
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _productFuture = _loadProduct();
     _quantityController.text = _quantity.toString();
-    
+
     // Update URL for deep linking support
     NavigationUtils.updatePageUrl('/product/${widget.productId}');
   }
-  
+
   @override
   void dispose() {
     _quantityController.dispose();
     super.dispose();
   }
-  
+
   Future<Product?> _loadProduct() async {
     try {
       AppLogger.d('ProductDetailPage: Loading product ${widget.productId}...');
       final product = await _productService.getProductById(widget.productId);
-      
+
       if (product != null) {
         // Cache the product data
         _cachedProduct = product;
         _cacheTimestamp = DateTime.now();
-        
+
         // Select the first variation by default if available
-        if (product.variations != null && 
-            product.variations!.isNotEmpty) {
+        if (product.variations != null && product.variations!.isNotEmpty) {
           _selectedVariation = product.variations![0];
           // Update text controller for web view
           _quantityController.text = _quantity.toString();
         }
-        
+
+        // Start in gallery mode if the product has gallery images.
+        _inGallery = product.images.isNotEmpty;
+        _galleryImageIndex = 0;
+
         AppLogger.d('ProductDetailPage: Loaded product ${product.name}');
       }
-      
+
       return product;
     } catch (e) {
       AppLogger.d('Error loading product: $e');
       return null;
     }
   }
-  
+
   // Fetch category name by ID and cache it
   Future<String> _getCategoryName(String categoryId) async {
     if (_categoryNames.containsKey(categoryId)) {
       return _categoryNames[categoryId]!;
     }
-    
+
     try {
       final category = await _categoryService.getCategoryById(categoryId);
       final categoryName = category?.categoryName ?? 'Unknown Category';
@@ -200,14 +224,20 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   }
 
   // Fetch subcategory name by IDs and cache it
-  Future<String> _getSubCategoryName(String categoryId, String subCategoryId) async {
+  Future<String> _getSubCategoryName(
+    String categoryId,
+    String subCategoryId,
+  ) async {
     final cacheKey = '$categoryId|$subCategoryId';
     if (_subCategoryNames.containsKey(cacheKey)) {
       return _subCategoryNames[cacheKey]!;
     }
 
     try {
-      final subCategory = await _categoryService.getSubCategoryById(categoryId, subCategoryId);
+      final subCategory = await _categoryService.getSubCategoryById(
+        categoryId,
+        subCategoryId,
+      );
       final subCategoryName = subCategory?.subCategoryName ?? '';
       _subCategoryNames[cacheKey] = subCategoryName;
       return subCategoryName;
@@ -223,14 +253,14 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
     if (_sellerData.containsKey(sellerId)) {
       return _sellerData[sellerId]!;
     }
-    
+
     try {
       final sellerDoc = await FirebaseFirestore.instance
           .collection('Seller')
           .doc(sellerId)
           .get();
-      
-           if (sellerDoc.exists) {
+
+      if (sellerDoc.exists) {
         final data = sellerDoc.data() as Map<String, dynamic>;
 
         // Safely read nested vendor > company fields
@@ -243,7 +273,8 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
 
         // Fetch profileImage URL from vendor.profileImage
         String profileImageURL = '';
-        if (vendor['profileImage'] is Map && vendor['profileImage']['url'] is String) {
+        if (vendor['profileImage'] is Map &&
+            vendor['profileImage']['url'] is String) {
           profileImageURL = vendor['profileImage']['url'] as String;
         }
 
@@ -308,7 +339,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   // Check if cache is expired (older than 10 minutes for product details)
   bool _isCacheExpired() {
     if (_cacheTimestamp == null) return true;
-    
+
     final now = DateTime.now();
     final difference = now.difference(_cacheTimestamp!);
     return difference.inMinutes >= 10;
@@ -318,7 +349,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   bool _hasProductChanged(Product? oldProduct, Product? newProduct) {
     if (oldProduct == null && newProduct == null) return false;
     if (oldProduct == null || newProduct == null) return true;
-    
+
     // Compare basic product properties
     if (oldProduct.productId != newProduct.productId ||
         oldProduct.name != newProduct.name ||
@@ -329,66 +360,75 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       AppLogger.d('Product data changed: Basic properties differ');
       return true;
     }
-    
+
     // Compare variations
     if (oldProduct.variations?.length != newProduct.variations?.length) {
       AppLogger.d('Product data changed: Variation count differs');
       return true;
     }
-    
+
     if (oldProduct.variations != null && newProduct.variations != null) {
       for (int i = 0; i < oldProduct.variations!.length; i++) {
         final oldVar = oldProduct.variations![i];
         final newVar = newProduct.variations![i];
-        
+
         if (oldVar.variationId != newVar.variationId ||
             oldVar.name != newVar.name ||
             oldVar.price != newVar.price ||
             oldVar.stock != newVar.stock ||
             oldVar.imageURL != newVar.imageURL) {
-          AppLogger.d('Product data changed: Variation ${oldVar.name} has differences');
+          AppLogger.d(
+            'Product data changed: Variation ${oldVar.name} has differences',
+          );
           return true;
         }
       }
     }
-    
+
     return false;
   }
 
   // Handle pull-to-refresh with cache-first approach and change detection
   Future<void> _handleRefresh() async {
-    AppLogger.d('ProductDetailPage: Pull-to-refresh triggered (cache-first approach)');
-    
+    AppLogger.d(
+      'ProductDetailPage: Pull-to-refresh triggered (cache-first approach)',
+    );
+
     try {
       // Keep current data as backup
       final currentProduct = _cachedProduct;
       final currentTimestamp = _cacheTimestamp;
-      
-      AppLogger.d('Current cache: ${currentProduct?.name ?? 'No cached product'}');
-      
+
+      AppLogger.d(
+        'Current cache: ${currentProduct?.name ?? 'No cached product'}',
+      );
+
       // Fetch fresh data from Firebase
       AppLogger.d('Fetching fresh product data from Firebase...');
-      final freshProduct = await _productService.getProductById(widget.productId);
-      
+      final freshProduct = await _productService.getProductById(
+        widget.productId,
+      );
+
       // Compare data for changes
       final hasChanges = _hasProductChanged(currentProduct, freshProduct);
-      
+
       if (hasChanges || currentTimestamp == null || _isCacheExpired()) {
         AppLogger.d('Changes detected or cache expired - updating data');
-        
+
         // Update with fresh data
         setState(() {
           _cachedProduct = freshProduct;
           _cacheTimestamp = DateTime.now();
           _productFuture = Future.value(freshProduct);
-          
+
           // Re-select variation if it still exists, otherwise select first available
-          if (freshProduct?.variations != null && freshProduct!.variations!.isNotEmpty) {
+          if (freshProduct?.variations != null &&
+              freshProduct!.variations!.isNotEmpty) {
             final currentVariationId = _selectedVariation?.variationId;
             final foundVariation = freshProduct.variations!
                 .where((v) => v.variationId == currentVariationId)
                 .firstOrNull;
-            
+
             if (foundVariation != null) {
               _selectedVariation = foundVariation;
               // Adjust quantity if it exceeds new stock
@@ -406,21 +446,22 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
             _quantityController.text = _quantity.toString();
           }
         });
-        
-        AppLogger.d('Product data updated: ${freshProduct?.name ?? 'Product removed'}');
+
+        AppLogger.d(
+          'Product data updated: ${freshProduct?.name ?? 'Product removed'}',
+        );
       } else {
         // No changes detected, just refresh timestamp
         setState(() {
           _cacheTimestamp = DateTime.now();
         });
-        
+
         AppLogger.d('No changes detected - cache timestamp refreshed');
       }
-      
     } catch (e) {
       AppLogger.d('Refresh error: $e');
       AppLogger.d('Stack trace: ${StackTrace.current}');
-      
+
       // Show error but keep existing data
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -431,7 +472,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         );
       }
     }
-    
+
     AppLogger.d('ProductDetailPage: Pull-to-refresh completed');
   }
 
@@ -445,33 +486,35 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
 
     // Prevent multiple simultaneous requests
     if (_isAddingToCart) return;
-    
+
     // Additional safety check for stock availability
     if (_selectedVariation != null && _quantity > _selectedVariation!.stock) {
       CartFeedback.showError(
-        context, 
-        'Cannot add more items than available stock (${_selectedVariation!.stock})'
+        context,
+        'Cannot add more items than available stock (${_selectedVariation!.stock})',
       );
       setState(() {
-        _quantity = _selectedVariation!.stock > 0 ? _selectedVariation!.stock : 1;
+        _quantity = _selectedVariation!.stock > 0
+            ? _selectedVariation!.stock
+            : 1;
       });
       return;
     }
 
     // Debounce: Prevent rapid button taps (minimum 1 second between requests)
     final now = DateTime.now();
-    if (_lastAddToCartTime != null && 
+    if (_lastAddToCartTime != null &&
         now.difference(_lastAddToCartTime!).inSeconds < 1) {
       CartFeedback.showInfo(context, 'Please wait before adding another item');
       return;
     }
-    
+
     _lastAddToCartTime = now;
-    
+
     setState(() {
       _isAddingToCart = true;
     });
-    
+
     try {
       await CartPage.addItemOptimistically(
         productId: product.productId,
@@ -479,18 +522,18 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         variationId: _selectedVariation?.variationId,
         cartService: _cartService,
       );
-      
+
       if (mounted) {
         CartFeedback.showSuccess(
-          context, 
-          'Added $_quantity ${product.name} to cart'
+          context,
+          'Added $_quantity ${product.name} to cart',
         );
       }
     } catch (e) {
       if (mounted) {
         CartFeedback.showError(
-          context, 
-          'Failed to add item to cart: ${e.toString()}'
+          context,
+          'Failed to add item to cart: ${e.toString()}',
         );
       }
     } finally {
@@ -508,7 +551,9 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       builder: (BuildContext context) {
         return AlertDialog(
           backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           title: Row(
             children: [
               Container(
@@ -565,7 +610,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       },
     );
   }
-  
+
   Future<void> _inquireAboutProduct(Product product) async {
     // Check if user is authenticated first
     final user = FirebaseAuth.instance.currentUser;
@@ -590,13 +635,11 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
+        builder: (context) => const Center(child: CircularProgressIndicator()),
       );
 
       final chatService = ChatService();
-      
+
       // Get current variation for product details
       final selectedVariation = _selectedVariation;
       String productName = product.name;
@@ -618,15 +661,26 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           .doc(product.productId)
           .collection('Inquiries')
           .doc(user.uid)
-          .set({
-        'userId': user.uid,
-        'isCharged': false,
-        'createdAt': FieldValue.serverTimestamp(),
-        'lastInquiryAt': FieldValue.serverTimestamp(), // Track latest inquiry
-        'chatRoomId': chatRoomId,
-        'variationId': selectedVariation?.variationId,
-        'variationName': selectedVariation?.name,
-      }, SetOptions(mergeFields: ['lastInquiryAt', 'chatRoomId', 'variationId', 'variationName']));
+          .set(
+            {
+              'userId': user.uid,
+              'isCharged': false,
+              'createdAt': FieldValue.serverTimestamp(),
+              'lastInquiryAt':
+                  FieldValue.serverTimestamp(), // Track latest inquiry
+              'chatRoomId': chatRoomId,
+              'variationId': selectedVariation?.variationId,
+              'variationName': selectedVariation?.name,
+            },
+            SetOptions(
+              mergeFields: [
+                'lastInquiryAt',
+                'chatRoomId',
+                'variationId',
+                'variationName',
+              ],
+            ),
+          );
       // Close loading dialog
       if (mounted) Navigator.of(context).pop();
 
@@ -638,7 +692,8 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
             builder: (context) => ChatDetailPage(
               chatRoomId: chatRoomId,
               otherUserId: product.sellerId,
-              otherUserName: 'Seller', // Will be updated with actual seller name in chat page
+              otherUserName:
+                  'Seller', // Will be updated with actual seller name in chat page
             ),
           ),
         );
@@ -646,7 +701,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
     } catch (e) {
       // Close loading dialog if still open
       if (mounted) Navigator.of(context).pop();
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -657,16 +712,17 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       }
     }
   }
-  
+
   void _shareProduct(Product product) {
     // On mobile, use native share directly without showing our modal
     if (!kIsWeb) {
       final shareUrl = NavigationUtils.getProductShareUrl(product.productId);
-      final shareText = '${product.name}\n\nCheck out this product on DentPal: $shareUrl';
+      final shareText =
+          '${product.name}\n\nCheck out this product on DentPal: $shareUrl';
       Share.share(shareText, subject: 'Check out this product on DentPal');
       return;
     }
-    
+
     // On web, show our custom modal
     showModalBottomSheet(
       context: context,
@@ -678,8 +734,9 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
 
   Widget _buildShareBottomSheet(Product product) {
     final shareUrl = NavigationUtils.getProductShareUrl(product.productId);
-    final shareText = '${product.name}\n\nCheck out this product on DentPal: $shareUrl';
-    
+    final shareText =
+        '${product.name}\n\nCheck out this product on DentPal: $shareUrl';
+
     return Container(
       decoration: const BoxDecoration(
         color: AppColors.surface,
@@ -702,7 +759,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            
+
             // Header
             Padding(
               padding: const EdgeInsets.all(24),
@@ -741,7 +798,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 ],
               ),
             ),
-            
+
             // Share options - horizontal scrollable list
             SizedBox(
               height: 100, // Fixed height to contain icon + label
@@ -782,9 +839,9 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 ),
               ),
             ),
-                  
+
             const SizedBox(height: 24),
-            
+
             // Copy link button
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -837,7 +894,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 ),
               ),
             ),
-                  
+
             const SizedBox(height: 24),
           ],
         ),
@@ -863,11 +920,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
               color: color.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              icon,
-              color: color,
-              size: 24,
-            ),
+            child: Icon(icon, color: color, size: 24),
           ),
           const SizedBox(height: 8),
           Text(
@@ -889,9 +942,10 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       Navigator.pop(context);
       return;
     }
-    
+
     // On web, open Facebook share URL
-    final facebookUrl = 'https://www.facebook.com/sharer/sharer.php?u=${Uri.encodeComponent(url)}';
+    final facebookUrl =
+        'https://www.facebook.com/sharer/sharer.php?u=${Uri.encodeComponent(url)}';
     _openUrl(facebookUrl);
   }
 
@@ -902,26 +956,28 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       Navigator.pop(context);
       return;
     }
-    
+
     // On web, open Facebook Messenger with pre-filled message
-    final messengerUrl = 'https://www.messenger.com/new?text=${Uri.encodeComponent(text)}';
+    final messengerUrl =
+        'https://www.messenger.com/new?text=${Uri.encodeComponent(text)}';
     _openUrl(messengerUrl);
   }
 
   void _shareToEmail(String url, String text) {
     // Email should work on both mobile and web
-    final emailUrl = 'mailto:?subject=${Uri.encodeComponent('Check out this product on DentPal')}&body=${Uri.encodeComponent(text)}';
+    final emailUrl =
+        'mailto:?subject=${Uri.encodeComponent('Check out this product on DentPal')}&body=${Uri.encodeComponent(text)}';
     _openUrl(emailUrl);
   }
 
   void _shareToSMS(String url, String text) {
-    // On mobile, use native share dialog  
+    // On mobile, use native share dialog
     if (!kIsWeb) {
       Share.share(text, subject: 'Check out this product on DentPal');
       Navigator.pop(context);
       return;
     }
-    
+
     // On web, open SMS URL
     final smsUrl = 'sms:?body=${Uri.encodeComponent(text)}';
     _openUrl(smsUrl);
@@ -951,11 +1007,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           SnackBar(
             content: Row(
               children: [
-                Icon(
-                  Icons.check_circle,
-                  color: AppColors.onPrimary,
-                  size: 20,
-                ),
+                Icon(Icons.check_circle, color: AppColors.onPrimary, size: 20),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -979,7 +1031,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       }
     });
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -994,7 +1046,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           } else if (!snapshot.hasData || snapshot.data == null) {
             return _buildNotFoundState();
           }
-          
+
           final product = snapshot.data!;
           return _buildModernProductDetail(product);
         },
@@ -1009,7 +1061,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => _navigateBackToProductListing(),
         ),
       ),
       body: Center(
@@ -1055,7 +1107,10 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: AppColors.onPrimary,
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 16,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
@@ -1074,7 +1129,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => _navigateBackToProductListing(),
         ),
       ),
       body: Center(
@@ -1110,13 +1165,16 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
             ),
             const SizedBox(height: 32),
             ElevatedButton.icon(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => _navigateBackToProductListing(),
               icon: const Icon(Icons.arrow_back),
               label: const Text('Go Back'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: AppColors.onPrimary,
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 16,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
@@ -1132,11 +1190,11 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
     final screenWidth = MediaQuery.of(context).size.width;
     final isWebView = screenWidth > 1024;
     final isTabletView = screenWidth > 768 && screenWidth <= 1024;
-    
+
     if (isWebView || isTabletView) {
       return _buildWebLayout(product);
     }
-    
+
     return _buildMobileLayout(product);
   }
 
@@ -1152,157 +1210,171 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-            // Fixed app bar header (separate from image)
-            SliverAppBar(
-              expandedHeight: 60,
-              floating: false,
-              pinned: true,
-              elevation: 0,
-              backgroundColor: AppColors.surface,
-              automaticallyImplyLeading: false,
-              title: Row(
-                children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.08),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
+              // Fixed app bar header (separate from image)
+              SliverAppBar(
+                expandedHeight: 60,
+                floating: false,
+                pinned: true,
+                elevation: 0,
+                backgroundColor: AppColors.surface,
+                automaticallyImplyLeading: false,
+                title: Row(
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.08),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: IconButton(
+                        icon: const Icon(
+                          Icons.arrow_back,
+                          color: AppColors.onSurface,
                         ),
-                      ],
+                        onPressed: () => _navigateBackToProductListing(),
+                      ),
                     ),
-                    child: IconButton(
-                      icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ),
-                  const Spacer(),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.08),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Edit button - only show if current user is the seller
-                        if (_isCurrentUserSeller(product)) ...[
+                    const Spacer(),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.08),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Edit button - only show if current user is the seller
+                          if (_isCurrentUserSeller(product)) ...[
+                            IconButton(
+                              icon: const Icon(
+                                Icons.edit,
+                                color: AppColors.primary,
+                              ),
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        EditProductPage(product: product),
+                                  ),
+                                ).then((_) {
+                                  _handleRefresh();
+                                });
+                              },
+                            ),
+                            Container(
+                              width: 1,
+                              height: 24,
+                              color: AppColors.onSurface.withValues(alpha: 0.1),
+                            ),
+                          ],
+                          // Share button
                           IconButton(
-                            icon: const Icon(Icons.edit, color: AppColors.primary),
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => EditProductPage(product: product),
-                                ),
-                              ).then((_) {
-                                _handleRefresh();
-                              });
-                            },
+                            icon: const Icon(
+                              Icons.share,
+                              color: AppColors.onSurface,
+                            ),
+                            onPressed: () => _shareProduct(product),
                           ),
                           Container(
                             width: 1,
                             height: 24,
                             color: AppColors.onSurface.withValues(alpha: 0.1),
                           ),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.shopping_cart,
+                              color: AppColors.onSurface,
+                            ),
+                            onPressed: () {
+                              final user = FirebaseAuth.instance.currentUser;
+                              if (user == null) {
+                                _showLoginRequiredDialog();
+                              } else {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (context) => const CartPage(),
+                                  ),
+                                );
+                              }
+                            },
+                          ),
                         ],
-                        // Share button
-                        IconButton(
-                          icon: const Icon(Icons.share, color: AppColors.onSurface),
-                          onPressed: () => _shareProduct(product),
-                        ),
-                        Container(
-                          width: 1,
-                          height: 24,
-                          color: AppColors.onSurface.withValues(alpha: 0.1),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.shopping_cart, color: AppColors.onSurface),
-                          onPressed: () {
-                            final user = FirebaseAuth.instance.currentUser;
-                            if (user == null) {
-                              _showLoginRequiredDialog();
-                            } else {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(builder: (context) => const CartPage()),
-                              );
-                            }
-                          },
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              flexibleSpace: FlexibleSpaceBar(
-                background: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        AppColors.primary.withValues(alpha: 0.05),
-                        AppColors.secondary.withValues(alpha: 0.02),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-            // Product image as a separate 1:1 square section
-            SliverToBoxAdapter(
-              child: Hero(
-                tag: 'product-${product.productId}',
-                child: _buildProductImageSection(product),
-              ),
-            ),
-            
-            // Product Information
-            SliverToBoxAdapter(
-              child: Container(
-                decoration: const BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(24),
-                    topRight: Radius.circular(24),
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    _buildProductInfo(product),
-                    _buildVariationsSection(product),
-                    _buildQuantityAndStock(),
-                    _buildDescriptionSection(product),
-                    _buildSpecificationsSection(product),
-                    // _buildReviewsSection(), // Hidden: Static/fake data
-                    const SizedBox(height: 80), // Bottom padding for fixed button
                   ],
                 ),
+                flexibleSpace: FlexibleSpaceBar(
+                  background: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          AppColors.primary.withValues(alpha: 0.05),
+                          AppColors.secondary.withValues(alpha: 0.02),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
 
-            // Web Footer (only shows on web)
-            const SliverToBoxAdapter(
-              child: WebFooter(),
-            ),
-          ],
-        ), // End CustomScrollView
+              // Product image as a separate 1:1 square section
+              SliverToBoxAdapter(
+                child: Hero(
+                  tag: 'product-${product.productId}',
+                  child: _buildProductImageSection(product),
+                ),
+              ),
+
+              // Product Information
+              SliverToBoxAdapter(
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(24),
+                      topRight: Radius.circular(24),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      _buildProductInfo(product),
+                      _buildVariationsSection(product),
+                      _buildQuantityAndStock(),
+                      _buildDescriptionSection(product),
+                      _buildSpecificationsSection(product),
+                      // _buildReviewsSection(), // Hidden: Static/fake data
+                      const SizedBox(
+                        height: 80,
+                      ), // Bottom padding for fixed button
+                    ],
+                  ),
+                ),
+              ),
+
+              // Web Footer (only shows on web)
+              const SliverToBoxAdapter(child: WebFooter()),
+            ],
+          ), // End CustomScrollView
         ), // End RefreshIndicator
-        
         // Fixed Add to Cart Button
         _buildFixedAddToCartButton(product),
-        
+
         // Loading overlay
         LoadingOverlay(
           message: 'Adding to cart...',
@@ -1327,7 +1399,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => _navigateBackToProductListing(),
         ),
         actions: [
           // Edit button - only show if current user is the seller
@@ -1408,9 +1480,9 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                               ),
                             ),
                           ),
-                          
+
                           const SizedBox(width: 40),
-                          
+
                           // Right side - Product Details & Actions
                           Expanded(
                             flex: 5,
@@ -1428,15 +1500,15 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                           ),
                         ],
                       ),
-                      
+
                       const SizedBox(height: 40),
-                      
+
                       // Row 2: Description (Full Width)
                       SizedBox(
                         width: double.infinity,
                         child: _buildDescriptionSection(product),
                       ),
-                      
+
                       const SizedBox(height: 8),
 
                       // Row 3: Specifications (Full Width)
@@ -1444,9 +1516,9 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                         width: double.infinity,
                         child: _buildSpecificationsSection(product),
                       ),
-                      
+
                       const SizedBox(height: 24),
-                      
+
                       // Row 4: Reviews (Full Width) - Hidden: Static/fake data
                       // SizedBox(
                       //   width: double.infinity,
@@ -1462,7 +1534,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
               ),
             ),
           ),
-          
+
           // Loading overlay
           LoadingOverlay(
             message: 'Adding to cart...',
@@ -1490,10 +1562,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Colors.white,
-              Colors.grey.shade50,
-            ],
+            colors: [Colors.white, Colors.grey.shade50],
           ),
         ),
         child: Stack(
@@ -1503,7 +1572,8 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 child: imageUrl.isNotEmpty
                     ? CachedNetworkImage(
                         imageUrl: imageUrl,
-                        fit: BoxFit.cover, // Changed from cover to contain for consistency
+                        fit: BoxFit
+                            .cover, // Changed from cover to contain for consistency
                         filterQuality: FilterQuality.high,
                         fadeInDuration: const Duration(milliseconds: 300),
                         placeholder: (context, url) => Container(
@@ -1515,21 +1585,27 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                         errorWidget: (context, url, error) => Container(
                           color: Colors.white,
                           child: const Center(
-                            child: Icon(Icons.image_not_supported,
-                                size: 64, color: Colors.grey),
+                            child: Icon(
+                              Icons.image_not_supported,
+                              size: 64,
+                              color: Colors.grey,
+                            ),
                           ),
                         ),
                       )
                     : Container(
                         color: Colors.white,
                         child: const Center(
-                          child: Icon(Icons.image_not_supported,
-                              size: 64, color: Colors.grey),
+                          child: Icon(
+                            Icons.image_not_supported,
+                            size: 64,
+                            color: Colors.grey,
+                          ),
                         ),
                       ),
               ),
             ),
-            
+
             // Variation thumbnails overlay for web - improved sizing
             if (product.variations != null && product.variations!.length > 1)
               Positioned(
@@ -1537,14 +1613,17 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 left: 16,
                 right: 16,
                 child: SizedBox(
-                  height: 90, // Increased height for better thumbnail visibility
+                  height:
+                      90, // Increased height for better thumbnail visibility
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
                     itemCount: product.variations!.length,
                     itemBuilder: (context, index) {
                       final variation = product.variations![index];
-                      final isSelected = _selectedVariation?.variationId == variation.variationId;
-                      
+                      final isSelected =
+                          _selectedVariation?.variationId ==
+                          variation.variationId;
+
                       return GestureDetector(
                         onTap: () {
                           setState(() {
@@ -1562,15 +1641,19 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                           height: 90,
                           margin: const EdgeInsets.only(right: 12),
                           decoration: BoxDecoration(
-                            color: isSelected ? AppColors.primary.withValues(alpha: 0.1) : Colors.white,
+                            color: isSelected
+                                ? AppColors.primary.withValues(alpha: 0.1)
+                                : Colors.white,
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
-                              color: isSelected ? AppColors.primary : Colors.grey.shade300,
+                              color: isSelected
+                                  ? AppColors.primary
+                                  : Colors.grey.shade300,
                               width: isSelected ? 3 : 1,
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: isSelected 
+                                color: isSelected
                                     ? AppColors.primary.withValues(alpha: 0.2)
                                     : Colors.black.withValues(alpha: 0.1),
                                 blurRadius: isSelected ? 8 : 4,
@@ -1579,18 +1662,25 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                             ],
                           ),
                           child: ClipRRect(
-                            borderRadius: BorderRadius.circular(14), // Slightly smaller to account for border
+                            borderRadius: BorderRadius.circular(
+                              14,
+                            ), // Slightly smaller to account for border
                             child: SizedBox(
                               width: 90,
                               height: 90,
-                              child: variation.imageURL != null && variation.imageURL!.isNotEmpty
+                              child:
+                                  variation.imageURL != null &&
+                                      variation.imageURL!.isNotEmpty
                                   ? CachedNetworkImage(
                                       imageUrl: variation.imageURL!,
-                                      fit: BoxFit.cover, // Ensures image fills the entire container
+                                      fit: BoxFit
+                                          .cover, // Ensures image fills the entire container
                                       width: 90,
                                       height: 90,
                                       filterQuality: FilterQuality.high,
-                                      fadeInDuration: const Duration(milliseconds: 200),
+                                      fadeInDuration: const Duration(
+                                        milliseconds: 200,
+                                      ),
                                       placeholder: (context, url) => Container(
                                         width: 90,
                                         height: 90,
@@ -1599,22 +1689,25 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                                           child: SizedBox(
                                             width: 20,
                                             height: 20,
-                                            child: CircularProgressIndicator(strokeWidth: 2),
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
                                           ),
                                         ),
                                       ),
-                                      errorWidget: (context, url, error) => Container(
-                                        width: 90,
-                                        height: 90,
-                                        color: Colors.grey.shade100,
-                                        child: const Center(
-                                          child: Icon(
-                                            Icons.image_not_supported,
-                                            size: 24,
-                                            color: Colors.grey,
+                                      errorWidget: (context, url, error) =>
+                                          Container(
+                                            width: 90,
+                                            height: 90,
+                                            color: Colors.grey.shade100,
+                                            child: const Center(
+                                              child: Icon(
+                                                Icons.image_not_supported,
+                                                size: 24,
+                                                color: Colors.grey,
+                                              ),
+                                            ),
                                           ),
-                                        ),
-                                      ),
                                       // Optimized cache size for web thumbnails
                                       memCacheWidth: 400,
                                       memCacheHeight: 400,
@@ -1646,67 +1739,129 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   }
 
   Widget _buildWebAddToCartButton(Product product) {
+    final bool isInStock =
+        _selectedVariation != null && _selectedVariation!.stock > 0;
+    final bool showContactAgent = product.allowInquiry;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: LoadingButton(
-        text: _selectedVariation != null && _selectedVariation!.stock > 0
-            ? 'Add to Cart • ₱${(_selectedVariation!.price * _quantity).toStringAsFixed(2)}'
-            : 'Out of Stock',
-        loadingText: 'Adding to cart...',
-        isLoading: _isAddingToCart,
-        onPressed: _selectedVariation != null && _selectedVariation!.stock > 0
-            ? () => _addToCart(product)
-            : null,
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        textStyle: const TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.w600,
-          fontFamily: 'Roboto',
-        ),
-      ),
+      child: showContactAgent
+          ? ElevatedButton(
+              onPressed: () => _inquireAboutProduct(product),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.accent,
+                foregroundColor: AppColors.onSecondary,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 0,
+              ),
+              child: const Text(
+                'Contact a Sales Agent',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            )
+          : LoadingButton(
+              text: isInStock
+                  ? 'Add to Cart • ${CurrencyFormatter.formatWithPeso(_selectedVariation!.price * _quantity)}'
+                  : 'Out of Stock',
+              loadingText: 'Adding to cart...',
+              isLoading: _isAddingToCart,
+              onPressed: isInStock ? () => _addToCart(product) : null,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              textStyle: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                fontFamily: 'Roboto',
+              ),
+            ),
     );
   }
 
   Widget _buildProductImageSection(Product product) {
-    final imageUrl = _selectedVariation?.imageURL ?? product.imageURL;
+    final hasGallery = product.images.isNotEmpty;
+    final variations = product.variations ?? const <ProductVariation>[];
+    final hasVariations = variations.isNotEmpty;
+
+    final imageUrl = (_inGallery && hasGallery)
+        ? product.images[_galleryImageIndex]
+        : (_selectedVariation?.imageURL ?? product.imageURL);
+
     // Track swipe direction for animation
     Offset _swipeOffset = const Offset(0.2, 0);
 
+    void goToVariation(ProductVariation variation) {
+      _selectedVariation = variation;
+      if (_quantity > variation.stock) {
+        _quantity = variation.stock > 0 ? 1 : 0;
+      }
+      _quantityController.text = _quantity.toString();
+    }
+
     return GestureDetector(
       onHorizontalDragEnd: (details) {
-        if (product.variations == null || product.variations!.isEmpty) return;
-        final currentIndex = product.variations!
-            .indexWhere((v) => v.variationId == _selectedVariation?.variationId);
+        final velocity = details.primaryVelocity;
+        if (velocity == null) return;
 
-        if (details.primaryVelocity != null) {
-          // Swipe right (velocity > 0): previous variation
-          if (details.primaryVelocity! > 0) {
-            if (currentIndex > 0) {
+        // Swipe LEFT (next frame): velocity < 0
+        if (velocity < 0) {
+          if (_inGallery && hasGallery) {
+            if (_galleryImageIndex < product.images.length - 1) {
               setState(() {
-                _swipeOffset = const Offset(-0.2, 0); // slide in from left
-                _selectedVariation = product.variations![currentIndex - 1];
-                if (_quantity > _selectedVariation!.stock) {
-                  _quantity = _selectedVariation!.stock > 0 ? 1 : 0;
-                }
-                // Update text controller for web view
-                _quantityController.text = _quantity.toString();
+                _swipeOffset = const Offset(0.2, 0);
+                _galleryImageIndex++;
+              });
+            } else if (hasVariations) {
+              // Past the last gallery image → enter variations.
+              setState(() {
+                _swipeOffset = const Offset(0.2, 0);
+                _inGallery = false;
+                goToVariation(variations.first);
+              });
+            }
+          } else if (hasVariations) {
+            final currentIndex = variations.indexWhere(
+              (v) => v.variationId == _selectedVariation?.variationId,
+            );
+            if (currentIndex < variations.length - 1) {
+              setState(() {
+                _swipeOffset = const Offset(0.2, 0);
+                goToVariation(variations[currentIndex + 1]);
               });
             }
           }
-          // Swipe left (velocity < 0): next variation
-          else if (details.primaryVelocity! < 0) {
-            if (currentIndex < product.variations!.length - 1) {
+          return;
+        }
+
+        // Swipe RIGHT (previous frame): velocity > 0
+        if (velocity > 0) {
+          if (!_inGallery && hasVariations) {
+            final currentIndex = variations.indexWhere(
+              (v) => v.variationId == _selectedVariation?.variationId,
+            );
+            if (currentIndex > 0) {
               setState(() {
-                _swipeOffset = const Offset(0.2, 0); // slide in from right
-                _selectedVariation = product.variations![currentIndex + 1];
-                if (_quantity > _selectedVariation!.stock) {
-                  _quantity = _selectedVariation!.stock > 0 ? 1 : 0;
-                }
-                // Update text controller for web view
-                _quantityController.text = _quantity.toString();
+                _swipeOffset = const Offset(-0.2, 0);
+                goToVariation(variations[currentIndex - 1]);
+              });
+            } else if (hasGallery) {
+              // Back from the first variation → return to the last gallery image.
+              setState(() {
+                _swipeOffset = const Offset(-0.2, 0);
+                _inGallery = true;
+                _galleryImageIndex = product.images.length - 1;
               });
             }
+          } else if (_inGallery && _galleryImageIndex > 0) {
+            setState(() {
+              _swipeOffset = const Offset(-0.2, 0);
+              _galleryImageIndex--;
+            });
           }
         }
       },
@@ -1724,10 +1879,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [
-                Colors.white,
-                Colors.grey.shade50,
-              ],
+              colors: [Colors.white, Colors.grey.shade50],
             ),
           ),
           child: Stack(
@@ -1747,7 +1899,9 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                     );
                   },
                   child: SizedBox(
-                    key: ValueKey(imageUrl), // important for detecting image change
+                    key: ValueKey(
+                      imageUrl,
+                    ), // important for detecting image change
                     width: double.infinity,
                     height: double.infinity,
                     child: imageUrl.isNotEmpty
@@ -1760,14 +1914,19 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                             placeholder: (context, url) => Container(
                               color: Colors.white,
                               child: const Center(
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               ),
                             ),
                             errorWidget: (context, url, error) => Container(
                               color: Colors.white,
                               child: const Center(
-                                child: Icon(Icons.image_not_supported,
-                                    size: 64, color: Colors.grey),
+                                child: Icon(
+                                  Icons.image_not_supported,
+                                  size: 64,
+                                  color: Colors.grey,
+                                ),
                               ),
                             ),
                             memCacheWidth: 720, // 720p square
@@ -1776,8 +1935,11 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                         : Container(
                             color: Colors.white,
                             child: const Center(
-                              child: Icon(Icons.image_not_supported,
-                                  size: 64, color: Colors.grey),
+                              child: Icon(
+                                Icons.image_not_supported,
+                                size: 64,
+                                color: Colors.grey,
+                              ),
                             ),
                           ),
                   ),
@@ -1806,8 +1968,12 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: product.variations!.asMap().entries.map((entry) {
-                      final isSelected = _selectedVariation?.variationId == entry.value.variationId;
-                      final hasImage = entry.value.imageURL != null && entry.value.imageURL!.isNotEmpty;
+                      final isSelected =
+                          _selectedVariation?.variationId ==
+                          entry.value.variationId;
+                      final hasImage =
+                          entry.value.imageURL != null &&
+                          entry.value.imageURL!.isNotEmpty;
 
                       return AnimatedContainer(
                         duration: const Duration(milliseconds: 250),
@@ -1817,14 +1983,15 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                         decoration: BoxDecoration(
                           color: isSelected
                               ? AppColors.primary
-                              : hasImage 
-                                  ? Colors.white.withValues(alpha: 0.7)
-                                  : Colors.white.withValues(alpha: 0.3),
-                          borderRadius: BorderRadius.circular(isSelected ? 6 : 50),
-                          border: isSelected ? Border.all(
-                            color: Colors.white,
-                            width: 1,
-                          ) : null,
+                              : hasImage
+                              ? Colors.white.withValues(alpha: 0.7)
+                              : Colors.white.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(
+                            isSelected ? 6 : 50,
+                          ),
+                          border: isSelected
+                              ? Border.all(color: Colors.white, width: 1)
+                              : null,
                         ),
                       );
                     }).toList(),
@@ -1836,7 +2003,6 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       ),
     );
   }
-
 
   Widget _buildProductInfo(Product product) {
     return Container(
@@ -1865,9 +2031,14 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                       builder: (context, snapshot) {
                         final categoryName = snapshot.data ?? 'Loading...';
                         return Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
                           decoration: BoxDecoration(
-                            color: AppColors.onSurfaceVariant.withValues(alpha: .1),
+                            color: AppColors.onSurfaceVariant.withValues(
+                              alpha: .1,
+                            ),
                             borderRadius: BorderRadius.circular(16),
                           ),
                           child: Text(
@@ -1885,27 +2056,30 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
               ),
             ],
           ),
-          
+
           const SizedBox(height: 20),
-          
+
           // Shop name section
           if (_selectedVariation != null)
             FutureBuilder<Map<String, dynamic>>(
               future: _getSellerData(product.sellerId),
               builder: (context, sellerSnapshot) {
-                final sellerData = sellerSnapshot.data ?? {
-                  'shopName': 'DentPal Store',
-                  'address': 'Loading...',
-                  'isActive': true,
-                };
-                final profileImageURL = sellerData['profileImageURL'] as String? ?? '';
+                final sellerData =
+                    sellerSnapshot.data ??
+                    {
+                      'shopName': 'DentPal Store',
+                      'address': 'Loading...',
+                      'isActive': true,
+                    };
+                final profileImageURL =
+                    sellerData['profileImageURL'] as String? ?? '';
                 // Add cache-busting parameter for web
                 final profileImageURLWithCache = profileImageURL.isNotEmpty
-                    ? (profileImageURL.contains('?') 
-                        ? '$profileImageURL&v=${DateTime.now().millisecondsSinceEpoch}'
-                        : '$profileImageURL?v=${DateTime.now().millisecondsSinceEpoch}')
+                    ? (profileImageURL.contains('?')
+                          ? '$profileImageURL&v=${DateTime.now().millisecondsSinceEpoch}'
+                          : '$profileImageURL?v=${DateTime.now().millisecondsSinceEpoch}')
                     : '';
-                
+
                 return Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -1943,10 +2117,17 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                                       ),
                                     ),
                                   ),
-                                  errorWidget: (context, url, error) =>
-                                      Icon(Icons.store, size: 24, color: AppColors.primary),
+                                  errorWidget: (context, url, error) => Icon(
+                                    Icons.store,
+                                    size: 24,
+                                    color: AppColors.primary,
+                                  ),
                                 )
-                              : Icon(Icons.store, size: 24, color: AppColors.primary),
+                              : Icon(
+                                  Icons.store,
+                                  size: 24,
+                                  color: AppColors.primary,
+                                ),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -1955,8 +2136,9 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              sellerData['shopName'] ?? 'Store name not available',
-                              style: AppTextStyles.titleLarge.copyWith(
+                              sellerData['shopName'] ??
+                                  'Store name not available',
+                              style: AppTextStyles.titleMedium.copyWith(
                                 color: AppColors.primary,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -1964,77 +2146,15 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                             Text(
                               sellerData['address'] ?? 'Address not available',
                               style: AppTextStyles.bodySmall.copyWith(
-                                color: AppColors.onSurface.withValues(alpha: 0.7),
+                                color: AppColors.onSurface.withValues(
+                                  alpha: 0.7,
+                                ),
                               ),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ],
                         ),
-                      ),
-                      Row(
-                        children: [
-                          // Visit Store button
-                          Container(
-                            decoration: BoxDecoration(
-                              color: AppColors.primary,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(12),
-                                onTap: () {
-                                  NavigationUtils.navigateToStore(
-                                    context,
-                                    product.sellerId,
-                                    sellerData: sellerData,
-                                  );
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                  child: Text(
-                                    'Visit Store',
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color: AppColors.onPrimary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          
-                          // Show inquiry button only if allowed
-                          if (product.allowInquiry) ...[
-                            const SizedBox(width: 8),
-                            
-                            // Inquire button
-                            Container(
-                              decoration: BoxDecoration(
-                                color: AppColors.accent,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(12),
-                                  onTap: () => _inquireAboutProduct(product),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                    child: Text(
-                                      'Inquire',
-                                      style: AppTextStyles.bodySmall.copyWith(
-                                        color: AppColors.onSecondary,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
                       ),
                     ],
                   ),
@@ -2088,8 +2208,9 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
               itemCount: product.variations!.length,
               itemBuilder: (context, index) {
                 final variation = product.variations![index];
-                final isSelected = _selectedVariation?.variationId == variation.variationId;
-                
+                final isSelected =
+                    _selectedVariation?.variationId == variation.variationId;
+
                 return GestureDetector(
                   onTap: () {
                     setState(() {
@@ -2113,33 +2234,45 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                           width: 70,
                           height: 70,
                           decoration: BoxDecoration(
-                            color: isSelected ? AppColors.primary.withValues(alpha: 0.1) : AppColors.surface,
+                            color: isSelected
+                                ? AppColors.primary.withValues(alpha: 0.1)
+                                : AppColors.surface,
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
-                              color: isSelected ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.2),
+                              color: isSelected
+                                  ? AppColors.primary
+                                  : AppColors.onSurface.withValues(alpha: 0.2),
                               width: isSelected ? 2 : 1,
                             ),
-                            boxShadow: isSelected ? [
-                              BoxShadow(
-                                color: AppColors.primary.withValues(alpha: 0.2),
-                                blurRadius: 6,
-                                offset: const Offset(0, 1),
-                              ),
-                            ] : [],
+                            boxShadow: isSelected
+                                ? [
+                                    BoxShadow(
+                                      color: AppColors.primary.withValues(
+                                        alpha: 0.2,
+                                      ),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 1),
+                                    ),
+                                  ]
+                                : [],
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(14),
                             child: SizedBox(
                               width: 70,
                               height: 70,
-                              child: variation.imageURL != null && variation.imageURL!.isNotEmpty
+                              child:
+                                  variation.imageURL != null &&
+                                      variation.imageURL!.isNotEmpty
                                   ? CachedNetworkImage(
                                       imageUrl: variation.imageURL!,
                                       fit: BoxFit.cover,
                                       width: 70,
                                       height: 70,
                                       filterQuality: FilterQuality.high,
-                                      fadeInDuration: const Duration(milliseconds: 200),
+                                      fadeInDuration: const Duration(
+                                        milliseconds: 200,
+                                      ),
                                       placeholder: (context, url) => Container(
                                         width: 70,
                                         height: 70,
@@ -2148,22 +2281,25 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                                           child: SizedBox(
                                             width: 16,
                                             height: 16,
-                                            child: CircularProgressIndicator(strokeWidth: 2),
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
                                           ),
                                         ),
                                       ),
-                                      errorWidget: (context, url, error) => Container(
-                                        width: 70,
-                                        height: 70,
-                                        color: AppColors.background,
-                                        child: const Center(
-                                          child: Icon(
-                                            Icons.image_not_supported,
-                                            size: 20,
-                                            color: Colors.grey,
+                                      errorWidget: (context, url, error) =>
+                                          Container(
+                                            width: 70,
+                                            height: 70,
+                                            color: AppColors.background,
+                                            child: const Center(
+                                              child: Icon(
+                                                Icons.image_not_supported,
+                                                size: 20,
+                                                color: Colors.grey,
+                                              ),
+                                            ),
                                           ),
-                                        ),
-                                      ),
                                       memCacheWidth: 300,
                                       memCacheHeight: 300,
                                     )
@@ -2187,8 +2323,12 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                         Text(
                           variation.name,
                           style: AppTextStyles.bodySmall.copyWith(
-                            color: isSelected ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.7),
-                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                            color: isSelected
+                                ? AppColors.primary
+                                : AppColors.onSurface.withValues(alpha: 0.7),
+                            fontWeight: isSelected
+                                ? FontWeight.w600
+                                : FontWeight.normal,
                             fontSize: 11,
                           ),
                           textAlign: TextAlign.center,
@@ -2220,9 +2360,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.onSurface.withValues(alpha: 0.1),
-        ),
+        border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.1)),
       ),
       child: Column(
         children: [
@@ -2252,11 +2390,11 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
               Text(
                 '${_selectedVariation!.stock} available',
                 style: AppTextStyles.bodySmall.copyWith(
-                  color: _quantity >= _selectedVariation!.stock 
-                      ? Colors.orange 
+                  color: _quantity >= _selectedVariation!.stock
+                      ? Colors.orange
                       : AppColors.onSurface.withValues(alpha: 0.7),
-                  fontWeight: _quantity >= _selectedVariation!.stock 
-                      ? FontWeight.w600 
+                  fontWeight: _quantity >= _selectedVariation!.stock
+                      ? FontWeight.w600
                       : FontWeight.normal,
                 ),
               ),
@@ -2266,7 +2404,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           Row(
             children: [
               // Quantity selector - different for web and mobile
-              isWebView 
+              isWebView
                   ? _buildWebQuantitySelector()
                   : _buildMobileQuantitySelector(),
               const Spacer(),
@@ -2281,7 +2419,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                     ),
                   ),
                   Text(
-                    '₱${_selectedVariation!.price.toStringAsFixed(2)}',
+                    CurrencyFormatter.formatWithPeso(_selectedVariation!.price),
                     style: AppTextStyles.bodyMedium.copyWith(
                       fontWeight: FontWeight.w600,
                       color: AppColors.onSurface,
@@ -2296,7 +2434,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                     ),
                   ),
                   Text(
-                    '₱${(_selectedVariation!.price * _quantity).toStringAsFixed(2)}',
+                    CurrencyFormatter.formatWithPeso(_selectedVariation!.price * _quantity),
                     style: AppTextStyles.titleMedium.copyWith(
                       fontWeight: FontWeight.bold,
                       color: AppColors.primary,
@@ -2391,8 +2529,8 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 alignment: Alignment.center,
                 child: Icon(
                   Icons.remove,
-                  color: _quantity > 1 
-                      ? AppColors.primary 
+                  color: _quantity > 1
+                      ? AppColors.primary
                       : AppColors.primary.withValues(alpha: 0.3),
                   size: 20,
                 ),
@@ -2407,9 +2545,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
               controller: _quantityController,
               textAlign: TextAlign.center,
               keyboardType: TextInputType.number,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-              ],
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               style: AppTextStyles.titleMedium.copyWith(
                 fontWeight: FontWeight.bold,
                 color: AppColors.primary,
@@ -2431,7 +2567,10 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
               textAlignVertical: TextAlignVertical.center,
               onChanged: (value) {
                 if (value.startsWith('0')) {
-                  _quantityController.text = value.replaceFirst(RegExp(r'^0+'), '');
+                  _quantityController.text = value.replaceFirst(
+                    RegExp(r'^0+'),
+                    '',
+                  );
                   _quantityController.selection = TextSelection.fromPosition(
                     TextPosition(offset: _quantityController.text.length),
                   );
@@ -2439,7 +2578,10 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 }
                 final parsedValue = int.tryParse(value);
                 if (parsedValue != null && parsedValue > 0) {
-                  final clampedValue = parsedValue.clamp(1, _selectedVariation!.stock);
+                  final clampedValue = parsedValue.clamp(
+                    1,
+                    _selectedVariation!.stock,
+                  );
                   if (clampedValue != parsedValue) {
                     // Clamp to max stock
                     _quantityController.text = clampedValue.toString();
@@ -2505,8 +2647,8 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 alignment: Alignment.center,
                 child: Icon(
                   Icons.add,
-                  color: _quantity < _selectedVariation!.stock 
-                      ? AppColors.primary 
+                  color: _quantity < _selectedVariation!.stock
+                      ? AppColors.primary
                       : AppColors.primary.withValues(alpha: 0.3),
                   size: 20,
                 ),
@@ -2525,9 +2667,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.onSurface.withValues(alpha: 0.1),
-        ),
+        border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2582,7 +2722,11 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         final sellerData = snapshot.data?[2] as Map<String, dynamic>? ?? {};
         final sellerAddress = sellerData['address'] as String? ?? '';
 
-        final hasWarranty = product.warrantyType != null && product.warrantyType!.isNotEmpty;
+        final hasWarranty =
+            product.warrantyType != null && product.warrantyType!.isNotEmpty;
+
+        // Get selected variation for pcsPerBox display
+        final selectedVariation = _selectedVariation;
 
         return Container(
           margin: const EdgeInsets.fromLTRB(24, 4, 24, 8),
@@ -2628,9 +2772,28 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
               if (snapshot.connectionState == ConnectionState.waiting)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 12),
-                  child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                  child: Center(
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
                 )
               else ...[
+                // Brand
+                if (product.brand != null && product.brand!.isNotEmpty) ...[
+                  _buildSpecRow(label: 'Brand', value: product.brand!),
+                  const Divider(height: 20, thickness: 0.6),
+                ],
+
+                // Variation Name - pcsPerBox
+                if (selectedVariation != null &&
+                    selectedVariation.pcsPerBox != null) ...[
+                  _buildSpecRow(
+                    label: 'Variation',
+                    value:
+                        '${selectedVariation.name.isNotEmpty ? selectedVariation.name : 'Default'}  Pcs Per Box: ${selectedVariation.pcsPerBox}',
+                  ),
+                  const Divider(height: 20, thickness: 0.6),
+                ],
+
                 // Category / SubCategory
                 _buildSpecRow(
                   label: 'Category',
@@ -2645,24 +2808,50 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                   label: 'Ships From',
                   value: sellerAddress.isNotEmpty ? sellerAddress : '—',
                 ),
+                const Divider(height: 20, thickness: 0.6),
 
-                // Warranty block
+                // Dangerous Goods
+                _buildSpecRow(
+                  label: 'Dangerous Goods',
+                  value:
+                      (product.dangerousGoods == null ||
+                          product.dangerousGoods!.isEmpty ||
+                          product.dangerousGoods!.toLowerCase() == 'none')
+                      ? 'No'
+                      : 'Yes - ${product.dangerousGoods![0].toUpperCase()}${product.dangerousGoods!.substring(1)}',
+                ),
+                const Divider(height: 20, thickness: 0.6),
+
+                // Warranty block - Always show warranty info
+                _buildSpecRow(
+                  label: 'Warranty Type',
+                  value: hasWarranty
+                      ? '${product.warrantyType![0].toUpperCase()}${product.warrantyType!.substring(1)} Warranty'
+                      : 'No Warranty',
+                ),
+                // Only show duration and policy if there is a warranty
                 if (hasWarranty) ...[
-                  const Divider(height: 20, thickness: 0.6),
-                  _buildSpecRow(
-                    label: 'Warranty Type',
-                    value: product.warrantyType!,
-                  ),
-                  if (product.warrantyPeriod != null && product.warrantyPeriod!.isNotEmpty) ...[
+                  // Warranty Duration (use warrantyDuration first, then fall back to warrantyPeriod)
+                  if ((product.warrantyDuration != null &&
+                          product.warrantyDuration!.isNotEmpty) ||
+                      (product.warrantyPeriod != null &&
+                          product.warrantyPeriod!.isNotEmpty)) ...[
                     const Divider(height: 20, thickness: 0.6),
                     _buildSpecRow(
                       label: 'Warranty Duration',
-                      value: product.warrantyPeriodUnit != null && product.warrantyPeriodUnit!.isNotEmpty
-                          ? '${product.warrantyPeriod} ${product.warrantyPeriodUnit}'
-                          : product.warrantyPeriod!,
+                      value:
+                          product.warrantyDuration != null &&
+                              product.warrantyDuration!.isNotEmpty
+                          ? product.warrantyDuration!
+                          : (product.warrantyPeriodUnit != null &&
+                                    product.warrantyPeriodUnit!.isNotEmpty
+                                ? '${product.warrantyPeriod} ${product.warrantyPeriodUnit}'
+                                : product.warrantyPeriod!),
                     ),
                   ],
-                  if (product.warrantyPolicy != null && product.warrantyPolicy!.isNotEmpty) ...[
+                  // Warranty Policy
+                  if (product.warrantyPolicy != null &&
+                      product.warrantyPolicy!.isNotEmpty) ...[
                     const Divider(height: 20, thickness: 0.6),
                     _buildWarrantyPolicyRow(product.warrantyPolicy!),
                   ],
@@ -2760,7 +2949,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   //           ],
   //         ),
   //         const SizedBox(height: 16),
-  //         
+  //
   //         // Rating summary
   //         Row(
   //           children: [
@@ -2794,9 +2983,9 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   //             ),
   //           ],
   //         ),
-  //         
+  //
   //         const SizedBox(height: 20),
-  //         
+  //
   //         // Sample reviews
   //         _buildModernReviewItem(
   //           name: 'John Doe',
@@ -2901,6 +3090,12 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   // }
 
   Widget _buildFixedAddToCartButton(Product product) {
+    // If the product is inquiry-only, replace Add to Cart with
+    // "Contact a Sales Agent" regardless of stock status.
+    final bool isInStock =
+        _selectedVariation != null && _selectedVariation!.stock > 0;
+    final bool showContactAgent = product.allowInquiry;
+
     return Positioned(
       bottom: 0,
       left: 0,
@@ -2923,22 +3118,43 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         ),
         child: SafeArea(
           top: false,
-          child: LoadingButton(
-            text: _selectedVariation != null && _selectedVariation!.stock > 0
-                ? 'Add to Cart • ₱${(_selectedVariation!.price * _quantity).toStringAsFixed(2)}'
-                : 'Out of Stock',
-            loadingText: 'Adding to cart...',
-            isLoading: _isAddingToCart,
-            onPressed: _selectedVariation != null && _selectedVariation!.stock > 0
-                ? () => _addToCart(product)
-                : null,
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            textStyle: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              fontFamily: 'Roboto', // Use Roboto for peso sign support
-            ),
-          ),
+          child: showContactAgent
+              ? SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => _inquireAboutProduct(product),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.accent,
+                      foregroundColor: AppColors.onSecondary,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: const Text(
+                      'Contact a Sales Agent',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                )
+              : LoadingButton(
+                  text: isInStock
+                      ? 'Add to Cart • ${CurrencyFormatter.formatWithPeso(_selectedVariation!.price * _quantity)}'
+                      : 'Out of Stock',
+                  loadingText: 'Adding to cart...',
+                  isLoading: _isAddingToCart,
+                  onPressed: isInStock ? () => _addToCart(product) : null,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  textStyle: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'Roboto',
+                  ),
+                ),
         ),
       ),
     );
@@ -2985,7 +3201,9 @@ class _ExpandableWarrantyPolicyState extends State<_ExpandableWarrantyPolicy> {
               Text(
                 widget.policy,
                 maxLines: _expanded ? null : 3,
-                overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+                overflow: _expanded
+                    ? TextOverflow.visible
+                    : TextOverflow.ellipsis,
                 style: AppTextStyles.bodySmall.copyWith(
                   color: AppColors.onSurface.withValues(alpha: 0.85),
                   fontWeight: FontWeight.w500,

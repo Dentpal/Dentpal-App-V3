@@ -23,6 +23,12 @@
         android:label="Dentpal"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
+        
+        <!-- Declare support for 16KB page sizes (required by Google Play) -->
+        <property
+            android:name="android.app.supportsPageSizes"
+            android:value="16KB" />
+        
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -127,6 +133,15 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Required by url_launcher to open https/http URLs on Android 11+ (API 30+) -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
         </intent>
     </queries>
 </manifest>

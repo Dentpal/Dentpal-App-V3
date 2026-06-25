@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dentpal/utils/web_utils.dart';
 import 'package:dentpal/services/deep_link_service.dart';
+import 'package:dentpal/product/services/banned_seller_service.dart';
 
 /// Navigation utilities for handling deep linking and URL management
 class NavigationUtils {
@@ -53,15 +54,39 @@ class NavigationUtils {
   }
   
   /// Navigate to store page with proper URL updating for web
-  static void navigateToStore(BuildContext context, String sellerId, {Map<String, dynamic>? sellerData}) {
+  static void navigateToStore(
+    BuildContext context,
+    String sellerId, {
+    Map<String, dynamic>? sellerData,
+    List<String>? initialCategoryIds,
+    List<String>? initialSubCategoryIds,
+  }) {
+    // Synchronous fast-path: if we already know this seller has banned the
+    // current buyer, surface a snackbar and do nothing. StorePage itself does
+    // an authoritative Firestore re-check on load for deep-links.
+    if (BannedSellerService.instance.isBanned(sellerId)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This store is not available.'),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
     // Update URL for web deep linking
     updateUrl('/store/$sellerId');
-    
+
     // Navigate to store page
     Navigator.pushNamed(
-      context, 
+      context,
       '/store/$sellerId',
-      arguments: {'sellerData': sellerData},
+      arguments: {
+        'sellerData': sellerData,
+        'initialCategoryIds': initialCategoryIds,
+        'initialSubCategoryIds': initialSubCategoryIds,
+      },
     );
   }
   

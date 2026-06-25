@@ -173,22 +173,32 @@ class JRSShippingService {
         }
         
         final shippingCost = (responseData?['shippingCost'] as num?)?.toDouble() ?? 50.0;
-        final buyerShippingCharge = (responseData?['buyerShippingCharge'] as num?)?.toDouble() ?? shippingCost;
-        final sellerShippingCharge = (responseData?['sellerShippingCharge'] as num?)?.toDouble() ?? 0.0;
-        final shippingSplitRule = (responseData?['shippingSplitRule'] as String?) ?? 'buyer_pays_full';
-        final productName = responseData?['productName'] as String? ?? 'unknown';
-        
-        AppLogger.d('JRS shipping cost calculated: ₱$shippingCost (buyer pays: ₱$buyerShippingCharge, rule: $shippingSplitRule)');
-        AppLogger.d('[JRS] SUCCESS: ₱$shippingCost (buyer: ₱$buyerShippingCharge, seller: ₱$sellerShippingCharge, rule: $shippingSplitRule)');
-        AppLogger.d('📦 [JRS] Packaging used: $productName');
-        
+        final productName = responseData?['packagingSize'] as String?;
+        final insuranceCost = (responseData?['insuranceCost'] as num?)?.toDouble();
+        final evaluationCost = (responseData?['evaluationCost'] as num?)?.toDouble();
+        final isFallback = responseData?['isFallback'] == true;
+        final fallbackError = responseData?['fallbackError'] as String?;
+
+        // The JRS calculator does not know about vouchers, so its split-rule fields
+        // are not authoritative — the actual split is decided at order creation time.
+        if (isFallback) {
+          AppLogger.d('⚠️ [JRS] FALLBACK USED: ₱$shippingCost (JRS API unavailable). Reason: ${fallbackError ?? 'unknown'}');
+        } else {
+          AppLogger.d('JRS shipping cost calculated: ₱$shippingCost (split rule decided at order creation)');
+          AppLogger.d('[JRS] SUCCESS: ₱$shippingCost (insurance: ₱${insuranceCost ?? 0}, evaluation: ₱${evaluationCost ?? 0})');
+          AppLogger.d('📦 [JRS] Packaging used: ${productName ?? 'unknown'}');
+        }
+
         return JRSShippingResult(
           success: true,
           shippingCost: shippingCost,
-          buyerShippingCharge: buyerShippingCharge,
-          sellerShippingCharge: sellerShippingCharge,
-          shippingSplitRule: shippingSplitRule,
+          buyerShippingCharge: shippingCost,
+          sellerShippingCharge: 0.0,
+          shippingSplitRule: 'buyer_pays_full',
           message: 'Shipping cost calculated successfully',
+          insuranceCost: insuranceCost,
+          evaluationCost: evaluationCost,
+          packagingName: productName,
         );
       } else {
         final error = data['error'] as String? ?? 'Unknown error';
@@ -428,6 +438,9 @@ class JRSShippingResult {
   final String shippingSplitRule; // 'buyer_pays_full' or 'seller_pays_full'
   final String message;
   final String? error;
+  final double? insuranceCost;
+  final double? evaluationCost;
+  final String? packagingName; // locally-resolved packaging type from JRS calculator (e.g., "1 Pounder")
 
   JRSShippingResult({
     required this.success,
@@ -437,6 +450,9 @@ class JRSShippingResult {
     this.shippingSplitRule = 'buyer_pays_full',
     required this.message,
     this.error,
+    this.insuranceCost,
+    this.evaluationCost,
+    this.packagingName,
   });
 
   @override

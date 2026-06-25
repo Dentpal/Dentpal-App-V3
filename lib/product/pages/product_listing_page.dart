@@ -10,6 +10,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/product_model.dart';
 import '../services/product_service.dart';
+import '../services/banned_seller_service.dart';
 import '../services/user_service.dart';
 import '../services/category_service.dart';
 import '../services/cart_service.dart';
@@ -18,13 +19,15 @@ import '../widgets/product_card.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import 'package:dentpal/utils/app_logger.dart';
+import 'package:dentpal/utils/currency_formatter.dart';
 import 'package:dentpal/utils/navigation_utils.dart';
 import 'cart_page.dart';
-import 'product_search_page.dart';
 import 'product_detail_page.dart';
+import '../services/product_search_service.dart';
 import '../../login_page.dart';
 import 'package:flutter/services.dart';
 import '../../profile/pages/profile_page.dart';
+import '../../profile/services/address_service.dart';
 import 'package:dentpal/core/widgets/web_footer.dart';
 
 // Custom cache manager with web compatibility
@@ -71,28 +74,43 @@ class _ProductListingPageState extends State<ProductListingPage>
   bool _isLoadingMore = false;
   List<String> _selectedCategories = [];
   List<String> _categories = ['All'];
+  bool _showAllCategories = false;
+  bool _categoryGridForceExpanded = false;
   String? _errorMessage;
   List<Product> _products = [];
   DateTime? _cacheTimestamp;
   DocumentSnapshot? _lastDocument;
   bool _hasMore = true;
-  final int _pageSize = 15;
+  final int _pageSize = 50; // Fetch products in larger batches to accumulate stores
+  static const int _storePageSize = 10; // Display 10 unique stores per page
+  Set<String> _loadedSellerIds = {};
   final ScrollController _scrollController = ScrollController();
   final PageController _bannerPageController = PageController();
   Timer? _bannerAutoScrollTimer;
 
   bool _isSeller = false;
   String _userFirstName = 'User';
-  
+  String? _userRegion; // Classified region: 'NCR' | 'Luzon' | 'Visayas' | 'Mindanao'
+
   // Cart item count for badge
   int _cartItemCount = 0;
   StreamSubscription<int>? _cartCountSubscription;
   StreamSubscription<User?>? _authStateSubscription;
-  
+
   // Active banner image URLs and target URLs loaded from Realtime Database
   List<String> _bannerImageUrls = [];
   List<String?> _bannerTargetUrls = [];
   int _currentBannerIndex = 0;
+
+  // Cache for seller/vendor data fetched from Firestore, keyed by sellerId.
+  // A null value means the document was fetched but does not exist in Firestore.
+  Map<String, Map<String, dynamic>?> _sellerDataCache = {};
+  Set<String> _sellerDataFetching = {};
+
+  // Cache for active vouchers per seller, keyed by sellerId. Each value is
+  // the list of currently-valid voucher documents (already date-filtered).
+  final Map<String, List<Map<String, dynamic>>> _sellerVouchersCache = {};
+  final Set<String> _sellerVouchersFetching = {};
 
   // Mapping between category names and IDs for filtering
   Map<String, String> _categoryNameToId = {};
@@ -103,6 +121,30 @@ class _ProductListingPageState extends State<ProductListingPage>
   Map<String, List<SubCategory>> _subcategoriesByCategory = {};
   List<String> _selectedSubCategories = [];
 
+  // Brand filter — null means no filter (show all)
+  String? _selectedBrand;
+
+  // Filter state
+  String _selectedShippedFrom = 'All';
+
+  // Filter options
+  final List<String> _shippedFromOptions = ['All', 'Nearest You', 'NCR', 'Luzon', 'Visayas', 'Mindanao'];
+
+  // Inline search state
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  final ProductSearchService _searchService = ProductSearchService();
+  String _searchQuery = '';
+  bool _isSearchMode = false;
+  List<Product> _searchResults = [];
+  List<String> _searchSuggestions = [];
+  bool _showSearchSuggestions = false;
+  bool _isSearching = false;
+  bool _isLoadingMoreSearch = false;
+  Timer? _searchDebounceTimer;
+  SearchResult? _lastSearchResult;
+  bool _showMobileSearchBar = false;
+
   // Override to keep this page alive when navigating away
   @override
   bool get wantKeepAlive => true;
@@ -111,12 +153,15 @@ class _ProductListingPageState extends State<ProductListingPage>
   void initState() {
     super.initState();
 
-    // Simple initialization without singleton pattern to avoid rebuild loops
-    _loadFirstPage();
+    // Load the set of sellers that have banned the current user first;
+    // _loadFirstPage will then exclude their products.
+    _loadBannedSellersThenFirstPage();
     _checkSellerStatus();
     _loadUserName();
+    _loadUserRegion();
     _loadActiveBanner(); // Load active banner image from Realtime Database
     _listenToCartCount(); // Listen to cart item count for badge
+    _loadStoresForBrandSection(); // Load sellers for brand/store section
 
     // Add scroll listener for pagination
     _scrollController.addListener(_scrollListener);
@@ -130,11 +175,56 @@ class _ProductListingPageState extends State<ProductListingPage>
     );
   }
 
+  // Brands for the brand section — list of {brand, brandImage}
+  List<Map<String, String>> _brandList = [];
+
+  // Load unique brands from Products collection (brand + brandImage)
+  Future<void> _loadStoresForBrandSection() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('Product')
+          .where('isActive', isEqualTo: true)
+          .get();
+
+      // Use lowercase key for deduplication, store original display name
+      final Map<String, String> brandDisplayName = {}; // lowercased -> display name
+      final Map<String, String> brandImageMap = {}; // lowercased -> brandImage url
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        // Filter out drafts client-side to avoid composite index requirement
+        if (data['isDraft'] == true) continue;
+        final rawBrand = data['brand'] as String?;
+        if (rawBrand == null || rawBrand.trim().isEmpty) continue;
+        final brandKey = rawBrand.trim().toLowerCase();
+        if (!brandImageMap.containsKey(brandKey)) {
+          brandDisplayName[brandKey] = rawBrand.trim();
+          final img = (data['brandImage'] as String?) ?? (data['brandimage'] as String?) ?? '';
+          brandImageMap[brandKey] = img;
+        }
+      }
+
+      final List<Map<String, String>> brands = brandImageMap.entries
+          .map((e) => {'brand': brandDisplayName[e.key]!, 'brandImage': e.value})
+          .toList()
+        ..sort((a, b) => a['brand']!.toLowerCase().compareTo(b['brand']!.toLowerCase()));
+
+      if (mounted) {
+        setState(() {
+          _brandList = brands;
+        });
+      }
+      AppLogger.d('Loaded ${_brandList.length} brands');
+    } catch (e) {
+      AppLogger.d('Error loading brands: $e');
+    }
+  }
+
   // Listen to auth state changes and (re)subscribe to cart count accordingly
   void _listenToCartCount() {
     _authStateSubscription?.cancel();
-    _authStateSubscription =
-        FirebaseAuth.instance.authStateChanges().listen((user) {
+    _authStateSubscription = FirebaseAuth.instance.authStateChanges().listen((
+      user,
+    ) {
       _cartCountSubscription?.cancel();
       _cartCountSubscription = null;
 
@@ -147,23 +237,26 @@ class _ProductListingPageState extends State<ProductListingPage>
         return;
       }
 
-      _cartCountSubscription =
-          _cartService.cartItemCountStream().listen((count) {
-        if (mounted) {
-          setState(() {
-            _cartItemCount = count;
-          });
-        }
-      }, onError: (error) {
-        AppLogger.d('Error listening to cart count: $error');
-      });
+      _cartCountSubscription = _cartService.cartItemCountStream().listen(
+        (count) {
+          if (mounted) {
+            setState(() {
+              _cartItemCount = count;
+            });
+          }
+        },
+        onError: (error) {
+          AppLogger.d('Error listening to cart count: $error');
+        },
+      );
     });
   }
 
   // Fetch all active banner images from Firebase Realtime Database
   Future<void> _loadActiveBanner() async {
     try {
-      final databaseUrl = 'https://dentpal-161e5-default-rtdb.asia-southeast1.firebasedatabase.app';
+      final databaseUrl =
+          'https://dentpal-161e5-default-rtdb.asia-southeast1.firebasedatabase.app';
       final database = FirebaseDatabase.instanceFor(
         app: Firebase.app(),
         databaseURL: databaseUrl,
@@ -174,47 +267,56 @@ class _ProductListingPageState extends State<ProductListingPage>
         AppLogger.d('No banners found in Realtime Database');
         return;
       }
-      
+
       // Create a list to hold banner data with order
       List<Map<String, dynamic>> activeBanners = [];
       final currentTime = DateTime.now();
-      
+
       final bannersData = snapshot.value as Map<dynamic, dynamic>?;
       if (bannersData != null) {
         for (final entry in bannersData.entries) {
           final bannerData = entry.value as Map<dynamic, dynamic>?;
           if (bannerData != null) {
             final isActive = bannerData['isActive'] == true;
-            
+
             // Only process if banner is active
             if (isActive) {
               // Check duration.startTime if exists
               bool shouldDisplay = true;
-              
+
               if (bannerData['duration'] != null) {
-                final duration = bannerData['duration'] as Map<dynamic, dynamic>?;
+                final duration =
+                    bannerData['duration'] as Map<dynamic, dynamic>?;
                 if (duration != null && duration['startTime'] != null) {
                   final startTimeStr = duration['startTime'] as String?;
                   if (startTimeStr != null) {
                     try {
                       final startTime = DateTime.parse(startTimeStr);
                       // Only display if current time is after or equal to start time
-                      shouldDisplay = currentTime.isAfter(startTime) || currentTime.isAtSameMomentAs(startTime);
-                      
+                      shouldDisplay =
+                          currentTime.isAfter(startTime) ||
+                          currentTime.isAtSameMomentAs(startTime);
+
                       if (!shouldDisplay) {
-                        AppLogger.d('Banner ${entry.key} not yet started. Start time: $startTimeStr, Current time: $currentTime');
+                        AppLogger.d(
+                          'Banner ${entry.key} not yet started. Start time: $startTimeStr, Current time: $currentTime',
+                        );
                       }
                     } catch (e) {
-                      AppLogger.d('Error parsing startTime for banner ${entry.key}: $e');
+                      AppLogger.d(
+                        'Error parsing startTime for banner ${entry.key}: $e',
+                      );
                       // If parsing fails, don't display the banner
                       shouldDisplay = false;
                     }
                   }
                 }
               }
-              
+
               if (shouldDisplay) {
-                final bannerUrl = bannerData['imageURL'] as String? ?? bannerData['imageUrl'] as String?;
+                final bannerUrl =
+                    bannerData['imageURL'] as String? ??
+                    bannerData['imageUrl'] as String?;
                 if (bannerUrl != null && bannerUrl.isNotEmpty) {
                   final targetUrl = bannerData['url'] as String?;
                   final rawOrder = bannerData['order'];
@@ -242,20 +344,29 @@ class _ProductListingPageState extends State<ProductListingPage>
           }
         }
       }
-      
+
       // Sort banners by order (ascending: 0, 1, 2, ...)
-      activeBanners.sort((a, b) => (a['order'] as int? ?? 999).compareTo(b['order'] as int? ?? 999));
-      
+      activeBanners.sort(
+        (a, b) =>
+            (a['order'] as int? ?? 999).compareTo(b['order'] as int? ?? 999),
+      );
+
       // Extract sorted URLs
-      List<String> activeBannerUrls = activeBanners.map((b) => b['imageURL'] as String).toList();
-      List<String?> activeBannerTargetUrls = activeBanners.map((b) => b['targetURL'] as String?).toList();
-      
+      List<String> activeBannerUrls = activeBanners
+          .map((b) => b['imageURL'] as String)
+          .toList();
+      List<String?> activeBannerTargetUrls = activeBanners
+          .map((b) => b['targetURL'] as String?)
+          .toList();
+
       if (mounted && activeBannerUrls.isNotEmpty) {
         setState(() {
           _bannerImageUrls = activeBannerUrls;
           _bannerTargetUrls = activeBannerTargetUrls;
         });
-        AppLogger.d('${activeBannerUrls.length} active banners loaded and sorted by order from Realtime Database');
+        AppLogger.d(
+          '${activeBannerUrls.length} active banners loaded and sorted by order from Realtime Database',
+        );
         _startBannerAutoScroll();
       } else {
         AppLogger.d('No active banners found in Realtime Database');
@@ -268,67 +379,94 @@ class _ProductListingPageState extends State<ProductListingPage>
   // Handle banner click and open URL
   Future<void> _onBannerTap(int index) async {
     AppLogger.d('Banner tapped at index: $index');
-    if (index < _bannerTargetUrls.length) {
-      final targetUrl = _bannerTargetUrls[index];
-      AppLogger.d('Target URL: $targetUrl');
-      if (targetUrl != null && targetUrl.isNotEmpty) {
-        try {
-          // Check if it's a product URL (contains /product/)
-          if (targetUrl.contains('/product/')) {
-            // Extract product ID from URL
-            final uri = Uri.parse(targetUrl);
-            final pathSegments = uri.fragment.isNotEmpty 
-                ? uri.fragment.split('/') 
-                : uri.pathSegments;
-            
-            // Find the product ID (comes after 'product')
-            final productIndex = pathSegments.indexOf('product');
-            if (productIndex != -1 && productIndex < pathSegments.length - 1) {
-              final productId = pathSegments[productIndex + 1];
-              AppLogger.d('Navigating to product detail page with ID: $productId');
-              
-              // Navigate to product detail page within the app
-              if (mounted) {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => ProductDetailPage(productId: productId),
-                  ),
-                );
-              }
-              return;
-            }
-          }
-          
-          // If not a product URL, launch externally
-          final uri = Uri.parse(targetUrl);
-          await launchUrl(
-            uri,
-            mode: LaunchMode.externalApplication,
+    if (index >= _bannerTargetUrls.length) return;
+
+    final targetUrl = _bannerTargetUrls[index];
+    AppLogger.d('Target URL: $targetUrl');
+
+    if (targetUrl == null || targetUrl.isEmpty) {
+      _showBannerSnack('No link configured for this banner.');
+      return;
+    }
+
+    // Normalize URL: if it has no scheme (e.g. "meetperla-ai.com"),
+    // assume https so url_launcher can resolve a browser intent.
+    final normalizedUrl =
+        targetUrl.startsWith(RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]*:'))
+        ? targetUrl
+        : 'https://$targetUrl';
+    if (normalizedUrl != targetUrl) {
+      AppLogger.d('Banner URL had no scheme, normalized to: $normalizedUrl');
+    }
+
+    try {
+      // Check if it's a product URL (contains /product/)
+      if (normalizedUrl.contains('/product/')) {
+        // Extract product ID from URL
+        final uri = Uri.parse(normalizedUrl);
+        final pathSegments = uri.fragment.isNotEmpty
+            ? uri.fragment.split('/')
+            : uri.pathSegments;
+
+        // Find the product ID (comes after 'product')
+        final productIndex = pathSegments.indexOf('product');
+        if (productIndex != -1 && productIndex < pathSegments.length - 1) {
+          final productId = pathSegments[productIndex + 1];
+          AppLogger.d(
+            'Navigating to product detail page with ID: $productId',
           );
-          AppLogger.d('Successfully launched URL externally: $targetUrl');
-        } catch (e) {
-          AppLogger.d('Error launching banner URL: $e');
-          // Try alternative launch mode if first attempt fails
-          try {
-            final uri = Uri.parse(targetUrl);
-            await launchUrl(
-              uri,
-              mode: LaunchMode.platformDefault,
+
+          // Navigate to product detail page within the app
+          if (mounted) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) =>
+                    ProductDetailPage(productId: productId),
+              ),
             );
-            AppLogger.d('Successfully launched URL with platformDefault mode: $targetUrl');
-          } catch (e2) {
-            AppLogger.d('Error with platformDefault mode: $e2');
           }
+          return;
         }
       }
+
+      // If not a product URL, launch externally
+      final uri = Uri.parse(normalizedUrl);
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      AppLogger.d('Successfully launched URL externally: $normalizedUrl');
+    } catch (e) {
+      AppLogger.d('Error launching banner URL: $e');
+      // Try alternative launch mode if first attempt fails
+      try {
+        final uri = Uri.parse(normalizedUrl);
+        await launchUrl(uri, mode: LaunchMode.platformDefault);
+        AppLogger.d(
+          'Successfully launched URL with platformDefault mode: $normalizedUrl',
+        );
+      } catch (e2) {
+        AppLogger.d('Error with platformDefault mode: $e2');
+        _showBannerSnack('Unable to open the link.');
+      }
     }
+  }
+
+  void _showBannerSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   // Start auto-scrolling banners every 5 seconds
   void _startBannerAutoScroll() {
     _bannerAutoScrollTimer?.cancel();
     if (_bannerImageUrls.length > 1) {
-      _bannerAutoScrollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      _bannerAutoScrollTimer = Timer.periodic(const Duration(seconds: 5), (
+        timer,
+      ) {
         if (mounted && _bannerPageController.hasClients) {
           final nextPage = (_currentBannerIndex + 1) % _bannerImageUrls.length;
           _bannerPageController.animateToPage(
@@ -349,6 +487,9 @@ class _ProductListingPageState extends State<ProductListingPage>
     _bannerPageController.dispose();
     _authStateSubscription?.cancel();
     _cartCountSubscription?.cancel();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    _searchDebounceTimer?.cancel();
 
     AppLogger.d("ProductListingPage dispose called");
     super.dispose();
@@ -409,6 +550,189 @@ class _ProductListingPageState extends State<ProductListingPage>
         _userFirstName = firstName;
       });
     }
+  }
+
+  // ── Delivery estimation ────────────────────────────────────────────────
+  // Mapping: FROM seller region → TO user region → estimated days label.
+  static const Map<String, Map<String, String>> _deliveryEstimateMap = {
+    'NCR': {
+      'NCR': '2-4 days',
+      'Luzon': '3-5 days',
+      'Visayas': '6-8 days',
+      'Mindanao': '6-10 days',
+    },
+    'Luzon': {
+      'NCR': '3-5 days',
+      'Luzon': '3-5 days',
+      'Visayas': '6-8 days',
+      'Mindanao': '6-8 days',
+    },
+    'Visayas': {
+      'NCR': '5-7 days',
+      'Luzon': '5-8 days',
+      'Visayas': '5-8 days',
+      'Mindanao': '6-9 days',
+    },
+    'Mindanao': {
+      'NCR': '5-7 days',
+      'Luzon': '5-8 days',
+      'Visayas': '7-11 days',
+      'Mindanao': '3-6 days',
+    },
+  };
+
+  static const String _defaultDeliveryLabel = '3-7 days';
+
+  // Philippine province / city → region lookup (lowercased keys).
+  static const Map<String, String> _provinceToRegion = {
+    // NCR cities / municipalities
+    'manila': 'NCR', 'quezon city': 'NCR', 'makati': 'NCR', 'pasig': 'NCR',
+    'taguig': 'NCR', 'pasay': 'NCR', 'caloocan': 'NCR', 'mandaluyong': 'NCR',
+    'muntinlupa': 'NCR', 'parañaque': 'NCR', 'paranaque': 'NCR',
+    'las piñas': 'NCR', 'las pinas': 'NCR', 'marikina': 'NCR',
+    'san juan': 'NCR', 'valenzuela': 'NCR', 'malabon': 'NCR',
+    'navotas': 'NCR', 'pateros': 'NCR',
+
+    // Luzon
+    'ilocos norte': 'Luzon', 'ilocos sur': 'Luzon', 'la union': 'Luzon',
+    'pangasinan': 'Luzon', 'cagayan': 'Luzon', 'isabela': 'Luzon',
+    'nueva vizcaya': 'Luzon', 'quirino': 'Luzon', 'batanes': 'Luzon',
+    'abra': 'Luzon', 'apayao': 'Luzon', 'benguet': 'Luzon',
+    'ifugao': 'Luzon', 'kalinga': 'Luzon', 'mountain province': 'Luzon',
+    'aurora': 'Luzon', 'bataan': 'Luzon', 'bulacan': 'Luzon',
+    'nueva ecija': 'Luzon', 'pampanga': 'Luzon', 'tarlac': 'Luzon',
+    'zambales': 'Luzon', 'batangas': 'Luzon', 'cavite': 'Luzon',
+    'laguna': 'Luzon', 'quezon': 'Luzon', 'rizal': 'Luzon',
+    'marinduque': 'Luzon', 'occidental mindoro': 'Luzon',
+    'oriental mindoro': 'Luzon', 'palawan': 'Luzon', 'romblon': 'Luzon',
+    'albay': 'Luzon', 'camarines norte': 'Luzon', 'camarines sur': 'Luzon',
+    'catanduanes': 'Luzon', 'masbate': 'Luzon', 'sorsogon': 'Luzon',
+
+    // Visayas
+    'aklan': 'Visayas', 'antique': 'Visayas', 'capiz': 'Visayas',
+    'guimaras': 'Visayas', 'iloilo': 'Visayas',
+    'negros occidental': 'Visayas', 'bohol': 'Visayas', 'cebu': 'Visayas',
+    'negros oriental': 'Visayas', 'siquijor': 'Visayas',
+    'biliran': 'Visayas', 'eastern samar': 'Visayas', 'leyte': 'Visayas',
+    'northern samar': 'Visayas', 'samar': 'Visayas',
+    'southern leyte': 'Visayas',
+
+    // Mindanao
+    'zamboanga del norte': 'Mindanao', 'zamboanga del sur': 'Mindanao',
+    'zamboanga sibugay': 'Mindanao', 'bukidnon': 'Mindanao',
+    'camiguin': 'Mindanao', 'lanao del norte': 'Mindanao',
+    'misamis occidental': 'Mindanao', 'misamis oriental': 'Mindanao',
+    'davao de oro': 'Mindanao', 'davao del norte': 'Mindanao',
+    'davao del sur': 'Mindanao', 'davao occidental': 'Mindanao',
+    'davao oriental': 'Mindanao', 'cotabato': 'Mindanao',
+    'sarangani': 'Mindanao', 'south cotabato': 'Mindanao',
+    'sultan kudarat': 'Mindanao', 'agusan del norte': 'Mindanao',
+    'agusan del sur': 'Mindanao', 'dinagat islands': 'Mindanao',
+    'surigao del norte': 'Mindanao', 'surigao del sur': 'Mindanao',
+    'basilan': 'Mindanao', 'lanao del sur': 'Mindanao',
+    'maguindanao': 'Mindanao', 'sulu': 'Mindanao', 'tawi-tawi': 'Mindanao',
+  };
+
+  /// Classifies a free-form location string into one of NCR / Luzon /
+  /// Visayas / Mindanao. Returns null if it cannot be classified.
+  String? _classifyRegion(String? raw) {
+    if (raw == null) return null;
+    final v = raw.trim().toLowerCase();
+    if (v.isEmpty) return null;
+
+    // Direct region names
+    if (v.contains('ncr') ||
+        v.contains('metro manila') ||
+        v.contains('national capital')) {
+      return 'NCR';
+    }
+    if (v.contains('luzon')) return 'Luzon';
+    if (v.contains('visayas')) return 'Visayas';
+    if (v.contains('mindanao')) return 'Mindanao';
+
+    // Exact province / city match
+    final direct = _provinceToRegion[v];
+    if (direct != null) return direct;
+
+    // Substring match (handles values like "Bulacan, Philippines" or
+    // "Cebu City"). Longest keys first so "negros occidental" wins over
+    // "negros oriental" by specificity.
+    final keys = _provinceToRegion.keys.toList()
+      ..sort((a, b) => b.length.compareTo(a.length));
+    for (final key in keys) {
+      if (v.contains(key)) return _provinceToRegion[key];
+    }
+    return null;
+  }
+
+  Future<void> _loadUserRegion() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      // Priority 1: use the default address's `location` when one exists.
+      try {
+        final defaultAddress = await AddressService.getDefaultAddress();
+        if (defaultAddress != null && defaultAddress.location.isNotEmpty) {
+          final region = _classifyRegion(defaultAddress.location);
+          if (mounted && region != null) {
+            setState(() {
+              _userRegion = region;
+            });
+            return;
+          }
+        }
+      } catch (e) {
+        AppLogger.d('Error reading default address for region: $e');
+        // Fall through to legacy User.location.
+      }
+
+      // Priority 2: legacy User.location fallback.
+      final doc = await FirebaseFirestore.instance
+          .collection('User')
+          .doc(user.uid)
+          .get();
+      if (!doc.exists) return;
+      final data = doc.data();
+      final location = data?['location'] as String?;
+      final region = _classifyRegion(location);
+      if (mounted && region != null) {
+        setState(() {
+          _userRegion = region;
+        });
+      }
+    } catch (e) {
+      AppLogger.d('Error loading user region: $e');
+    }
+  }
+
+  /// Extracts the seller's region from cached seller data using
+  /// vendor.company.address.location, falling back to address.province.
+  String? _sellerRegion(String sellerId) {
+    final raw = _sellerDataCache[sellerId];
+    if (raw == null) return null;
+    final vendor = raw['vendor'] is Map
+        ? raw['vendor'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final company = vendor['company'] is Map
+        ? vendor['company'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final address = company['address'] is Map
+        ? company['address'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final location = (address['location'] as String?) ??
+        (address['province'] as String?);
+    return _classifyRegion(location);
+  }
+
+  /// Returns a delivery-estimate label for shipping FROM the seller TO the
+  /// current user. Falls back to [_defaultDeliveryLabel] when either side's
+  /// region cannot be determined.
+  String _estimateDelivery(String sellerId) {
+    final from = _sellerRegion(sellerId);
+    final to = _userRegion;
+    if (from == null || to == null) return _defaultDeliveryLabel;
+    return _deliveryEstimateMap[from]?[to] ?? _defaultDeliveryLabel;
   }
 
   void _showLoginRequiredDialog() {
@@ -495,6 +819,7 @@ class _ProductListingPageState extends State<ProductListingPage>
       _hasMore = true;
       _errorMessage = null;
       _cacheTimestamp = null;
+      _loadedSellerIds.clear();
     });
 
     _loadFirstPage();
@@ -502,13 +827,92 @@ class _ProductListingPageState extends State<ProductListingPage>
 
   // Scroll listener for detecting when user reaches bottom
   void _scrollListener() {
-    if (_scrollController.position.pixels >=
-            _scrollController.position.maxScrollExtent - 200 &&
-        !_isLoading &&
-        !_isLoadingMore &&
-        _hasMore) {
-      _loadNextPage();
+    if (_scrollController.position.pixels <
+        _scrollController.position.maxScrollExtent - 200) return;
+    if (_isSearchMode) {
+      if (!_isSearching && !_isLoadingMoreSearch && (_lastSearchResult?.hasMore ?? false)) {
+        _performSearch(isLoadMore: true);
+      }
+    } else {
+      if (!_isLoading && !_isLoadingMore && _hasMore) {
+        _loadNextPage();
+      }
     }
+  }
+
+  // ── Inline search methods ──────────────────────────────────────────────────
+
+  void _onSearchChanged(String query) {
+    _searchDebounceTimer?.cancel();
+    setState(() {
+      _searchQuery = query;
+      _showSearchSuggestions = query.isNotEmpty;
+    });
+    if (query.isEmpty) {
+      _clearSearch();
+      return;
+    }
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 500), () {
+      _performSearch();
+      if (query.length > 1) _loadSearchSuggestions(query);
+    });
+  }
+
+  Future<void> _performSearch({bool isLoadMore = false}) async {
+    if (_searchQuery.trim().isEmpty) return;
+    if (isLoadMore && (_isLoadingMoreSearch || !(_lastSearchResult?.hasMore ?? true))) return;
+    setState(() {
+      if (isLoadMore) {
+        _isLoadingMoreSearch = true;
+      } else {
+        _isSearching = true;
+      }
+    });
+    final result = await _searchService.searchProducts(
+      searchQuery: _searchQuery,
+      filters: SearchFilters(),
+      lastDocument: isLoadMore ? _lastSearchResult?.lastDocument : null,
+    );
+    if (!mounted) return;
+    setState(() {
+      _isSearchMode = true;
+      _isSearching = false;
+      _isLoadingMoreSearch = false;
+      if (isLoadMore) {
+        _searchResults.addAll(result.products);
+      } else {
+        _searchResults = result.products;
+      }
+      _lastSearchResult = result;
+    });
+  }
+
+  Future<void> _loadSearchSuggestions(String query) async {
+    final suggestions = await _searchService.getSearchSuggestions(query);
+    if (mounted) setState(() { _searchSuggestions = suggestions; });
+  }
+
+  void _onSuggestionTap(String suggestion) {
+    _searchController.text = suggestion;
+    setState(() {
+      _searchQuery = suggestion;
+      _showSearchSuggestions = false;
+    });
+    _performSearch();
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    setState(() {
+      _searchQuery = '';
+      _isSearchMode = false;
+      _searchResults = [];
+      _searchSuggestions = [];
+      _showSearchSuggestions = false;
+      _lastSearchResult = null;
+      _showMobileSearchBar = false;
+    });
+    _searchFocusNode.unfocus();
   }
 
   // Handle category selection (now supports multiple selection)
@@ -521,6 +925,8 @@ class _ProductListingPageState extends State<ProductListingPage>
         _selectedCategories = [];
         _selectedSubCategories = [];
         _subcategoriesByCategory.clear();
+        _categoryGridForceExpanded = false;
+        _showAllCategories = false;
         // Reset pagination parameters
         _products = [];
         _lastDocument = null;
@@ -556,6 +962,7 @@ class _ProductListingPageState extends State<ProductListingPage>
             newSelectedCategories.add(category);
           }
           _selectedCategories = newSelectedCategories;
+          _categoryGridForceExpanded = false;
 
           // Reset pagination parameters for the new selection
           _products = [];
@@ -598,22 +1005,35 @@ class _ProductListingPageState extends State<ProductListingPage>
       AppLogger.d(
         'Loading subcategories for category: $categoryName (ID: $categoryId)',
       );
-      final subcategories = await _categoryService.getSubCategories(categoryId);
+      final subcategoriesFuture = _categoryService.getSubCategories(categoryId);
+      // Collect subCategoryIDs actually used by active products in this category.
+      final productSnapFuture = FirebaseFirestore.instance
+          .collection('Product')
+          .where('isActive', isEqualTo: true)
+          .where('categoryID', isEqualTo: categoryId)
+          .get();
+
+      final subcategories = await subcategoriesFuture;
+      final productSnap = await productSnapFuture;
+
+      final usedSubIds = productSnap.docs
+          .map((d) => (d.data()['subCategoryID'] as String?) ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet();
+
+      final filtered = subcategories
+          .where((s) => usedSubIds.contains(s.subCategoryId))
+          .toList();
 
       AppLogger.d(
-        'Loaded ${subcategories.length} subcategories for $categoryName',
+        'Loaded ${filtered.length}/${subcategories.length} subcategories for $categoryName',
       );
-      for (var sub in subcategories) {
-        AppLogger.d('${sub.subCategoryName} (ID: ${sub.subCategoryId})');
-      }
 
-      if (!mounted) return; // Check if widget is still mounted
+      if (!mounted) return;
 
-      if (mounted) {
-        setState(() {
-          _subcategoriesByCategory[categoryId] = subcategories;
-        });
-      }
+      setState(() {
+        _subcategoriesByCategory[categoryId] = filtered;
+      });
     } catch (e) {
       AppLogger.d('Error loading subcategories for $categoryName: $e');
     }
@@ -751,7 +1171,8 @@ class _ProductListingPageState extends State<ProductListingPage>
                                   color: isSelected
                                       ? AppColors.onSecondary
                                       : AppColors.onSurface.withValues(
-                                          alpha: 0.6),
+                                          alpha: 0.6,
+                                        ),
                                 ),
                               ),
                             ),
@@ -831,7 +1252,20 @@ class _ProductListingPageState extends State<ProductListingPage>
     return widgets;
   }
 
-  // Load the first page of products
+  // Fetch the banned-seller cache for the current user, then trigger the
+  // first product page load. Run sequentially so the first page already
+  // filters banned sellers out instead of showing them then hiding.
+  Future<void> _loadBannedSellersThenFirstPage() async {
+    try {
+      await BannedSellerService.instance.loadForCurrentUser();
+    } catch (e) {
+      AppLogger.d('ProductListingPage: banned seller load failed: $e');
+    }
+    if (!mounted) return;
+    _loadFirstPage();
+  }
+
+  // Load the first page of products, accumulating until we have enough unique stores
   Future<void> _loadFirstPage() async {
     if (_isLoading || !mounted) return;
 
@@ -842,96 +1276,119 @@ class _ProductListingPageState extends State<ProductListingPage>
 
     try {
       AppLogger.d('ProductListingPage: Loading first page of products...');
-      AppLogger.d('DEBUG: Selected categories: $_selectedCategories');
-      AppLogger.d('DEBUG: Selected subcategories: $_selectedSubCategories');
 
       // Use server-side filtering when possible
       String? filterCategoryId;
       String? filterSubCategoryId;
 
-      // If only one category is selected, use server-side filtering
       if (_selectedCategories.length == 1) {
         filterCategoryId = _categoryNameToId[_selectedCategories.first];
-        AppLogger.d('Using server-side category filter: $filterCategoryId');
       }
-
-      // If only one subcategory is selected, use server-side filtering
       if (_selectedSubCategories.length == 1) {
         filterSubCategoryId = _selectedSubCategories.first;
-        AppLogger.d(
-          'Using server-side subcategory filter: $filterSubCategoryId',
-        );
       }
 
-      final result = await _productService.getProductsPaginated(
-        limit: _pageSize,
-        categoryId: filterCategoryId,
-        subCategoryId: filterSubCategoryId,
-        includeInactive: false,
-        includeDrafts: false,
-        includeArchived: false,
+      // Reset seller tracking for first page
+      _loadedSellerIds.clear();
+      List<Product> allFetched = [];
+      DocumentSnapshot? cursor;
+      bool moreAvailable = true;
+
+      // Fetch products in batches until we have _storePageSize unique sellers
+      while (moreAvailable) {
+        final result = await _productService.getProductsPaginated(
+          limit: _pageSize,
+          lastDocument: cursor,
+          categoryId: filterCategoryId,
+          subCategoryId: filterSubCategoryId,
+          includeInactive: false,
+          includeDrafts: false,
+          includeArchived: false,
+          excludeSellerIds: BannedSellerService.instance.bannedSellerIds,
+        );
+
+        if (!mounted) return;
+
+        final batch = result['products'] as List<Product>;
+        cursor = result['lastDocument'] as DocumentSnapshot?;
+        moreAvailable = result['hasMore'] as bool;
+
+        allFetched.addAll(batch);
+
+        // Count unique sellers so far
+        for (final p in batch) {
+          if (p.sellerId.isNotEmpty) _loadedSellerIds.add(p.sellerId);
+        }
+
+        // Stop if we have enough unique sellers or no more data
+        if (_loadedSellerIds.length >= _storePageSize || !moreAvailable) break;
+      }
+
+      // Confirm ban status for every seller surfaced on this page via direct
+      // doc gets (no composite index needed), then drop any products whose
+      // seller turns out to have banned the current buyer.
+      await BannedSellerService.instance
+          .checkSellers(allFetched.map((p) => p.sellerId));
+      allFetched.removeWhere(
+        (p) => BannedSellerService.instance.isBanned(p.sellerId),
       );
-
-      if (!mounted) return; // Check if widget is still mounted
-
-      final newProducts = result['products'] as List<Product>;
-      final lastDoc = result['lastDocument'] as DocumentSnapshot?;
-      final hasMore = result['hasMore'] as bool;
 
       // Load categories only if they haven't been loaded yet
       if (_categories.length <= 1) {
         try {
-          // Fetch all categories from CategoryService (now with caching)
           final allCategories = await _categoryService.getCategories();
+          // Collect categoryIDs that are actually used by active products,
+          // so empty categories don't crowd the grid.
+          final productSnap = await FirebaseFirestore.instance
+              .collection('Product')
+              .where('isActive', isEqualTo: true)
+              .get();
+          final usedCategoryIds = productSnap.docs
+              .map((d) => (d.data()['categoryID'] as String?) ?? '')
+              .where((id) => id.isNotEmpty)
+              .toSet();
 
-          if (!mounted) return; // Check if widget is still mounted
+          if (!mounted) return;
 
-          AppLogger.d(
-            'DEBUG: Fetched ${allCategories.length} categories from service',
-          );
-
-          // Build categories list starting with 'All'
           Set<String> categorySet = {'All'};
-
-          // Clear existing mappings
           _categoryNameToId.clear();
           _categoryIdToName.clear();
           _categoryNameToImage.clear();
 
-          // Add all category names from the service and build mappings
           for (var category in allCategories) {
-            AppLogger.d(
-              'DEBUG: Category - Name: ${category.categoryName}, ID: ${category.categoryId}',
-            );
+            if (!usedCategoryIds.contains(category.categoryId)) continue;
             categorySet.add(category.categoryName);
             _categoryNameToId[category.categoryName] = category.categoryId;
             _categoryIdToName[category.categoryId] = category.categoryName;
-            _categoryNameToImage[category.categoryName] = category.categoryImageUrl;
+            _categoryNameToImage[category.categoryName] =
+                category.categoryImageUrl;
           }
 
           _categories = categorySet.toList();
-          AppLogger.d('DEBUG: Final categories list: $_categories');
         } catch (e) {
           AppLogger.d('Error loading categories: $e');
-          // Fallback to just 'All' if category loading fails
           _categories = ['All'];
         }
       }
 
       if (mounted) {
         setState(() {
-          _products = newProducts;
-          _lastDocument = lastDoc;
-          _hasMore = hasMore;
+          _products = allFetched;
+          _lastDocument = cursor;
+          _hasMore = moreAvailable;
           _isLoading = false;
           _cacheTimestamp = DateTime.now();
         });
       }
 
-      AppLogger.d('Loaded ${newProducts.length} products (first page)');
+      // Pre-fetch vendor data for trader cards
+      _prefetchSellerData(allFetched).then((_) {
+        if (mounted) setState(() {});
+      });
+
+      AppLogger.d('Loaded ${allFetched.length} products covering ${_loadedSellerIds.length} stores (first page)');
     } catch (e) {
       AppLogger.d('Error loading first page: $e');
-      AppLogger.d('Stack trace: ${StackTrace.current}');
 
       if (mounted) {
         setState(() {
@@ -942,59 +1399,89 @@ class _ProductListingPageState extends State<ProductListingPage>
     }
   }
 
-  // Load the next page of products
+  // Load the next page of products, accumulating until 10 new unique stores are found
   Future<void> _loadNextPage() async {
-    if (_isLoadingMore || !_hasMore || _lastDocument == null || !mounted)
+    if (_isLoadingMore || !_hasMore || _lastDocument == null || !mounted) {
       return;
+    }
 
     setState(() {
       _isLoadingMore = true;
     });
 
     try {
-      AppLogger.d('ProductListingPage: Loading more products...');
+      AppLogger.d('ProductListingPage: Loading more stores...');
 
-      // Use same filtering logic as first page
       String? filterCategoryId;
       String? filterSubCategoryId;
 
       if (_selectedCategories.length == 1) {
         filterCategoryId = _categoryNameToId[_selectedCategories.first];
       }
-
       if (_selectedSubCategories.length == 1) {
         filterSubCategoryId = _selectedSubCategories.first;
       }
 
-      final result = await _productService.getProductsPaginated(
-        limit: _pageSize,
-        lastDocument: _lastDocument,
-        categoryId: filterCategoryId,
-        subCategoryId: filterSubCategoryId,
-        includeInactive: false,
-        includeDrafts: false,
-        includeArchived: false,
+      final int sellersBefore = _loadedSellerIds.length;
+      List<Product> allNewProducts = [];
+      DocumentSnapshot? cursor = _lastDocument;
+      bool moreAvailable = true;
+
+      // Fetch batches until we accumulate _storePageSize new sellers
+      while (moreAvailable) {
+        final result = await _productService.getProductsPaginated(
+          limit: _pageSize,
+          lastDocument: cursor,
+          categoryId: filterCategoryId,
+          subCategoryId: filterSubCategoryId,
+          includeInactive: false,
+          includeDrafts: false,
+          includeArchived: false,
+          excludeSellerIds: BannedSellerService.instance.bannedSellerIds,
+        );
+
+        if (!mounted) return;
+
+        final batch = result['products'] as List<Product>;
+        cursor = result['lastDocument'] as DocumentSnapshot?;
+        moreAvailable = result['hasMore'] as bool;
+
+        allNewProducts.addAll(batch);
+
+        for (final p in batch) {
+          if (p.sellerId.isNotEmpty) _loadedSellerIds.add(p.sellerId);
+        }
+
+        final newSellers = _loadedSellerIds.length - sellersBefore;
+        if (newSellers >= _storePageSize || !moreAvailable) break;
+      }
+
+      // Confirm ban status for any new sellers surfaced in this batch, then
+      // drop banned products before they reach the list.
+      await BannedSellerService.instance
+          .checkSellers(allNewProducts.map((p) => p.sellerId));
+      allNewProducts.removeWhere(
+        (p) => BannedSellerService.instance.isBanned(p.sellerId),
       );
-
-      if (!mounted) return; // Check if widget is still mounted
-
-      final newProducts = result['products'] as List<Product>;
-      final lastDoc = result['lastDocument'] as DocumentSnapshot?;
-      final hasMore = result['hasMore'] as bool;
 
       if (mounted) {
         setState(() {
-          _products.addAll(newProducts);
-          _lastDocument = lastDoc;
-          _hasMore = hasMore;
+          _products.addAll(allNewProducts);
+          _lastDocument = cursor;
+          _hasMore = moreAvailable;
           _isLoadingMore = false;
         });
       }
 
-      AppLogger.d('Loaded ${newProducts.length} more products');
+      // Pre-fetch vendor data for new traders
+      _prefetchSellerData(allNewProducts).then((_) {
+        if (mounted) setState(() {});
+      });
+
+      final newSellers = _loadedSellerIds.length - sellersBefore;
+      AppLogger.d('Loaded ${allNewProducts.length} more products covering $newSellers new stores');
     } catch (e) {
       AppLogger.d('Error loading more products: $e');
-      AppLogger.d('Stack trace: ${StackTrace.current}');
 
       if (mounted) {
         setState(() {
@@ -1073,11 +1560,16 @@ class _ProductListingPageState extends State<ProductListingPage>
         'Current cache: ${currentProducts.length} products, ${currentCategories.length} categories',
       );
 
+      // Refresh banned-seller cache before fetching so newly added bans
+      // take effect on this pull-to-refresh.
+      await BannedSellerService.instance.loadForCurrentUser();
+
       // Fetch fresh data from Firebase
       AppLogger.d('Fetching fresh data from Firebase...');
       final result = await _productService.getProductsPaginated(
         limit: _pageSize,
         categoryId: null,
+        excludeSellerIds: BannedSellerService.instance.bannedSellerIds,
       );
 
       if (!mounted) return; // Check if widget is still mounted
@@ -1099,7 +1591,8 @@ class _ProductListingPageState extends State<ProductListingPage>
           freshCategoriesList.add(category.categoryName);
           freshCategoryMapping[category.categoryName] = category.categoryId;
           freshCategoryIdToName[category.categoryId] = category.categoryName;
-          freshCategoryImageMapping[category.categoryName] = category.categoryImageUrl;
+          freshCategoryImageMapping[category.categoryName] =
+              category.categoryImageUrl;
         }
         AppLogger.d('Fetched ${allCategories.length} fresh categories');
       } catch (e) {
@@ -1135,6 +1628,12 @@ class _ProductListingPageState extends State<ProductListingPage>
             _categoryNameToImage = freshCategoryImageMapping;
             _cacheTimestamp = DateTime.now();
             _errorMessage = null;
+            _sellerDataCache.clear(); // invalidate vendor cache on manual refresh
+          });
+
+          // Re-fetch vendor data after cache clear
+          _prefetchSellerData(freshProducts).then((_) {
+            if (mounted) setState(() {});
           });
         }
 
@@ -1259,6 +1758,12 @@ class _ProductListingPageState extends State<ProductListingPage>
 
   Widget _buildScaffold() {
     final isWideScreen = MediaQuery.of(context).size.width >= 900;
+    const double traderListMaxWidth = 720;
+    final double tradersHorizontalPadding = (kIsWeb && isWideScreen)
+        ? (MediaQuery.of(context).size.width - traderListMaxWidth) / 2
+        : (MediaQuery.of(context).size.width >= 900
+            ? (MediaQuery.of(context).size.width - 1100) / 2
+            : 16);
     return Scaffold(
       backgroundColor: AppColors.background,
       body: RefreshIndicator(
@@ -1346,6 +1851,8 @@ class _ProductListingPageState extends State<ProductListingPage>
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: TextField(
+                                    controller: _searchController,
+                                    focusNode: _searchFocusNode,
                                     decoration: InputDecoration(
                                       hintText: 'Search products...',
                                       border: InputBorder.none,
@@ -1356,16 +1863,17 @@ class _ProductListingPageState extends State<ProductListingPage>
                                           ),
                                     ),
                                     style: AppTextStyles.bodyMedium,
-                                    onSubmitted: (_) {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (context) =>
-                                              const ProductSearchPage(),
-                                        ),
-                                      );
-                                    },
+                                    onChanged: _onSearchChanged,
                                   ),
                                 ),
+                                if (_searchQuery.isNotEmpty)
+                                  IconButton(
+                                    icon: const Icon(Icons.close, size: 18),
+                                    color: AppColors.onSurface.withOpacity(0.5),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                    onPressed: _clearSearch,
+                                  ),
                               ],
                             ),
                           ),
@@ -1416,7 +1924,9 @@ class _ProductListingPageState extends State<ProductListingPage>
                                   children: [
                                     Icon(
                                       Icons.shopping_cart_outlined,
-                                      color: AppColors.onSurface.withOpacity(0.7),
+                                      color: AppColors.onSurface.withOpacity(
+                                        0.7,
+                                      ),
                                       size: 22,
                                     ),
                                     if (_cartItemCount > 0)
@@ -1434,7 +1944,9 @@ class _ProductListingPageState extends State<ProductListingPage>
                                             shape: BoxShape.circle,
                                           ),
                                           child: Text(
-                                            _cartItemCount > 99 ? '99+' : '$_cartItemCount',
+                                            _cartItemCount > 99
+                                                ? '99+'
+                                                : '$_cartItemCount',
                                             style: const TextStyle(
                                               color: Colors.white,
                                               fontSize: 10,
@@ -1507,46 +2019,61 @@ class _ProductListingPageState extends State<ProductListingPage>
                 elevation: 0,
                 backgroundColor: AppColors.surface,
                 automaticallyImplyLeading: false,
-                title: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(
-                        Icons.waving_hand,
-                        color: AppColors.accent,
-                        size: 16,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
+                title: _showMobileSearchBar
+                    ? TextField(
+                        controller: _searchController,
+                        focusNode: _searchFocusNode,
+                        autofocus: true,
+                        onChanged: _onSearchChanged,
+                        decoration: InputDecoration(
+                          hintText: 'Search products...',
+                          border: InputBorder.none,
+                          hintStyle: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.onSurface.withValues(alpha: 0.5),
+                          ),
+                        ),
+                        style: AppTextStyles.bodyMedium,
+                      )
+                    : Row(
                         children: [
-                          Text(
-                            'Welcome back!',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.onSurface.withValues(alpha: 0.6),
-                              fontSize: 11,
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.waving_hand,
+                              color: AppColors.accent,
+                              size: 16,
                             ),
                           ),
-                          Text(
-                            'Hi $_userFirstName',
-                            style: AppTextStyles.titleMedium.copyWith(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'Welcome back!',
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.onSurface.withValues(alpha: 0.6),
+                                    fontSize: 11,
+                                  ),
+                                ),
+                                Text(
+                                  'Hi $_userFirstName',
+                                  style: AppTextStyles.titleMedium.copyWith(
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
-                    ),
-                  ],
-                ),
                 flexibleSpace: FlexibleSpaceBar(
                   background: Container(
                     decoration: BoxDecoration(
@@ -1585,73 +2112,17 @@ class _ProductListingPageState extends State<ProductListingPage>
                             minWidth: 36,
                             minHeight: 36,
                           ),
-                          icon: const Icon(
-                            Icons.search,
+                          icon: Icon(
+                            _showMobileSearchBar ? Icons.close : Icons.search,
                             color: AppColors.onSurface,
                           ),
                           onPressed: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (context) => const ProductSearchPage(),
-                              ),
-                            );
-                          },
-                        ),
-                        Container(
-                          width: 1,
-                          height: 20,
-                          color: AppColors.onSurface.withValues(alpha: 0.1),
-                        ),
-                        IconButton(
-                          iconSize: 20,
-                          padding: const EdgeInsets.all(8),
-                          constraints: const BoxConstraints(
-                            minWidth: 36,
-                            minHeight: 36,
-                          ),
-                          icon: Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              const Icon(
-                                Icons.shopping_cart,
-                                color: AppColors.onSurface,
-                              ),
-                              if (_cartItemCount > 0)
-                                Positioned(
-                                  right: -8,
-                                  top: -6,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(4),
-                                    constraints: const BoxConstraints(
-                                      minWidth: 18,
-                                      minHeight: 18,
-                                    ),
-                                    decoration: const BoxDecoration(
-                                      color: Colors.orange,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Text(
-                                      _cartItemCount > 99 ? '99+' : '$_cartItemCount',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                          onPressed: () {
-                            final user = FirebaseAuth.instance.currentUser;
-                            if (user == null) {
-                              _showLoginRequiredDialog();
+                            if (_showMobileSearchBar) {
+                              _clearSearch();
                             } else {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (context) => const CartPage(),
-                                ),
+                              setState(() { _showMobileSearchBar = true; });
+                              WidgetsBinding.instance.addPostFrameCallback(
+                                (_) => _searchFocusNode.requestFocus(),
                               );
                             }
                           },
@@ -1680,6 +2151,128 @@ class _ProductListingPageState extends State<ProductListingPage>
                   const SizedBox(width: 8),
                 ],
               ),
+            // Search suggestions overlay
+            if (_isSearchMode && _showSearchSuggestions && _searchSuggestions.isNotEmpty)
+              SliverToBoxAdapter(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: isWideScreen ? 1100 : double.infinity,
+                    ),
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.1),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: _searchSuggestions.map((suggestion) {
+                          return ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.search, size: 18),
+                            title: Text(suggestion, style: AppTextStyles.bodyMedium),
+                            onTap: () => _onSuggestionTap(suggestion),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+            // Search mode content
+            if (_isSearchMode) ...[
+              // Search results header
+              SliverToBoxAdapter(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: isWideScreen ? 1100 : double.infinity,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.search, color: AppColors.primary, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _isSearching
+                                  ? 'Searching...'
+                                  : 'Results for "$_searchQuery" (${_searchResults.length} products)',
+                              style: AppTextStyles.titleMedium.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.onSurface,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _clearSearch,
+                            child: const Text('Clear'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              // Search results as trader cards
+              if (_isSearching)
+                const SliverFillRemaining(
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_searchResults.isEmpty)
+                SliverFillRemaining(
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.search_off, size: 64, color: AppColors.onSurface.withValues(alpha: 0.3)),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No products found.',
+                          style: AppTextStyles.titleMedium.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Try a different search term',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.onSurface.withValues(alpha: 0.6),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                SliverPadding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: tradersHorizontalPadding,
+                  ),
+                  sliver: _buildSearchTradersList(),
+                ),
+              if (_isLoadingMoreSearch)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                ),
+            ],
+
+            // Normal browsing content
+            if (!_isSearchMode) ...[
             // Main centered content
             SliverToBoxAdapter(
               child: Center(
@@ -1693,9 +2286,15 @@ class _ProductListingPageState extends State<ProductListingPage>
                       // Banner Slideshow
                       if (_bannerImageUrls.isNotEmpty)
                         Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 16),
+                          margin: EdgeInsets.symmetric(
+                            horizontal: MediaQuery.of(context).size.width >= 600
+                                ? 16 // Standard margin for tablet/desktop
+                                : 0, // No margin for mobile = full width = much taller banner
+                          ),
                           decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(24),
+                            borderRadius: BorderRadius.circular(
+                              MediaQuery.of(context).size.width >= 600 ? 24 : 0,
+                            ),
                             boxShadow: [
                               BoxShadow(
                                 color: AppColors.primary.withValues(alpha: 0.2),
@@ -1705,14 +2304,20 @@ class _ProductListingPageState extends State<ProductListingPage>
                             ],
                           ),
                           child: ClipRRect(
-                            borderRadius: BorderRadius.circular(24),
+                            borderRadius: BorderRadius.circular(
+                              MediaQuery.of(context).size.width >= 600 ? 24 : 0,
+                            ),
                             child: AspectRatio(
-                              aspectRatio: 8 / 3, // 800x300
+                              aspectRatio:
+                                  8 /
+                                  3, // Keep original 8:3 ratio for all screens
                               child: Stack(
                                 children: [
                                   PageView.builder(
                                     controller: _bannerPageController,
-                                    physics: const BouncingScrollPhysics(),
+                                    physics: kIsWeb
+                                        ? const AlwaysScrollableScrollPhysics()
+                                        : const PageScrollPhysics(),
                                     onPageChanged: (index) {
                                       setState(() {
                                         _currentBannerIndex = index;
@@ -1724,7 +2329,9 @@ class _ProductListingPageState extends State<ProductListingPage>
                                       return GestureDetector(
                                         behavior: HitTestBehavior.opaque,
                                         onTap: () {
-                                          AppLogger.d('Banner GestureDetector tapped at index: $index');
+                                          AppLogger.d(
+                                            'Banner GestureDetector tapped at index: $index',
+                                          );
                                           _onBannerTap(index);
                                         },
                                         child: CachedNetworkImage(
@@ -1733,334 +2340,153 @@ class _ProductListingPageState extends State<ProductListingPage>
                                           width: double.infinity,
                                           memCacheWidth: 1920,
                                           memCacheHeight: 720,
-                                          placeholder: (context, url) => Container(
-                                            decoration: BoxDecoration(
-                                              gradient: LinearGradient(
-                                                colors: [
-                                                  AppColors.primary.withValues(alpha: 0.1),
-                                                  AppColors.accent.withValues(alpha: 0.1),
-                                                ],
-                                                begin: Alignment.topLeft,
-                                                end: Alignment.bottomRight,
+                                          placeholder: (context, url) =>
+                                              Container(
+                                                decoration: BoxDecoration(
+                                                  gradient: LinearGradient(
+                                                    colors: [
+                                                      AppColors.primary
+                                                          .withValues(
+                                                            alpha: 0.1,
+                                                          ),
+                                                      AppColors.accent
+                                                          .withValues(
+                                                            alpha: 0.1,
+                                                          ),
+                                                    ],
+                                                    begin: Alignment.topLeft,
+                                                    end: Alignment.bottomRight,
+                                                  ),
+                                                ),
+                                                child: const Center(
+                                                  child:
+                                                      CircularProgressIndicator(),
+                                                ),
                                               ),
-                                            ),
-                                            child: const Center(
-                                              child: CircularProgressIndicator(),
-                                            ),
-                                          ),
-                                          errorWidget: (context, url, error) => Container(
-                                            decoration: BoxDecoration(
-                                              gradient: LinearGradient(
-                                                colors: [
-                                                  AppColors.primary.withValues(alpha: 0.1),
-                                                  AppColors.accent.withValues(alpha: 0.1),
-                                                ],
-                                                begin: Alignment.topLeft,
-                                                end: Alignment.bottomRight,
+                                          errorWidget: (context, url, error) =>
+                                              Container(
+                                                decoration: BoxDecoration(
+                                                  gradient: LinearGradient(
+                                                    colors: [
+                                                      AppColors.primary
+                                                          .withValues(
+                                                            alpha: 0.1,
+                                                          ),
+                                                      AppColors.accent
+                                                          .withValues(
+                                                            alpha: 0.1,
+                                                          ),
+                                                    ],
+                                                    begin: Alignment.topLeft,
+                                                    end: Alignment.bottomRight,
+                                                  ),
+                                                ),
+                                                child: const Center(
+                                                  child: Icon(
+                                                    Icons.image_not_supported,
+                                                    color: Colors.grey,
+                                                    size: 40,
+                                                  ),
+                                                ),
                                               ),
-                                            ),
-                                            child: const Center(
-                                              child: Icon(
-                                                Icons.image_not_supported,
-                                                color: Colors.grey,
-                                                size: 40,
-                                              ),
-                                            ),
-                                          ),
-                                          cacheManager: ProductImageCacheManager.instance,
+                                          cacheManager:
+                                              ProductImageCacheManager.instance,
                                         ),
                                       );
                                     },
-                                  ),
-                                  // Gradient overlay for better text readability
-                                  Positioned.fill(
-                                    child: IgnorePointer(
-                                      child: DecoratedBox(
-                                        decoration: BoxDecoration(
-                                          gradient: LinearGradient(
-                                            begin: Alignment.topCenter,
-                                            end: Alignment.bottomCenter,
-                                            colors: [
-                                              Colors.transparent,
-                                              Colors.black.withValues(alpha: 0.3),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
                                   ),
                                   // Banner indicator dots
                                   if (_bannerImageUrls.length > 1)
                                     Positioned(
                                       bottom: 16,
-                                    left: 0,
-                                    right: 0,
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: List.generate(_bannerImageUrls.length, (index) {
-                                        return AnimatedContainer(
-                                          duration: const Duration(milliseconds: 300),
-                                          margin: const EdgeInsets.symmetric(horizontal: 4),
-                                          width: _currentBannerIndex == index ? 16 : 8,
-                                          height: 8,
-                                          decoration: BoxDecoration(
-                                            color: _currentBannerIndex == index
-                                                ? AppColors.primary
-                                                : AppColors.primary.withOpacity(0.3),
-                                            borderRadius: BorderRadius.circular(4),
-                                          ),
-                                        );
-                                      }),
+                                      left: 0,
+                                      right: 0,
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: List.generate(
+                                          _bannerImageUrls.length,
+                                          (index) {
+                                            return GestureDetector(
+                                              onTap: () {
+                                                if (_bannerPageController
+                                                    .hasClients) {
+                                                  _bannerPageController
+                                                      .animateToPage(
+                                                        index,
+                                                        duration:
+                                                            const Duration(
+                                                              milliseconds: 300,
+                                                            ),
+                                                        curve: Curves.easeInOut,
+                                                      );
+                                                }
+                                              },
+                                              child: AnimatedContainer(
+                                                duration: const Duration(
+                                                  milliseconds: 300,
+                                                ),
+                                                margin:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 5,
+                                                    ),
+                                                width:
+                                                    _currentBannerIndex == index
+                                                    ? 24
+                                                    : 12,
+                                                height: 12,
+                                                decoration: BoxDecoration(
+                                                  color:
+                                                      _currentBannerIndex ==
+                                                          index
+                                                      ? AppColors.primary
+                                                      : AppColors.primary
+                                                            .withOpacity(0.3),
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                              ],
+                                ],
                               ),
                             ),
                           ),
                         ),
 
                       // Modern Categories Section
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 16),
+                      _buildCategoriesSection(),
 
-                      Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 16),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppColors.surface,
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.05),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
+                      // Subcategories section (grouped by category) — when shown,
+                      // the Shipped From filter is rendered below it; otherwise it
+                      // stays in its default position right under Categories.
+                      if (_selectedCategories.isNotEmpty &&
+                          _subcategoriesByCategory.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: _buildGroupedSubcategoriesSection(),
                             ),
-                          ],
+                          ),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary.withValues(
-                                      alpha: 0.1,
-                                    ),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Icon(
-                                    Icons.category,
-                                    color: AppColors.primary,
-                                    size: 20,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  'Categories',
-                                  style: AppTextStyles.titleMedium.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.onSurface,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            SizedBox(
-                              height: 124,
-                              child: ListView.builder(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: _categories.length,
-                                itemBuilder: (context, index) {
-                                  final category = _categories[index];
-                                  final isSelected = category == 'All'
-                                      ? _selectedCategories.isEmpty
-                                      : _selectedCategories.contains(category);
-                                  final imageUrl = category == 'All'
-                                      ? null
-                                      : _categoryNameToImage[category];
-
-                                  return Padding(
-                                    padding: const EdgeInsets.only(right: 10),
-                                    child: GestureDetector(
-                                      onTap: () =>
-                                          _onCategorySelected(category),
-                                      child: AnimatedContainer(
-                                        duration: const Duration(
-                                          milliseconds: 200,
-                                        ),
-                                        width: 100,
-                                        decoration: BoxDecoration(
-                                          color: isSelected
-                                              ? AppColors.primary
-                                              : AppColors.surface,
-                                          borderRadius: BorderRadius.circular(12),
-                                          border: Border.all(
-                                            color: isSelected
-                                                ? AppColors.primary
-                                                : AppColors.onSurface
-                                                      .withValues(alpha: 0.15),
-                                            width: 1.5,
-                                          ),
-                                          boxShadow: isSelected
-                                              ? [
-                                                  BoxShadow(
-                                                    color: AppColors.primary
-                                                        .withValues(alpha: 0.3),
-                                                    blurRadius: 8,
-                                                    offset: const Offset(0, 2),
-                                                  ),
-                                                ]
-                                              : [
-                                                  BoxShadow(
-                                                    color: Colors.black
-                                                        .withValues(alpha: 0.04),
-                                                    blurRadius: 4,
-                                                    offset: const Offset(0, 1),
-                                                  ),
-                                                ],
-                                        ),
-                                        child: Column(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          children: [
-                                            // Image / icon area
-                                            ClipRRect(
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              child: Container(
-                                                width: 64,
-                                                height: 64,
-                                                decoration: BoxDecoration(
-                                                  color: imageUrl != null &&
-                                                          imageUrl.isNotEmpty
-                                                      ? Colors.transparent
-                                                      : isSelected
-                                                          ? Colors.white
-                                                                .withValues(
-                                                                  alpha: 0.2,
-                                                                )
-                                                          : AppColors.primary
-                                                                .withValues(
-                                                                  alpha: 0.08,
-                                                                ),
-                                                  borderRadius:
-                                                      BorderRadius.circular(8),
-                                                ),
-                                                child: imageUrl != null &&
-                                                        imageUrl.isNotEmpty
-                                                    ? CachedNetworkImage(
-                                                        imageUrl: imageUrl,
-                                                        fit: BoxFit.cover,
-                                                        placeholder:
-                                                            (context, url) =>
-                                                                Center(
-                                                          child: Icon(
-                                                            Icons.category,
-                                                            color: isSelected
-                                                                ? Colors.white
-                                                                      .withValues(
-                                                                        alpha:
-                                                                            0.7,
-                                                                      )
-                                                                : AppColors
-                                                                      .primary
-                                                                      .withValues(
-                                                                        alpha:
-                                                                            0.5,
-                                                                      ),
-                                                            size: 24,
-                                                          ),
-                                                        ),
-                                                        errorWidget: (context,
-                                                                url, error) =>
-                                                            Center(
-                                                          child: Icon(
-                                                            Icons.category,
-                                                            color: isSelected
-                                                                ? Colors.white
-                                                                      .withValues(
-                                                                        alpha:
-                                                                            0.7,
-                                                                      )
-                                                                : AppColors
-                                                                      .primary
-                                                                      .withValues(
-                                                                        alpha:
-                                                                            0.5,
-                                                                      ),
-                                                            size: 24,
-                                                          ),
-                                                        ),
-                                                      )
-                                                    : Center(
-                                                        child: Icon(
-                                                          category == 'All'
-                                                              ? Icons
-                                                                    .grid_view_rounded
-                                                              : Icons.category,
-                                                          color: isSelected
-                                                              ? Colors.white
-                                                                    .withValues(
-                                                                      alpha:
-                                                                          0.9,
-                                                                    )
-                                                              : AppColors
-                                                                    .primary
-                                                                    .withValues(
-                                                                      alpha:
-                                                                          0.7,
-                                                                    ),
-                                                          size: 26,
-                                                        ),
-                                                      ),
-                                              ),
-                                            ),
-                                            const SizedBox(height: 6),
-                                            // Label
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 4,
-                                                  ),
-                                              child: Text(
-                                                category,
-                                                style: AppTextStyles.bodySmall
-                                                    .copyWith(
-                                                      color: isSelected
-                                                          ? AppColors.onPrimary
-                                                          : AppColors.onSurface,
-                                                      fontWeight: isSelected
-                                                          ? FontWeight.bold
-                                                          : FontWeight.w500,
-                                                      fontSize: 11,
-                                                    ),
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                textAlign: TextAlign.center,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-
-                            // Subcategories section (grouped by category)
-                            if (_selectedCategories.isNotEmpty &&
-                                _subcategoriesByCategory.isNotEmpty) ...[
-                              const SizedBox(height: 16),
-                              ..._buildGroupedSubcategoriesSection(),
-                            ],
-                          ],
-                        ),
-                      ),
+                        const SizedBox(height: 16),
+                        _buildFilterSection(),
+                      ] else ...[
+                        const SizedBox(height: 16),
+                        _buildFilterSection(),
+                      ],
 
                       const SizedBox(height: 24),
 
+                      // Explore Dental Traders Section Header (renamed from Products)
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: Row(
@@ -2072,7 +2498,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: const Icon(
-                                Icons.grid_view_rounded,
+                                Icons.store_rounded,
                                 color: AppColors.accent,
                                 size: 20,
                               ),
@@ -2080,7 +2506,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
-                                'Products',
+                                'Explore Dental Traders',
                                 style: AppTextStyles.titleLarge.copyWith(
                                   fontWeight: FontWeight.bold,
                                   color: AppColors.onSurface,
@@ -2097,7 +2523,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                                 borderRadius: BorderRadius.circular(16),
                               ),
                               child: Text(
-                                '${_getFilteredProductsCount()} items',
+                                '${_getFilteredProductsCount()} traders',
                                 style: AppTextStyles.bodySmall.copyWith(
                                   color: AppColors.primary,
                                   fontWeight: FontWeight.w600,
@@ -2115,7 +2541,7 @@ class _ProductListingPageState extends State<ProductListingPage>
               ),
             ),
 
-            // Products Grid
+            // Traders List (Vertical List Layout - Foodpanda style)
             _isLoading && _products.isEmpty
                 ? const SliverFillRemaining(
                     child: Center(child: CircularProgressIndicator()),
@@ -2126,17 +2552,14 @@ class _ProductListingPageState extends State<ProductListingPage>
                 ? SliverFillRemaining(child: _buildEmptyState())
                 : SliverPadding(
                     padding: EdgeInsets.symmetric(
-                      horizontal: MediaQuery.of(context).size.width >= 900
-                          ? (MediaQuery.of(context).size.width - 1100) / 2
-                          : 16,
+                      horizontal: tradersHorizontalPadding,
                     ),
-                    sliver: _buildModernProductGrid(),
+                    sliver: _buildTradersList(),
                   ),
+            ], // end if (!_isSearchMode)
 
             // Web Footer
-            const SliverToBoxAdapter(
-              child: WebFooter(),
-            ),
+            const SliverToBoxAdapter(child: WebFooter()),
           ],
         ),
       ),
@@ -2496,44 +2919,45 @@ class _ProductListingPageState extends State<ProductListingPage>
   }
 
   int _getFilteredProductsCount() {
-    return _products.where((product) {
-      // Exclude draft products from product listing page
-      if (product.isDraft == true) return false;
+    // Collect unique seller IDs from filtered products
+    final Set<String> sellerIds = {};
+    for (final product in _products) {
+      if (product.isDraft == true) continue;
+      if (product.isActive == false) continue;
+      if (product.isArchived == true) continue;
 
-      // Exclude inactive products from product listing page
-      if (product.isActive == false) return false;
+      // Apply brand filter
+      if (_selectedBrand != null && product.brand != _selectedBrand) continue;
 
-      // Exclude archived products from product listing page
-      if (product.isArchived == true) return false;
+      // Apply category/subcategory filters
+      if (_selectedCategories.isNotEmpty) {
+        final selectedCategoryIds = _selectedCategories
+            .map((categoryName) => _categoryNameToId[categoryName])
+            .where((id) => id != null)
+            .cast<String>()
+            .toList();
 
-      // If no categories selected, show all
-      if (_selectedCategories.isEmpty) return true;
+        if (!selectedCategoryIds.contains(product.categoryId)) continue;
 
-      // Get selected category IDs
-      final selectedCategoryIds = _selectedCategories
-          .map((categoryName) => _categoryNameToId[categoryName])
-          .where((id) => id != null)
-          .cast<String>()
-          .toList();
-
-      // If subcategories are selected, filter by subcategory AND category
-      if (_selectedSubCategories.isNotEmpty) {
-        // Product must be in a selected category
-        final isInSelectedCategory = selectedCategoryIds.contains(
-          product.categoryId,
-        );
-
-        final hasSubCategory = product.subCategoryId.isNotEmpty;
-        final isInSelectedSubCategory = _selectedSubCategories.contains(
-          product.subCategoryId,
-        );
-        final shouldShowProduct = !hasSubCategory || isInSelectedSubCategory;
-
-        return isInSelectedCategory && shouldShowProduct;
+        if (_selectedSubCategories.isNotEmpty) {
+          final hasSubCategory = product.subCategoryId.isNotEmpty;
+          final isInSelectedSubCategory = _selectedSubCategories.contains(product.subCategoryId);
+          if (hasSubCategory && !isInSelectedSubCategory) continue;
+        }
       }
 
-      // Otherwise, filter by selected categories only
-      return selectedCategoryIds.contains(product.categoryId);
+      if (product.sellerId.isNotEmpty) {
+        sellerIds.add(product.sellerId);
+      }
+    }
+
+    // Only count parent seller accounts (not sub-accounts)
+    return sellerIds.where((sid) {
+      final data = _sellerDataCache[sid];
+      if (data == null) return true; // include if not yet cached
+      final isSubAccount = data['isSubAccount'] == true;
+      final role = data['role'] as String? ?? '';
+      return !isSubAccount && role == 'seller';
     }).length;
   }
 
@@ -2609,10 +3033,13 @@ class _ProductListingPageState extends State<ProductListingPage>
             for (final subCategoryId in newSubCategories) {
               if (!_selectedSubCategories.contains(subCategoryId)) {
                 for (final entry in _subcategoriesByCategory.entries) {
-                  if (entry.value
-                      .any((s) => s.subCategoryId == subCategoryId)) {
+                  if (entry.value.any(
+                    (s) => s.subCategoryId == subCategoryId,
+                  )) {
                     _clickTrackingService.trackSubCategoryClick(
-                        entry.key, subCategoryId);
+                      entry.key,
+                      subCategoryId,
+                    );
                     break;
                   }
                 }
@@ -2654,6 +3081,1384 @@ class _ProductListingPageState extends State<ProductListingPage>
       },
     );
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // NEW WIDGET BUILDERS FOR REDESIGNED LAYOUT
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Build Brand Section (horizontally scrollable, matches Categories style)
+  Widget _buildBrandSection() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.verified_rounded,
+                  color: AppColors.accent,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Brands',
+                style: AppTextStyles.titleMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.onSurface,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_brandList.isEmpty) const SizedBox.shrink() else SizedBox(
+            height: 100,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: _brandList.length + 1, // +1 for "All" option
+              itemBuilder: (context, index) {
+                // First item is "All"
+                if (index == 0) {
+                  final isSelected = _selectedBrand == null;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 10),
+                    child: GestureDetector(
+                      onTap: () {
+                        if (_selectedBrand != null) {
+                          setState(() {
+                            _selectedBrand = null;
+                            _products = [];
+                            _lastDocument = null;
+                            _hasMore = true;
+                            _loadedSellerIds = {};
+                          });
+                          _loadFirstPage();
+                        }
+                      },
+                      child: IntrinsicWidth(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minWidth: 80),
+                          child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        decoration: BoxDecoration(
+                          color: isSelected ? AppColors.accent : AppColors.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSelected
+                                ? AppColors.accent
+                                : AppColors.onSurface.withValues(alpha: 0.12),
+                            width: 1.5,
+                          ),
+                          boxShadow: isSelected
+                              ? [
+                                  BoxShadow(
+                                    color: AppColors.accent.withValues(alpha: 0.25),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ]
+                              : [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.04),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? Colors.white.withValues(alpha: 0.2)
+                                      : AppColors.accent.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Center(
+                                  child: Icon(
+                                    Icons.grid_view_rounded,
+                                    color: isSelected
+                                        ? Colors.white.withValues(alpha: 0.9)
+                                        : AppColors.accent.withValues(alpha: 0.7),
+                                    size: 22,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              child: Text(
+                                'All',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: isSelected ? AppColors.onPrimary : AppColors.onSurface,
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                  fontSize: 10,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ],
+                        ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }
+
+                final brandIndex = index - 1;
+                final brand = _brandList[brandIndex]['brand'] ?? '';
+                final brandImage = _brandList[brandIndex]['brandImage'] ?? '';
+                final isSelected = _selectedBrand == brand;
+
+                return Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _selectedBrand = isSelected ? null : brand;
+                        _products = [];
+                        _lastDocument = null;
+                        _hasMore = true;
+                        _loadedSellerIds = {};
+                      });
+                      _loadFirstPage();
+                    },
+                    child: IntrinsicWidth(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minWidth: 80),
+                        child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      decoration: BoxDecoration(
+                        color: isSelected ? AppColors.accent : AppColors.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isSelected
+                              ? AppColors.accent
+                              : AppColors.onSurface.withValues(alpha: 0.12),
+                          width: 1.5,
+                        ),
+                        boxShadow: isSelected
+                            ? [
+                                BoxShadow(
+                                  color: AppColors.accent.withValues(alpha: 0.25),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ]
+                            : [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.04),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: brandImage.isNotEmpty
+                                    ? Colors.transparent
+                                    : isSelected
+                                        ? Colors.white.withValues(alpha: 0.2)
+                                        : AppColors.accent.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: brandImage.isNotEmpty
+                                  ? CachedNetworkImage(
+                                      imageUrl: brandImage,
+                                      fit: BoxFit.cover,
+                                      placeholder: (context, url) => Center(
+                                        child: Icon(
+                                          Icons.verified_rounded,
+                                          color: isSelected
+                                              ? Colors.white.withValues(alpha: 0.7)
+                                              : AppColors.accent.withValues(alpha: 0.5),
+                                          size: 20,
+                                        ),
+                                      ),
+                                      errorWidget: (context, url, error) => Center(
+                                        child: Icon(
+                                          Icons.verified_rounded,
+                                          color: isSelected
+                                              ? Colors.white.withValues(alpha: 0.7)
+                                              : AppColors.accent.withValues(alpha: 0.5),
+                                          size: 20,
+                                        ),
+                                      ),
+                                    )
+                                  : Center(
+                                      child: Icon(
+                                        Icons.verified_rounded,
+                                        color: isSelected
+                                            ? Colors.white.withValues(alpha: 0.9)
+                                            : AppColors.accent.withValues(alpha: 0.7),
+                                        size: 22,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Text(
+                              brand.length > 17 ? '${brand.substring(0, 17)}...' : brand,
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: isSelected ? AppColors.onPrimary : AppColors.onSurface,
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                fontSize: 10,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ],
+                      ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  int _categoryCrossAxisCount(BuildContext context) {
+    final w = MediaQuery.of(context).size.width;
+    if (w >= 1200) return 7;
+    if (w >= 900) return 6;
+    if (w >= 600) return 5;
+    return 4;
+  }
+
+  // Build Categories Section (responsive grid)
+  Widget _buildCategoriesSection() {
+    final crossAxisCount = _categoryCrossAxisCount(context);
+    const maxCollapsedRows = 2;
+    final collapsedLimit = crossAxisCount * maxCollapsedRows;
+
+    final hasSelection = _selectedCategories.isNotEmpty;
+    final isCollapsedToSelection = hasSelection && !_categoryGridForceExpanded;
+
+    List<int> visibleIndices;
+    if (isCollapsedToSelection) {
+      final selectedRows = <int>{};
+      for (var i = 0; i < _categories.length; i++) {
+        if (_selectedCategories.contains(_categories[i])) {
+          selectedRows.add(i ~/ crossAxisCount);
+        }
+      }
+      visibleIndices = [
+        for (var i = 0; i < _categories.length; i++)
+          if (selectedRows.contains(i ~/ crossAxisCount)) i,
+      ];
+    } else if (_showAllCategories || _categories.length <= collapsedLimit) {
+      visibleIndices = List.generate(_categories.length, (i) => i);
+    } else {
+      visibleIndices = List.generate(collapsedLimit, (i) => i);
+    }
+
+    final hasMoreInDefault = _categories.length > collapsedLimit;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.category_rounded,
+                  color: AppColors.primary,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Categories',
+                style: AppTextStyles.titleMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.onSurface,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            itemCount: visibleIndices.length,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: crossAxisCount,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              childAspectRatio: 0.85,
+            ),
+            itemBuilder: (context, index) {
+              final categoryIndex = visibleIndices[index];
+              final category = _categories[categoryIndex];
+              final isSelected = category == 'All'
+                  ? _selectedCategories.isEmpty
+                  : _selectedCategories.contains(category);
+              final imageUrl = category == 'All' ? null : _categoryNameToImage[category];
+              return _buildCategoryGridTile(
+                category: category,
+                isSelected: isSelected,
+                imageUrl: imageUrl,
+              );
+            },
+          ),
+          if (isCollapsedToSelection) ...[
+            const SizedBox(height: 8),
+            Center(
+              child: TextButton.icon(
+                onPressed: () {
+                  setState(() => _categoryGridForceExpanded = true);
+                },
+                icon: const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 18,
+                  color: AppColors.primary,
+                ),
+                label: Text(
+                  'Change category',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  minimumSize: const Size(0, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ),
+          ] else if (hasSelection && _categoryGridForceExpanded) ...[
+            const SizedBox(height: 8),
+            Center(
+              child: TextButton.icon(
+                onPressed: () {
+                  setState(() => _categoryGridForceExpanded = false);
+                },
+                icon: const Icon(
+                  Icons.keyboard_arrow_up_rounded,
+                  size: 18,
+                  color: AppColors.primary,
+                ),
+                label: Text(
+                  'Hide other categories',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  minimumSize: const Size(0, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ),
+          ] else if (hasMoreInDefault) ...[
+            const SizedBox(height: 8),
+            Center(
+              child: TextButton.icon(
+                onPressed: () {
+                  setState(() => _showAllCategories = !_showAllCategories);
+                },
+                icon: Icon(
+                  _showAllCategories
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  size: 18,
+                  color: AppColors.primary,
+                ),
+                label: Text(
+                  _showAllCategories
+                      ? 'Show less'
+                      : 'Show all (${_categories.length})',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  minimumSize: const Size(0, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryGridTile({
+    required String category,
+    required bool isSelected,
+    required String? imageUrl,
+  }) {
+    return GestureDetector(
+      onTap: () => _onCategorySelected(category),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppColors.primary.withValues(alpha: 0.06)
+              : AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected
+                ? AppColors.primary
+                : AppColors.onSurface.withValues(alpha: 0.08),
+            width: isSelected ? 1.5 : 1,
+          ),
+          boxShadow: isSelected
+              ? null
+              : [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(
+                  alpha: isSelected ? 0.14 : 0.08,
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: imageUrl != null && imageUrl.isNotEmpty
+                  ? CachedNetworkImage(
+                      imageUrl: imageUrl,
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => Center(
+                        child: Icon(
+                          Icons.category,
+                          color: AppColors.primary.withValues(alpha: 0.5),
+                          size: 16,
+                        ),
+                      ),
+                      errorWidget: (context, url, error) => Center(
+                        child: Icon(
+                          Icons.category,
+                          color: AppColors.primary.withValues(alpha: 0.5),
+                          size: 16,
+                        ),
+                      ),
+                    )
+                  : Center(
+                      child: Icon(
+                        category == 'All' ? Icons.grid_view_rounded : Icons.category,
+                        color: AppColors.primary,
+                        size: 18,
+                      ),
+                    ),
+            ),
+            const SizedBox(height: 6),
+            Flexible(
+              child: Text(
+                category,
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: isSelected ? AppColors.primary : AppColors.onSurface,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  fontSize: 9.5,
+                  height: 1.15,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Build Filter Section (horizontal filter bar with chips)
+  Widget _buildFilterSection() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            // Shipped From Filter
+            _buildFilterChip(
+              icon: Icons.local_shipping_rounded,
+              label: 'Shipped From',
+              value: _selectedShippedFrom,
+              options: _shippedFromOptions,
+              onSelected: (value) {
+                setState(() {
+                  _selectedShippedFrom = value;
+                  _products = [];
+                  _lastDocument = null;
+                  _hasMore = true;
+                });
+                _loadFirstPage();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Build individual filter chip with dropdown
+  Widget _buildFilterChip({
+    required IconData icon,
+    required String label,
+    required String value,
+    required List<String> options,
+    required Function(String) onSelected,
+  }) {
+    final isActive = value != 'All';
+    
+    return PopupMenuButton<String>(
+      onSelected: onSelected,
+      offset: const Offset(0, 40),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: AppColors.surface,
+      itemBuilder: (context) => options.map((option) {
+        final isSelectedOption = option == value;
+        return PopupMenuItem<String>(
+          value: option,
+          child: Row(
+            children: [
+              if (isSelectedOption)
+                Icon(Icons.check_rounded, color: AppColors.primary, size: 18)
+              else
+                const SizedBox(width: 18),
+              const SizedBox(width: 8),
+              Text(
+                option,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: isSelectedOption ? AppColors.primary : AppColors.onSurface,
+                  fontWeight: isSelectedOption ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isActive ? AppColors.primary.withValues(alpha: 0.1) : AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isActive ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.15),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isActive ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.6),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              value == 'All' ? label : value,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: isActive ? AppColors.primary : AppColors.onSurface,
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(
+              Icons.keyboard_arrow_down_rounded,
+              size: 16,
+              color: isActive ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.5),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Seller data helpers ──────────────────────────────────────────────────
+
+  /// Returns cached seller data or fetches from Firestore and caches the result.
+  /// A cached null value means the document was queried but does not exist.
+  Future<Map<String, dynamic>?> _getSellerDataCached(String sellerId) async {
+    if (_sellerDataCache.containsKey(sellerId)) return _sellerDataCache[sellerId];
+    if (_sellerDataFetching.contains(sellerId)) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      return _sellerDataCache[sellerId];
+    }
+    _sellerDataFetching.add(sellerId);
+    try {
+      final data = await _userService.getSellerData(sellerId);
+      _sellerDataCache[sellerId] = data;
+      return data;
+    } catch (e) {
+      AppLogger.d('Error fetching seller data for $sellerId: $e');
+      _sellerDataCache[sellerId] = null;
+      return null;
+    } finally {
+      _sellerDataFetching.remove(sellerId);
+    }
+  }
+
+  /// Batch-fetches seller data for all unique sellerIds in [products] that are
+  /// not already cached. Runs fetches concurrently.
+  Future<void> _prefetchSellerData(List<Product> products) async {
+    final sellerIds = products
+        .map((p) => p.sellerId)
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    final uncachedSellerIds =
+        sellerIds.where((id) => !_sellerDataCache.containsKey(id)).toSet();
+    if (uncachedSellerIds.isNotEmpty) {
+      AppLogger.d('Pre-fetching seller data for ${uncachedSellerIds.length} sellers');
+      await Future.wait(uncachedSellerIds.map(_getSellerDataCached));
+      AppLogger.d('Seller data pre-fetch complete');
+    }
+
+    // Pre-fetch active vouchers for all sellers in view.
+    final uncachedVoucherIds =
+        sellerIds.where((id) => !_sellerVouchersCache.containsKey(id)).toSet();
+    if (uncachedVoucherIds.isNotEmpty) {
+      await Future.wait(uncachedVoucherIds.map(_fetchSellerVouchers));
+    }
+  }
+
+  /// Fetches active, currently-valid vouchers for a single seller and caches
+  /// them in [_sellerVouchersCache]. Caches an empty list on error so we don't
+  /// retry on every rebuild.
+  Future<void> _fetchSellerVouchers(String sellerId) async {
+    if (_sellerVouchersCache.containsKey(sellerId)) return;
+    if (_sellerVouchersFetching.contains(sellerId)) return;
+    _sellerVouchersFetching.add(sellerId);
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('Vouchers')
+          .where('sellerId', isEqualTo: sellerId)
+          .where('status', isEqualTo: 'active')
+          .get();
+
+      final now = DateTime.now();
+      final valid = snapshot.docs
+          .map((d) => d.data())
+          .where((v) {
+            final start = _parseVoucherDate(v['startDate']);
+            final end = _parseVoucherDate(v['endDate']);
+            if (start == null || end == null) return false;
+            return !start.isAfter(now) && !end.isBefore(now);
+          })
+          .toList();
+
+      _sellerVouchersCache[sellerId] = valid;
+    } catch (e) {
+      AppLogger.d('Error fetching vouchers for $sellerId: $e');
+      _sellerVouchersCache[sellerId] = const [];
+    } finally {
+      _sellerVouchersFetching.remove(sellerId);
+    }
+  }
+
+  DateTime? _parseVoucherDate(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    return null;
+  }
+
+  /// Sorts vouchers by priority:
+  ///   1. percentage (highest discountValue first)
+  ///   2. fixed (highest discountValue first)
+  ///   3. free_delivery
+  /// Returns a new sorted list without mutating the input.
+  List<Map<String, dynamic>> _sortVouchersByPriority(
+      List<Map<String, dynamic>> vouchers) {
+    int typeRank(String? type) {
+      switch (type) {
+        case 'percentage':
+          return 0;
+        case 'fixed':
+          return 1;
+        case 'free_delivery':
+          return 2;
+        default:
+          return 3;
+      }
+    }
+
+    final sorted = [...vouchers];
+    sorted.sort((a, b) {
+      final rankA = typeRank(a['discountType'] as String?);
+      final rankB = typeRank(b['discountType'] as String?);
+      if (rankA != rankB) return rankA.compareTo(rankB);
+      final valA = (a['discountValue'] as num?)?.toDouble() ?? 0;
+      final valB = (b['discountValue'] as num?)?.toDouble() ?? 0;
+      return valB.compareTo(valA); // highest first
+    });
+    return sorted;
+  }
+
+  /// Formats a single voucher into its display label based on `discountType`.
+  /// Returns null if the voucher has invalid data (e.g. 0% off, ₱0 off).
+  String? _formatSingleVoucher(Map<String, dynamic> voucher) {
+    final type = (voucher['discountType'] as String?) ?? '';
+    final code = (voucher['code'] as String?) ?? '';
+    final value = (voucher['discountValue'] as num?)?.toDouble() ?? 0;
+    final minAmount = (voucher['minimumOrderAmount'] as num?)?.toDouble() ?? 0;
+
+    switch (type) {
+      case 'percentage':
+        if (value <= 0) return null;
+        final pct = value == value.roundToDouble()
+            ? value.toStringAsFixed(0)
+            : value.toString();
+        return '$pct% OFF ${CurrencyFormatter.formatWithPeso(minAmount)} : $code';
+      case 'fixed':
+        if (value <= 0) return null;
+        return '${CurrencyFormatter.formatWithPeso(value)} OFF : $code';
+      case 'free_delivery':
+        return 'Free Shipping';
+      default:
+        return null;
+    }
+  }
+
+  /// Renders a single orange voucher badge matching the existing tag style.
+  Widget _buildVoucherBadge(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppColors.accent.withValues(alpha: 0.15),
+            AppColors.primary.withValues(alpha: 0.15),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: AppColors.accent.withValues(alpha: 0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.local_offer_rounded,
+            size: 14,
+            color: AppColors.accent,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.accent,
+              fontWeight: FontWeight.w600,
+              fontSize: 11,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build Traders List (Foodpanda-style vertical list layout)
+  Widget _buildTradersList() {
+    // Group products by seller to create "business" cards
+    final Map<String, List<Product>> productsBySeller = {};
+
+    final filteredProducts = _products.where((product) {
+      if (product.isDraft == true) return false;
+      if (product.isActive == false) return false;
+      if (product.isArchived == true) return false;
+
+      // Apply brand filter
+      if (_selectedBrand != null && product.brand != _selectedBrand) return false;
+
+      // Apply category filter
+      if (_selectedCategories.isNotEmpty) {
+        final selectedCategoryIds = _selectedCategories
+            .map((categoryName) => _categoryNameToId[categoryName])
+            .where((id) => id != null)
+            .cast<String>()
+            .toList();
+
+        if (!selectedCategoryIds.contains(product.categoryId)) return false;
+
+        // Apply subcategory filter
+        if (_selectedSubCategories.isNotEmpty) {
+          final hasSubCategory = product.subCategoryId.isNotEmpty;
+          final isInSelectedSubCategory = _selectedSubCategories.contains(product.subCategoryId);
+          if (hasSubCategory && !isInSelectedSubCategory) return false;
+        }
+      }
+
+      return true;
+    }).toList();
+
+    // Group by seller
+    for (final product in filteredProducts) {
+      final sellerId = product.sellerId.isNotEmpty ? product.sellerId : 'unknown';
+      if (BannedSellerService.instance.isBanned(sellerId)) continue;
+      productsBySeller.putIfAbsent(sellerId, () => []).add(product);
+    }
+
+    // Apply Shipped From filter — based on seller region classified from
+    // vendor.company.address.location. "Nearest You" matches the current
+    // user's region; the four named regions filter strictly.
+    List<String> sellerIds = productsBySeller.keys.toList();
+    final String? targetRegion;
+    if (_selectedShippedFrom == 'All') {
+      targetRegion = null;
+    } else if (_selectedShippedFrom == 'Nearest You') {
+      targetRegion = _userRegion;
+    } else {
+      targetRegion = _selectedShippedFrom;
+    }
+    if (targetRegion != null) {
+      sellerIds = sellerIds
+          .where((sid) => _sellerRegion(sid) == targetRegion)
+          .toList();
+    }
+
+    if (sellerIds.isEmpty) {
+      return SliverToBoxAdapter(
+        child: _buildEmptyState(),
+      );
+    }
+
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          if (index >= sellerIds.length) {
+            if (_isLoadingMore) {
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: CircularProgressIndicator(),
+                ),
+              );
+            }
+            return const SizedBox.shrink();
+          }
+
+          final sellerId = sellerIds[index];
+          final sellerProducts = productsBySeller[sellerId]!;
+
+          return _buildTraderCard(sellerId, sellerProducts);
+        },
+        childCount: sellerIds.length + (_isLoadingMore ? 1 : 0),
+      ),
+    );
+  }
+
+  // Build trader cards from search results grouped by seller
+  Widget _buildSearchTradersList() {
+    final Map<String, List<Product>> productsBySeller = {};
+    for (final product in _searchResults) {
+      if (product.isDraft == true) continue;
+      if (product.isActive == false) continue;
+      if (product.isArchived == true) continue;
+      final sellerId = product.sellerId.isNotEmpty ? product.sellerId : 'unknown';
+      if (BannedSellerService.instance.isBanned(sellerId)) continue;
+      productsBySeller.putIfAbsent(sellerId, () => []).add(product);
+    }
+
+    final sellerIds = productsBySeller.keys.toList();
+
+    if (sellerIds.isEmpty) {
+      return SliverToBoxAdapter(child: _buildEmptyState());
+    }
+
+    // Pre-fetch seller data for search results
+    _prefetchSellerData(_searchResults);
+
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          if (index >= sellerIds.length) return const SizedBox.shrink();
+          final sellerId = sellerIds[index];
+          final sellerProducts = productsBySeller[sellerId]!;
+          return _buildTraderCard(sellerId, sellerProducts);
+        },
+        childCount: sellerIds.length,
+      ),
+    );
+  }
+
+  /// Extracts display-ready vendor fields from a raw Firestore Seller document.
+  /// Falls back gracefully at every level so the card always renders.
+  static _SellerDisplayData _extractSellerDisplay(
+    Map<String, dynamic>? raw,
+    List<Product> products,
+    Map<String, String> categoryIdToName,
+  ) {
+    // Fallback values derived from product data
+    final fallbackName = products.first.brand?.isNotEmpty == true
+        ? products.first.brand!
+        : 'Dental Trader';
+    var fallbackCats = products
+        .map((p) => categoryIdToName[p.categoryId])
+        .whereType<String>()
+        .toSet()
+        .take(2)
+        .join(', ');
+    if (fallbackCats.isEmpty) fallbackCats = 'Dental Products';
+
+    if (raw == null) {
+      return _SellerDisplayData(
+        storeName: fallbackName,
+        province: 'Metro Manila',
+        coverImageUrl: products.first.imageURL,
+        categories: fallbackCats,
+      );
+    }
+
+    final vendor = raw['vendor'] is Map
+        ? raw['vendor'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final company = vendor['company'] is Map
+        ? vendor['company'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final address = company['address'] is Map
+        ? company['address'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final coverImg = vendor['coverImage'];
+
+    // Cover image: url → path → product image fallback
+    String coverUrl = products.first.imageURL;
+    if (coverImg is Map) {
+      final u = coverImg['url'] as String?;
+      final p = coverImg['path'] as String?;
+      if (u != null && u.isNotEmpty) {
+        coverUrl = u;
+      } else if (p != null && p.isNotEmpty) {
+        coverUrl = p;
+      }
+    }
+
+    // Store name
+    final storeName = (company['storeName'] as String?)?.isNotEmpty == true
+        ? company['storeName'] as String
+        : ((raw['storeName'] as String?) ?? fallbackName);
+
+    // Province
+    final province = (address['province'] as String?)?.isNotEmpty == true
+        ? address['province'] as String
+        : 'Metro Manila';
+
+    // Categories — vendor.categories is an array of name strings
+    var cats = fallbackCats;
+    final rawCats = vendor['categories'];
+    if (rawCats is List && rawCats.isNotEmpty) {
+      final joined = rawCats.whereType<String>().take(2).join(', ');
+      if (joined.isNotEmpty) cats = joined;
+    }
+
+    return _SellerDisplayData(
+      storeName: storeName,
+      province: province,
+      coverImageUrl: coverUrl,
+      categories: cats,
+    );
+  }
+
+  // Build individual Trader/Business Card (Foodpanda style)
+  Widget _buildTraderCard(String sellerId, List<Product> products) {
+    // Price range indicator (₱/₱₱/₱₱₱) — hidden per request, leaving logic commented for future use.
+    // final prices = products.map((p) => p.lowestPrice ?? 0).where((p) => p > 0).toList();
+    // String priceIndicator = '₱';
+    // if (prices.isNotEmpty) {
+    //   final avgPrice = prices.reduce((a, b) => a + b) / prices.length;
+    //   if (avgPrice > 5000) {
+    //     priceIndicator = '₱₱₱';
+    //   } else if (avgPrice > 1000) {
+    //     priceIndicator = '₱₱';
+    //   }
+    // }
+
+    // Read vendor data from cache (populated by pre-fetch before build)
+    final stillLoading = !_sellerDataCache.containsKey(sellerId);
+    final display = _extractSellerDisplay(
+      stillLoading ? null : _sellerDataCache[sellerId],
+      products,
+      _categoryIdToName,
+    );
+
+    // Show loading skeleton while vendor fetch is in flight (edge case)
+    if (stillLoading) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: const AspectRatio(
+          aspectRatio: 16 / 7,
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
+
+    // Dynamic vouchers fetched from Firestore (pre-cached by _prefetchSellerData).
+    // Sort by priority, format each into a label, drop invalid (null) entries.
+    final sortedVouchers =
+        _sortVouchersByPriority(_sellerVouchersCache[sellerId] ?? const []);
+    final voucherLabels = sortedVouchers
+        .map(_formatSingleVoucher)
+        .whereType<String>()
+        .toList();
+
+    // Display rules:
+    //   1 voucher  → show it
+    //   2 vouchers → show both
+    //   3+         → show first 2 + "+X more"
+    final List<String> displayedVoucherLabels;
+    if (voucherLabels.length <= 2) {
+      displayedVoucherLabels = voucherLabels;
+    } else {
+      displayedVoucherLabels = [
+        voucherLabels[0],
+        voucherLabels[1],
+        '+${voucherLabels.length - 2} more',
+      ];
+    }
+    final hasVoucher = displayedVoucherLabels.isNotEmpty;
+
+    return GestureDetector(
+      onTap: () {
+        if (BannedSellerService.instance.isBanned(sellerId)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('This store is not available.'),
+              behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 2),
+            ),
+          );
+          return;
+        }
+        final initialCategoryIds = _selectedCategories
+            .map((name) => _categoryNameToId[name])
+            .whereType<String>()
+            .toList();
+        NavigationUtils.navigateToStore(
+          context,
+          sellerId,
+          sellerData: _sellerDataCache[sellerId],
+          initialCategoryIds:
+              initialCategoryIds.isEmpty ? null : initialCategoryIds,
+          initialSubCategoryIds: _selectedSubCategories.isEmpty
+              ? null
+              : List<String>.from(_selectedSubCategories),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Banner image from vendor coverImage
+            ClipRRect(
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+              ),
+              child: AspectRatio(
+                aspectRatio: 16 / 7,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    CachedNetworkImage(
+                      imageUrl: display.coverImageUrl,
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => Container(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        child: const Center(child: CircularProgressIndicator()),
+                      ),
+                      errorWidget: (context, url, error) => Container(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        child: const Icon(Icons.store_rounded, size: 40, color: AppColors.primary),
+                      ),
+                      cacheManager: ProductImageCacheManager.instance,
+                    ),
+                    // Gradient overlay for text readability
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      child: Container(
+                        height: 60,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              Colors.black.withValues(alpha: 0.4),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Product count badge
+                    Positioned(
+                      top: 12,
+                      right: 12,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.15),
+                              blurRadius: 4,
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.inventory_2_outlined, size: 14, color: AppColors.primary),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${products.length} items',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.onSurface,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Info section
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Top row: store name + price range badge
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          display.storeName,
+                          style: AppTextStyles.titleMedium.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.onSurface,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      // Price range badge (₱/₱₱/₱₱₱) — hidden per request.
+                      // const SizedBox(width: 8),
+                      // Container(
+                      //   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      //   decoration: BoxDecoration(
+                      //     color: AppColors.accent.withValues(alpha: 0.1),
+                      //     borderRadius: BorderRadius.circular(6),
+                      //   ),
+                      //   child: Text(
+                      //     priceIndicator,
+                      //     style: AppTextStyles.bodySmall.copyWith(
+                      //       color: AppColors.accent,
+                      //       fontWeight: FontWeight.bold,
+                      //     ),
+                      //   ),
+                      // ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 4),
+
+                  // Province / location row
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.location_on_outlined,
+                        size: 14,
+                        color: AppColors.onSurface.withValues(alpha: 0.6),
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          display.province,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.onSurface.withValues(alpha: 0.7),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // Middle row: ETA pill + categories
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.access_time_rounded,
+                              size: 12,
+                              color: AppColors.primary,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              _estimateDelivery(sellerId),
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          display.categories,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.onSurface.withValues(alpha: 0.6),
+                            fontSize: 11,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // Bottom row: voucher badges (horizontal list)
+                  if (hasVoucher) ...[
+                    const SizedBox(height: 10),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (int i = 0; i < displayedVoucherLabels.length; i++) ...[
+                            if (i > 0) const SizedBox(width: 6),
+                            _buildVoucherBadge(displayedVoucherLabels[i]),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Value object holding display-ready vendor fields for a trader card
+// ─────────────────────────────────────────────────────────────────────────────
+class _SellerDisplayData {
+  final String storeName;
+  final String province;
+  final String coverImageUrl;
+  final String categories;
+  const _SellerDisplayData({
+    required this.storeName,
+    required this.province,
+    required this.coverImageUrl,
+    required this.categories,
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2673,7 +4478,8 @@ class _CategorySidebarSheet extends StatefulWidget {
   final void Function(
     List<String> selectedCategories,
     List<String> selectedSubCategories,
-  ) onApplySelection;
+  )
+  onApplySelection;
 
   const _CategorySidebarSheet({
     required this.categories,
@@ -2851,14 +4657,17 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                                       width: 54,
                                       height: 54,
                                       decoration: BoxDecoration(
-                                        color: imageUrl != null &&
+                                        color:
+                                            imageUrl != null &&
                                                 imageUrl.isNotEmpty
                                             ? Colors.transparent
                                             : isHighlighted
-                                                ? AppColors.primary
-                                                      .withValues(alpha: 0.1)
-                                                : AppColors.primary
-                                                      .withValues(alpha: 0.05),
+                                            ? AppColors.primary.withValues(
+                                                alpha: 0.1,
+                                              )
+                                            : AppColors.primary.withValues(
+                                                alpha: 0.05,
+                                              ),
                                         borderRadius: BorderRadius.circular(10),
                                         border: isHighlighted
                                             ? Border.all(
@@ -2869,20 +4678,23 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                                       ),
                                       child: ClipRRect(
                                         borderRadius: BorderRadius.circular(9),
-                                        child: imageUrl != null &&
+                                        child:
+                                            imageUrl != null &&
                                                 imageUrl.isNotEmpty
                                             ? CachedNetworkImage(
                                                 imageUrl: imageUrl,
                                                 fit: BoxFit.cover,
                                                 errorWidget: (c, u, e) =>
                                                     Center(
-                                                  child: Icon(
-                                                    Icons.category,
-                                                    color: AppColors.primary
-                                                        .withValues(alpha: 0.5),
-                                                    size: 22,
-                                                  ),
-                                                ),
+                                                      child: Icon(
+                                                        Icons.category,
+                                                        color: AppColors.primary
+                                                            .withValues(
+                                                              alpha: 0.5,
+                                                            ),
+                                                        size: 22,
+                                                      ),
+                                                    ),
                                               )
                                             : Center(
                                                 child: Icon(
@@ -2971,8 +4783,9 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                             widget.onCategorySelected('All');
                           },
                           style: TextButton.styleFrom(
-                            backgroundColor: AppColors.primary
-                                .withValues(alpha: 0.08),
+                            backgroundColor: AppColors.primary.withValues(
+                              alpha: 0.08,
+                            ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
                             ),
@@ -3055,8 +4868,9 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                   final subIds = _localSubcategories[categoryId]!
                       .map((s) => s.subCategoryId)
                       .toList();
-                  _localSelectedSubCategories
-                      .removeWhere((id) => subIds.contains(id));
+                  _localSelectedSubCategories.removeWhere(
+                    (id) => subIds.contains(id),
+                  );
                 }
               } else {
                 _localSelectedCategories.add(category);
@@ -3160,8 +4974,9 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                   final subIds = _localSubcategories[categoryId]!
                       .map((s) => s.subCategoryId)
                       .toList();
-                  _localSelectedSubCategories
-                      .removeWhere((id) => subIds.contains(id));
+                  _localSelectedSubCategories.removeWhere(
+                    (id) => subIds.contains(id),
+                  );
                 }
               } else {
                 _localSelectedCategories.add(_highlightedCategory);
@@ -3228,8 +5043,9 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
               itemCount: subs.length,
               itemBuilder: (context, index) {
                 final sub = subs[index];
-                final isSelected = _localSelectedSubCategories
-                    .contains(sub.subCategoryId);
+                final isSelected = _localSelectedSubCategories.contains(
+                  sub.subCategoryId,
+                );
 
                 return GestureDetector(
                   onTap: () {
@@ -3238,8 +5054,9 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                         _localSelectedSubCategories.remove(sub.subCategoryId);
                       } else {
                         // Auto-select the parent category if not yet selected
-                        if (!_localSelectedCategories
-                            .contains(_highlightedCategory)) {
+                        if (!_localSelectedCategories.contains(
+                          _highlightedCategory,
+                        )) {
                           _localSelectedCategories.add(_highlightedCategory);
                         }
                         _localSelectedSubCategories.add(sub.subCategoryId);
@@ -3267,17 +5084,19 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                           width: 44,
                           height: 44,
                           decoration: BoxDecoration(
-                            color: (sub.imageURL != null &&
+                            color:
+                                (sub.imageURL != null &&
                                     sub.imageURL!.isNotEmpty)
                                 ? Colors.transparent
                                 : isSelected
-                                    ? AppColors.primary.withValues(alpha: 0.12)
-                                    : AppColors.primary.withValues(alpha: 0.06),
+                                ? AppColors.primary.withValues(alpha: 0.12)
+                                : AppColors.primary.withValues(alpha: 0.06),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(8),
-                            child: (sub.imageURL != null &&
+                            child:
+                                (sub.imageURL != null &&
                                     sub.imageURL!.isNotEmpty)
                                 ? Image.network(
                                     sub.imageURL!,
@@ -3286,8 +5105,9 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                                       Icons.category_rounded,
                                       color: isSelected
                                           ? AppColors.primary
-                                          : AppColors.primary
-                                              .withValues(alpha: 0.5),
+                                          : AppColors.primary.withValues(
+                                              alpha: 0.5,
+                                            ),
                                       size: 22,
                                     ),
                                   )
@@ -3295,8 +5115,9 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                                     Icons.category_rounded,
                                     color: isSelected
                                         ? AppColors.primary
-                                        : AppColors.primary
-                                            .withValues(alpha: 0.5),
+                                        : AppColors.primary.withValues(
+                                            alpha: 0.5,
+                                          ),
                                     size: 22,
                                   ),
                           ),

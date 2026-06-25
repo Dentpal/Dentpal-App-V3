@@ -1,6 +1,7 @@
 import 'package:dentpal/core/app_theme/index.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:dentpal/utils/currency_formatter.dart';
 import '../models/product_model.dart';
 
 class ProductCard extends StatelessWidget {
@@ -212,9 +213,20 @@ class ProductCard extends StatelessWidget {
 
   // Shared price widget
   Widget _buildPrice(double? lowestPrice, double priceSize, double variesSize) {
+    if (product.allowInquiry) {
+      return Text(
+        'Contact for Pricing',
+        style: AppTextStyles.bodySmall.copyWith(
+          fontWeight: FontWeight.w600,
+          color: AppColors.accent,
+          fontSize: variesSize,
+        ),
+        overflow: TextOverflow.ellipsis,
+      );
+    }
     return lowestPrice != null
         ? Text(
-            '₱${lowestPrice.toStringAsFixed(2)}',
+            CurrencyFormatter.formatWithPeso(lowestPrice),
             style: AppTextStyles.bodySmall.copyWith(
               fontWeight: FontWeight.bold,
               color: AppColors.primary,

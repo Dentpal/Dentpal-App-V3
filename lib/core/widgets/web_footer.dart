@@ -12,11 +12,10 @@ class WebFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Only render on web platform
-    if (!kIsWeb) return const SizedBox.shrink();
-
     final screenWidth = MediaQuery.of(context).size.width;
-    final isWideWeb = screenWidth >= 900;
+    // Only use the wide multi-column layout on web desktop widths.
+    // Native mobile (and narrow web) uses the stacked mobile layout.
+    final isWideWeb = kIsWeb && screenWidth >= 900;
 
     return Container(
       width: double.infinity,
@@ -96,15 +95,20 @@ class WebFooter extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildBrandingSection(context),
-        const SizedBox(height: 40),
-        _buildCustomerServiceSection(context),
         const SizedBox(height: 32),
-        _buildLegalSection(context),
-        const SizedBox(height: 32),
-        _buildDownloadAppSection(context),
+        // Customer Service (left) | Legal (right)
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: _buildCustomerServiceSection(context)),
+            const SizedBox(width: 16),
+            Expanded(child: _buildLegalSection(context)),
+          ],
+        ),
       ],
     );
   }
+
 
   Widget _buildBrandingSection(BuildContext context) {
     return Column(
@@ -154,27 +158,33 @@ class WebFooter extends StatelessWidget {
         // Social Media Icons
         Row(
           children: [
-            _buildSocialIcon(Icons.facebook, () {
-              // TODO: Add Facebook link
+            _buildSocialIcon(Icons.facebook, () async {
+              final uri = Uri.parse('https://www.facebook.com/p/DentPal-100064135209127/');
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
             }),
             const SizedBox(width: 12),
             _buildSocialIcon(Icons.email, () async {
-              final uri = Uri.parse('mailto:support@dentpal.ph');
+              final uri = Uri.parse('mailto:admin@dental.shop');
               final success = await launchUrl(uri);
               if (!success) {
                 final scaffold = ScaffoldMessenger.of(context);
                 scaffold.showSnackBar(
-                  SnackBar(
+                  const SnackBar(
                     content: Text('Could not open mail app. Email copied to clipboard.'),
                     duration: Duration(seconds: 3),
                   ),
                 );
-                Clipboard.setData(ClipboardData(text: 'support@dentpal.ph'));
+                Clipboard.setData(const ClipboardData(text: 'admin@dental.shop'));
               }
             }),
             const SizedBox(width: 12),
-            _buildSocialIcon(Icons.phone, () {
-              // TODO: Add Phone link
+            _buildSocialIcon(Icons.phone, () async {
+              final uri = Uri.parse('tel:09178287353');
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
             }),
           ],
         ),
@@ -220,18 +230,18 @@ class WebFooter extends StatelessWidget {
         _buildFooterLink('Help Center', () {
           Navigator.of(context).pushNamed('/support-url');
         }),
-        const SizedBox(height: 12),
-        _buildFooterLink('Track Order', () {
-          Navigator.of(context).pushNamed('/');
-        }),
-        const SizedBox(height: 12),
-        _buildFooterLink('Returns & Refunds', () {
-          Navigator.of(context).pushNamed('/');
-        }),
-        const SizedBox(height: 12),
-        _buildFooterLink('Shipping Info', () {
-          Navigator.of(context).pushNamed('/');
-        }),
+        // const SizedBox(height: 12),
+        // _buildFooterLink('Track Order', () {
+        //   Navigator.of(context).pushNamed('/');
+        // }),
+        // const SizedBox(height: 12),
+        // _buildFooterLink('Returns & Refunds', () {
+        //   Navigator.of(context).pushNamed('/');
+        // }),
+        // const SizedBox(height: 12),
+        // _buildFooterLink('Shipping Info', () {
+        //   Navigator.of(context).pushNamed('/');
+        // }),
         const SizedBox(height: 12),
         _buildFooterLink('Contact Us', () {
           Navigator.of(context).pushNamed('/support-url');
@@ -259,14 +269,14 @@ class WebFooter extends StatelessWidget {
         _buildFooterLink('Terms of Service', () {
           Navigator.of(context).pushNamed('/terms-of-service');
         }),
-        const SizedBox(height: 12),
-        _buildFooterLink('Seller Agreement', () {
-          Navigator.of(context).pushNamed('/');
-        }),
-        const SizedBox(height: 12),
-        _buildFooterLink('Cookie Policy', () {
-          Navigator.of(context).pushNamed('/');
-        }),
+        // const SizedBox(height: 12),
+        // _buildFooterLink('Seller Agreement', () {
+        //   Navigator.of(context).pushNamed('/');
+        // }),
+        // const SizedBox(height: 12),
+        // _buildFooterLink('Cookie Policy', () {
+        //   Navigator.of(context).pushNamed('/');
+        // }),
       ],
     );
   }
@@ -285,11 +295,11 @@ class WebFooter extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         
-        // Single QR Code with App Store Badges
+        // iOS QR Code with App Store Badge
         Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // QR Code
+            // iOS QR Code
             Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
@@ -297,147 +307,166 @@ class WebFooter extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: AppColors.grey300, width: 2),
               ),
-              child: Container(
-                width: 70,
-                height: 70,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Center(
-                  child: Icon(Icons.qr_code, size: 50, color: AppColors.grey400),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: Image.asset(
+                  'lib/assets/icons/qr_ios.jpeg',
+                  width: 70,
+                  height: 70,
+                  fit: BoxFit.cover,
                 ),
               ),
             ),
             const SizedBox(width: 12),
             
-            // App Store Badges
+            // App Store Badge
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // App Store Button
-                  Container(
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: AppColors.grey900,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: AppColors.grey300),
-                    ),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () async {
-                          const appStoreUrl = 'https://apps.apple.com/app/dentpal/id6758815697';
-                          final uri = Uri.parse(appStoreUrl);
-                          if (await canLaunchUrl(uri)) {
-                            await launchUrl(uri, mode: LaunchMode.externalApplication);
-                          }
-                        },
-                        borderRadius: BorderRadius.circular(6),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.apple, color: Colors.white, size: 20),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Download',
-                                      style: AppTextStyles.bodySmall.copyWith(
-                                        color: Colors.white,
-                                        fontSize: 8,
-                                        height: 1,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    Text(
-                                      'App Store',
-                                      style: AppTextStyles.bodyMedium.copyWith(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        height: 1.2,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
+              child: Container(
+                height: 36,
+                decoration: BoxDecoration(
+                  color: AppColors.grey900,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: AppColors.grey300),
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () async {
+                      const appStoreUrl = 'https://apps.apple.com/ph/app/dentpal/id6758815697';
+                      final uri = Uri.parse(appStoreUrl);
+                      if (await canLaunchUrl(uri)) {
+                        await launchUrl(uri, mode: LaunchMode.externalApplication);
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.apple, color: Colors.white, size: 20),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Download',
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: Colors.white,
+                                    fontSize: 8,
+                                    height: 1,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                              ),
-                            ],
+                                Text(
+                                  'App Store',
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    height: 1.2,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  
-                  // Google Play Button
-                  Container(
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: AppColors.grey900,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: AppColors.grey300),
-                    ),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () async {
-                          const playStoreUrl = 'https://play.google.com/store/apps/details?id=com.rrnewtech.dentpal';
-                          final uri = Uri.parse(playStoreUrl);
-                          if (await canLaunchUrl(uri)) {
-                            await launchUrl(uri, mode: LaunchMode.externalApplication);
-                          }
-                        },
-                        borderRadius: BorderRadius.circular(6),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.play_arrow, color: Colors.white, size: 20),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'GET IT ON',
-                                      style: AppTextStyles.bodySmall.copyWith(
-                                        color: Colors.white,
-                                        fontSize: 8,
-                                        height: 1,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    Text(
-                                      'Google Play',
-                                      style: AppTextStyles.bodyMedium.copyWith(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        height: 1.2,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        
+        // Android QR Code with Google Play Badge
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Android QR Code
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.grey300, width: 2),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: Image.asset(
+                  'lib/assets/icons/qr_android.jpeg',
+                  width: 70,
+                  height: 70,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            
+            // Google Play Badge
+            Expanded(
+              child: Container(
+                height: 36,
+                decoration: BoxDecoration(
+                  color: AppColors.grey900,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: AppColors.grey300),
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () async {
+                      const playStoreUrl = 'https://play.google.com/store/apps/details?id=com.rrnewtech.dentpal';
+                      final uri = Uri.parse(playStoreUrl);
+                      if (await canLaunchUrl(uri)) {
+                        await launchUrl(uri, mode: LaunchMode.externalApplication);
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.play_arrow, color: Colors.white, size: 20),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'GET IT ON',
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: Colors.white,
+                                    fontSize: 8,
+                                    height: 1,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                              ),
-                            ],
+                                Text(
+                                  'Google Play',
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    height: 1.2,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ),
                   ),
-                ],
+                ),
               ),
             ),
           ],
@@ -478,9 +507,11 @@ class WebFooter extends StatelessWidget {
     return Text(
       '© ${DateTime.now().year} DentPal. All rights reserved.',
       style: AppTextStyles.bodySmall.copyWith(
-        color: AppColors.grey600,
+        color: AppColors.grey700,
         fontSize: 13,
+        fontWeight: FontWeight.w700,
       ),
+      textAlign: TextAlign.center,
     );
   }
 }

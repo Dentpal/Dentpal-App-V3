@@ -1,4 +1,4 @@
-import 'package:dentpal/signup/signup_flow.dart';
+import 'package:dentpal/signup/signup_page_new.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -310,7 +310,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                               Navigator.of(context).pop();
                               Navigator.of(context).push(
                                 MaterialPageRoute(
-                                  builder: (context) => const SignupFlow(),
+                                  builder: (context) => const SignUpPageNew(),
                                 ),
                               );
                             },
@@ -549,7 +549,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                                                       ).push(
                                                         MaterialPageRoute(
                                                           builder: (context) =>
-                                                              const SignupFlow(),
+                                                              const SignUpPageNew(),
                                                         ),
                                                       );
                                                     },
@@ -773,7 +773,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                                                 Navigator.of(context).push(
                                                   MaterialPageRoute(
                                                     builder: (context) =>
-                                                        const SignupFlow(),
+                                                        const SignUpPageNew(),
                                                   ),
                                                 );
                                               },

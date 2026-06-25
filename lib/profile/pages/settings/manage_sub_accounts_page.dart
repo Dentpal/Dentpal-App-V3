@@ -63,7 +63,7 @@ class _ManageSubAccountsPageState extends State<ManageSubAccountsPage> {
             Icon(Icons.people_outline, color: AppColors.primary, size: 24),
             const SizedBox(width: 8),
             Text(
-              'Manage Sub Accounts',
+              'Manage Assistants',
               style: AppTextStyles.titleLarge.copyWith(
                 fontWeight: FontWeight.w700,
               ),
@@ -415,10 +415,8 @@ class _ManageSubAccountsPageState extends State<ManageSubAccountsPage> {
   void _showCreateSubAccountDialog() {
     final emailController = TextEditingController();
     final nameController = TextEditingController();
-    final passwordController = TextEditingController();
     bool isCreating = false;
     String? errorMessage;
-    bool obscurePassword = true;
     SubAccountPermissions permissions =
         SubAccountPermissions.defaultPermissions();
 
@@ -550,59 +548,6 @@ class _ManageSubAccountsPageState extends State<ManageSubAccountsPage> {
                         ),
                       ),
 
-                      const SizedBox(height: 16),
-
-                      // Password field (main user's password for re-authentication)
-                      Text(
-                        'Your Password',
-                        style: AppTextStyles.inputLabel,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Required to verify your identity',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.onSurfaceVariant,
-                          fontSize: 11,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      TextField(
-                        controller: passwordController,
-                        obscureText: obscurePassword,
-                        decoration: InputDecoration(
-                          hintText: 'Enter your password',
-                          hintStyle: AppTextStyles.inputHint,
-                          filled: true,
-                          fillColor: AppColors.surfaceVariant,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                                color: AppColors.primary, width: 2),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 14),
-                          prefixIcon: const Icon(Icons.lock_outline,
-                              color: AppColors.grey400),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              obscurePassword
-                                  ? Icons.visibility_off
-                                  : Icons.visibility,
-                              color: AppColors.grey400,
-                            ),
-                            onPressed: () {
-                              setDialogState(() {
-                                obscurePassword = !obscurePassword;
-                              });
-                            },
-                          ),
-                        ),
-                      ),
-
                       const SizedBox(height: 20),
 
                       // Permissions section
@@ -688,7 +633,6 @@ class _ManageSubAccountsPageState extends State<ManageSubAccountsPage> {
                       : () async {
                           final email = emailController.text.trim();
                           final name = nameController.text.trim();
-                          final password = passwordController.text;
 
                           // Validate
                           if (name.isEmpty) {
@@ -704,13 +648,6 @@ class _ManageSubAccountsPageState extends State<ManageSubAccountsPage> {
                             });
                             return;
                           }
-                          if (password.isEmpty) {
-                            setDialogState(() {
-                              errorMessage =
-                                  'Please enter your password to verify your identity.';
-                            });
-                            return;
-                          }
 
                           setDialogState(() {
                             isCreating = true;
@@ -722,7 +659,7 @@ class _ManageSubAccountsPageState extends State<ManageSubAccountsPage> {
                                 .createSubAccountStreamlined(
                               email: email,
                               name: name,
-                              mainUserPassword: password,
+                              mainUserPassword: '', // Not used, kept for API compatibility
                               permissions: permissions,
                             );
 

@@ -21,6 +21,10 @@ class CartItem {
   int? availableStock;
   String? variationId;
   String? variationName;
+  String? brand;
+  
+  // Product availability status
+  bool isProductActive; // Whether the product is active/available for purchase
   
   // Seller information
   String? sellerId;
@@ -33,8 +37,26 @@ class CartItem {
   double? width; // Width in cm
   double? height; // Height in cm
   
+  // Whether the product requires insurance and evaluation in JRS shipping
+  bool insuranceAndEvaluation;
+
+  // Seller-configured checkout options (delivery modes + payment methods).
+  // Populated at runtime from the seller document; null means allow all.
+  Map<String, dynamic>? checkoutOptions;
+
   // Selection state for multi-seller checkout
   bool isSelected;
+  
+  /// Returns true if this item is unavailable for checkout
+  /// (either product is inactive or out of stock)
+  bool get isUnavailable => !isProductActive || (availableStock != null && availableStock! <= 0);
+  
+  /// Returns the reason why the item is unavailable, or null if available
+  String? get unavailableReason {
+    if (!isProductActive) return 'Product is no longer available';
+    if (availableStock != null && availableStock! <= 0) return 'Out of stock';
+    return null;
+  }
 
   CartItem({
     required this.cartItemId,
@@ -47,6 +69,8 @@ class CartItem {
     this.availableStock,
     this.variationId,
     this.variationName,
+    this.brand,
+    this.isProductActive = true, // Default to active
     this.sellerId,
     this.sellerName,
     this.sellerAddress,
@@ -55,6 +79,8 @@ class CartItem {
     this.width,
     this.height,
     this.isSelected = true, // Default to selected
+    this.insuranceAndEvaluation = false,
+    this.checkoutOptions,
   });
 
   factory CartItem.fromFirestore(DocumentSnapshot doc) {
@@ -212,6 +238,31 @@ class CartSummary {
       }
     }
     return false;
+  }
+
+  // Check if any selected items are unavailable (inactive or out of stock)
+  bool get hasUnavailableItems {
+    for (var group in sellerGroups) {
+      for (var item in group.items) {
+        if (item.isSelected && item.isUnavailable) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  // Get list of selected items that are unavailable
+  List<CartItem> get unavailableSelectedItems {
+    final List<CartItem> unavailableItems = [];
+    for (var group in sellerGroups) {
+      for (var item in group.items) {
+        if (item.isSelected && item.isUnavailable) {
+          unavailableItems.add(item);
+        }
+      }
+    }
+    return unavailableItems;
   }
 
   // Get list of selected items with insufficient stock

@@ -677,6 +677,18 @@ class CreateCheckoutOrderRequest {
   final List<String> paymentMethodTypes;
   final String? successUrl;
   final String? cancelUrl;
+  final Map<String, double> sellerShippingCosts;
+  final Map<String, double> sellerInsuranceCosts;
+  final Map<String, double> sellerEvaluationCosts;
+  final Map<String, String> sellerPackagingSizes;
+  final Map<String, bool> sellerExpressShipping;
+  final Map<String, bool> sellerPickupSelected;
+  final Map<String, double> expressSellerShippingCosts;
+  final Map<String, double> standardSellerShippingCosts;
+  final Map<String, double> expressSellerTotalShippingCosts;
+  final Map<String, double> standardSellerTotalShippingCosts;
+  final Map<String, Map<String, dynamic>?> selectedDiscountVouchers;
+  final Map<String, Map<String, dynamic>?> selectedShippingVouchers;
 
   CreateCheckoutOrderRequest({
     required this.cartItemIds,
@@ -685,6 +697,18 @@ class CreateCheckoutOrderRequest {
     required this.paymentMethodTypes,
     this.successUrl,
     this.cancelUrl,
+    this.sellerShippingCosts = const {},
+    this.sellerInsuranceCosts = const {},
+    this.sellerEvaluationCosts = const {},
+    this.sellerPackagingSizes = const {},
+    this.sellerExpressShipping = const {},
+    this.sellerPickupSelected = const {},
+    this.expressSellerShippingCosts = const {},
+    this.standardSellerShippingCosts = const {},
+    this.expressSellerTotalShippingCosts = const {},
+    this.standardSellerTotalShippingCosts = const {},
+    this.selectedDiscountVouchers = const {},
+    this.selectedShippingVouchers = const {},
   });
 
   Map<String, dynamic> toJson() {
@@ -695,6 +719,29 @@ class CreateCheckoutOrderRequest {
       'payment_method_types': paymentMethodTypes,
       'success_url': successUrl,
       'cancel_url': cancelUrl,
+      'seller_shipping_costs': sellerShippingCosts,
+      'seller_insurance_costs': sellerInsuranceCosts,
+      'seller_evaluation_costs': sellerEvaluationCosts,
+      'seller_packaging_sizes': sellerPackagingSizes,
+      'seller_express_shipping': sellerExpressShipping,
+      'seller_pickup_selected': sellerPickupSelected,
+      'express_seller_shipping_costs': expressSellerShippingCosts,
+      'standard_seller_shipping_costs': standardSellerShippingCosts,
+      'express_seller_total_shipping_costs': expressSellerTotalShippingCosts,
+      'standard_seller_total_shipping_costs': standardSellerTotalShippingCosts,
+      'selected_discount_vouchers': selectedDiscountVouchers.map((sellerId, voucher) =>
+        MapEntry(sellerId, voucher != null ? {
+          'code': voucher['code'],
+          'seller_id': voucher['sellerId'],
+          'discount_type': voucher['discountType'],
+        } : null)),
+      'selected_shipping_vouchers': selectedShippingVouchers.map((sellerId, voucher) =>
+        MapEntry(sellerId, voucher != null ? {
+          'code': voucher['code'],
+          'seller_id': voucher['sellerId'],
+          'discount_type': voucher['discountType'],
+          'shipping_option': voucher['shippingOption'],
+        } : null)),
     };
   }
 }

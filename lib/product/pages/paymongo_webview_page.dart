@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import '../../core/app_theme/app_colors.dart';
@@ -58,7 +59,16 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
           onNavigationRequest: (NavigationRequest request) {
             AppLogger.d('WebView navigation request: ${request.url}');
             _checkUrlForCompletion(request.url);
-            return NavigationDecision.navigate;
+
+            final uri = Uri.parse(request.url);
+            // Allow normal http/https navigation inside WebView
+            if (uri.scheme == 'http' || uri.scheme == 'https') {
+              return NavigationDecision.navigate;
+            }
+
+            // For custom schemes (gcash://, maya://, etc.), launch externally
+            _launchExternalUrl(request.url);
+            return NavigationDecision.prevent;
           },
           onWebResourceError: (WebResourceError error) {
             AppLogger.d('WebView error: ${error.description}');
@@ -162,6 +172,15 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
     if (mounted) {
       Navigator.of(context).pop(); // Close WebView
       widget.onPaymentComplete(false, orderId);
+    }
+  }
+
+  Future<void> _launchExternalUrl(String url) async {
+    try {
+      final uri = Uri.parse(url);
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      AppLogger.d('Failed to launch external URL: $url, error: $e');
     }
   }
 
