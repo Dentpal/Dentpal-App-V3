@@ -63,10 +63,23 @@ class _CheckoutPageState extends State<CheckoutPage> {
   // Per-seller pickup mode: when true the buyer picks up in store (no shipping cost).
   final Map<String, bool> _sellerPickupSelected = {};
 
+  // Per-seller Same Day Delivery (Lalamove) mode. When true, the buyer pays the
+  // full Lalamove quote and no vouchers apply. Only available within Metro Manila.
+  final Map<String, bool> _sellerSameDaySelected = {};
+  // Per-seller Lalamove quote total (buyer-paid). Presence => same-day is offered.
+  final Map<String, double> _sameDaySellerCosts = {};
+  // Per-seller Lalamove quotationId (informational; the backend re-quotes at booking).
+  final Map<String, String> _sameDayQuotationIds = {};
+  bool _isCalculatingSameDay = false;
+
   // Per-seller shipping costs (active = chosen mode per seller)
   final Map<String, double> _sellerShippingCosts = {}; // sellerId -> active buyer's portion
   final Map<String, double> _sellerTotalShippingCosts = {}; // sellerId -> active total cost
   bool _isCalculatingShipping = false;
+  // Sellers whose JRS (standard + express) rate failed after backend retries.
+  // Tracked per-seller so a JRS outage only blocks sellers without a non-JRS
+  // option (Pickup / Same Day) — others stay checkout-able.
+  final Set<String> _jrsFailedSellers = {};
   int _shippingCalcGeneration = 0;
 
   Map<String, double> _expressSellerShippingCosts = {};
@@ -111,6 +124,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         .toSet();
     for (final sellerId in sellerIds) {
       _sellerPickupSelected[sellerId] = false;
+      _sellerSameDaySelected[sellerId] = false;
 
       final voucherModes = _coveredModes(_shippingVouchers[sellerId]);
       if (voucherModes.length == 1 && voucherModes.contains('express')) {
@@ -193,11 +207,53 @@ class _CheckoutPageState extends State<CheckoutPage> {
   bool _isPickupSelectedFor(String sellerId) =>
       _sellerPickupSelected[sellerId] ?? false;
 
+  bool _isSameDaySelectedFor(String sellerId) =>
+      _sellerSameDaySelected[sellerId] ?? false;
+
+  /// All distinct seller ids represented in the cart.
+  Set<String> _cartSellerIds() => widget.cartItems
+      .map((item) => item.sellerId ?? 'unknown')
+      .toSet();
+
+  /// Whether this seller currently has no usable shipping option, so the order
+  /// can't proceed for it. A JRS failure only blocks a seller while it has no
+  /// chosen non-JRS alternative (Pickup / a live Same-Day quote). Returns false
+  /// while rates are still loading so we don't flash an error mid-calc.
+  bool _sellerShippingBlocked(String sellerId) {
+    if (_isCalculatingShipping || _isCalculatingSameDay) return false;
+    if (_isPickupSelectedFor(sellerId)) return false;
+    if (_isSameDaySelectedFor(sellerId) && _isSameDayAvailableFor(sellerId)) {
+      return false;
+    }
+    // Still on a JRS mode (standard/express): blocked iff JRS failed for it.
+    return _jrsFailedSellers.contains(sellerId);
+  }
+
+  /// True when at least one cart seller has no usable shipping option.
+  bool get _anyShippingBlocked => _cartSellerIds().any(_sellerShippingBlocked);
+
+  /// Same-day is offered only when the seller enabled it AND a live Lalamove
+  /// quote succeeded (which also enforces Metro Manila coverage on the backend).
+  bool _isSameDayAvailableFor(String sellerId) =>
+      _sellerAllowsDelivery(sellerId, 'sameDay') &&
+      _sameDaySellerCosts.containsKey(sellerId);
+
   void _onSellerPickupToggled(String sellerId, bool pickupSelected) {
     setState(() {
       _sellerPickupSelected[sellerId] = pickupSelected;
+      if (pickupSelected) _sellerSameDaySelected[sellerId] = false;
       // Reset express/standard map when switching to/from pickup so costs
       // are correctly reflected in the summary.
+      _refreshActiveMapsForSeller(sellerId);
+    });
+  }
+
+  /// Toggle Same Day Delivery for a seller. Turning it on clears pickup; turning
+  /// it off falls back to the seller's standard/express selection.
+  void _onSellerSameDayToggled(String sellerId, bool sameDay) {
+    setState(() {
+      _sellerSameDaySelected[sellerId] = sameDay;
+      if (sameDay) _sellerPickupSelected[sellerId] = false;
       _refreshActiveMapsForSeller(sellerId);
     });
   }
@@ -297,6 +353,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
   /// - Otherwise → buyer pays the chosen-mode buyer portion.
   double _buyerShippingForSeller(String sellerId) {
     if (_isPickupSelectedFor(sellerId)) return 0.0;
+    // Same Day Delivery: buyer always pays the full Lalamove quote. No vouchers.
+    if (_isSameDaySelectedFor(sellerId)) {
+      return _sameDaySellerCosts[sellerId] ?? 0.0;
+    }
     final express = _isExpressFor(sellerId);
     final expCost = _expressSellerTotalShippingCosts[sellerId] ?? 0.0;
     final stdCost = _standardSellerTotalShippingCosts[sellerId] ?? 0.0;
@@ -326,6 +386,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
   /// Total cost for a seller in the chosen shipping mode (display, before voucher split).
   double _totalShippingForSeller(String sellerId) {
     if (_isPickupSelectedFor(sellerId)) return 0.0;
+    if (_isSameDaySelectedFor(sellerId)) {
+      return _sameDaySellerCosts[sellerId] ?? 0.0;
+    }
     final express = _isExpressFor(sellerId);
     return (express
             ? _expressSellerTotalShippingCosts[sellerId]
@@ -363,7 +426,14 @@ class _CheckoutPageState extends State<CheckoutPage> {
       // Build per-seller buyer-shipping costs after voucher coverage is applied,
       // so the backend cross-checks with the same numbers the buyer saw.
       final adjustedSellerShippingCosts = <String, double>{};
-      for (final sellerId in _sellerShippingCosts.keys) {
+      // Include every seller (same-day-only sellers may not be in
+      // _sellerShippingCosts, which is JRS-derived).
+      final allSellerIds = <String>{
+        ..._sellerShippingCosts.keys,
+        ..._sellerExpressShipping.keys,
+        ..._sameDaySellerCosts.keys,
+      };
+      for (final sellerId in allSellerIds) {
         adjustedSellerShippingCosts[sellerId] = _buyerShippingForSeller(sellerId);
       }
 
@@ -380,6 +450,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
           sellerPackagingSizes: _sellerPackagingSizes,
           sellerExpressShipping: Map.of(_sellerExpressShipping),
           sellerPickupSelected: Map.of(_sellerPickupSelected),
+          sellerSameDaySelected: Map.of(_sellerSameDaySelected),
           expressSellerShippingCosts: Map.of(_expressSellerShippingCosts),
           standardSellerShippingCosts: Map.of(_standardSellerShippingCosts),
           expressSellerTotalShippingCosts: Map.of(_expressSellerTotalShippingCosts),
@@ -409,6 +480,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
           sellerPackagingSizes: _sellerPackagingSizes,
           sellerExpressShipping: Map.of(_sellerExpressShipping),
           sellerPickupSelected: Map.of(_sellerPickupSelected),
+          sellerSameDaySelected: Map.of(_sellerSameDaySelected),
           expressSellerShippingCosts: Map.of(_expressSellerShippingCosts),
           standardSellerShippingCosts: Map.of(_standardSellerShippingCosts),
           expressSellerTotalShippingCosts: Map.of(_expressSellerTotalShippingCosts),
@@ -447,6 +519,24 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
     if (_selectedPaymentMethod == null) {
       _showErrorDialog('Please select a payment method');
+      return false;
+    }
+
+    if (_isCalculatingShipping) {
+      _showErrorDialog('Please wait for the shipping cost to finish calculating.');
+      return false;
+    }
+
+    if (_isCalculatingSameDay) {
+      _showErrorDialog('Please wait for delivery options to finish loading.');
+      return false;
+    }
+
+    if (_anyShippingBlocked) {
+      _showErrorDialog(
+        'Some sellers\' delivery rate is unavailable. Please choose another delivery '
+        'option (or tap "Retry") for the highlighted sellers before placing your order.',
+      );
       return false;
     }
 
@@ -496,6 +586,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
     setState(() {
       _isCalculatingShipping = true;
+      _jrsFailedSellers.clear();
       _expressSellerShippingCosts.clear();
       _expressSellerTotalShippingCosts.clear();
       _standardSellerShippingCosts.clear();
@@ -512,6 +603,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
       _standardSellerPackagingSizes.clear();
       _sellerPackagingSizes.clear();
     });
+
+    // Kick off the Same Day (Lalamove) quotes now so they load concurrently with
+    // the JRS rates instead of only after JRS finishes. Independent of JRS and
+    // honors the same generation token, so a superseded call discards its result.
+    _fetchSameDayQuotes(myGeneration);
 
     try {
       AppLogger.d('Calculating per-seller shipping costs (express + standard) for checkout');
@@ -567,16 +663,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
           AppLogger.d('Seller $sellerId - Express: ₱${expressDetails['totalCost']}, Standard: ₱${standardDetails['totalCost']}');
         } catch (e) {
+          // JRS could not return a rate for this seller (even after the backend
+          // retried). Record it per-seller and keep going — other sellers, and
+          // this seller's non-JRS options (Pickup / Same Day), stay available.
+          // Its standard/express maps were cleared above and never populated, so
+          // those rows simply won't render. No placeholder rate is charged.
           AppLogger.d('Error calculating shipping for seller $sellerId: $e');
           if (!mounted || _shippingCalcGeneration != myGeneration) return;
-          _expressSellerShippingCosts[sellerId] = 0.0;
-          _expressSellerTotalShippingCosts[sellerId] = 0.0;
-          _expressSellerInsuranceCosts[sellerId] = 0.0;
-          _expressSellerEvaluationCosts[sellerId] = 0.0;
-          _standardSellerShippingCosts[sellerId] = 0.0;
-          _standardSellerTotalShippingCosts[sellerId] = 0.0;
-          _standardSellerInsuranceCosts[sellerId] = 0.0;
-          _standardSellerEvaluationCosts[sellerId] = 0.0;
+          _jrsFailedSellers.add(sellerId);
+          continue;
         }
       }
 
@@ -589,6 +684,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
         _isCalculatingShipping = false;
       });
 
+      // Same Day (Lalamove) quotes were already kicked off above, concurrently.
+
       AppLogger.d('Express total: ₱${_expressSellerShippingCosts.values.fold(0.0, (s, c) => s + c)}, '
           'Standard total: ₱${_standardSellerShippingCosts.values.fold(0.0, (s, c) => s + c)}');
     } catch (e) {
@@ -596,6 +693,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
       if (!mounted || _shippingCalcGeneration != myGeneration) return;
       setState(() {
         _isCalculatingShipping = false;
+        // Unexpected/global failure — mark every seller so the buyer can still
+        // fall back to any non-JRS option or retry.
+        _jrsFailedSellers.addAll(_cartSellerIds());
         _expressSellerShippingCosts.clear();
         _expressSellerTotalShippingCosts.clear();
         _standardSellerShippingCosts.clear();
@@ -604,6 +704,57 @@ class _CheckoutPageState extends State<CheckoutPage> {
         _sellerTotalShippingCosts.clear();
       });
     }
+  }
+
+  /// Fetch Lalamove same-day quotes for sellers that enabled Same Day Delivery.
+  /// Quotes that fail (out of Metro Manila coverage / not serviceable) simply
+  /// leave the seller without a same-day option. Honors the calc generation so
+  /// stale results from a previous address are discarded.
+  Future<void> _fetchSameDayQuotes(int generation) async {
+    if (_selectedAddress == null) return;
+    final addressId = _selectedAddress!.id;
+
+    final sellerIds = widget.cartItems
+        .map((item) => item.sellerId ?? 'unknown')
+        .toSet()
+        .where((sellerId) => _sellerAllowsDelivery(sellerId, 'sameDay'))
+        .toList();
+    if (sellerIds.isEmpty) return;
+
+    if (!mounted || _shippingCalcGeneration != generation) return;
+    setState(() {
+      _isCalculatingSameDay = true;
+      _sameDaySellerCosts.clear();
+      _sameDayQuotationIds.clear();
+    });
+
+    for (final sellerId in sellerIds) {
+      try {
+        final quote = await _checkoutService.getLalamoveQuote(
+          sellerId: sellerId,
+          addressId: addressId,
+        );
+        if (!mounted || _shippingCalcGeneration != generation) return;
+        if (quote['success'] == true && quote['total'] != null) {
+          _sameDaySellerCosts[sellerId] = (quote['total'] as num).toDouble();
+          if (quote['quotationId'] != null) {
+            _sameDayQuotationIds[sellerId] = quote['quotationId'].toString();
+          }
+        } else {
+          // Not serviceable / out of coverage — ensure same-day isn't selected.
+          _sellerSameDaySelected[sellerId] = false;
+        }
+      } catch (e) {
+        AppLogger.d('Same-day quote error for seller $sellerId: $e');
+        if (!mounted || _shippingCalcGeneration != generation) return;
+        _sellerSameDaySelected[sellerId] = false;
+      }
+    }
+
+    if (!mounted || _shippingCalcGeneration != generation) return;
+    setState(() {
+      _isCalculatingSameDay = false;
+    });
   }
 
   /// Repopulate all active per-seller cost maps from the express/standard caches
@@ -1586,6 +1737,14 @@ class _CheckoutPageState extends State<CheckoutPage> {
                               ),
                             ],
                           )
+                        : _sellerShippingBlocked(sellerId)
+                        ? Text(
+                            'Unavailable',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.error,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          )
                         : Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -1635,19 +1794,30 @@ class _CheckoutPageState extends State<CheckoutPage> {
     final allowsStandard = _sellerAllowsDelivery(sellerId, 'standard');
     final allowsExpress  = _sellerAllowsDelivery(sellerId, 'express');
     final allowsPickup   = _sellerAllowsDelivery(sellerId, 'pickup');
+    final allowsSameDay  = _sellerAllowsDelivery(sellerId, 'sameDay');
+    final sameDayAvailable = _isSameDayAvailableFor(sellerId);
 
     final hasExpressCost  = _expressSellerTotalShippingCosts.containsKey(sellerId);
     final hasStandardCost = _standardSellerTotalShippingCosts.containsKey(sellerId);
     final hasAnyCost = hasExpressCost || hasStandardCost;
+    final jrsFailed = _jrsFailedSellers.contains(sellerId);
 
     // Nothing to show when no delivery options exist.
-    if (!allowsStandard && !allowsExpress && !allowsPickup) return const SizedBox.shrink();
-    if (!hasAnyCost && !allowsPickup) return const SizedBox.shrink();
+    if (!allowsStandard && !allowsExpress && !allowsPickup && !allowsSameDay) {
+      return const SizedBox.shrink();
+    }
+    // Bail only when there's genuinely nothing to render: no JRS cost, no
+    // pickup/same-day, and JRS didn't fail (a failure still needs its notice).
+    if (!hasAnyCost && !allowsPickup && !allowsSameDay && !jrsFailed) {
+      return const SizedBox.shrink();
+    }
 
-    final isPickup  = _isPickupSelectedFor(sellerId);
-    final isExpress = !isPickup && _isExpressFor(sellerId);
-    final isStandard = !isPickup && !isExpress;
+    final isSameDay = _isSameDaySelectedFor(sellerId);
+    final isPickup  = !isSameDay && _isPickupSelectedFor(sellerId);
+    final isExpress = !isSameDay && !isPickup && _isExpressFor(sellerId);
+    final isStandard = !isSameDay && !isPickup && !isExpress;
     final lockedExpress = _isLockedToExpress(sellerId);
+    final sameDayCost = _sameDaySellerCosts[sellerId] ?? 0.0;
 
     final expressTotal  = _expressSellerTotalShippingCosts[sellerId] ?? 0.0;
     final standardTotal = _standardSellerTotalShippingCosts[sellerId] ?? 0.0;
@@ -1730,11 +1900,45 @@ class _CheckoutPageState extends State<CheckoutPage> {
       ),
       child: Column(
         children: [
+          // JRS rate unavailable for this seller — explain and offer a retry.
+          // Pickup / Same Day rows below (if the seller enabled them) remain
+          // selectable so the order can still proceed.
+          if (jrsFailed) ...[
+            Row(
+              children: [
+                Icon(Icons.error_outline, size: 16, color: AppColors.error),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    (allowsPickup || sameDayAvailable)
+                        ? 'Standard/Express delivery is unavailable right now. Choose another option below, or retry.'
+                        : 'Standard/Express delivery is unavailable right now. Please retry.',
+                    style: AppTextStyles.bodySmall.copyWith(color: AppColors.error),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                TextButton.icon(
+                  onPressed: _isCalculatingShipping ? null : _calculateShippingCost,
+                  icon: const Icon(Icons.refresh, size: 14),
+                  label: Text('Retry', style: AppTextStyles.bodySmall),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.error,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ],
+            ),
+            if (allowsPickup || allowsSameDay)
+              const Divider(height: 16),
+          ],
           if (allowsStandard && hasStandardCost)
             radioRow(
               selected: isStandard,
               disabled: _isCalculatingShipping || lockedExpress,
               onTap: () {
+                _onSellerSameDayToggled(sellerId, false);
                 _onSellerPickupToggled(sellerId, false);
                 _onSellerShippingModeToggled(sellerId, false);
               },
@@ -1748,6 +1952,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
               selected: isExpress,
               disabled: _isCalculatingShipping,
               onTap: () {
+                _onSellerSameDayToggled(sellerId, false);
                 _onSellerPickupToggled(sellerId, false);
                 _onSellerShippingModeToggled(sellerId, true);
               },
@@ -1755,11 +1960,32 @@ class _CheckoutPageState extends State<CheckoutPage> {
               label: 'Express',
               trailing: costLabel(expressTotal, isExpress),
             ),
+          // Same Day Delivery (Lalamove) — only when the seller enabled it and a
+          // live quote succeeded (Metro Manila only). Buyer pays the full fee.
+          if (allowsSameDay && (sameDayAvailable || _isCalculatingSameDay))
+            radioRow(
+              selected: isSameDay,
+              disabled: _isCalculatingShipping || _isCalculatingSameDay || !sameDayAvailable,
+              onTap: () => _onSellerSameDayToggled(sellerId, true),
+              icon: Icons.motorcycle_outlined,
+              label: 'Same Day Delivery',
+              sublabel: _isCalculatingSameDay && !sameDayAvailable ? '(checking…)' : null,
+              trailing: _isCalculatingSameDay && !sameDayAvailable
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : costLabel(sameDayCost, isSameDay),
+            ),
           if (allowsPickup)
             radioRow(
               selected: isPickup,
               disabled: false,
-              onTap: () => _onSellerPickupToggled(sellerId, true),
+              onTap: () {
+                _onSellerSameDayToggled(sellerId, false);
+                _onSellerPickupToggled(sellerId, true);
+              },
               icon: Icons.store_outlined,
               label: 'Pickup',
               trailing: Text(
@@ -2229,6 +2455,43 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
+  /// Shown when at least one seller has no usable shipping option (its JRS rate
+  /// failed and no Pickup / Same Day alternative is selected). Lets the buyer
+  /// re-trigger the calculation; those sellers stay blocked until resolved.
+  Widget _buildShippingRetryBanner() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.error.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.error_outline, color: AppColors.error, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Some delivery rates couldn\'t be calculated. Choose another option below, or retry.',
+              style: AppTextStyles.bodySmall.copyWith(color: AppColors.error),
+            ),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            onPressed: _isCalculatingShipping ? null : _calculateShippingCost,
+            icon: const Icon(Icons.refresh, size: 16),
+            label: Text('Retry', style: AppTextStyles.buttonMedium),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.error,
+              side: BorderSide(color: AppColors.error.withValues(alpha: 0.5)),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBottomCheckoutBar() {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -2250,6 +2513,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (_anyShippingBlocked) ...[
+              _buildShippingRetryBanner(),
+              const SizedBox(height: 12),
+            ],
             // Subtotal row
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2451,6 +2718,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
       ),
       child: Column(
         children: [
+          if (_anyShippingBlocked) ...[
+            _buildShippingRetryBanner(),
+            const SizedBox(height: 12),
+          ],
           // Subtotal row
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,

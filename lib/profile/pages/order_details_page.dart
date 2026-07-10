@@ -177,6 +177,12 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
               const SizedBox(height: 16),
             ],
 
+            // Same Day Delivery (Lalamove) tracking — when a rider is booked.
+            if (widget.order.lalamoveShareLink != null) ...[
+              _buildLalamoveTrackingSection(),
+              const SizedBox(height: 16),
+            ],
+
             // Status Timeline
             _buildStatusTimeline(),
             const SizedBox(height: 16),
@@ -271,6 +277,110 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         ],
       ),
     );
+  }
+
+  /// Same Day Delivery (Lalamove) tracking card. Shows the rider status/driver
+  /// and a button that opens Lalamove's live tracking share link.
+  Widget _buildLalamoveTrackingSection() {
+    final shareLink = widget.order.lalamoveShareLink;
+
+    // Pull status + driver from the first booked seller record.
+    String? status;
+    Map? driver;
+    final lalamove = widget.order.lalamove;
+    if (lalamove != null) {
+      for (final entry in lalamove.values) {
+        if (entry is Map && entry['shareLink'] != null) {
+          status = entry['status']?.toString();
+          driver = entry['driver'] is Map ? entry['driver'] as Map : null;
+          break;
+        }
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.motorcycle_outlined, color: AppColors.primary, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Same Day Delivery',
+                style: AppTextStyles.titleMedium.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+          if (status != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Status: ${_prettyLalamoveStatus(status)}',
+              style: AppTextStyles.bodyMedium,
+            ),
+          ],
+          if (driver != null && (driver['name'] != null)) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Rider: ${driver['name']}'
+              '${driver['plateNumber'] != null ? ' • ${driver['plateNumber']}' : ''}',
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.onSurface.withValues(alpha: 0.7),
+              ),
+            ),
+          ],
+          if (shareLink != null) ...[
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  final uri = Uri.tryParse(shareLink);
+                  if (uri != null) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  }
+                },
+                icon: const Icon(Icons.location_on_outlined, size: 18),
+                label: Text('Track rider', style: AppTextStyles.buttonMedium),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: AppColors.onPrimary,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _prettyLalamoveStatus(String raw) {
+    switch (raw.toUpperCase()) {
+      case 'ASSIGNING_DRIVER':
+        return 'Finding a rider';
+      case 'ON_GOING':
+        return 'Rider on the way';
+      case 'PICKED_UP':
+        return 'Picked up';
+      case 'COMPLETED':
+        return 'Delivered';
+      case 'CANCELED':
+        return 'Canceled';
+      case 'REJECTED':
+        return 'Rejected';
+      case 'EXPIRED':
+        return 'Expired';
+      default:
+        return raw;
+    }
   }
 
   Widget _buildTrackingSection() {

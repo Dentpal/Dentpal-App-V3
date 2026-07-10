@@ -4,9 +4,6 @@
 // Export the createCheckoutSession function
 export { createCheckoutSession } from './createCheckoutSession';
 
-// Export the callable test GCash order creation function
-export { createGcashTestOrder } from './createGcashTestOrder';
-
 // Export the Cash on Delivery order creation function
 export { createCodOrder } from './createCodOrder';
 
@@ -18,6 +15,11 @@ export { calculateJRSShipping } from './jrsShippingCalculator';
 
 // Export the JRS tracking function
 export { trackJRSShipping } from './trackJRSShipping';
+
+// Export the Lalamove Same Day Delivery functions
+export { calculateLalamoveQuote } from './calculateLalamoveQuote';
+export { bookLalamoveDelivery } from './bookLalamoveDelivery';
+export { lalamoveWebhook } from './lalamoveWebhook';
 
 // Export the cancel order function
 export { cancelOrder } from './cancelOrder';

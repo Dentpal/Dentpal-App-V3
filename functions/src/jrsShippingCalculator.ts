@@ -169,10 +169,12 @@ export const calculateJRSShipping = onCall(
     } catch (error: any) {
       logger.error('Error calculating JRS shipping', error);
       if (error instanceof HttpsError) throw error;
+      // No silent ₱250 fallback — report failure so the client can retry and
+      // block checkout until a real rate is available.
       return {
         success: false,
         error: error.message || 'Failed to calculate shipping cost',
-        data: { shippingCost: DEFAULT_FALLBACK_SHIPPING_COST, isFallback: true },
+        data: {},
       };
     }
   },

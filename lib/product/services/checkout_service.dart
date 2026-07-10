@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:dentpal/utils/app_logger.dart';
@@ -8,7 +9,6 @@ import '../models/paymongo_model.dart';
 import '../models/cart_model.dart';
 import '../../profile/models/shipping_address.dart';
 import 'cart_service.dart';
-import 'jrs_shipping_service.dart';
 
 class CheckoutService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -37,6 +37,7 @@ class CheckoutService {
     Map<String, String> sellerPackagingSizes = const {},
     Map<String, bool> sellerExpressShipping = const {},
     Map<String, bool> sellerPickupSelected = const {},
+    Map<String, bool> sellerSameDaySelected = const {},
     Map<String, double> expressSellerShippingCosts = const {},
     Map<String, double> standardSellerShippingCosts = const {},
     Map<String, double> expressSellerTotalShippingCosts = const {},
@@ -68,6 +69,7 @@ class CheckoutService {
         sellerPackagingSizes: sellerPackagingSizes,
         sellerExpressShipping: sellerExpressShipping,
         sellerPickupSelected: sellerPickupSelected,
+        sellerSameDaySelected: sellerSameDaySelected,
         expressSellerShippingCosts: expressSellerShippingCosts,
         standardSellerShippingCosts: standardSellerShippingCosts,
         expressSellerTotalShippingCosts: expressSellerTotalShippingCosts,
@@ -232,11 +234,11 @@ class CheckoutService {
           AppLogger.d('Seller $sellerId - Full: ₱${result.shippingCost}, Buyer pays: ₱${result.buyerShippingCharge}, Packaging: ${result.packagingName ?? 'unknown'}');
 
         } catch (e) {
+          // Do NOT substitute a placeholder rate. Surface the failure so the
+          // checkout page can retry and block ordering until JRS returns a real
+          // rate. (The backend already retries the flaky JRS API internally.)
           AppLogger.d('Error calculating shipping for seller $sellerId: $e');
-          // Fallback to default shipping cost when JRS API fails
-          final fallbackCost = JRSShippingService.defaultFallbackShippingCost;
-          totalBuyerCost += fallbackCost;
-          totalShippingCost += fallbackCost;
+          rethrow;
         }
       }
 
@@ -251,12 +253,35 @@ class CheckoutService {
 
     } catch (e) {
       AppLogger.d('Error calculating shipping cost: $e');
-      // Default shipping cost when calculation fails
-      final fallback = JRSShippingService.defaultFallbackShippingCost;
-      return {
-        'buyerCost': fallback,
-        'totalCost': fallback,
-      };
+      rethrow;
+    }
+  }
+
+  /// Fetch a Same Day Delivery (Lalamove) quote for a seller -> buyer address.
+  ///
+  /// Returns the parsed callable response. On success:
+  ///   { success: true, total: double, currency, quotationId, expiresAt }
+  /// On failure (out of Metro Manila coverage or not serviceable):
+  ///   { success: false, reason: 'out_of_coverage' | 'not_serviceable' }
+  Future<Map<String, dynamic>> getLalamoveQuote({
+    required String sellerId,
+    required String addressId,
+  }) async {
+    try {
+      final functions = FirebaseFunctions.instanceFor(region: 'asia-southeast1');
+      final callable = functions.httpsCallable('calculateLalamoveQuote');
+      final result = await callable.call<Map<String, dynamic>>({
+        'sellerId': sellerId,
+        'addressId': addressId,
+      });
+      final data = Map<String, dynamic>.from(result.data);
+      if (data['total'] != null) {
+        data['total'] = (data['total'] as num).toDouble();
+      }
+      return data;
+    } catch (e) {
+      AppLogger.d('Lalamove quote failed for seller $sellerId: $e');
+      return {'success': false, 'reason': 'not_serviceable'};
     }
   }
 
@@ -363,6 +388,7 @@ class CheckoutService {
     Map<String, String> sellerPackagingSizes = const {},
     Map<String, bool> sellerExpressShipping = const {},
     Map<String, bool> sellerPickupSelected = const {},
+    Map<String, bool> sellerSameDaySelected = const {},
     Map<String, double> expressSellerShippingCosts = const {},
     Map<String, double> standardSellerShippingCosts = const {},
     Map<String, double> expressSellerTotalShippingCosts = const {},
@@ -392,6 +418,7 @@ class CheckoutService {
         'seller_packaging_sizes': sellerPackagingSizes,
         'seller_express_shipping': sellerExpressShipping,
         'seller_pickup_selected': sellerPickupSelected,
+        'seller_same_day_selected': sellerSameDaySelected,
         'express_seller_shipping_costs': expressSellerShippingCosts,
         'standard_seller_shipping_costs': standardSellerShippingCosts,
         'express_seller_total_shipping_costs': expressSellerTotalShippingCosts,

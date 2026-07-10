@@ -706,8 +706,10 @@ export async function calculateJRSShippingCost(
     logger.info('JRS API Response received:', {
       status: response.status,
       statusText: response.statusText,
+      contentType: response.headers?.['content-type'],
       hasData: !!response.data,
-      dataKeys: response.data ? Object.keys(response.data) : []
+      dataType: typeof response.data,
+      dataKeys: response.data && typeof response.data === 'object' ? Object.keys(response.data) : []
     });
 
     if (response.status === 200 && response.data) {
@@ -728,6 +730,22 @@ export async function calculateJRSShippingCost(
         throw new Error(`JRS API returned invalid shipping cost: ${shippingCost}`);
       }
     } else {
+      // Diagnostic: JRS replied 200 but with an empty/unparseable body. Capture
+      // the content-type and a raw preview so we can see WHY (e.g. unrecognized
+      // address, an HTML/gateway message, or a content-type axios didn't parse).
+      // The getRate response is a shipping rate, not buyer PII.
+      logger.error('JRS API returned an empty/unparseable 200 body', {
+        status: response.status,
+        statusText: response.statusText,
+        contentType: response.headers?.['content-type'],
+        dataType: typeof response.data,
+        rawPreview: typeof response.data === 'string'
+          ? response.data.substring(0, 500)
+          : JSON.stringify(response.data ?? null).substring(0, 500),
+        shipperRegion: maskAddress(shipperAddress),
+        recipientRegion: maskAddress(recipientFormattedAddress),
+        sameOriginAndDestination: shipperAddress === recipientFormattedAddress,
+      });
       throw new Error(`JRS API returned status ${response.status}: ${response.statusText}`);
     }
 
@@ -765,8 +783,17 @@ export async function calculateJRSShippingCost(
   }
 }
 
-// Default fallback shipping cost when JRS API is unavailable
+// Default fallback shipping cost when JRS API is unavailable. Only used by
+// callers that opt into config fallback (allowConfigFallback = true). The
+// checkout quote and order-creation paths surface an error instead so the buyer
+// is never silently charged a placeholder rate.
 export const DEFAULT_FALLBACK_SHIPPING_COST = 250;
+
+// Bounded retry tuning for the flaky JRS API.
+const JRS_MAX_ATTEMPTS = 4;
+const JRS_RETRY_BASE_DELAY_MS = 400;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
  * Calculates JRS shipping cost with fallback support.
@@ -828,45 +855,68 @@ export async function calculateJRSShippingCostWithFallback(
     };
   }
 
-  try {
-    const result = await calculateJRSShippingCost(
-      sellerAddress,
-      recipientAddress,
-      orderItems,
-      jrsApiKey,
-      jrsApiUrl,
-      express,
-      insurance,
-      valuation,
-      codAmountToCollect
-    );
+  // JRS is intermittently flaky (e.g. HTTP 200 with an empty body). Retry the
+  // call a bounded number of times with exponential backoff before giving up,
+  // so transient failures self-heal into a real rate instead of a fallback.
+  const maxAttempts = JRS_MAX_ATTEMPTS;
+  let lastError: any;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const result = await calculateJRSShippingCost(
+        sellerAddress,
+        recipientAddress,
+        orderItems,
+        jrsApiKey,
+        jrsApiUrl,
+        express,
+        insurance,
+        valuation,
+        codAmountToCollect
+      );
 
-    return {
-      shippingCost: result.shippingCost,
-      packagingName: result.packagingName,
-      insuranceCost: result.insuranceCost,
-      evaluationCost: result.evaluationCost,
-      isFallback: false
-    };
-  } catch (error: any) {
-    // Log runtime/API failure and use fallback (PII-safe)
-    logger.warn(`JRS API runtime failure, using fallback shipping cost of ₱${fallbackCost}:`, {
-      error: error.message,
-      errorType: 'runtime',
-      sellerAddressHash: hashAddress(sellerAddress),
+      if (attempt > 1) {
+        logger.info(`JRS shipping calculated after retry (attempt ${attempt}/${maxAttempts})`);
+      }
+      return {
+        shippingCost: result.shippingCost,
+        packagingName: result.packagingName,
+        insuranceCost: result.insuranceCost,
+        evaluationCost: result.evaluationCost,
+        isFallback: false
+      };
+    } catch (error: any) {
+      lastError = error;
+      logger.warn(`JRS API attempt ${attempt}/${maxAttempts} failed:`, {
+        error: error.message,
+        errorType: 'runtime',
+        attempt,
+        sellerRegion: maskAddress(sellerAddress),
+        recipientRegion: maskAddress(recipientAddress),
+        itemCount: orderItems.length,
+      });
+      if (attempt < maxAttempts) {
+        // Exponential backoff: 400ms, 800ms, 1600ms, ...
+        await sleep(JRS_RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1));
+      }
+    }
+  }
+
+  // All attempts failed. Surface the error (no silent ₱250) unless a caller has
+  // explicitly opted into config fallback for resilience.
+  if (allowConfigFallback) {
+    logger.warn(`JRS API failed after ${maxAttempts} attempts, using fallback ₱${fallbackCost}:`, {
+      error: lastError?.message,
       sellerRegion: maskAddress(sellerAddress),
-      recipientAddressHash: hashAddress(recipientAddress),
       recipientRegion: maskAddress(recipientAddress),
       itemCount: orderItems.length,
-      fallbackCost
+      fallbackCost,
     });
-    
-    return {
-      shippingCost: fallbackCost,
-      isFallback: true,
-      error: error.message
-    };
+    return { shippingCost: fallbackCost, isFallback: true, error: lastError?.message };
   }
+
+  throw new Error(
+    `JRS shipping unavailable after ${maxAttempts} attempts: ${lastError?.message || 'unknown error'}`
+  );
 }
 
 /**

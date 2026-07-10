@@ -64,6 +64,7 @@ flutter:
     - lib/assets/icons/dentpal_icon.png
     - lib/assets/icons/qr_ios.jpeg
     - lib/assets/icons/qr_android.jpeg
+    - lib/assets/data/ph_locations.json
 
   fonts:
     - family: Poppins

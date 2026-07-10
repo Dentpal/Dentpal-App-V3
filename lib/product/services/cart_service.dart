@@ -681,37 +681,15 @@ class CartService {
         AppLogger.d('JRS shipping: full=₱${result.shippingCost}, buyerPays=₱${result.buyerShippingCharge}');
         return result;
       } else {
-        AppLogger.d('JRS calculation failed, using fallback: ${result.message}');
-        return result; // Return the full fallback result
+        // No silent fallback rate — surface the failure so checkout can retry
+        // and block ordering until a real rate is available.
+        throw Exception('Shipping rate unavailable: ${result.message}');
       }
 
     } catch (e) {
       AppLogger.d('Error calculating JRS shipping cost with address: $e');
-      
-      // Fallback to simple logic
-      double totalValue = items.fold(0.0, (sum, item) => sum + item.totalPrice);
-      
-      // Free shipping if order value exceeds ₱1000
-      if (totalValue >= 1000.0) {
-        return JRSShippingResult(
-          success: true,
-          shippingCost: 50.0, // Estimated cost
-          buyerShippingCharge: 0.0, // Free for buyer
-          sellerShippingCharge: 50.0, // Seller pays
-          shippingSplitRule: 'seller_pays_full',
-          message: 'Free shipping (fallback)',
-        );
-      }
-      
-      // Default shipping cost
-      return JRSShippingResult(
-        success: true,
-        shippingCost: 50.0,
-        buyerShippingCharge: 50.0,
-        sellerShippingCharge: 0.0,
-        shippingSplitRule: 'buyer_pays_full',
-        message: 'Default shipping (fallback)',
-      );
+      // Propagate the failure rather than substituting a placeholder rate.
+      rethrow;
     }
   }
 }

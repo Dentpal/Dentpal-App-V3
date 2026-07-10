@@ -54,6 +54,9 @@ class Order {
   final List<OrderStatusUpdate> statusHistory;
   final String? checkoutSessionId;
   final List<Map<String, dynamic>> sellerFeeBreakdowns;
+  /// Per-seller Lalamove (Same Day Delivery) booking records, keyed by sellerId.
+  /// Each value: { orderId, status, shareLink, driver, ... }. Null until booked.
+  final Map<String, dynamic>? lalamove;
 
   Order({
     required this.orderId,
@@ -70,6 +73,7 @@ class Order {
     required this.statusHistory,
     this.checkoutSessionId,
     this.sellerFeeBreakdowns = const [],
+    this.lalamove,
   });
 
   /// True if any seller in this order is fulfilling via in-store pickup
@@ -77,6 +81,23 @@ class Order {
   bool get hasPickupShipping => sellerFeeBreakdowns.any(
         (b) => (b['shippingMode']?.toString().toLowerCase() ?? '') == 'pickup',
       );
+
+  /// True if any seller in this order is fulfilling via Same Day Delivery.
+  bool get hasSameDayShipping => sellerFeeBreakdowns.any(
+        (b) => (b['shippingMode']?.toString().toLowerCase() ?? '') == 'sameday',
+      );
+
+  /// First available Lalamove tracking share link across booked sellers, if any.
+  String? get lalamoveShareLink {
+    if (lalamove == null) return null;
+    for (final entry in lalamove!.values) {
+      if (entry is Map && entry['shareLink'] != null) {
+        final link = entry['shareLink'].toString();
+        if (link.isNotEmpty) return link;
+      }
+    }
+    return null;
+  }
 
   factory Order.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
@@ -177,6 +198,9 @@ class Order {
         statusHistory: statusHistory,
         checkoutSessionId: data['checkoutSessionId'],
         sellerFeeBreakdowns: sellerFeeBreakdowns,
+        lalamove: data['lalamove'] is Map
+            ? Map<String, dynamic>.from(data['lalamove'] as Map)
+            : null,
       );
     } catch (e, stackTrace) {
       AppLogger.d('Order.fromFirestore - Error occurred: $e');
@@ -217,6 +241,7 @@ class Order {
     String? notes,
     List<OrderStatusUpdate>? statusHistory,
     String? checkoutSessionId,
+    Map<String, dynamic>? lalamove,
   }) {
     return Order(
       orderId: orderId ?? this.orderId,
@@ -232,6 +257,8 @@ class Order {
       notes: notes ?? this.notes,
       statusHistory: statusHistory ?? this.statusHistory,
       checkoutSessionId: checkoutSessionId ?? this.checkoutSessionId,
+      sellerFeeBreakdowns: sellerFeeBreakdowns,
+      lalamove: lalamove ?? this.lalamove,
     );
   }
 

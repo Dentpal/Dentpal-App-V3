@@ -202,6 +202,14 @@ export const createCodOrder = onRequest(
             ? request.body.seller_pickup_selected
             : {};
 
+        // Per-seller Same Day Delivery (Lalamove) selection. When true the
+        // shipping cost is the buyer-paid Lalamove quote; JRS and vouchers are
+        // skipped for that seller.
+        const sellerSameDaySelected: Record<string, boolean> =
+          (request.body.seller_same_day_selected && typeof request.body.seller_same_day_selected === 'object')
+            ? request.body.seller_same_day_selected
+            : {};
+
         // Both modes' costs from the frontend, needed for partial-coverage math.
         const expressSellerShippingCosts: Record<string, number> =
           (request.body.express_seller_shipping_costs && typeof request.body.express_seller_shipping_costs === 'object')
@@ -417,7 +425,7 @@ export const createCodOrder = onRequest(
           coversStandard: boolean;
           coversExpress: boolean;
           // Per-seller shipping mode and both modes' costs
-          chosenMode: 'express' | 'standard' | 'pickup';
+          chosenMode: 'express' | 'standard' | 'pickup' | 'sameDay';
           expressTotalCost: number;
           standardTotalCost: number;
           // Insurance & evaluation
@@ -487,6 +495,37 @@ export const createCodOrder = onRequest(
               chosenMode: 'pickup' as const,
               expressTotalCost: 0,
               standardTotalCost: 0,
+              insuranceAndEvaluation: false,
+              insuranceCost: null,
+              evaluationCost: null,
+            };
+          }
+
+          // Same Day Delivery short-circuit: shipping cost is the buyer-paid
+          // Lalamove quote supplied by the frontend. Skip JRS and vouchers — no
+          // shipping voucher applies to same-day.
+          if (sellerSameDaySelected[sellerId] === true) {
+            const sameDayCost = sellerShippingCosts[sellerId] ?? 0;
+            console.log(`Seller ${sellerId} is same-day (Lalamove) — buyer pays ₱${sameDayCost}`);
+            return {
+              sellerId,
+              sellerName,
+              shippingCost: sameDayCost,
+              cartValue: sellerCartValue,
+              isFallbackShipping: false,
+              platformFeePercentage,
+              packagingName: undefined,
+              discountAmount,
+              postDiscountCartValue,
+              voucherCode: voucherResult.voucherCode || undefined,
+              voucherDocId: voucherResult.voucherDocId || undefined,
+              shippingVoucherCode: undefined,
+              shippingVoucherDocId: undefined,
+              coversStandard: false,
+              coversExpress: false,
+              chosenMode: 'sameDay' as const,
+              expressTotalCost: sameDayCost,
+              standardTotalCost: sameDayCost,
               insuranceAndEvaluation: false,
               insuranceCost: null,
               evaluationCost: null,
@@ -591,6 +630,20 @@ export const createCodOrder = onRequest(
             continue;
           }
 
+          // Same Day Delivery: buyer always pays the full Lalamove fee; the
+          // platform settles with Lalamove, so the seller bears no shipping
+          // cost/VAT. No vouchers apply.
+          if (sd.chosenMode === 'sameDay') {
+            const fee = round2(sd.shippingCost);
+            breakdown.shippingCost = fee;
+            breakdown.buyerShippingCharge = fee;
+            breakdown.sellerShippingCharge = 0;
+            breakdown.shippingSplitRule = 'buyer_pays_full';
+            breakdown.totalChargedToBuyer = round2(sd.postDiscountCartValue + fee);
+            shippingCoverageTypes.push('none');
+            continue;
+          }
+
           const stdCost = sd.standardTotalCost ?? sd.shippingCost;
           const expCost = sd.expressTotalCost ?? sd.shippingCost;
 
@@ -633,18 +686,26 @@ export const createCodOrder = onRequest(
           const breakdown = multiSellerBreakdown.sellerBreakdowns[i];
           const sd = sellerShippingData[i];
           let actualShippingCost: number;
-          if (sd.chosenMode === 'pickup') {
+          if (sd.chosenMode === 'pickup' || sd.chosenMode === 'sameDay') {
+            // Same-day is a pass-through Lalamove fee paid by the buyer; the
+            // seller is not charged shipping VAT or commission on it.
             actualShippingCost = 0;
           } else if (sd.chosenMode === 'express') {
             actualShippingCost = sd.expressTotalCost ?? breakdown.shippingCost;
           } else {
             actualShippingCost = sd.standardTotalCost ?? breakdown.shippingCost;
           }
+          const sameDayFee = sd.chosenMode === 'sameDay' ? breakdown.buyerShippingCharge : null;
           applyNewFeeModel(breakdown, {
             actualShippingCost,
             postDiscountCartValue: sd.postDiscountCartValue,
             paymentMethod: 'cash_on_delivery',
           });
+          // applyNewFeeModel sets breakdown.shippingCost to actualShippingCost (0
+          // for same-day); restore the buyer-facing fee for display/records.
+          if (sameDayFee !== null) {
+            breakdown.shippingCost = sameDayFee;
+          }
         }
 
         const shippingCost = multiSellerBreakdown.totalShippingCost;

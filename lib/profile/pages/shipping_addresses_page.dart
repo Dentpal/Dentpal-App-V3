@@ -3,8 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb; // Added for web detection
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geocoding/geocoding.dart' as geo;
 import '../models/shipping_address.dart';
 import '../services/address_service.dart';
+import '../services/ph_locations_service.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import 'package:dentpal/utils/app_logger.dart';
@@ -559,13 +561,15 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
   AutovalidateMode _autovalidateMode =
       AutovalidateMode.disabled; // Track validation mode
   String? _selectedLocation;
+  // Cascading dropdown selections (province/city). The underlying
+  // _stateController / _cityController remain the source of truth for saving;
+  // these drive the dropdown UI and postal auto-fill.
+  String? _selectedProvince;
+  String? _selectedCity;
+  // Whether the offline PH locations dataset finished loading.
+  bool _locationsLoaded = false;
 
-  static const List<String> _locationOptions = [
-    'NCR',
-    'Luzon',
-    'Visayas',
-    'Mindanao',
-  ];
+  static const List<String> _locationOptions = PhLocationsService.locations;
 
   bool get _isEditing => widget.address != null;
 
@@ -578,6 +582,25 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
       _countryController.text = 'Philippines'; // Default country
       _prefillUserName(); // Pre-fill user's name when adding new address
     }
+    _loadLocations();
+  }
+
+  /// Loads the offline PH locations dataset, then (in edit mode) preselects the
+  /// province/city dropdowns from the saved address. Legacy free-text values
+  /// that aren't in the dataset are kept as-is (shown as a one-off dropdown
+  /// item) so editing an old address never loses or blocks its location.
+  Future<void> _loadLocations() async {
+    await PhLocationsService.ensureLoaded();
+    if (!mounted) return;
+    setState(() {
+      _locationsLoaded = true;
+      if (_isEditing) {
+        final state = _stateController.text.trim();
+        final city = _cityController.text.trim();
+        _selectedProvince = state.isEmpty ? null : state;
+        _selectedCity = city.isEmpty ? null : city;
+      }
+    });
   }
 
   Future<void> _prefillUserName() async {
@@ -689,6 +712,17 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
         formattedPhone = '+63${formattedPhone.substring(1)}';
       }
 
+      // Geocode the address up front so Same Day Delivery (Lalamove) has precise
+      // coordinates without a server round-trip. Best-effort: if it fails we
+      // save with null coords and the backend geocodeHelper resolves them later.
+      final coords = await _geocodeAddress(
+        line1: _addressLine1Controller.text.trim(),
+        line2: _addressLine2Controller.text.trim(),
+        city: _cityController.text.trim(),
+        state: _stateController.text.trim(),
+        postalCode: _postalCodeController.text.trim(),
+      );
+
       final address = ShippingAddress(
         id: _isEditing ? widget.address!.id : '',
         fullName: _fullNameController.text.trim(),
@@ -701,8 +735,8 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
         postalCode: _postalCodeController.text.trim(),
         country: _countryController.text.trim(),
         phoneNumber: formattedPhone,
-        latitude: null,
-        longitude: null,
+        latitude: coords?.latitude ?? (_isEditing ? widget.address!.latitude : null),
+        longitude: coords?.longitude ?? (_isEditing ? widget.address!.longitude : null),
         notes: _notesController.text.trim().isEmpty
             ? null
             : _notesController.text.trim(),
@@ -752,6 +786,63 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
         });
       }
     }
+  }
+
+  /// NCR cities/municipalities — used only for a non-blocking "no same-day"
+  /// hint. Backend (metroManila.ts) remains the authoritative coverage check.
+  static const List<String> _ncrCities = [
+    'manila', 'quezon city', 'caloocan', 'las pinas', 'las piñas', 'makati',
+    'malabon', 'mandaluyong', 'marikina', 'muntinlupa', 'navotas', 'paranaque',
+    'parañaque', 'pasay', 'pasig', 'pateros', 'san juan', 'taguig', 'valenzuela',
+  ];
+
+  bool _looksMetroManila(String city, String state) {
+    final c = city.toLowerCase().trim();
+    final s = state.toLowerCase().trim();
+    if (s.contains('metro manila') || s.contains('ncr') || c.contains('metro manila')) {
+      return true;
+    }
+    return _ncrCities.any((nc) => c == nc || s == nc || c.contains(nc) || s.contains(nc));
+  }
+
+  /// Best-effort geocode of the entered address to coordinates. Returns null on
+  /// failure (offline/ambiguous) so saving is never blocked. Shows a hint when
+  /// the address resolves outside Metro Manila (no same-day delivery there).
+  Future<geo.Location?> _geocodeAddress({
+    required String line1,
+    required String line2,
+    required String city,
+    required String state,
+    required String postalCode,
+  }) async {
+    final query = [
+      if (line1.isNotEmpty) line1,
+      if (line2.isNotEmpty) line2,
+      if (city.isNotEmpty) city,
+      if (state.isNotEmpty) state,
+      if (postalCode.isNotEmpty) postalCode,
+      'Philippines',
+    ].join(', ');
+
+    if (!_looksMetroManila(city, state) && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Heads up: Same Day Delivery is only available within Metro Manila.',
+          ),
+          backgroundColor: AppColors.info,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+
+    try {
+      final results = await geo.locationFromAddress(query);
+      if (results.isNotEmpty) return results.first;
+    } catch (e) {
+      AppLogger.d('Geocoding failed for "$query": $e');
+    }
+    return null;
   }
 
   @override
@@ -811,7 +902,7 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          'City, Province, and Postal Code will be validated using Google Maps to ensure accurate delivery.',
+                          'Pick your Location, Province, and City from the lists. The postal code is filled in for you — you can edit it if needed.',
                           style: AppTextStyles.bodySmall.copyWith(
                             color: AppColors.onSurface.withValues(alpha: 0.8),
                           ),
@@ -843,32 +934,13 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
                       : null,
                 ),
                 const SizedBox(height: 16),
-                _buildTextField(
-                  controller: _stateController,
-                  label: 'State/Province',
-                  icon: Icons.map_outlined,
-                  enabled: _selectedLocation != null,
-                  helperText: 'Must be a valid province in the Philippines',
-                  validator: (value) => (value == null || value.trim().isEmpty)
-                      ? 'State/Province is required'
-                      : null,
-                ),
+                _buildProvinceDropdown(),
                 const SizedBox(height: 16),
                 Row(
                   children: [
                     Expanded(
                       flex: 2,
-                      child: _buildTextField(
-                        controller: _cityController,
-                        label: 'City',
-                        icon: Icons.location_city_outlined,
-                        enabled: _selectedLocation != null,
-                        helperText: 'Must be a valid city in the Philippines',
-                        validator: (value) =>
-                            (value == null || value.trim().isEmpty)
-                            ? 'City is required'
-                            : null,
-                      ),
+                      child: _buildCityDropdown(),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
@@ -879,7 +951,7 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
                         icon: Icons.markunread_mailbox_outlined,
                         keyboardType: TextInputType.number,
                         enabled: _selectedLocation != null,
-                        helperText: 'Valid PH postal code',
+                        helperText: 'Auto-filled from city; edit if needed',
                         validator: (value) =>
                             (value == null || value.trim().isEmpty)
                             ? 'Postal code is required'
@@ -1060,6 +1132,12 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
       onChanged: (value) {
         setState(() {
           _selectedLocation = value;
+          // Changing region invalidates the province/city/postal selections.
+          _selectedProvince = null;
+          _selectedCity = null;
+          _stateController.clear();
+          _cityController.clear();
+          _postalCodeController.clear();
         });
       },
       validator: (value) =>
@@ -1108,6 +1186,159 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
         labelStyle: AppTextStyles.bodyMedium.copyWith(
           color: AppColors.onSurface.withValues(alpha: 0.7),
         ),
+      ),
+    );
+  }
+
+  /// Shared decoration for the cascading location dropdowns (matches the
+  /// text-field / location-dropdown styling).
+  InputDecoration _dropdownDecoration({
+    required String label,
+    required String helperText,
+    required IconData icon,
+    required bool enabled,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      helperText: helperText,
+      helperMaxLines: 2,
+      errorMaxLines: 2,
+      helperStyle: AppTextStyles.bodySmall.copyWith(
+        color: AppColors.primary.withValues(alpha: 0.7),
+      ),
+      errorStyle: AppTextStyles.bodySmall.copyWith(color: AppColors.error),
+      prefixIcon: Icon(
+        icon,
+        color: enabled
+            ? AppColors.primary
+            : AppColors.onSurface.withValues(alpha: 0.3),
+      ),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: AppColors.onSurface.withValues(alpha: 0.2)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: AppColors.onSurface.withValues(alpha: 0.2)),
+      ),
+      disabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: AppColors.onSurface.withValues(alpha: 0.1)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.primary, width: 2),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.error, width: 2),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.error, width: 2),
+      ),
+      filled: true,
+      fillColor: enabled
+          ? AppColors.surface
+          : AppColors.surface.withValues(alpha: 0.5),
+      labelStyle: AppTextStyles.bodyMedium.copyWith(
+        color: AppColors.onSurface.withValues(alpha: 0.7),
+      ),
+    );
+  }
+
+  /// State/Province dropdown, populated with the provinces of the selected
+  /// Location. A saved value that isn't in the dataset (legacy free text) is
+  /// added as a one-off item so it still displays and validates.
+  Widget _buildProvinceDropdown() {
+    final enabled = _selectedLocation != null && _locationsLoaded;
+    final options = PhLocationsService.provincesFor(_selectedLocation);
+    final values = <String>[...options];
+    if (_selectedProvince != null && !values.contains(_selectedProvince)) {
+      values.insert(0, _selectedProvince!);
+    }
+    return DropdownButtonFormField<String>(
+      // Rebuild (and re-seed initialValue) when the Location changes or the
+      // dataset finishes loading, so cascade resets / edit-mode preselect show.
+      key: ValueKey('province-${_selectedLocation ?? ''}-$_locationsLoaded'),
+      initialValue: _selectedProvince,
+      isExpanded: true,
+      items: values
+          .map((p) => DropdownMenuItem<String>(
+                value: p,
+                child: Text(p, style: AppTextStyles.bodyMedium, overflow: TextOverflow.ellipsis),
+              ))
+          .toList(),
+      onChanged: enabled
+          ? (value) {
+              setState(() {
+                _selectedProvince = value;
+                _stateController.text = value ?? '';
+                // Province change invalidates the city + postal.
+                _selectedCity = null;
+                _cityController.clear();
+                _postalCodeController.clear();
+              });
+            }
+          : null,
+      validator: (value) =>
+          (value == null || value.isEmpty) ? 'State/Province is required' : null,
+      decoration: _dropdownDecoration(
+        label: 'State/Province',
+        helperText: _selectedLocation == null
+            ? 'Select a Location first'
+            : (_locationsLoaded ? 'Select your province' : 'Loading provinces…'),
+        icon: Icons.map_outlined,
+        enabled: enabled,
+      ),
+    );
+  }
+
+  /// City dropdown, populated with the cities/municipalities of the selected
+  /// province. Selecting a city auto-fills the postal code (still editable).
+  Widget _buildCityDropdown() {
+    final enabled = _selectedProvince != null && _locationsLoaded;
+    final options =
+        PhLocationsService.citiesFor(_selectedLocation, _selectedProvince);
+    final values = <String>[...options];
+    if (_selectedCity != null && !values.contains(_selectedCity)) {
+      values.insert(0, _selectedCity!);
+    }
+    return DropdownButtonFormField<String>(
+      // Rebuild when the parent Location/Province changes (or data loads) so the
+      // city resets on province change and edit-mode preselect displays.
+      key: ValueKey(
+          'city-${_selectedLocation ?? ''}-${_selectedProvince ?? ''}-$_locationsLoaded'),
+      initialValue: _selectedCity,
+      isExpanded: true,
+      items: values
+          .map((c) => DropdownMenuItem<String>(
+                value: c,
+                child: Text(c, style: AppTextStyles.bodyMedium, overflow: TextOverflow.ellipsis),
+              ))
+          .toList(),
+      onChanged: enabled
+          ? (value) {
+              setState(() {
+                _selectedCity = value;
+                _cityController.text = value ?? '';
+                // Auto-fill a representative ZIP when we have one; otherwise
+                // clear so a stale ZIP from the previous city isn't kept.
+                final zip = PhLocationsService.zipFor(
+                    _selectedLocation, _selectedProvince, value);
+                _postalCodeController.text = zip ?? '';
+              });
+            }
+          : null,
+      validator: (value) =>
+          (value == null || value.isEmpty) ? 'City is required' : null,
+      decoration: _dropdownDecoration(
+        label: 'City',
+        helperText: _selectedProvince == null
+            ? 'Select a province first'
+            : 'Select your city',
+        icon: Icons.location_city_outlined,
+        enabled: enabled,
       ),
     );
   }
