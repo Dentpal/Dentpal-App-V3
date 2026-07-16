@@ -26,7 +26,9 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
   bool isLoading = true;
   String? error;
   String? selectedTabFilter; // Changed from OrderStatus to String for grouped tabs
-  order_model.OrderStatus? selectedProcessingSubFilter; // Sub-filter for Processing tab
+  // Shipping-method sub-tab under "To Receive": null = All, else one of
+  // 'standard' | 'express' | 'pickup' | 'sameday'.
+  String? _selectedMethod;
   TabController? _tabController;
   final TextEditingController _searchController = TextEditingController();
   String searchQuery = '';
@@ -35,19 +37,18 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
   // Add stream subscription for real-time updates
   late Stream<List<order_model.Order>> _ordersStream;
 
-  // Define grouped tab filters
+  // Consolidated lifecycle tab groups (keys align with tab order after "All").
+  // "To Receive" holds in-transit orders and carries the shipping-method sub-tabs
+  // (Standard/Express/Pickup/Same Day). "Delivered" is its own tab.
   final Map<String, List<order_model.OrderStatus>> tabGroups = {
     'processing': [
       order_model.OrderStatus.pending,
       order_model.OrderStatus.confirmed,
       order_model.OrderStatus.to_ship,
     ],
-    'shipping': [
+    'to_receive': [
       order_model.OrderStatus.shipping,
     ],
-    // Pickup membership is determined by `Order.hasPickupShipping`, not by
-    // OrderStatus — the empty list signals filter code to use the predicate.
-    'pickup': const <order_model.OrderStatus>[],
     'delivered': [
       order_model.OrderStatus.delivered,
     ],
@@ -63,29 +64,29 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     ],
   };
 
-  // Tab labels for display
+  // Tab labels for display (index 0 is the "All" tab; the rest map to tabGroups).
   final List<String> tabLabels = [
     'All',
     'Processing',
-    'Shipping',
-    'Pick Up',
+    'To Receive',
     'Delivered',
     'Completed',
     'Returns & Cancellations',
   ];
 
-  /// In-funnel pickup orders show only under the "Pick Up" tab. Once they
-  /// reach a terminal state they fall back into the regular tabs.
-  static const Set<order_model.OrderStatus> _inFunnelStatuses = {
-    order_model.OrderStatus.pending,
-    order_model.OrderStatus.confirmed,
-    order_model.OrderStatus.to_ship,
-    order_model.OrderStatus.shipping,
-  };
+  /// Shipping-method sub-tabs shown under "To Receive". `null` key = All.
+  static const List<(String?, String)> _methodSubTabs = [
+    (null, 'All'),
+    ('standard', 'Standard'),
+    ('express', 'Express'),
+    ('pickup', 'Pickup'),
+    ('sameday', 'Same Day'),
+  ];
 
-  bool _isPickupOrder(order_model.Order o) => o.hasPickupShipping;
-  bool _isInFunnelPickup(order_model.Order o) =>
-      _isPickupOrder(o) && _inFunnelStatuses.contains(o.status);
+  /// Orders currently in the "To Receive" stage (used for the method sub-tabs).
+  List<order_model.Order> get _toReceiveOrders => orders
+      .where((o) => tabGroups['to_receive']!.contains(o.status))
+      .toList();
 
   @override
   void initState() {
@@ -148,29 +149,24 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     }
   }
 
+  /// Whether any seller in [order] uses the shipping-method sub-tab [methodKey].
+  bool _orderUsesMethod(order_model.Order order, String methodKey) =>
+      order.usesShippingMethod(methodKey);
+
   void _applyFilter() {
     List<order_model.Order> result = orders;
 
-    // Apply tab group filter
+    // Apply lifecycle tab group filter.
     if (selectedTabFilter != null) {
       final statusesInGroup = tabGroups[selectedTabFilter];
       if (statusesInGroup != null) {
-        if (selectedTabFilter == 'pickup') {
-          result = result.where(_isInFunnelPickup).toList();
-        } else if (selectedTabFilter == 'processing' && selectedProcessingSubFilter != null) {
-          result = result
-              .where((order) =>
-                  order.status == selectedProcessingSubFilter && !_isInFunnelPickup(order))
-              .toList();
-        } else if (selectedTabFilter == 'processing' || selectedTabFilter == 'shipping') {
-          result = result
-              .where((order) =>
-                  statusesInGroup.contains(order.status) && !_isInFunnelPickup(order))
-              .toList();
-        } else {
-          result = result
-              .where((order) => statusesInGroup.contains(order.status))
-              .toList();
+        result =
+            result.where((o) => statusesInGroup.contains(o.status)).toList();
+
+        // Under "To Receive", narrow to the selected shipping method (if any).
+        if (selectedTabFilter == 'to_receive' && _selectedMethod != null) {
+          result =
+              result.where((o) => _orderUsesMethod(o, _selectedMethod!)).toList();
         }
       }
     }
@@ -196,8 +192,15 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
   void _onFilterChanged(String? tabKey) {
     setState(() {
       selectedTabFilter = tabKey;
-      // Reset sub-filter when changing main tabs
-      selectedProcessingSubFilter = null;
+      // Reset the method sub-tab when switching top-level tabs.
+      _selectedMethod = null;
+      _applyFilter();
+    });
+  }
+
+  void _onMethodChanged(String? methodKey) {
+    setState(() {
+      _selectedMethod = methodKey;
       _applyFilter();
     });
   }
@@ -306,8 +309,13 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                 color: AppColors.surface,
                 child: TabBar(
                   controller: _tabController,
-                  isScrollable: !isWideWeb, // wide web: fixed tabs
-                  tabAlignment: isWideWeb ? TabAlignment.fill : TabAlignment.start,
+                  // Always scrollable + start-aligned so the tab row never
+                  // overflows on wide web (fixed "fill" couldn't fit the tabs).
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  // Underline hugs the label (not the padded cell) so it stays
+                  // centered under each tab instead of drifting into the padding.
+                  indicatorSize: TabBarIndicatorSize.label,
                   labelColor: AppColors.primary,
                   unselectedLabelColor: AppColors.onSurface.withValues(
                     alpha: 0.6,
@@ -318,8 +326,8 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                   ),
                   unselectedLabelStyle: AppTextStyles.bodyMedium,
                   labelPadding: const EdgeInsets.symmetric(
-                    horizontal: 5,
-                  ), // added to give more space when fixed
+                    horizontal: 14,
+                  ), // breathing room between tabs (scrolls if it overflows)
                   tabs: tabLabels.asMap().entries.map((entry) {
                     final index = entry.key;
                     final label = entry.value;
@@ -329,23 +337,13 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                       // All tab
                       count = orders.length;
                     } else {
-                      // Get the tab key from tabGroups
                       final tabKey = tabGroups.keys.elementAt(index - 1);
                       final statusesInGroup = tabGroups[tabKey]!;
-                      if (tabKey == 'pickup') {
-                        count = orders.where(_isInFunnelPickup).length;
-                      } else if (tabKey == 'processing' || tabKey == 'shipping') {
-                        count = orders
-                            .where((o) =>
-                                statusesInGroup.contains(o.status) && !_isInFunnelPickup(o))
-                            .length;
-                      } else {
-                        count = orders
-                            .where((order) => statusesInGroup.contains(order.status))
-                            .length;
-                      }
+                      count = orders
+                          .where((order) => statusesInGroup.contains(order.status))
+                          .length;
                     }
-                    
+
                     return _tabWithBadge(label, count);
                   }).toList(),
                   onTap: (index) {
@@ -358,7 +356,8 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                   },
                 ),
               ),
-              // Processing sub-tabs removed
+              // Shipping-method sub-tabs — only under "To Receive".
+              if (selectedTabFilter == 'to_receive') _buildMethodSubTabs(),
               // Orders content
               Expanded(
                 child: RefreshIndicator(
@@ -387,6 +386,53 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
             child: SizedBox(width: constraints.maxWidth, child: pageContent),
           );
         },
+      ),
+    );
+  }
+
+  /// Shipping-method sub-tab row shown under "To Receive": a scrollable set of
+  /// chips (All · Standard · Express · Pickup · Same Day) with live counts.
+  Widget _buildMethodSubTabs() {
+    final toReceive = _toReceiveOrders;
+    return Container(
+      width: double.infinity,
+      color: AppColors.surface,
+      padding: const EdgeInsets.fromLTRB(12, 16, 12, 10),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: _methodSubTabs.map((m) {
+            final key = m.$1;
+            final label = m.$2;
+            final selected = _selectedMethod == key;
+            final count = key == null
+                ? toReceive.length
+                : toReceive.where((o) => _orderUsesMethod(o, key)).length;
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                label: Text('$label ($count)'),
+                selected: selected,
+                showCheckmark: false,
+                onSelected: (_) => _onMethodChanged(key),
+                labelStyle: AppTextStyles.bodySmall.copyWith(
+                  color: selected ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.7),
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                ),
+                backgroundColor: AppColors.grey100,
+                selectedColor: AppColors.primary.withValues(alpha: 0.12),
+                side: BorderSide(
+                  color: selected
+                      ? AppColors.primary.withValues(alpha: 0.4)
+                      : AppColors.onSurface.withValues(alpha: 0.12),
+                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+            );
+          }).toList(),
+        ),
       ),
     );
   }
@@ -585,7 +631,16 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
                     ],
                   ),
                 ),
-                _buildStatusChip(order.status),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    _buildStatusChip(order.status),
+                    if (order.hasSameDayShipping) ...[
+                      const SizedBox(height: 6),
+                      _buildSameDayChip(order),
+                    ],
+                  ],
+                ),
               ],
             ),
 
@@ -1058,6 +1113,53 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
         ],
       ),
     );
+  }
+
+  /// Small "Same Day" chip with the live Lalamove rider phase, when applicable.
+  Widget _buildSameDayChip(order_model.Order order) {
+    const indigo = Color(0xFF4F46E5);
+    final label = _sameDayShortLabel(order.lalamoveStatus);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: indigo.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.motorcycle_outlined, size: 14, color: indigo),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: indigo,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Short phase label for the Same Day chip.
+  String _sameDayShortLabel(String? status) {
+    switch ((status ?? '').toUpperCase()) {
+      case 'ASSIGNING_DRIVER':
+        return 'Same Day • Finding rider';
+      case 'ON_GOING':
+        return 'Same Day • To store';
+      case 'PICKED_UP':
+        return 'Same Day • On the way';
+      case 'COMPLETED':
+        return 'Same Day • Delivered';
+      case 'CANCELED':
+      case 'REJECTED':
+      case 'EXPIRED':
+        return 'Same Day • Unavailable';
+      default:
+        return 'Same Day';
+    }
   }
 
   String _formatStatus(order_model.OrderStatus status) {

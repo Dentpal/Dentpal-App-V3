@@ -87,6 +87,33 @@ class Order {
         (b) => (b['shippingMode']?.toString().toLowerCase() ?? '') == 'sameday',
       );
 
+  /// True if any seller ships this order via JRS Standard.
+  bool get hasStandardShipping => sellerFeeBreakdowns.any(
+        (b) => (b['shippingMode']?.toString().toLowerCase() ?? '') == 'standard',
+      );
+
+  /// True if any seller ships this order via JRS Express.
+  bool get hasExpressShipping => sellerFeeBreakdowns.any(
+        (b) => (b['shippingMode']?.toString().toLowerCase() ?? '') == 'express',
+      );
+
+  /// Whether any seller uses the given shipping method key
+  /// ('standard' | 'express' | 'pickup' | 'sameday').
+  bool usesShippingMethod(String methodKey) {
+    switch (methodKey.toLowerCase()) {
+      case 'standard':
+        return hasStandardShipping;
+      case 'express':
+        return hasExpressShipping;
+      case 'pickup':
+        return hasPickupShipping;
+      case 'sameday':
+        return hasSameDayShipping;
+      default:
+        return false;
+    }
+  }
+
   /// First available Lalamove tracking share link across booked sellers, if any.
   String? get lalamoveShareLink {
     if (lalamove == null) return null;
@@ -94,6 +121,19 @@ class Order {
       if (entry is Map && entry['shareLink'] != null) {
         final link = entry['shareLink'].toString();
         if (link.isNotEmpty) return link;
+      }
+    }
+    return null;
+  }
+
+  /// Current Lalamove rider status (e.g. ASSIGNING_DRIVER, ON_GOING, PICKED_UP,
+  /// COMPLETED) from the first booked seller record, or null if not booked yet.
+  String? get lalamoveStatus {
+    if (lalamove == null) return null;
+    for (final entry in lalamove!.values) {
+      if (entry is Map && entry['status'] != null) {
+        final s = entry['status'].toString();
+        if (s.isNotEmpty) return s;
       }
     }
     return null;

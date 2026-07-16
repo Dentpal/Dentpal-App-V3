@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import '../../core/app_theme/app_colors.dart';
+import '../widgets/lalamove_tracking_map.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import '../../product/models/order_model.dart' as order_model;
 import '../../product/pages/paymongo_webview_page.dart';
@@ -177,8 +179,8 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
               const SizedBox(height: 16),
             ],
 
-            // Same Day Delivery (Lalamove) tracking — when a rider is booked.
-            if (widget.order.lalamoveShareLink != null) ...[
+            // Same Day Delivery (Lalamove) tracking — status timeline + live map.
+            if (widget.order.hasSameDayShipping) ...[
               _buildLalamoveTrackingSection(),
               const SizedBox(height: 16),
             ],
@@ -279,84 +281,251 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     );
   }
 
-  /// Same Day Delivery (Lalamove) tracking card. Shows the rider status/driver
-  /// and a button that opens Lalamove's live tracking share link.
+  /// Same Day Delivery (Lalamove) tracking card. Streams the order doc so the
+  /// rider status/driver refresh live (the webhook writes them), shows a phase
+  /// timeline, the driver, and an embedded live map (Lalamove's share link).
   Widget _buildLalamoveTrackingSection() {
-    final shareLink = widget.order.lalamoveShareLink;
-
-    // Pull status + driver from the first booked seller record.
-    String? status;
-    Map? driver;
-    final lalamove = widget.order.lalamove;
-    if (lalamove != null) {
-      for (final entry in lalamove.values) {
-        if (entry is Map && entry['shareLink'] != null) {
-          status = entry['status']?.toString();
-          driver = entry['driver'] is Map ? entry['driver'] as Map : null;
-          break;
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('Order')
+          .doc(widget.order.orderId)
+          .snapshots(),
+      builder: (context, snapshot) {
+        // Prefer live doc data; fall back to the order passed into the page.
+        Map<String, dynamic>? lalamove = widget.order.lalamove;
+        final data = snapshot.data?.data();
+        if (data != null && data['lalamove'] is Map) {
+          lalamove = Map<String, dynamic>.from(data['lalamove'] as Map);
         }
-      }
+
+        // First booked seller record (has a shareLink or a status).
+        String? status;
+        String? shareLink;
+        Map? driver;
+        if (lalamove != null) {
+          for (final entry in lalamove.values) {
+            if (entry is Map && (entry['shareLink'] != null || entry['status'] != null)) {
+              status = entry['status']?.toString();
+              shareLink = entry['shareLink']?.toString();
+              driver = entry['driver'] is Map ? entry['driver'] as Map : null;
+              break;
+            }
+          }
+        }
+        if (shareLink != null && shareLink.isEmpty) shareLink = null;
+
+        return Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.1)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.motorcycle_outlined, color: AppColors.primary, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Same Day Delivery',
+                    style: AppTextStyles.titleMedium.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 16),
+              _buildLalamoveTimeline(status),
+
+              if (driver != null && driver['name'] != null) ...[
+                const SizedBox(height: 16),
+                _buildDriverCard(driver),
+              ],
+
+              // Live map (Lalamove's own tracking page: moving driver + route + ETA).
+              if (shareLink != null) ...[
+                const SizedBox(height: 16),
+                LalamoveTrackingMap(shareLink: shareLink),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      final uri = Uri.tryParse(shareLink!);
+                      if (uri != null) {
+                        await launchUrl(uri, mode: LaunchMode.externalApplication);
+                      }
+                    },
+                    icon: const Icon(Icons.open_in_new, size: 16),
+                    label: Text('Open live map', style: AppTextStyles.buttonMedium),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                      side: BorderSide(color: AppColors.primary.withValues(alpha: 0.4)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              ] else ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Waiting for a rider to be assigned. Live tracking appears here once your rider is on the way.',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.onSurface.withValues(alpha: 0.6),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Ordered phases a Same Day delivery moves through, mapped from Lalamove
+  /// status. Returns the index of the current phase (0-based), or -1 if the
+  /// order is in a terminal failure state (canceled/rejected/expired).
+  static const List<String> _lalamovePhases = [
+    'Finding a rider',
+    'Rider heading to store',
+    'Picked up — on the way to you',
+    'Delivered',
+  ];
+
+  int _lalamovePhaseIndex(String? status) {
+    switch ((status ?? '').toUpperCase()) {
+      case 'ASSIGNING_DRIVER':
+        return 0;
+      case 'ON_GOING':
+        return 1;
+      case 'PICKED_UP':
+        return 2;
+      case 'COMPLETED':
+        return 3;
+      case 'CANCELED':
+      case 'REJECTED':
+      case 'EXPIRED':
+        return -1;
+      default:
+        return 0;
+    }
+  }
+
+  Widget _buildLalamoveTimeline(String? status) {
+    final current = _lalamovePhaseIndex(status);
+
+    if (current == -1) {
+      return Row(
+        children: [
+          Icon(Icons.cancel_outlined, color: AppColors.error, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _prettyLalamoveStatus(status ?? ''),
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.error,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      );
     }
 
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.1)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return Column(
+      children: List.generate(_lalamovePhases.length, (i) {
+        final done = i < current;
+        final active = i == current;
+        final reached = i <= current;
+        final color = reached ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.3);
+        final isLast = i == _lalamovePhases.length - 1;
+        return IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.motorcycle_outlined, color: AppColors.primary, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                'Same Day Delivery',
-                style: AppTextStyles.titleMedium.copyWith(fontWeight: FontWeight.w700),
+              Column(
+                children: [
+                  Icon(
+                    done
+                        ? Icons.check_circle
+                        : (active ? Icons.radio_button_checked : Icons.radio_button_unchecked),
+                    color: color,
+                    size: 20,
+                  ),
+                  if (!isLast)
+                    Expanded(
+                      child: Container(
+                        width: 2,
+                        color: i < current ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.15),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 12),
+              Padding(
+                padding: EdgeInsets.only(bottom: isLast ? 0 : 14, top: 1),
+                child: Text(
+                  _lalamovePhases[i],
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: reached ? AppColors.onSurface : AppColors.onSurface.withValues(alpha: 0.5),
+                    fontWeight: active ? FontWeight.w700 : FontWeight.normal,
+                  ),
+                ),
               ),
             ],
           ),
-          if (status != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              'Status: ${_prettyLalamoveStatus(status)}',
-              style: AppTextStyles.bodyMedium,
+        );
+      }),
+    );
+  }
+
+  Widget _buildDriverCard(Map driver) {
+    final name = driver['name']?.toString() ?? 'Rider';
+    final plate = driver['plateNumber']?.toString();
+    final phone = driver['phone']?.toString();
+    final photo = driver['photo']?.toString();
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+            backgroundImage: (photo != null && photo.isNotEmpty) ? NetworkImage(photo) : null,
+            child: (photo == null || photo.isEmpty)
+                ? Icon(Icons.person, color: AppColors.primary)
+                : null,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(name,
+                    style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w600)),
+                if (plate != null && plate.isNotEmpty)
+                  Text(plate,
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.onSurface.withValues(alpha: 0.6),
+                      )),
+              ],
             ),
-          ],
-          if (driver != null && (driver['name'] != null)) ...[
-            const SizedBox(height: 6),
-            Text(
-              'Rider: ${driver['name']}'
-              '${driver['plateNumber'] != null ? ' • ${driver['plateNumber']}' : ''}',
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.onSurface.withValues(alpha: 0.7),
-              ),
+          ),
+          if (phone != null && phone.isNotEmpty)
+            IconButton(
+              onPressed: () async {
+                final uri = Uri(scheme: 'tel', path: phone);
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri);
+                }
+              },
+              icon: Icon(Icons.phone, color: AppColors.primary),
+              tooltip: 'Call rider',
             ),
-          ],
-          if (shareLink != null) ...[
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  final uri = Uri.tryParse(shareLink);
-                  if (uri != null) {
-                    await launchUrl(uri, mode: LaunchMode.externalApplication);
-                  }
-                },
-                icon: const Icon(Icons.location_on_outlined, size: 18),
-                label: Text('Track rider', style: AppTextStyles.buttonMedium),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: AppColors.onPrimary,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -367,17 +536,17 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
       case 'ASSIGNING_DRIVER':
         return 'Finding a rider';
       case 'ON_GOING':
-        return 'Rider on the way';
+        return 'Rider heading to store';
       case 'PICKED_UP':
-        return 'Picked up';
+        return 'On the way to you';
       case 'COMPLETED':
         return 'Delivered';
       case 'CANCELED':
-        return 'Canceled';
+        return 'Delivery canceled';
       case 'REJECTED':
-        return 'Rejected';
+        return 'Rider unavailable';
       case 'EXPIRED':
-        return 'Expired';
+        return 'Booking expired';
       default:
         return raw;
     }
