@@ -74,7 +74,9 @@ class _ProductListingPageState extends State<ProductListingPage>
   bool _isLoadingMore = false;
   List<String> _selectedCategories = [];
   List<String> _categories = ['All'];
-  bool _showAllCategories = false;
+  // Number of category rows currently revealed in the default view.
+  // Starts at one row; each "Show more" tap reveals one additional row.
+  int _visibleCategoryRows = 1;
   bool _categoryGridForceExpanded = false;
   String? _errorMessage;
   List<Product> _products = [];
@@ -926,7 +928,7 @@ class _ProductListingPageState extends State<ProductListingPage>
         _selectedSubCategories = [];
         _subcategoriesByCategory.clear();
         _categoryGridForceExpanded = false;
-        _showAllCategories = false;
+        _visibleCategoryRows = 1;
         // Reset pagination parameters
         _products = [];
         _lastDocument = null;
@@ -3360,11 +3362,13 @@ class _ProductListingPageState extends State<ProductListingPage>
   // Build Categories Section (responsive grid)
   Widget _buildCategoriesSection() {
     final crossAxisCount = _categoryCrossAxisCount(context);
-    const maxCollapsedRows = 2;
-    final collapsedLimit = crossAxisCount * maxCollapsedRows;
 
     final hasSelection = _selectedCategories.isNotEmpty;
     final isCollapsedToSelection = hasSelection && !_categoryGridForceExpanded;
+
+    // Default view reveals categories one row at a time.
+    final defaultVisibleCount =
+        (_visibleCategoryRows * crossAxisCount).clamp(0, _categories.length);
 
     List<int> visibleIndices;
     if (isCollapsedToSelection) {
@@ -3378,13 +3382,13 @@ class _ProductListingPageState extends State<ProductListingPage>
         for (var i = 0; i < _categories.length; i++)
           if (selectedRows.contains(i ~/ crossAxisCount)) i,
       ];
-    } else if (_showAllCategories || _categories.length <= collapsedLimit) {
-      visibleIndices = List.generate(_categories.length, (i) => i);
     } else {
-      visibleIndices = List.generate(collapsedLimit, (i) => i);
+      visibleIndices = List.generate(defaultVisibleCount, (i) => i);
     }
 
-    final hasMoreInDefault = _categories.length > collapsedLimit;
+    // Whether more rows remain hidden / can be collapsed in the default view.
+    final hasMoreRows = defaultVisibleCount < _categories.length;
+    final canShowLess = _visibleCategoryRows > 1;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -3425,7 +3429,8 @@ class _ProductListingPageState extends State<ProductListingPage>
               crossAxisCount: crossAxisCount,
               crossAxisSpacing: 8,
               mainAxisSpacing: 8,
-              childAspectRatio: 0.85,
+              // Portrait 3:4 (width:height) category artwork.
+              childAspectRatio: 1086 / 1448,
             ),
             itemBuilder: (context, index) {
               final categoryIndex = visibleIndices[index];
@@ -3493,24 +3498,46 @@ class _ProductListingPageState extends State<ProductListingPage>
                 ),
               ),
             ),
-          ] else if (hasMoreInDefault) ...[
+          ] else if (hasMoreRows) ...[
             const SizedBox(height: 8),
             Center(
               child: TextButton.icon(
                 onPressed: () {
-                  setState(() => _showAllCategories = !_showAllCategories);
+                  setState(() => _visibleCategoryRows++);
                 },
-                icon: Icon(
-                  _showAllCategories
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.keyboard_arrow_down_rounded,
+                icon: const Icon(
+                  Icons.keyboard_arrow_down_rounded,
                   size: 18,
                   color: AppColors.primary,
                 ),
                 label: Text(
-                  _showAllCategories
-                      ? 'Show less'
-                      : 'Show all (${_categories.length})',
+                  'Show more',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  minimumSize: const Size(0, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ),
+          ] else if (canShowLess) ...[
+            const SizedBox(height: 8),
+            Center(
+              child: TextButton.icon(
+                onPressed: () {
+                  setState(() => _visibleCategoryRows = 1);
+                },
+                icon: const Icon(
+                  Icons.keyboard_arrow_up_rounded,
+                  size: 18,
+                  color: AppColors.primary,
+                ),
+                label: Text(
+                  'Show less',
                   style: AppTextStyles.bodySmall.copyWith(
                     color: AppColors.primary,
                     fontWeight: FontWeight.w600,
@@ -3538,17 +3565,15 @@ class _ProductListingPageState extends State<ProductListingPage>
       onTap: () => _onCategorySelected(category),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
-          color: isSelected
-              ? AppColors.primary.withValues(alpha: 0.06)
-              : AppColors.surface,
+          color: AppColors.surface,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: isSelected
                 ? AppColors.primary
                 : AppColors.onSurface.withValues(alpha: 0.08),
-            width: isSelected ? 1.5 : 1,
+            width: isSelected ? 2 : 1,
           ),
           boxShadow: isSelected
               ? null
@@ -3560,63 +3585,46 @@ class _ProductListingPageState extends State<ProductListingPage>
                   ),
                 ],
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
+        // Full-bleed category artwork (name is baked into the image graphic).
+        child: imageUrl != null && imageUrl.isNotEmpty
+            ? CachedNetworkImage(
+                imageUrl: imageUrl,
+                fit: BoxFit.cover,
+                placeholder: (context, url) => Container(
+                  color: AppColors.primary.withValues(alpha: 0.08),
+                  child: Center(
+                    child: Icon(
+                      Icons.category,
+                      color: AppColors.primary.withValues(alpha: 0.5),
+                      size: 24,
+                    ),
+                  ),
+                ),
+                errorWidget: (context, url, error) => Container(
+                  color: AppColors.primary.withValues(alpha: 0.08),
+                  child: Center(
+                    child: Icon(
+                      Icons.category,
+                      color: AppColors.primary.withValues(alpha: 0.5),
+                      size: 24,
+                    ),
+                  ),
+                ),
+              )
+            : Container(
                 color: AppColors.primary.withValues(
                   alpha: isSelected ? 0.14 : 0.08,
                 ),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: imageUrl != null && imageUrl.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: imageUrl,
-                      fit: BoxFit.cover,
-                      placeholder: (context, url) => Center(
-                        child: Icon(
-                          Icons.category,
-                          color: AppColors.primary.withValues(alpha: 0.5),
-                          size: 16,
-                        ),
-                      ),
-                      errorWidget: (context, url, error) => Center(
-                        child: Icon(
-                          Icons.category,
-                          color: AppColors.primary.withValues(alpha: 0.5),
-                          size: 16,
-                        ),
-                      ),
-                    )
-                  : Center(
-                      child: Icon(
-                        category == 'All' ? Icons.grid_view_rounded : Icons.category,
-                        color: AppColors.primary,
-                        size: 18,
-                      ),
-                    ),
-            ),
-            const SizedBox(height: 6),
-            Flexible(
-              child: Text(
-                category,
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: isSelected ? AppColors.primary : AppColors.onSurface,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  fontSize: 9.5,
-                  height: 1.15,
+                child: Center(
+                  child: Icon(
+                    category == 'All'
+                        ? Icons.grid_view_rounded
+                        : Icons.category,
+                    color: AppColors.primary,
+                    size: 28,
+                  ),
                 ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
               ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -4155,7 +4163,7 @@ class _ProductListingPageState extends State<ProductListingPage>
           ],
         ),
         child: const AspectRatio(
-          aspectRatio: 16 / 7,
+          aspectRatio: 8 / 3,
           child: Center(child: CircularProgressIndicator()),
         ),
       );
@@ -4235,8 +4243,9 @@ class _ProductListingPageState extends State<ProductListingPage>
                 topLeft: Radius.circular(16),
                 topRight: Radius.circular(16),
               ),
+              // 8:3 ratio to match a 1920x720 source image.
               child: AspectRatio(
-                aspectRatio: 16 / 7,
+                aspectRatio: 8 / 3,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [

@@ -1968,7 +1968,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
               disabled: _isCalculatingShipping || _isCalculatingSameDay || !sameDayAvailable,
               onTap: () => _onSellerSameDayToggled(sellerId, true),
               icon: Icons.motorcycle_outlined,
-              label: 'Same Day Delivery',
+              label: 'Same Day',
               sublabel: _isCalculatingSameDay && !sameDayAvailable ? '(checking…)' : null,
               trailing: _isCalculatingSameDay && !sameDayAvailable
                   ? const SizedBox(

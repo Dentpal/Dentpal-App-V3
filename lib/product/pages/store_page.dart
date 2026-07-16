@@ -877,6 +877,7 @@ class _StorePageState extends State<StorePage> {
           clipBehavior: Clip.none,
           children: [
             // Banner — full-bleed, edge-to-edge, square corners.
+            // 8:3 ratio to match a 1920x720 source image.
             AspectRatio(
               aspectRatio: 8 / 3,
               child: Stack(
