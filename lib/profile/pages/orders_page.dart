@@ -1142,9 +1142,12 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
     );
   }
 
-  /// Short phase label for the Same Day chip.
+  /// Short phase label for the Same Day chip. A null status means the seller has
+  /// not booked the rider yet — the parcel is still being prepared.
   String _sameDayShortLabel(String? status) {
-    switch ((status ?? '').toUpperCase()) {
+    final raw = (status ?? '').toUpperCase();
+    if (raw.isEmpty) return 'Same Day • Preparing';
+    switch (raw) {
       case 'ASSIGNING_DRIVER':
         return 'Same Day • Finding rider';
       case 'ON_GOING':

@@ -369,7 +369,9 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
               ] else ...[
                 const SizedBox(height: 12),
                 Text(
-                  'Waiting for a rider to be assigned. Live tracking appears here once your rider is on the way.',
+                  (status == null || status.isEmpty)
+                      ? 'The seller is preparing your parcel. A rider is booked once it is ready, and live tracking appears here.'
+                      : 'Waiting for a rider to be assigned. Live tracking appears here once your rider is on the way.',
                   style: AppTextStyles.bodySmall.copyWith(
                     color: AppColors.onSurface.withValues(alpha: 0.6),
                   ),
@@ -385,7 +387,12 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
   /// Ordered phases a Same Day delivery moves through, mapped from Lalamove
   /// status. Returns the index of the current phase (0-based), or -1 if the
   /// order is in a terminal failure state (canceled/rejected/expired).
+  ///
+  /// The rider is only booked when the seller marks the order ready-to-ship, so
+  /// a null status means no Lalamove order exists yet — the parcel is still with
+  /// the seller.
   static const List<String> _lalamovePhases = [
+    'Seller preparing your parcel',
     'Finding a rider',
     'Rider heading to store',
     'Picked up — on the way to you',
@@ -393,21 +400,24 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
   ];
 
   int _lalamovePhaseIndex(String? status) {
-    switch ((status ?? '').toUpperCase()) {
+    final raw = (status ?? '').toUpperCase();
+    if (raw.isEmpty) return 0;
+    switch (raw) {
       case 'ASSIGNING_DRIVER':
-        return 0;
-      case 'ON_GOING':
         return 1;
-      case 'PICKED_UP':
+      case 'ON_GOING':
         return 2;
-      case 'COMPLETED':
+      case 'PICKED_UP':
         return 3;
+      case 'COMPLETED':
+        return 4;
       case 'CANCELED':
       case 'REJECTED':
       case 'EXPIRED':
         return -1;
+      // Booked, but a status we don't map yet — the rider hunt has begun.
       default:
-        return 0;
+        return 1;
     }
   }
 

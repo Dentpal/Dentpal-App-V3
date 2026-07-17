@@ -109,7 +109,11 @@ export const lalamoveWebhook = onRequest(
         if (mappedOrderStatus === 'delivered') update.fulfillmentStage = 'delivered';
       }
 
-      await orderRef.set(update, { merge: true });
+      // Must be update(), not set({merge:true}): only update() interprets the
+      // dotted keys above as nested field paths. set() would treat them as
+      // literal top-level field names ("lalamove.<uid>.status") and the real
+      // nested record would never change.
+      await orderRef.update(update);
       logger.info('Lalamove webhook processed', {
         eventType,
         dentpalOrderId,

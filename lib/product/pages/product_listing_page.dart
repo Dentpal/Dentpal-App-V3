@@ -3586,7 +3586,12 @@ class _ProductListingPageState extends State<ProductListingPage>
                 ],
         ),
         // Full-bleed category artwork (name is baked into the image graphic).
-        child: imageUrl != null && imageUrl.isNotEmpty
+        child: category == 'All'
+            ? Image.asset(
+                'lib/assets/icons/all.png',
+                fit: BoxFit.cover,
+              )
+            : imageUrl != null && imageUrl.isNotEmpty
             ? CachedNetworkImage(
                 imageUrl: imageUrl,
                 fit: BoxFit.cover,
@@ -3617,9 +3622,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                 ),
                 child: Center(
                   child: Icon(
-                    category == 'All'
-                        ? Icons.grid_view_rounded
-                        : Icons.category,
+                    Icons.category,
                     color: AppColors.primary,
                     size: 28,
                   ),
