@@ -210,6 +210,17 @@ export const createCodOrder = onRequest(
             ? request.body.seller_same_day_selected
             : {};
 
+        // Same Day Delivery (Lalamove) is online-payment only. This endpoint only
+        // creates Cash on Delivery orders, so any same-day seller here is invalid
+        // — reject rather than create a COD order the rider flow can't fulfill.
+        if (Object.values(sellerSameDaySelected).some((selected) => selected === true)) {
+          response.status(400).json({
+            success: false,
+            error: 'Cash on Delivery is not available for Same Day Delivery orders. Please choose an online payment method (card or GCash).',
+          });
+          return;
+        }
+
         // Both modes' costs from the frontend, needed for partial-coverage math.
         const expressSellerShippingCosts: Record<string, number> =
           (request.body.express_seller_shipping_costs && typeof request.body.express_seller_shipping_costs === 'object')

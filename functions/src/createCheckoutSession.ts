@@ -13,6 +13,7 @@ import {
   validateAndApplyShippingVoucher,
   incrementVoucherUsage,
 } from './utils/voucherHelper';
+import { isWithinSameDayWindow } from './utils/sameDayWindow';
 import cors = require('cors');
 
 
@@ -649,6 +650,25 @@ export const createCheckoutSession = onRequest(
           evaluationCost: number | null;
         }
         
+        // Guard: Same Day (Lalamove) orders must be placed within each seller's
+        // configured ordering window (days + hours, PH time). Fail fast before
+        // the shipping calc so a client can't submit a same-day order off-hours.
+        const sameDaySellerIds = Object.keys(sellerSameDaySelected).filter(
+          (id) => sellerSameDaySelected[id] === true,
+        );
+        for (const sellerId of sameDaySellerIds) {
+          const scheduleSnap = await db.collection('Seller').doc(sellerId).get();
+          const schedule = scheduleSnap.data()?.checkoutOptions?.sameDaySchedule;
+          if (!isWithinSameDayWindow(schedule)) {
+            response.status(400).json({
+              success: false,
+              error:
+                'Same Day Delivery is outside its ordering hours for one of your sellers. Please choose another delivery option.',
+            });
+            return;
+          }
+        }
+
         const sellerShippingPromises: Promise<SellerShippingData>[] = Object.entries(itemsBySeller).map(async ([sellerId, sellerItems]) => {
           // Get seller address and name from User collection
           const sellerDoc = await db.collection('User').doc(sellerId).get();

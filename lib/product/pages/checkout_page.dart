@@ -63,6 +63,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
   // Per-seller pickup mode: when true the buyer picks up in store (no shipping cost).
   final Map<String, bool> _sellerPickupSelected = {};
 
+  // Per-seller: whether the buyer has explicitly chosen a delivery method. There
+  // is deliberately NO default — a seller stays unchosen (no radio selected, no
+  // shipping cost added, Place Order blocked) until the buyer picks a mode, so
+  // they can't accidentally place an order with no delivery method selected.
+  final Map<String, bool> _sellerDeliveryModeChosen = {};
+
   // Per-seller Same Day Delivery (Lalamove) mode. When true, the buyer pays the
   // full Lalamove quote and no vouchers apply. Only available within Metro Manila.
   final Map<String, bool> _sellerSameDaySelected = {};
@@ -112,7 +118,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
     _shippingVouchers = Map.of(widget.selectedShippingVouchers);
     _initializeSellerShippingModes();
     _computeVoucherDiscounts();
-    _loadPaymentMethods();
+    // No payment method is pre-selected on purpose — the buyer must choose one,
+    // so they can't accidentally place an order with no payment method set.
   }
 
   /// Set each seller's initial mode based on its (optional) shipping voucher
@@ -132,11 +139,16 @@ class _CheckoutPageState extends State<CheckoutPage> {
       } else if (voucherModes.length == 1 && voucherModes.contains('standard')) {
         _sellerExpressShipping[sellerId] = false;
       } else {
-        // Respect seller's allowed delivery modes: default to standard if
-        // allowed, otherwise express.
+        // Baseline for cost math only (not a visible selection): standard if
+        // allowed, otherwise express. The buyer must still pick a mode.
         final allowsStd = _sellerAllowsDelivery(sellerId, 'standard');
         _sellerExpressShipping[sellerId] = !allowsStd;
       }
+      // No delivery mode is pre-selected. Exception: an express-only shipping
+      // voucher locks the seller to express (nothing left to choose), so treat
+      // that as already chosen.
+      _sellerDeliveryModeChosen[sellerId] =
+          voucherModes.length == 1 && voucherModes.contains('express');
     }
   }
 
@@ -210,6 +222,31 @@ class _CheckoutPageState extends State<CheckoutPage> {
   bool _isSameDaySelectedFor(String sellerId) =>
       _sellerSameDaySelected[sellerId] ?? false;
 
+  /// True when any seller in the cart currently has Same Day Delivery selected.
+  /// Same Day (Lalamove) is online-payment only, so COD is disabled whenever
+  /// this is true.
+  bool _anySameDaySelected() =>
+      _sellerSameDaySelected.values.any((selected) => selected);
+
+  /// First allowed online payment method (card / GCash), or null if the sellers
+  /// only allow COD. Mirrors the exclusions applied in the payment selector.
+  PaymentMethod? _firstOnlinePaymentMethod() {
+    for (final m in PaymentMethod.values) {
+      if (m == PaymentMethod.cashOnDelivery ||
+          m == PaymentMethod.grabpay ||
+          m == PaymentMethod.billEase ||
+          m == PaymentMethod.paymaya) {
+        continue;
+      }
+      if (_isPaymentMethodAllowed(m)) return m;
+    }
+    return null;
+  }
+
+  /// Whether an online payment method is available for the cart. Same Day
+  /// Delivery is only offered when this is true (COD-only carts can't use it).
+  bool get _hasOnlinePaymentAvailable => _firstOnlinePaymentMethod() != null;
+
   /// All distinct seller ids represented in the cart.
   Set<String> _cartSellerIds() => widget.cartItems
       .map((item) => item.sellerId ?? 'unknown')
@@ -232,16 +269,118 @@ class _CheckoutPageState extends State<CheckoutPage> {
   /// True when at least one cart seller has no usable shipping option.
   bool get _anyShippingBlocked => _cartSellerIds().any(_sellerShippingBlocked);
 
-  /// Same-day is offered only when the seller enabled it AND a live Lalamove
-  /// quote succeeded (which also enforces Metro Manila coverage on the backend).
+  /// Whether a seller presents at least one selectable delivery option (mirrors
+  /// what the shipping-method UI actually renders). Used to require an explicit
+  /// delivery pick before checkout can proceed.
+  bool _sellerHasShippingChoice(String sellerId) {
+    final hasStandard = _sellerAllowsDelivery(sellerId, 'standard') &&
+        _standardSellerTotalShippingCosts.containsKey(sellerId);
+    final hasExpress = _sellerAllowsDelivery(sellerId, 'express') &&
+        _expressSellerTotalShippingCosts.containsKey(sellerId);
+    final hasPickup = _sellerAllowsDelivery(sellerId, 'pickup');
+    final hasSameDay = _sellerAllowsDelivery(sellerId, 'sameDay') &&
+        _hasOnlinePaymentAvailable &&
+        _isSameDayAvailableFor(sellerId);
+    return hasStandard || hasExpress || hasPickup || hasSameDay;
+  }
+
+  /// True while any seller that has delivery options still has no mode picked.
+  bool get _anyShippingModeUnchosen => _cartSellerIds().any((sellerId) =>
+      _sellerHasShippingChoice(sellerId) &&
+      !(_sellerDeliveryModeChosen[sellerId] ?? false));
+
+  /// Same-day is offered only when the seller enabled it, a live Lalamove quote
+  /// succeeded (which also enforces Metro Manila coverage on the backend), AND
+  /// the current time is within the seller's Same Day ordering window.
   bool _isSameDayAvailableFor(String sellerId) =>
       _sellerAllowsDelivery(sellerId, 'sameDay') &&
-      _sameDaySellerCosts.containsKey(sellerId);
+      _sameDaySellerCosts.containsKey(sellerId) &&
+      _isSameDayWithinWindow(sellerId);
+
+  /// The seller's Same Day ordering schedule from checkoutOptions, with defaults
+  /// (Mon–Fri, 10:00 AM–3:00 PM) applied for any missing pieces.
+  Map<String, dynamic> _sellerSameDaySchedule(String sellerId) {
+    const defaultDays = {
+      'mon': true, 'tue': true, 'wed': true, 'thu': true, 'fri': true,
+      'sat': false, 'sun': false,
+    };
+    final raw = _getSellerCheckoutOptions(sellerId)?['sameDaySchedule'];
+    if (raw is! Map) {
+      return {
+        'days': Map<String, dynamic>.from(defaultDays),
+        'startTime': '10:00',
+        'endTime': '15:00',
+      };
+    }
+    final rawDays = raw['days'] is Map ? Map<String, dynamic>.from(raw['days'] as Map) : const {};
+    final days = <String, dynamic>{};
+    defaultDays.forEach((k, v) {
+      days[k] = rawDays.containsKey(k) ? rawDays[k] == true : v;
+    });
+    final start = (raw['startTime'] is String && (raw['startTime'] as String).isNotEmpty)
+        ? raw['startTime'] as String
+        : '10:00';
+    final end = (raw['endTime'] is String && (raw['endTime'] as String).isNotEmpty)
+        ? raw['endTime'] as String
+        : '15:00';
+    return {'days': days, 'startTime': start, 'endTime': end};
+  }
+
+  int _hmToMinutes(String hm) {
+    final parts = hm.split(':');
+    if (parts.length != 2) return 0;
+    return (int.tryParse(parts[0]) ?? 0) * 60 + (int.tryParse(parts[1]) ?? 0);
+  }
+
+  /// Whether Same Day ordering is currently open for [sellerId], evaluated in
+  /// Philippine time (UTC+8) so it's independent of the device timezone.
+  bool _isSameDayWithinWindow(String sellerId) {
+    final schedule = _sellerSameDaySchedule(sellerId);
+    final phNow = DateTime.now().toUtc().add(const Duration(hours: 8));
+    const keys = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+    final todayKey = keys[phNow.weekday - 1]; // DateTime.weekday: Mon=1..Sun=7
+    if ((schedule['days'] as Map)[todayKey] != true) return false;
+    final nowMin = phNow.hour * 60 + phNow.minute;
+    return nowMin >= _hmToMinutes(schedule['startTime'] as String) &&
+        nowMin <= _hmToMinutes(schedule['endTime'] as String);
+  }
+
+  String _formatTime12h(String hm) {
+    final parts = hm.split(':');
+    if (parts.length != 2) return hm;
+    var h = int.tryParse(parts[0]) ?? 0;
+    final period = h >= 12 ? 'PM' : 'AM';
+    h = h % 12;
+    if (h == 0) h = 12;
+    return '$h:${parts[1]} $period';
+  }
+
+  /// Ordering-window message shown in the disabled Same Day row's info tooltip.
+  String _sameDayWindowLabel(String sellerId) {
+    final schedule = _sellerSameDaySchedule(sellerId);
+    final days = schedule['days'] as Map;
+    const order = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+    const labels = {
+      'mon': 'Mon', 'tue': 'Tue', 'wed': 'Wed', 'thu': 'Thu', 'fri': 'Fri',
+      'sat': 'Sat', 'sun': 'Sun',
+    };
+    final active = order.where((k) => days[k] == true).map((k) => labels[k]).toList();
+    final daysLabel = active.isEmpty
+        ? 'Unavailable'
+        : active.length == 7
+            ? 'Daily'
+            : active.join(', ');
+    return 'Same Day ordering hours\n$daysLabel · '
+        '${_formatTime12h(schedule['startTime'] as String)}–${_formatTime12h(schedule['endTime'] as String)}';
+  }
 
   void _onSellerPickupToggled(String sellerId, bool pickupSelected) {
     setState(() {
       _sellerPickupSelected[sellerId] = pickupSelected;
-      if (pickupSelected) _sellerSameDaySelected[sellerId] = false;
+      if (pickupSelected) {
+        _sellerSameDaySelected[sellerId] = false;
+        _sellerDeliveryModeChosen[sellerId] = true; // explicit buyer choice
+      }
       // Reset express/standard map when switching to/from pickup so costs
       // are correctly reflected in the summary.
       _refreshActiveMapsForSeller(sellerId);
@@ -253,7 +392,16 @@ class _CheckoutPageState extends State<CheckoutPage> {
   void _onSellerSameDayToggled(String sellerId, bool sameDay) {
     setState(() {
       _sellerSameDaySelected[sellerId] = sameDay;
-      if (sameDay) _sellerPickupSelected[sellerId] = false;
+      if (sameDay) {
+        _sellerPickupSelected[sellerId] = false;
+        _sellerDeliveryModeChosen[sellerId] = true; // explicit buyer choice
+        // Same Day Delivery requires online payment — COD isn't supported. If
+        // COD was selected, clear the payment selection so the buyer must
+        // consciously pick an online method (no silent default).
+        if (_selectedPaymentMethod == PaymentMethod.cashOnDelivery) {
+          _selectedPaymentMethod = null;
+        }
+      }
       _refreshActiveMapsForSeller(sellerId);
     });
   }
@@ -262,22 +410,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
   void dispose() {
     _notesController.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadPaymentMethods() async {
-    try {
-      final paymentMethods = await _checkoutService.getAvailablePaymentMethods();
-      // Auto-select the first method that all sellers allow.
-      final firstAllowed = paymentMethods.firstWhere(
-        (m) => _isPaymentMethodAllowed(m),
-        orElse: () => paymentMethods.isNotEmpty ? paymentMethods.first : PaymentMethod.cashOnDelivery,
-      );
-      setState(() {
-        _selectedPaymentMethod = firstAllowed;
-      });
-    } catch (e) {
-      AppLogger.d('Error loading payment methods: $e');
-    }
   }
 
   /// Compute per-seller discount amounts from selected vouchers (for display).
@@ -352,6 +484,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
   /// - Chosen express, voucher covers standard only → buyer pays (expressTotal - standardTotal).
   /// - Otherwise → buyer pays the chosen-mode buyer portion.
   double _buyerShippingForSeller(String sellerId) {
+    // No mode chosen yet → no shipping fee shown (Place Order is blocked too).
+    if (!(_sellerDeliveryModeChosen[sellerId] ?? false)) return 0.0;
     if (_isPickupSelectedFor(sellerId)) return 0.0;
     // Same Day Delivery: buyer always pays the full Lalamove quote. No vouchers.
     if (_isSameDaySelectedFor(sellerId)) {
@@ -385,6 +519,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   /// Total cost for a seller in the chosen shipping mode (display, before voucher split).
   double _totalShippingForSeller(String sellerId) {
+    // No mode chosen yet → no shipping fee shown (Place Order is blocked too).
+    if (!(_sellerDeliveryModeChosen[sellerId] ?? false)) return 0.0;
     if (_isPickupSelectedFor(sellerId)) return 0.0;
     if (_isSameDaySelectedFor(sellerId)) {
       return _sameDaySellerCosts[sellerId] ?? 0.0;
@@ -522,6 +658,16 @@ class _CheckoutPageState extends State<CheckoutPage> {
       return false;
     }
 
+    // Same Day Delivery (Lalamove) is online-payment only.
+    if (_anySameDaySelected() &&
+        _selectedPaymentMethod == PaymentMethod.cashOnDelivery) {
+      _showErrorDialog(
+        'Cash on Delivery isn\'t available for Same Day Delivery. Please choose '
+        'an online payment method (card or GCash).',
+      );
+      return false;
+    }
+
     if (_isCalculatingShipping) {
       _showErrorDialog('Please wait for the shipping cost to finish calculating.');
       return false;
@@ -530,6 +676,25 @@ class _CheckoutPageState extends State<CheckoutPage> {
     if (_isCalculatingSameDay) {
       _showErrorDialog('Please wait for delivery options to finish loading.');
       return false;
+    }
+
+    if (_anyShippingModeUnchosen) {
+      _showErrorDialog(
+        'Please select a delivery method for every item before placing your order.',
+      );
+      return false;
+    }
+
+    // A Same Day selection must still be inside the seller's ordering window
+    // (e.g. the window may have closed while the buyer was on this page).
+    for (final sellerId in _cartSellerIds()) {
+      if (_isSameDaySelectedFor(sellerId) && !_isSameDayWithinWindow(sellerId)) {
+        _showErrorDialog(
+          'Same Day Delivery is outside its ordering hours for one of your sellers. '
+          'Please choose another delivery option.',
+        );
+        return false;
+      }
     }
 
     if (_anyShippingBlocked) {
@@ -717,7 +882,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
     final sellerIds = widget.cartItems
         .map((item) => item.sellerId ?? 'unknown')
         .toSet()
-        .where((sellerId) => _sellerAllowsDelivery(sellerId, 'sameDay'))
+        // Only quote sellers that enabled Same Day AND are within their ordering
+        // window right now — no point quoting when it can't be ordered.
+        .where((sellerId) =>
+            _sellerAllowsDelivery(sellerId, 'sameDay') && _isSameDayWithinWindow(sellerId))
         .toList();
     if (sellerIds.isEmpty) return;
 
@@ -807,6 +975,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     if (_isLockedToExpress(sellerId) && !isExpress) return;
     setState(() {
       _sellerExpressShipping[sellerId] = isExpress;
+      _sellerDeliveryModeChosen[sellerId] = true; // explicit Standard/Express pick
       _refreshActiveMapsForSeller(sellerId);
     });
   }
@@ -1796,6 +1965,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     final allowsPickup   = _sellerAllowsDelivery(sellerId, 'pickup');
     final allowsSameDay  = _sellerAllowsDelivery(sellerId, 'sameDay');
     final sameDayAvailable = _isSameDayAvailableFor(sellerId);
+    final sameDayWithinWindow = _isSameDayWithinWindow(sellerId);
 
     final hasExpressCost  = _expressSellerTotalShippingCosts.containsKey(sellerId);
     final hasStandardCost = _standardSellerTotalShippingCosts.containsKey(sellerId);
@@ -1812,10 +1982,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
       return const SizedBox.shrink();
     }
 
-    final isSameDay = _isSameDaySelectedFor(sellerId);
-    final isPickup  = !isSameDay && _isPickupSelectedFor(sellerId);
-    final isExpress = !isSameDay && !isPickup && _isExpressFor(sellerId);
-    final isStandard = !isSameDay && !isPickup && !isExpress;
+    // No default: nothing is selected until the buyer explicitly picks a mode.
+    final chosen = _sellerDeliveryModeChosen[sellerId] ?? false;
+    final isSameDay = chosen && _isSameDaySelectedFor(sellerId);
+    final isPickup  = chosen && !isSameDay && _isPickupSelectedFor(sellerId);
+    final isExpress = chosen && !isSameDay && !isPickup && _isExpressFor(sellerId);
+    final isStandard = chosen && !isSameDay && !isPickup && !isExpress;
     final lockedExpress = _isLockedToExpress(sellerId);
     final sameDayCost = _sameDaySellerCosts[sellerId] ?? 0.0;
 
@@ -1829,6 +2001,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
       required IconData icon,
       required String label,
       String? sublabel,
+      String? tooltip,
       required Widget trailing,
     }) {
       return InkWell(
@@ -1853,26 +2026,50 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     : AppColors.onSurface.withValues(alpha: 0.4)),
               const SizedBox(width: 4),
               Expanded(
-                child: Row(
+                // Label on top with the (optional) sublabel wrapping beneath, so
+                // long sublabels never overflow the row horizontally. A tooltip
+                // (tap the ⓘ) carries longer details like the Same Day hours.
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(label,
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                        color: selected
-                            ? AppColors.primary
-                            : AppColors.onSurface.withValues(alpha: 0.5),
-                      )),
-                    if (sublabel != null) ...[
-                      const SizedBox(width: 6),
-                      Text(sublabel,
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.onSurface.withValues(alpha: 0.5),
-                          fontStyle: FontStyle.italic,
-                        )),
-                    ],
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(label,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                              color: selected
+                                  ? AppColors.primary
+                                  : AppColors.onSurface.withValues(alpha: 0.5),
+                            )),
+                        ),
+                        if (tooltip != null) ...[
+                          const SizedBox(width: 4),
+                          Tooltip(
+                            message: tooltip,
+                            triggerMode: TooltipTriggerMode.tap,
+                            child: Icon(Icons.info_outline,
+                                size: 14,
+                                color: AppColors.onSurface.withValues(alpha: 0.45)),
+                          ),
+                        ],
+                      ],
+                    ),
+                    if (sublabel != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(sublabel,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.onSurface.withValues(alpha: 0.5),
+                            fontStyle: FontStyle.italic,
+                          )),
+                      ),
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
               trailing,
             ],
           ),
@@ -1960,23 +2157,39 @@ class _CheckoutPageState extends State<CheckoutPage> {
               label: 'Express',
               trailing: costLabel(expressTotal, isExpress),
             ),
-          // Same Day Delivery (Lalamove) — only when the seller enabled it and a
-          // live quote succeeded (Metro Manila only). Buyer pays the full fee.
-          if (allowsSameDay && (sameDayAvailable || _isCalculatingSameDay))
+          // Same Day Delivery (Lalamove) — shown when the seller enabled it and
+          // an online payment method is available (COD isn't supported for Same
+          // Day). Outside the seller's ordering window it renders disabled with
+          // the hours; otherwise it needs a live quote (Metro Manila only) and
+          // the buyer pays the full fee.
+          if (allowsSameDay && _hasOnlinePaymentAvailable &&
+              (sameDayAvailable || _isCalculatingSameDay || !sameDayWithinWindow))
             radioRow(
-              selected: isSameDay,
-              disabled: _isCalculatingShipping || _isCalculatingSameDay || !sameDayAvailable,
+              selected: isSameDay && sameDayWithinWindow,
+              disabled: _isCalculatingShipping || _isCalculatingSameDay ||
+                  !sameDayAvailable || !sameDayWithinWindow,
               onTap: () => _onSellerSameDayToggled(sellerId, true),
               icon: Icons.motorcycle_outlined,
               label: 'Same Day',
-              sublabel: _isCalculatingSameDay && !sameDayAvailable ? '(checking…)' : null,
-              trailing: _isCalculatingSameDay && !sameDayAvailable
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+              sublabel: sameDayWithinWindow && _isCalculatingSameDay && !sameDayAvailable
+                  ? '(checking…)'
+                  : null,
+              // Off-hours: hide the long day/time list behind an info tooltip.
+              tooltip: !sameDayWithinWindow ? _sameDayWindowLabel(sellerId) : null,
+              trailing: !sameDayWithinWindow
+                  ? Text(
+                      'Closed',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.onSurface.withValues(alpha: 0.5),
+                      ),
                     )
-                  : costLabel(sameDayCost, isSameDay),
+                  : (_isCalculatingSameDay && !sameDayAvailable
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : costLabel(sameDayCost, isSameDay)),
             ),
           if (allowsPickup)
             radioRow(
@@ -2140,6 +2353,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
             final modes = _coveredModes(voucher);
             if (modes.length == 1 && modes.contains('express')) {
               _sellerExpressShipping[sellerId] = true;
+              // Express-only voucher locks the mode — nothing left to choose.
+              _sellerDeliveryModeChosen[sellerId] = true;
             } else if (modes.length == 1 && modes.contains('standard')) {
               _sellerExpressShipping[sellerId] = false;
             }
@@ -2214,7 +2429,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
                       method != PaymentMethod.grabpay &&
                       method != PaymentMethod.billEase &&
                       method != PaymentMethod.paymaya &&
-                      _isPaymentMethodAllowed(method))
+                      _isPaymentMethodAllowed(method) &&
+                      // Same Day Delivery (Lalamove) is online-payment only —
+                      // hide Cash on Delivery while any seller uses Same Day.
+                      !(method == PaymentMethod.cashOnDelivery && _anySameDaySelected()))
                   .map((method) {
                 final isSelected = _selectedPaymentMethod == method;
                 
@@ -2597,7 +2815,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     : Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (_calculateTotalShippingCost() > 0 &&
+                          if (!_anyShippingModeUnchosen &&
+                              _calculateTotalShippingCost() > 0 &&
                               _calculateBuyerShippingPortion() < _calculateTotalShippingCost()) ...[
                             Text(
                               '₱${_calculateTotalShippingCost().toStringAsFixed(2)}',
@@ -2612,15 +2831,22 @@ class _CheckoutPageState extends State<CheckoutPage> {
                             const SizedBox(width: 6),
                           ],
                           Text(
-                            _calculateBuyerShippingPortion() > 0
-                                ? '₱${_calculateBuyerShippingPortion().toStringAsFixed(2)}'
-                                : 'FREE',
+                            _anyShippingModeUnchosen
+                                ? '—'
+                                : _calculateBuyerShippingPortion() > 0
+                                    ? '₱${_calculateBuyerShippingPortion().toStringAsFixed(2)}'
+                                    : 'FREE',
                             style: AppTextStyles.bodyMedium.copyWith(
                               fontWeight: FontWeight.w600,
-                              fontFamily: _calculateBuyerShippingPortion() > 0 ? 'Roboto' : null,
-                              color: _calculateBuyerShippingPortion() > 0
-                                  ? null
-                                  : AppColors.success,
+                              fontFamily: !_anyShippingModeUnchosen &&
+                                      _calculateBuyerShippingPortion() > 0
+                                  ? 'Roboto'
+                                  : null,
+                              color: _anyShippingModeUnchosen
+                                  ? AppColors.onSurface.withValues(alpha: 0.5)
+                                  : _calculateBuyerShippingPortion() > 0
+                                      ? null
+                                      : AppColors.success,
                             ),
                           ),
                         ],
@@ -2778,7 +3004,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   : Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (_calculateTotalShippingCost() > 0 && _calculateBuyerShippingPortion() < _calculateTotalShippingCost()) ...[
+                        if (!_anyShippingModeUnchosen && _calculateTotalShippingCost() > 0 && _calculateBuyerShippingPortion() < _calculateTotalShippingCost()) ...[
                           // Show crossed out total shipping when some/all is free
                           Text(
                             '₱${_calculateTotalShippingCost().toStringAsFixed(2)}',
@@ -2793,13 +3019,22 @@ class _CheckoutPageState extends State<CheckoutPage> {
                           const SizedBox(width: 6),
                         ],
                         Text(
-                          _calculateBuyerShippingPortion() > 0
-                              ? '₱${_calculateBuyerShippingPortion().toStringAsFixed(2)}'
-                              : 'FREE',
+                          _anyShippingModeUnchosen
+                              ? '—'
+                              : _calculateBuyerShippingPortion() > 0
+                                  ? '₱${_calculateBuyerShippingPortion().toStringAsFixed(2)}'
+                                  : 'FREE',
                           style: AppTextStyles.bodyLarge.copyWith(
                             fontWeight: FontWeight.w600,
-                            fontFamily: _calculateBuyerShippingPortion() > 0 ? 'Roboto' : null,
-                            color: _calculateBuyerShippingPortion() > 0 ? null : AppColors.success,
+                            fontFamily: !_anyShippingModeUnchosen &&
+                                    _calculateBuyerShippingPortion() > 0
+                                ? 'Roboto'
+                                : null,
+                            color: _anyShippingModeUnchosen
+                                ? AppColors.onSurface.withValues(alpha: 0.5)
+                                : _calculateBuyerShippingPortion() > 0
+                                    ? null
+                                    : AppColors.success,
                           ),
                         ),
                       ],
