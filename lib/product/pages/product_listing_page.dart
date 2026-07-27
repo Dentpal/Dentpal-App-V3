@@ -1167,6 +1167,8 @@ class _ProductListingPageState extends State<ProductListingPage>
                                 width: 20,
                                 height: 20,
                                 fit: BoxFit.cover,
+                                cacheWidth: 48,
+                                cacheHeight: 48,
                                 errorBuilder: (c, e, s) => Icon(
                                   Icons.category_rounded,
                                   size: 14,
@@ -3291,6 +3293,8 @@ class _ProductListingPageState extends State<ProductListingPage>
                                   ? CachedNetworkImage(
                                       imageUrl: brandImage,
                                       fit: BoxFit.cover,
+                                      memCacheWidth: 120,
+                                      maxWidthDiskCache: 120,
                                       placeholder: (context, url) => Center(
                                         child: Icon(
                                           Icons.verified_rounded,
@@ -4255,6 +4259,8 @@ class _ProductListingPageState extends State<ProductListingPage>
                     CachedNetworkImage(
                       imageUrl: display.coverImageUrl,
                       fit: BoxFit.cover,
+                      memCacheWidth: 1080,
+                      maxWidthDiskCache: 1080,
                       placeholder: (context, url) => Container(
                         color: AppColors.primary.withValues(alpha: 0.1),
                         child: const Center(child: CircularProgressIndicator()),
@@ -4696,6 +4702,8 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                                             ? CachedNetworkImage(
                                                 imageUrl: imageUrl,
                                                 fit: BoxFit.cover,
+                                                memCacheWidth: 160,
+                                                maxWidthDiskCache: 160,
                                                 errorWidget: (c, u, e) =>
                                                     Center(
                                                       child: Icon(
@@ -4924,6 +4932,8 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                         ? CachedNetworkImage(
                             imageUrl: imageUrl,
                             fit: BoxFit.cover,
+                            memCacheWidth: 160,
+                            maxWidthDiskCache: 160,
                             errorWidget: (c, u, e) => Icon(
                               Icons.category,
                               color: AppColors.primary.withValues(alpha: 0.5),
@@ -5113,6 +5123,8 @@ class _CategorySidebarSheetState extends State<_CategorySidebarSheet> {
                                 ? Image.network(
                                     sub.imageURL!,
                                     fit: BoxFit.cover,
+                                    cacheWidth: 120,
+                                    cacheHeight: 120,
                                     errorBuilder: (c, e, s) => Icon(
                                       Icons.category_rounded,
                                       color: isSelected

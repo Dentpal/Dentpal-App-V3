@@ -589,6 +589,20 @@ class _AddProductPageState extends State<AddProductPage> {
         } else {
           throw Exception('Failed to resize product image');
         }
+
+        // Generate + upload a small thumbnail for grids/lists (best-effort).
+        final productThumbBytes = await _imageUploadService.resizeThumbnail(
+          _productForm.imageFile!,
+        );
+        if (productThumbBytes != null) {
+          final productThumbUrl = await _imageUploadService.uploadImage(
+            imageBytes: productThumbBytes,
+            path: ImageUploadService.getProductThumbnailPath(productId),
+          );
+          if (productThumbUrl != null) {
+            _productForm.thumbnailURL = productThumbUrl;
+          }
+        }
       }
 
       // Upload variation images
@@ -608,6 +622,22 @@ class _AddProductPageState extends State<AddProductPage> {
               _variations[i].imageURL = variationImageUrl;
             }
             // Note: Variation images are optional, so we don't throw an error if upload fails
+
+            // Variation thumbnail (best-effort).
+            final variationThumbBytes =
+                await _imageUploadService.resizeThumbnail(
+              _variations[i].imageFile!,
+            );
+            if (variationThumbBytes != null) {
+              final variationThumbUrl = await _imageUploadService.uploadImage(
+                imageBytes: variationThumbBytes,
+                path:
+                    ImageUploadService.getVariationThumbnailPath(productId, i),
+              );
+              if (variationThumbUrl != null) {
+                _variations[i].thumbnailURL = variationThumbUrl;
+              }
+            }
           }
         }
       }

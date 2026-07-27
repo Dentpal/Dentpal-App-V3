@@ -1,6 +1,6 @@
 import 'package:dentpal/core/app_theme/index.dart';
+import 'package:dentpal/core/widgets/app_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dentpal/utils/currency_formatter.dart';
 import '../models/product_model.dart';
 
@@ -16,9 +16,15 @@ class ProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final imageUrl = product.variations?.isNotEmpty == true 
-        ? (product.variations!.first.imageURL ?? product.imageURL)
-        : product.imageURL;
+    final firstVariation = product.variations?.isNotEmpty == true
+        ? product.variations!.first
+        : null;
+    // Prefer small thumbnails for the grid; fall back to full-size images
+    // (legacy products without a generated thumbnail).
+    final imageUrl = firstVariation?.thumbnailURL ??
+        product.thumbnailURL ??
+        firstVariation?.imageURL ??
+        product.imageURL;
 
     final lowestPrice = product.lowestPrice;
     final screenWidth = MediaQuery.of(context).size.width;
@@ -177,38 +183,15 @@ class ProductCard extends StatelessWidget {
     );
   }
 
-  // Shared image widget
+  // Shared image widget. Cards are small, so cap decode well below the source.
   Widget _buildImage(String imageUrl, double iconSize) {
-    return imageUrl.isNotEmpty
-        ? CachedNetworkImage(
-            imageUrl: imageUrl,
-            fit: BoxFit.cover,
-            placeholder: (context, url) => Container(
-              color: Colors.grey.shade100,
-              child: const Center(
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                ),
-              ),
-            ),
-            errorWidget: (context, url, error) => Container(
-              color: Colors.grey.shade100,
-              child: Icon(
-                Icons.image_not_supported,
-                color: Colors.grey,
-                size: iconSize,
-              ),
-            ),
-          )
-        : Container(
-            color: Colors.grey.shade100,
-            child: Icon(
-              Icons.image_not_supported,
-              color: Colors.grey,
-              size: iconSize,
-            ),
-          );
+    return AppNetworkImage(
+      url: imageUrl,
+      fit: BoxFit.cover,
+      maxDecodeDimension: 500,
+      errorIconSize: iconSize,
+      backgroundColor: Colors.grey.shade100,
+    );
   }
 
   // Shared price widget

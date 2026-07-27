@@ -15,6 +15,7 @@ import '../../profile/models/shipping_address.dart';
 import '../../profile/services/platform_policies_service.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
+import '../../core/widgets/app_network_image.dart';
 
 typedef VouchersChangedCallback = void Function(
   Map<String, Map<String, dynamic>?> discountVouchers,
@@ -1627,26 +1628,28 @@ class _CheckoutPageState extends State<CheckoutPage> {
     return Row(
       children: [
         // Product image
-        Container(
-          width: 50,
-          height: 50,
-          decoration: BoxDecoration(
-            color: AppColors.grey100,
-            borderRadius: BorderRadius.circular(8),
-            image: item.productImage?.isNotEmpty == true
-                ? DecorationImage(
-                    image: NetworkImage(item.productImage!),
-                    fit: BoxFit.cover,
-                  )
-                : null,
-          ),
-          child: item.productImage?.isEmpty != false
-              ? Icon(
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: SizedBox(
+            width: 50,
+            height: 50,
+            child: AppNetworkImage(
+              url: item.productImage,
+              width: 50,
+              height: 50,
+              fit: BoxFit.cover,
+              maxDecodeDimension: 140,
+              backgroundColor: AppColors.grey100,
+              errorWidget: (context) => Container(
+                color: AppColors.grey100,
+                child: Icon(
                   Icons.image,
                   color: AppColors.onSurface.withValues(alpha: 0.4),
                   size: 20,
-                )
-              : null,
+                ),
+              ),
+            ),
+          ),
         ),
         const SizedBox(width: 12),
         

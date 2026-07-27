@@ -207,6 +207,7 @@ class _EditProductPageState extends State<EditProductPage> {
     _productForm.name = product.name;
     _productForm.description = product.description;
     _productForm.imageURL = product.imageURL;
+    _productForm.thumbnailURL = product.thumbnailURL;
     _productForm.categoryId = product.categoryId;
     _productForm.subCategoryId = product.subCategoryId;
     _productForm.allowInquiry = product.allowInquiry;
@@ -226,6 +227,7 @@ class _EditProductPageState extends State<EditProductPage> {
         variationForm.sku = variation.sku;
         variationForm.weight = variation.weight;
         variationForm.imageURL = variation.imageURL;
+        variationForm.thumbnailURL = variation.thumbnailURL;
         variationForm.dimensions = variation.dimensions ?? {};
         variationForm.isFragile = variation.isFragile;
         return variationForm;
@@ -610,6 +612,20 @@ class _EditProductPageState extends State<EditProductPage> {
         } else {
           throw Exception('Failed to resize product image');
         }
+
+        // Generate + upload a small thumbnail for grids/lists (best-effort).
+        final productThumbBytes = await _imageUploadService.resizeThumbnail(
+          _productForm.imageFile!,
+        );
+        if (productThumbBytes != null) {
+          final productThumbUrl = await _imageUploadService.uploadImage(
+            imageBytes: productThumbBytes,
+            path: ImageUploadService.getProductThumbnailPath(productId),
+          );
+          if (productThumbUrl != null) {
+            _productForm.thumbnailURL = productThumbUrl;
+          }
+        }
       }
 
       // Handle variation images
@@ -627,6 +643,20 @@ class _EditProductPageState extends State<EditProductPage> {
 
             if (variationImageUrl != null) {
               _variations[i].imageURL = variationImageUrl;
+            }
+          }
+
+          // Variation thumbnail (best-effort).
+          final variationThumbBytes = await _imageUploadService.resizeThumbnail(
+            _variations[i].imageFile!,
+          );
+          if (variationThumbBytes != null) {
+            final variationThumbUrl = await _imageUploadService.uploadImage(
+              imageBytes: variationThumbBytes,
+              path: ImageUploadService.getVariationThumbnailPath(productId, i),
+            );
+            if (variationThumbUrl != null) {
+              _variations[i].thumbnailURL = variationThumbUrl;
             }
           }
         }

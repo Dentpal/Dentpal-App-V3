@@ -407,29 +407,7 @@ class ProductSearchService {
           .toList();
       
       // Create a new Product instance with variations
-      product = Product(
-        productId: product.productId,
-        name: product.name,
-        description: product.description,
-        imageURL: product.imageURL,
-        images: product.images,
-        categoryId: product.categoryId,
-        subCategoryId: product.subCategoryId,
-        sellerId: product.sellerId,
-        createdAt: product.createdAt,
-        updatedAt: product.updatedAt,
-        isActive: product.isActive,
-        isDraft: product.isDraft,
-        isArchived: product.isArchived,
-        clickCounter: product.clickCounter,
-        variations: variations,
-        hasWarranty: product.hasWarranty,
-        warrantyType: product.warrantyType,
-        warrantyPeriod: product.warrantyPeriod,
-        warrantyPeriodUnit: product.warrantyPeriodUnit,
-        warrantyPolicy: product.warrantyPolicy,
-        allowInquiry: product.allowInquiry,
-      );
+      product = product.copyWith(variations: variations);
     }
     
     return product;

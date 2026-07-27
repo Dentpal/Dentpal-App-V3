@@ -69,6 +69,8 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                         child: CachedNetworkImage(
                           imageUrl: imageUrl,
                           fit: BoxFit.contain,
+                          memCacheWidth: 1080,
+                          maxWidthDiskCache: 1080,
                           placeholder: (context, url) =>
                               const Center(child: CircularProgressIndicator()),
                           errorWidget: (context, url, error) => const Icon(
@@ -1575,6 +1577,8 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                         fit: BoxFit
                             .cover, // Changed from cover to contain for consistency
                         filterQuality: FilterQuality.high,
+                        memCacheWidth: 1080,
+                        maxWidthDiskCache: 1080,
                         fadeInDuration: const Duration(milliseconds: 300),
                         placeholder: (context, url) => Container(
                           color: Colors.white,
@@ -1672,7 +1676,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                                   variation.imageURL != null &&
                                       variation.imageURL!.isNotEmpty
                                   ? CachedNetworkImage(
-                                      imageUrl: variation.imageURL!,
+                                      imageUrl: variation.thumbnailURL ?? variation.imageURL!,
                                       fit: BoxFit
                                           .cover, // Ensures image fills the entire container
                                       width: 90,
@@ -2109,6 +2113,8 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                                   imageUrl: profileImageURLWithCache,
                                   fit: BoxFit.cover,
                                   cacheKey: profileImageURL,
+                                  memCacheWidth: 160,
+                                  maxWidthDiskCache: 160,
                                   placeholder: (context, url) => const Center(
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
@@ -2265,7 +2271,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                                   variation.imageURL != null &&
                                       variation.imageURL!.isNotEmpty
                                   ? CachedNetworkImage(
-                                      imageUrl: variation.imageURL!,
+                                      imageUrl: variation.thumbnailURL ?? variation.imageURL!,
                                       fit: BoxFit.cover,
                                       width: 70,
                                       height: 70,

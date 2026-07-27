@@ -150,32 +150,7 @@ class ProductService {
         List<ProductVariation> variations = allVariations[i];
 
         if (variations.isNotEmpty) {
-          product = Product(
-            productId: product.productId,
-            name: product.name,
-            description: product.description,
-            imageURL: product.imageURL,
-            images: product.images,
-            categoryId: product.categoryId,
-            subCategoryId: product.subCategoryId,
-            sellerId: product.sellerId,
-            createdAt: product.createdAt,
-            updatedAt: product.updatedAt,
-            isActive: product.isActive,
-            isDraft: product.isDraft,
-            isArchived: product.isArchived,
-            clickCounter: product.clickCounter,
-            variations: variations,
-            hasWarranty: product.hasWarranty,
-            warrantyType: product.warrantyType,
-            warrantyPeriod: product.warrantyPeriod,
-            warrantyPeriodUnit: product.warrantyPeriodUnit,
-            warrantyPolicy: product.warrantyPolicy,
-            warrantyDuration: product.warrantyDuration,
-            dangerousGoods: product.dangerousGoods,
-            brand: product.brand,
-            allowInquiry: product.allowInquiry,
-          );
+          product = product.copyWith(variations: variations);
         }
 
         pageProducts.add(product);
@@ -227,32 +202,7 @@ class ProductService {
             .map((doc) => ProductVariation.fromFirestore(doc))
             .toList();
 
-        product = Product(
-          productId: product.productId,
-          name: product.name,
-          description: product.description,
-          imageURL: product.imageURL,
-          images: product.images,
-          categoryId: product.categoryId,
-          subCategoryId: product.subCategoryId,
-          sellerId: product.sellerId,
-          createdAt: product.createdAt,
-          updatedAt: product.updatedAt,
-          isActive: product.isActive,
-          isDraft: product.isDraft,
-          isArchived: product.isArchived,
-          clickCounter: product.clickCounter,
-          variations: variations,
-          hasWarranty: product.hasWarranty,
-          warrantyType: product.warrantyType,
-          warrantyPeriod: product.warrantyPeriod,
-          warrantyPeriodUnit: product.warrantyPeriodUnit,
-          warrantyPolicy: product.warrantyPolicy,
-          warrantyDuration: product.warrantyDuration,
-          dangerousGoods: product.dangerousGoods,
-          brand: product.brand,
-          allowInquiry: product.allowInquiry,
-        );
+        product = product.copyWith(variations: variations);
       }
 
       return product;
@@ -383,6 +333,7 @@ class ProductService {
         'name': productForm.name,
         'description': productForm.description,
         'imageURL': productForm.imageURL,
+        'thumbnailURL': productForm.thumbnailURL,
         'categoryID': productForm.categoryId,
         'subCategoryID': productForm.subCategoryId,
         'sellerId': sellerId,
@@ -409,6 +360,7 @@ class ProductService {
           'productId': productRef.id,
           'name': variationForm.name,
           'imageURL': variationForm.imageURL,
+          'thumbnailURL': variationForm.thumbnailURL,
           'price': variationForm.price, // Price already includes VAT
           'stock': variationForm.stock,
           'sku': variationForm.sku,
@@ -476,6 +428,7 @@ class ProductService {
         'name': productForm.name,
         'description': productForm.description,
         'imageURL': productForm.imageURL,
+        'thumbnailURL': productForm.thumbnailURL,
         'categoryID': productForm.categoryId,
         'subCategoryID': productForm.subCategoryId,
         'updatedAt': Timestamp.fromDate(now),
@@ -531,6 +484,7 @@ class ProductService {
               .update({
                 'name': variationForm.name,
                 'imageURL': variationForm.imageURL,
+                'thumbnailURL': variationForm.thumbnailURL,
                 'price': variationForm.price, // Price already includes VAT
                 'stock': variationForm.stock,
                 'sku': variationForm.sku,
@@ -548,6 +502,7 @@ class ProductService {
             'productId': productId,
             'name': variationForm.name,
             'imageURL': variationForm.imageURL,
+            'thumbnailURL': variationForm.thumbnailURL,
             'price': variationForm.price, // Price already includes VAT
             'stock': variationForm.stock,
             'sku': variationForm.sku,
@@ -622,32 +577,7 @@ class ProductService {
                 .map((doc) => ProductVariation.fromFirestore(doc))
                 .toList();
 
-            product = Product(
-              productId: product.productId,
-              name: product.name,
-              description: product.description,
-              imageURL: product.imageURL,
-              images: product.images,
-              categoryId: product.categoryId,
-              subCategoryId: product.subCategoryId,
-              sellerId: product.sellerId,
-              createdAt: product.createdAt,
-              updatedAt: product.updatedAt,
-              isActive: product.isActive,
-              isDraft: product.isDraft,
-              isArchived: product.isArchived,
-              clickCounter: product.clickCounter,
-              variations: variations,
-              hasWarranty: product.hasWarranty,
-              warrantyType: product.warrantyType,
-              warrantyPeriod: product.warrantyPeriod,
-              warrantyPeriodUnit: product.warrantyPeriodUnit,
-              warrantyPolicy: product.warrantyPolicy,
-              warrantyDuration: product.warrantyDuration,
-              dangerousGoods: product.dangerousGoods,
-              brand: product.brand,
-              allowInquiry: product.allowInquiry,
-            );
+            product = product.copyWith(variations: variations);
           }
 
           products.add(product);
@@ -726,32 +656,7 @@ class ProductService {
                 .map((vDoc) => ProductVariation.fromFirestore(vDoc))
                 .toList();
 
-            product = Product(
-              productId: product.productId,
-              name: product.name,
-              description: product.description,
-              imageURL: product.imageURL,
-              images: product.images,
-              categoryId: product.categoryId,
-              subCategoryId: product.subCategoryId,
-              sellerId: product.sellerId,
-              createdAt: product.createdAt,
-              updatedAt: product.updatedAt,
-              isActive: product.isActive,
-              isDraft: product.isDraft,
-              isArchived: product.isArchived,
-              clickCounter: product.clickCounter,
-              variations: variations,
-              hasWarranty: product.hasWarranty,
-              warrantyType: product.warrantyType,
-              warrantyPeriod: product.warrantyPeriod,
-              warrantyPeriodUnit: product.warrantyPeriodUnit,
-              warrantyPolicy: product.warrantyPolicy,
-              warrantyDuration: product.warrantyDuration,
-              dangerousGoods: product.dangerousGoods,
-              brand: product.brand,
-              allowInquiry: product.allowInquiry,
-            );
+            product = product.copyWith(variations: variations);
           }
 
           products.add(product);

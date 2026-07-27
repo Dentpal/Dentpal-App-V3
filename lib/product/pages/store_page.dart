@@ -265,7 +265,7 @@ class _StorePageState extends State<StorePage> {
     try {
       final result = await _productService.getProductsBySellerPaginated(
         sellerId: widget.sellerId,
-        limit: 10,
+        limit: _rowsFetchLimit(),
         categoryId: _selectedCategoryId,
       );
       final loaded = result['products'] as List<Product>;
@@ -357,7 +357,7 @@ class _StorePageState extends State<StorePage> {
     try {
       final result = await _productService.getProductsBySellerPaginated(
         sellerId: widget.sellerId,
-        limit: 10,
+        limit: _rowsFetchLimit(),
         lastDocument: _lastProductDoc,
         categoryId: _selectedCategoryId,
       );
@@ -888,6 +888,8 @@ class _StorePageState extends State<StorePage> {
                           imageUrl: coverImageURLWithCache,
                           fit: BoxFit.cover,
                           cacheKey: coverImageURL,
+                          memCacheWidth: 1920,
+                          maxWidthDiskCache: 1920,
                           placeholder: (context, url) => Container(
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
@@ -960,6 +962,8 @@ class _StorePageState extends State<StorePage> {
                             imageUrl: profileImageURLWithCache,
                             fit: BoxFit.cover,
                             cacheKey: profileImageURL,
+                            memCacheWidth: 240,
+                            maxWidthDiskCache: 240,
                             placeholder: (context, url) => const Center(
                               child: CircularProgressIndicator(strokeWidth: 2),
                             ),
@@ -1904,12 +1908,15 @@ class _StorePageState extends State<StorePage> {
   }
 
   Widget _buildStoreProductCard(Product product) {
-    final variationImage = (product.variations?.isNotEmpty == true)
-        ? product.variations!.first.imageURL
+    final firstVariation = (product.variations?.isNotEmpty == true)
+        ? product.variations!.first
         : null;
-    final imageUrl = (variationImage != null && variationImage.isNotEmpty)
-        ? variationImage
-        : product.imageURL;
+    // Prefer small thumbnails for the grid; fall back to full-size images.
+    final imageUrl = firstVariation?.thumbnailURL ??
+        product.thumbnailURL ??
+        (firstVariation?.imageURL?.isNotEmpty == true
+            ? firstVariation!.imageURL!
+            : product.imageURL);
 
     final price = product.lowestPrice;
     final soldCount = _soldCounts[product.productId] ?? 0;
@@ -1946,6 +1953,8 @@ class _StorePageState extends State<StorePage> {
                         imageUrl: imageUrl,
                         fit: BoxFit.cover,
                         width: double.infinity,
+                        memCacheWidth: 500,
+                        maxWidthDiskCache: 500,
                         placeholder: (context, url) => Container(
                           color: AppColors.primary.withValues(alpha: 0.05),
                           child: const Center(
@@ -2106,6 +2115,26 @@ class _StorePageState extends State<StorePage> {
     if (screenWidth >= 900) return 0.65;
     if (screenWidth >= 600) return 0.68;
     return 0.65;
+  }
+
+  /// Fetch/reveal products a few rows at a time (rows × the current column
+  /// count) instead of a fixed page size. In a 2-column layout we load 5 rows
+  /// so the narrow grid still fills a decent amount; with 3+ columns we load
+  /// 3 rows. Falls back to a sensible width if MediaQuery isn't available yet
+  /// (very early load).
+  int _rowsFetchLimit() {
+    final width = MediaQuery.maybeOf(context)?.size.width ?? 400;
+    final int columns = width >= 1200
+        ? 6
+        : width >= 900
+            ? 5
+            : width >= 600
+                ? 4
+                : width >= 480
+                    ? 3
+                    : 2;
+    final int rows = columns <= 2 ? 5 : 3;
+    return columns * rows;
   }
 }
 

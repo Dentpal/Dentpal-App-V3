@@ -231,7 +231,7 @@ class CartService {
         final product = productsMap[item.productId];
         if (product != null) {
           item.productName = product.name;
-          item.productImage = product.imageURL;
+          item.productImage = product.thumbnailURL ?? product.imageURL;
           item.sellerId = product.sellerId;
           item.isProductActive = product.isActive;
           item.insuranceAndEvaluation = product.insuranceAndEvaluation;
@@ -303,7 +303,7 @@ class CartService {
             }
             
             if (variation.imageURL != null && variation.imageURL!.isNotEmpty) {
-              item.productImage = variation.imageURL;
+              item.productImage = variation.thumbnailURL ?? variation.imageURL;
             }
           }
         }
@@ -441,7 +441,7 @@ class CartService {
       if (productDoc.exists) {
         Product product = Product.fromFirestore(productDoc);
         cartItem.productName = product.name;
-        cartItem.productImage = product.imageURL;
+        cartItem.productImage = product.thumbnailURL ?? product.imageURL;
         cartItem.sellerId = product.sellerId;
         
         // Fetch seller name and address
@@ -530,7 +530,7 @@ class CartService {
             }
             
             if (variation.imageURL != null && variation.imageURL!.isNotEmpty) {
-              cartItem.productImage = variation.imageURL;
+              cartItem.productImage = variation.thumbnailURL ?? variation.imageURL;
             }
           }
         } else {

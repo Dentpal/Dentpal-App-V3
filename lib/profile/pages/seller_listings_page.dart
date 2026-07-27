@@ -109,28 +109,7 @@ class _SellerListingsPageState extends State<SellerListingsPage>
                 .map((doc) => ProductVariation.fromFirestore(doc))
                 .toList();
 
-            product = Product(
-              productId: product.productId,
-              name: product.name,
-              description: product.description,
-              imageURL: product.imageURL,
-              categoryId: product.categoryId,
-              subCategoryId: product.subCategoryId,
-              sellerId: product.sellerId,
-              isActive: product.isActive,
-              isDraft: product.isDraft,
-              isArchived: product.isArchived,
-              createdAt: product.createdAt,
-              updatedAt: product.updatedAt,
-              clickCounter: product.clickCounter,
-              variations: variations,
-              hasWarranty: product.hasWarranty,
-              warrantyType: product.warrantyType,
-              warrantyPeriod: product.warrantyPeriod,
-              warrantyPeriodUnit: product.warrantyPeriodUnit,
-              warrantyPolicy: product.warrantyPolicy,
-              allowInquiry: product.allowInquiry,
-            );
+            product = product.copyWith(variations: variations);
           }
 
           products.add(product);

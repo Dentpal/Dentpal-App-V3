@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/cart_model.dart';
 import '../../core/app_theme/app_colors.dart';
+import '../../core/widgets/app_network_image.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'voucher_picker_sheet.dart';
@@ -598,33 +598,14 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
                         color: AppColors.grey100,
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: item.productImage != null
-                          ? CachedNetworkImage(
-                              imageUrl: item.productImage!,
-                              fit: BoxFit.cover,
-                              placeholder: (context, url) => Container(
-                                color: AppColors.grey100,
-                                child: const Center(
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: AppColors.primary,
-                                  ),
-                                ),
-                              ),
-                              errorWidget: (context, url, error) => Container(
-                                color: AppColors.grey100,
-                                child: const Icon(
-                                  Icons.image_not_supported,
-                                  color: AppColors.grey400,
-                                  size: 24,
-                                ),
-                              ),
-                            )
-                          : const Icon(
-                              Icons.image_not_supported,
-                              color: AppColors.grey400,
-                              size: 24,
-                            ),
+                      child: AppNetworkImage(
+                        url: item.productImage,
+                        width: 60,
+                        height: 60,
+                        fit: BoxFit.cover,
+                        maxDecodeDimension: 160,
+                        backgroundColor: AppColors.grey100,
+                      ),
                     ),
                   ),
 

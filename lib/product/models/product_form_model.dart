@@ -4,6 +4,7 @@ class ProductFormModel {
   String name = '';
   String description = '';
   String imageURL = '';
+  String? thumbnailURL;
   XFile? imageFile;
   String categoryId = '';
   String? subCategoryId = '';
@@ -93,6 +94,7 @@ class ProductFormModel {
 class VariationFormModel {
   String name = '';
   String? imageURL;
+  String? thumbnailURL;
   XFile? imageFile;
   double price = 0; // Price already includes VAT
   int stock = 0;

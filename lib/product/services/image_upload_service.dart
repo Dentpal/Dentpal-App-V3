@@ -105,7 +105,7 @@ class ImageUploadService {
     bool forceSquare = false,
     int maxWidth = 1280,
     int maxHeight = 720,
-    int quality = 95,
+    int quality = 82,
   }) async {
     try {
       // Read the image file bytes (works on both web and mobile)
@@ -161,6 +161,37 @@ class ImageUploadService {
     }
   }
 
+  /// Generate a small square thumbnail (JPEG) for use in grids/lists/carts.
+  ///
+  /// Kept intentionally tiny — the full-size image is uploaded separately and
+  /// used only on the product detail page. On Flutter web the `image` package
+  /// cannot encode WebP, so thumbnails produced here are JPEG (the seller-center
+  /// web app emits WebP thumbnails; both display fine everywhere).
+  Future<Uint8List?> resizeThumbnail(
+    XFile imageFile, {
+    int size = 400,
+    int quality = 75,
+  }) async {
+    try {
+      final bytes = await imageFile.readAsBytes();
+      final image = img.decodeImage(bytes);
+      if (image == null) {
+        AppLogger.d('Failed to decode image for thumbnail');
+        return null;
+      }
+
+      final thumb = img.copyResizeCropSquare(
+        image,
+        size: size,
+        interpolation: img.Interpolation.average,
+      );
+      return Uint8List.fromList(img.encodeJpg(thumb, quality: quality));
+    } catch (e) {
+      AppLogger.d('Error creating thumbnail: $e');
+      return null;
+    }
+  }
+
   /// Upload image to Firebase Storage
   Future<String?> uploadImage({
     required Uint8List imageBytes,
@@ -198,7 +229,7 @@ class ImageUploadService {
     bool forceSquare = false,
     int maxWidth = 1280,
     int maxHeight = 720,
-    int quality = 95,
+    int quality = 82,
   }) async {
     try {
       // Pick image
@@ -276,8 +307,18 @@ class ImageUploadService {
     return 'ProductImages/$productId/Image';
   }
 
+  /// Generate storage path for the small product thumbnail
+  static String getProductThumbnailPath(String productId) {
+    return 'ProductImages/$productId/Thumb';
+  }
+
   /// Generate storage path for variation images
   static String getVariationImagePath(String productId, int variationIndex) {
     return 'ProductImages/$productId/Image/VariationImage_$variationIndex';
+  }
+
+  /// Generate storage path for the small variation thumbnail
+  static String getVariationThumbnailPath(String productId, int variationIndex) {
+    return 'ProductImages/$productId/Image/VariationThumb_$variationIndex';
   }
 }

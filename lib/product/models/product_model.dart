@@ -6,6 +6,7 @@ class Product {
   final String name;
   final String description;
   final String imageURL;
+  final String? thumbnailURL;
   final List<String> images;
   final String categoryId;
   final String subCategoryId;
@@ -33,6 +34,7 @@ class Product {
     required this.name,
     required this.description,
     required this.imageURL,
+    this.thumbnailURL,
     this.images = const [],
     required this.categoryId,
     required this.subCategoryId,
@@ -120,6 +122,9 @@ class Product {
       name: data['name'] ?? '',
       description: data['description'] ?? '',
       imageURL: data['imageURL'] ?? '',
+      thumbnailURL: (data['thumbnailURL'] as String?)?.isNotEmpty == true
+          ? data['thumbnailURL'] as String
+          : null,
       images: images,
       categoryId: data['categoryID'] ?? '',
       subCategoryId: data['subCategoryID'] ?? '',
@@ -149,6 +154,7 @@ class Product {
       'name': name,
       'description': description,
       'imageURL': imageURL,
+      if (thumbnailURL != null) 'thumbnailURL': thumbnailURL,
       'categoryID': categoryId,
       'subCategoryID': subCategoryId,
       'sellerId': sellerId,
@@ -170,6 +176,65 @@ class Product {
     };
   }
 
+  Product copyWith({
+    String? productId,
+    String? name,
+    String? description,
+    String? imageURL,
+    String? thumbnailURL,
+    List<String>? images,
+    String? categoryId,
+    String? subCategoryId,
+    String? sellerId,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    bool? isActive,
+    bool? isDraft,
+    bool? isArchived,
+    int? clickCounter,
+    List<ProductVariation>? variations,
+    bool? hasWarranty,
+    String? warrantyType,
+    String? warrantyPeriod,
+    String? warrantyPeriodUnit,
+    String? warrantyPolicy,
+    String? warrantyDuration,
+    String? dangerousGoods,
+    String? brand,
+    bool? allowInquiry,
+    bool? insuranceAndEvaluation,
+  }) {
+    return Product(
+      productId: productId ?? this.productId,
+      name: name ?? this.name,
+      description: description ?? this.description,
+      imageURL: imageURL ?? this.imageURL,
+      thumbnailURL: thumbnailURL ?? this.thumbnailURL,
+      images: images ?? this.images,
+      categoryId: categoryId ?? this.categoryId,
+      subCategoryId: subCategoryId ?? this.subCategoryId,
+      sellerId: sellerId ?? this.sellerId,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      isActive: isActive ?? this.isActive,
+      isDraft: isDraft ?? this.isDraft,
+      isArchived: isArchived ?? this.isArchived,
+      clickCounter: clickCounter ?? this.clickCounter,
+      variations: variations ?? this.variations,
+      hasWarranty: hasWarranty ?? this.hasWarranty,
+      warrantyType: warrantyType ?? this.warrantyType,
+      warrantyPeriod: warrantyPeriod ?? this.warrantyPeriod,
+      warrantyPeriodUnit: warrantyPeriodUnit ?? this.warrantyPeriodUnit,
+      warrantyPolicy: warrantyPolicy ?? this.warrantyPolicy,
+      warrantyDuration: warrantyDuration ?? this.warrantyDuration,
+      dangerousGoods: dangerousGoods ?? this.dangerousGoods,
+      brand: brand ?? this.brand,
+      allowInquiry: allowInquiry ?? this.allowInquiry,
+      insuranceAndEvaluation:
+          insuranceAndEvaluation ?? this.insuranceAndEvaluation,
+    );
+  }
+
   // Return the lowest price from all variations or null if no variations
   double? get lowestPrice {
     if (variations == null || variations!.isEmpty) return null;
@@ -182,6 +247,7 @@ class ProductVariation {
   final String productId;
   final String name;
   final String? imageURL;
+  final String? thumbnailURL;
   final double price;
   final int stock;
   final String sku;
@@ -195,6 +261,7 @@ class ProductVariation {
     required this.productId,
     required this.name,
     this.imageURL,
+    this.thumbnailURL,
     required this.price,
     required this.stock,
     required this.sku,
@@ -251,6 +318,9 @@ class ProductVariation {
       productId: data['productId'] ?? '',
       name: data['name'] ?? '',
       imageURL: data['imageURL'],
+      thumbnailURL: (data['thumbnailURL'] as String?)?.isNotEmpty == true
+          ? data['thumbnailURL'] as String
+          : null,
       price: price,
       stock: stock,
       sku: data['sku'] ?? data['SKU'] ?? '',
@@ -266,6 +336,7 @@ class ProductVariation {
       'productId': productId,
       'name': name,
       'imageURL': imageURL,
+      if (thumbnailURL != null) 'thumbnailURL': thumbnailURL,
       'price': price,
       'stock': stock,
       'sku': sku,

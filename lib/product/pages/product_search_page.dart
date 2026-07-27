@@ -1628,6 +1628,8 @@ class _SearchCategorySidebarSheetState
                     ? Image.network(
                         imageUrl,
                         fit: BoxFit.cover,
+                        cacheWidth: 120,
+                        cacheHeight: 120,
                         errorBuilder: (c, e, s) => Icon(
                           Icons.category,
                           color: AppColors.primary.withValues(alpha: 0.5),
@@ -1745,6 +1747,8 @@ class _SearchCategorySidebarSheetState
                         ? Image.network(
                             imageUrl,
                             fit: BoxFit.cover,
+                            cacheWidth: 120,
+                            cacheHeight: 120,
                             errorBuilder: (c, e, s) => Icon(
                               Icons.category,
                               color: AppColors.primary.withValues(alpha: 0.5),
@@ -1935,6 +1939,8 @@ class _SearchCategorySidebarSheetState
                                 ? Image.network(
                                     sub.imageURL!,
                                     fit: BoxFit.cover,
+                                    cacheWidth: 120,
+                                    cacheHeight: 120,
                                     errorBuilder: (c, e, s) => Icon(
                                       Icons.category_rounded,
                                       color: isSelected
