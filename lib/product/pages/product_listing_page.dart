@@ -29,6 +29,7 @@ import 'package:flutter/services.dart';
 import '../../profile/pages/profile_page.dart';
 import '../../profile/services/address_service.dart';
 import 'package:dentpal/core/widgets/web_footer.dart';
+import '../widgets/loading_skeletons.dart';
 
 // Custom cache manager with web compatibility
 class ProductImageCacheManager {
@@ -2230,8 +2231,12 @@ class _ProductListingPageState extends State<ProductListingPage>
               ),
               // Search results as trader cards
               if (_isSearching)
-                const SliverFillRemaining(
-                  child: Center(child: CircularProgressIndicator()),
+                SliverToBoxAdapter(
+                  child: TraderListSkeleton(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: tradersHorizontalPadding,
+                    ),
+                  ),
                 )
               else if (_searchResults.isEmpty)
                 SliverFillRemaining(
@@ -2547,8 +2552,12 @@ class _ProductListingPageState extends State<ProductListingPage>
 
             // Traders List (Vertical List Layout - Foodpanda style)
             _isLoading && _products.isEmpty
-                ? const SliverFillRemaining(
-                    child: Center(child: CircularProgressIndicator()),
+                ? SliverToBoxAdapter(
+                    child: TraderListSkeleton(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: tradersHorizontalPadding,
+                      ),
+                    ),
                   )
                 : _errorMessage != null && _products.isEmpty
                 ? SliverFillRemaining(child: _buildErrorState())
@@ -4156,24 +4165,7 @@ class _ProductListingPageState extends State<ProductListingPage>
 
     // Show loading skeleton while vendor fetch is in flight (edge case)
     if (stillLoading) {
-      return Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: const AspectRatio(
-          aspectRatio: 8 / 3,
-          child: Center(child: CircularProgressIndicator()),
-        ),
-      );
+      return const TraderListSkeleton(count: 1);
     }
 
     // Dynamic vouchers fetched from Firestore (pre-cached by _prefetchSellerData).

@@ -16,6 +16,7 @@ import '../../profile/services/platform_policies_service.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import '../../core/widgets/app_network_image.dart';
+import '../widgets/loading_skeletons.dart';
 
 typedef VouchersChangedCallback = void Function(
   Map<String, Map<String, dynamic>?> discountVouchers,
@@ -1888,27 +1889,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                       ),
                     ),
                     _isCalculatingShipping
-                        ? Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Calculating...',
-                                style: AppTextStyles.bodySmall.copyWith(
-                                  color: AppColors.onSurface.withValues(alpha: 0.6),
-                                  fontStyle: FontStyle.italic,
-                                ),
-                              ),
-                            ],
-                          )
+                        ? const AmountSkeleton(width: 64, height: 13)
                         : _sellerShippingBlocked(sellerId)
                         ? Text(
                             'Unavailable',
@@ -2187,11 +2168,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                       ),
                     )
                   : (_isCalculatingSameDay && !sameDayAvailable
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
+                      ? const AmountSkeleton(width: 64, height: 14)
                       : costLabel(sameDayCost, isSameDay)),
             ),
           if (allowsPickup)
@@ -2794,27 +2771,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   ),
                 ),
                 _isCalculatingShipping
-                    ? Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Calculating...',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.onSurface.withValues(alpha: 0.6),
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                        ],
-                      )
+                    ? const AmountSkeleton(width: 72, height: 14)
                     : Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -2983,27 +2940,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 ),
               ),
               _isCalculatingShipping
-                  ? Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Calculating...',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            color: AppColors.onSurface.withValues(alpha: 0.6),
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      ],
-                    )
+                  ? const AmountSkeleton(width: 80, height: 16)
                   : Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [

@@ -6,6 +6,7 @@ import '../models/cart_model.dart';
 import '../services/cart_service.dart';
 import '../widgets/seller_group_widget.dart';
 import '../widgets/voucher_picker_sheet.dart';
+import '../widgets/loading_skeletons.dart';
 import 'checkout_page.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
@@ -1343,9 +1344,7 @@ class _CartPageState extends State<CartPage>
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting ||
               _isLoading) {
-            return const Center(
-              child: CircularProgressIndicator(color: AppColors.primary),
-            );
+            return const CartSkeleton();
           } else if (snapshot.hasError) {
             return _buildErrorState(snapshot.error.toString());
           } else if (!snapshot.hasData || snapshot.data!.isEmpty) {

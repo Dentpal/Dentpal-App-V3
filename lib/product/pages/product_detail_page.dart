@@ -22,6 +22,7 @@ import 'package:dentpal/utils/currency_formatter.dart';
 import 'package:dentpal/services/chat_service.dart';
 import 'package:dentpal/profile/pages/chat_detail_page.dart';
 import 'package:dentpal/core/widgets/web_footer.dart';
+import '../widgets/loading_skeletons.dart';
 
 class ProductDetailPage extends StatefulWidget {
   final String productId;
@@ -1042,7 +1043,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         future: _productFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const ProductDetailSkeleton();
           } else if (snapshot.hasError) {
             return _buildErrorState();
           } else if (!snapshot.hasData || snapshot.data == null) {

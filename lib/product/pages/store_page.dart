@@ -15,6 +15,7 @@ import 'package:dentpal/utils/currency_formatter.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:dentpal/core/widgets/web_footer.dart';
 import '../widgets/voucher_terms_sheet.dart';
+import '../widgets/loading_skeletons.dart';
 import '../../profile/services/review_service.dart';
 import 'rating_reviews_page.dart';
 
@@ -805,7 +806,7 @@ class _StorePageState extends State<StorePage> {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const StorePageSkeleton()
           : LayoutBuilder(
               builder: (context, constraints) {
                 final bool isWideWeb =
@@ -1877,10 +1878,7 @@ class _StorePageState extends State<StorePage> {
 
   Widget _buildProductsGrid() {
     if (_isLoadingProducts) {
-      return const SizedBox(
-        height: 300,
-        child: Center(child: CircularProgressIndicator()),
-      );
+      return const ProductGridSkeleton(itemCount: 6);
     }
 
     if (_displayedProducts.isEmpty) {
