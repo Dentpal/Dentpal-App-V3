@@ -216,7 +216,7 @@ export const createCodOrder = onRequest(
         if (Object.values(sellerSameDaySelected).some((selected) => selected === true)) {
           response.status(400).json({
             success: false,
-            error: 'Cash on Delivery is not available for Same Day Delivery orders. Please choose an online payment method (card or GCash).',
+            error: 'Cash on Delivery is not available for Same Day Delivery orders. Please choose an online payment method (card or e-wallet).',
           });
           return;
         }

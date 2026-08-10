@@ -1702,7 +1702,9 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
       case order_model.PaymentMethod.grabpay:
         return 'Grab Pay';
       case order_model.PaymentMethod.paymaya:
-        return 'PayMaya';
+        return 'Maya';
+      case order_model.PaymentMethod.shopeePay:
+        return 'Shopee Pay';
       case order_model.PaymentMethod.billEase:
         return 'BillEase (Buy Now Pay Later)';
       case order_model.PaymentMethod.cashOnDelivery:

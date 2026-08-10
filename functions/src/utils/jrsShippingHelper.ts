@@ -94,9 +94,14 @@ interface PaymentFeeConfig {
   fixedFee?: number;
 }
 
+// E-wallet percentages are PayMongo's published ex-VAT rates grossed up by 12%
+// (e.g. GCash 2.23% × 1.12 ≈ 2.5%), matching how the gcash entry was derived.
 const PAYMENT_PROCESSING_FEES: Record<string, PaymentFeeConfig> = {
   'card': { percentage: 3.125, fixedFee: 13.39 },
   'gcash': { percentage: 2.5 },
+  'grab_pay': { percentage: 2.2 },
+  'paymaya': { percentage: 2.0 },
+  'shopee_pay': { percentage: 1.9 },
   'cash_on_delivery': { percentage: 0 },
 };
 
@@ -108,6 +113,9 @@ const PLATFORM_FEE_PERCENTAGE = 8.88; // 8.88% of cart value
 const PAYMONGO_DIVISOR_RATES: Record<string, number> = {
   'card': 0.03125,
   'gcash': 0.025,
+  'grab_pay': 0.022,
+  'paymaya': 0.020,
+  'shopee_pay': 0.019,
   'cash_on_delivery': 0,
 };
 

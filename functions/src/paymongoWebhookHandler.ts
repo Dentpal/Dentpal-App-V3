@@ -203,10 +203,16 @@ async function handleCheckoutSessionPaymentPaid(eventAttributes: any) {
           paymentMethod = 'gcash';
           break;
         case 'grab_pay':
+        case 'grabpay':
           paymentMethod = 'grab_pay';
           break;
         case 'paymaya':
+        case 'maya':
           paymentMethod = 'paymaya';
+          break;
+        case 'shopee_pay':
+        case 'shopeepay':
+          paymentMethod = 'shopee_pay';
           break;
         case 'billease':
           paymentMethod = 'billease';

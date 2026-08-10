@@ -178,20 +178,25 @@ class _CheckoutPageState extends State<CheckoutPage> {
   }
 
   /// Whether [method] is in the intersection of all sellers' allowed payment
-  /// methods.  Returns true for methods not configurable via checkoutOptions
-  /// (grabpay, paymaya, billEase) so existing hard-coded filters still apply.
+  /// methods.  Methods with no checkoutOptions key (billEase) are never offered.
   bool _isPaymentMethodAllowed(PaymentMethod method) {
     final key = _paymentMethodKey(method);
-    if (key == null) return false; // grabbed / paymaya / billEase — excluded elsewhere
+    if (key == null) return false; // billEase — not configurable, excluded
     return _allowedPaymentKeys.contains(key);
   }
 
+  /// Firestore `checkoutOptions.payment` key for [method]. These match PayMongo's
+  /// own `payment_method_types` strings so the seller config, the checkout-session
+  /// payload and the webhook's stored paymentMethod all share one vocabulary.
   static String? _paymentMethodKey(PaymentMethod method) {
     switch (method) {
       case PaymentMethod.cashOnDelivery: return 'cod';
       case PaymentMethod.gcash:          return 'gcash';
       case PaymentMethod.card:           return 'card';
-      default:                           return null;
+      case PaymentMethod.grabpay:        return 'grab_pay';
+      case PaymentMethod.paymaya:        return 'paymaya';
+      case PaymentMethod.shopeePay:      return 'shopee_pay';
+      case PaymentMethod.billEase:       return null;
     }
   }
 
@@ -230,14 +235,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
   bool _anySameDaySelected() =>
       _sellerSameDaySelected.values.any((selected) => selected);
 
-  /// First allowed online payment method (card / GCash), or null if the sellers
-  /// only allow COD. Mirrors the exclusions applied in the payment selector.
+  /// First allowed online payment method (card / e-wallet), or null if the
+  /// sellers only allow COD. Mirrors the exclusions applied in the payment
+  /// selector.
   PaymentMethod? _firstOnlinePaymentMethod() {
     for (final m in PaymentMethod.values) {
-      if (m == PaymentMethod.cashOnDelivery ||
-          m == PaymentMethod.grabpay ||
-          m == PaymentMethod.billEase ||
-          m == PaymentMethod.paymaya) {
+      if (m == PaymentMethod.cashOnDelivery || m == PaymentMethod.billEase) {
         continue;
       }
       if (_isPaymentMethodAllowed(m)) return m;
@@ -665,7 +668,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         _selectedPaymentMethod == PaymentMethod.cashOnDelivery) {
       _showErrorDialog(
         'Cash on Delivery isn\'t available for Same Day Delivery. Please choose '
-        'an online payment method (card or GCash).',
+        'an online payment method (card or e-wallet).',
       );
       return false;
     }
@@ -2406,9 +2409,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
             child: Column(
               children: PaymentMethod.values
                   .where((method) =>
-                      method != PaymentMethod.grabpay &&
                       method != PaymentMethod.billEase &&
-                      method != PaymentMethod.paymaya &&
                       _isPaymentMethodAllowed(method) &&
                       // Same Day Delivery (Lalamove) is online-payment only —
                       // hide Cash on Delivery while any seller uses Same Day.
@@ -2495,6 +2496,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
         return Icons.local_taxi;
       case PaymentMethod.paymaya:
         return Icons.account_balance_wallet_outlined;
+      case PaymentMethod.shopeePay:
+        return Icons.shopping_bag_outlined;
       case PaymentMethod.billEase:
         return Icons.account_balance;
       case PaymentMethod.cashOnDelivery:

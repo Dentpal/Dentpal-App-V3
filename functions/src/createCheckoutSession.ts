@@ -134,7 +134,7 @@ function validatePaymentMethods(methods: any): string[] {
     throw new Error('Payment methods must be an array');
   }
   
-  const validMethods = ['card', 'gcash'];
+  const validMethods = ['card', 'gcash', 'grab_pay', 'paymaya', 'shopee_pay'];
   const sanitizedMethods = methods.filter(method => 
     typeof method === 'string' && validMethods.includes(method)
   );

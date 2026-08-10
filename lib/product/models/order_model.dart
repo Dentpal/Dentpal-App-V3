@@ -35,6 +35,7 @@ enum PaymentMethod {
   gcash,
   grabpay,
   paymaya,
+  shopeePay,
   billEase,
   cashOnDelivery
 }
@@ -834,7 +835,9 @@ extension PaymentMethodExtension on PaymentMethod {
       case PaymentMethod.grabpay:
         return 'Grab Pay';
       case PaymentMethod.paymaya:
-        return 'PayMaya';
+        return 'Maya';
+      case PaymentMethod.shopeePay:
+        return 'Shopee Pay';
       case PaymentMethod.billEase:
         return 'BillEase (Buy Now Pay Later)';
       case PaymentMethod.cashOnDelivery:
@@ -852,6 +855,8 @@ extension PaymentMethodExtension on PaymentMethod {
         return 'grab_pay';
       case PaymentMethod.paymaya:
         return 'paymaya';
+      case PaymentMethod.shopeePay:
+        return 'shopee_pay';
       case PaymentMethod.billEase:
         return 'Buy Now, Pay Later (BillEase)';
       case PaymentMethod.cashOnDelivery:
