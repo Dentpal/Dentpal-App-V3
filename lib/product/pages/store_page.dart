@@ -1332,81 +1332,87 @@ class _StorePageState extends State<StorePage> {
   Widget _buildCategoryTabStrip() {
     final entries = _categories.entries.toList();
 
-    return SizedBox(
-      height: 24,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: entries.length + 1,
-        separatorBuilder: (_, _) => const SizedBox(width: 18),
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            return _buildTabText(
-              label: 'Popular',
-              icon: Icons.local_fire_department,
-              isSelected: _viewMode == 'popular',
-              onTap: _selectPopular,
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, bottom: 4),
+      child: SizedBox(
+        height: 40,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+          itemCount: entries.length + 1,
+          separatorBuilder: (_, _) => const SizedBox(width: 8),
+          itemBuilder: (context, index) {
+            if (index == 0) {
+              return _buildCategoryPill(
+                label: 'Popular',
+                icon: Icons.local_fire_department,
+                isSelected: _viewMode == 'popular',
+                onTap: _selectPopular,
+              );
+            }
+            final entry = entries[index - 1];
+            final isSelected = _viewMode == 'category' &&
+                _selectedCategoryId == entry.key;
+            return _buildCategoryPill(
+              label: entry.value,
+              icon: null,
+              isSelected: isSelected,
+              onTap: () => _selectCategory(entry.key),
             );
-          }
-          final entry = entries[index - 1];
-          final isSelected = _viewMode == 'category' &&
-              _selectedCategoryId == entry.key;
-          return _buildTabText(
-            label: entry.value,
-            icon: null,
-            isSelected: isSelected,
-            onTap: () => _selectCategory(entry.key),
-          );
-        },
+          },
+        ),
       ),
     );
   }
 
-  Widget _buildTabText({
+  Widget _buildCategoryPill({
     required String label,
     required IconData? icon,
     required bool isSelected,
     required VoidCallback onTap,
   }) {
+    final Color foreground =
+        isSelected ? AppColors.onPrimary : AppColors.onSurface;
+
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: IntrinsicWidth(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.end,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary : AppColors.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: isSelected
+                ? AppColors.primary
+                : AppColors.onSurface.withValues(alpha: 0.15),
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.25),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (icon != null) ...[
-                  Icon(
-                    icon,
-                    size: 15,
-                    color: isSelected
-                        ? AppColors.primary
-                        : AppColors.onSurface.withValues(alpha: 0.6),
-                  ),
-                  const SizedBox(width: 4),
-                ],
-                Text(
-                  label.length > 29 ? '${label.substring(0, 29)}...' : label,
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: isSelected
-                        ? AppColors.primary
-                        : AppColors.onSurface.withValues(alpha: 0.75),
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                    height: 1.0,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Container(
-              height: 2,
-              decoration: BoxDecoration(
-                color: isSelected ? AppColors.primary : Colors.transparent,
-                borderRadius: BorderRadius.circular(1),
+            if (icon != null) ...[
+              Icon(icon, size: 16, color: foreground),
+              const SizedBox(width: 5),
+            ],
+            Text(
+              label.length > 29 ? '${label.substring(0, 29)}...' : label,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: foreground,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                height: 1.0,
               ),
             ),
           ],
@@ -1418,17 +1424,20 @@ class _StorePageState extends State<StorePage> {
   Widget _buildSubCategoryRow() {
     if (_loadingSubCategories) {
       return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 2, 16, 0),
+        padding: const EdgeInsets.fromLTRB(16, 2, 16, 4),
         child: Row(
           children: [
-            Container(
-              height: 22,
-              width: 80,
-              decoration: BoxDecoration(
-                color: AppColors.onSurface.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(14),
+            for (final width in const [70.0, 96.0, 82.0]) ...[
+              Container(
+                height: 30,
+                width: width,
+                decoration: BoxDecoration(
+                  color: AppColors.onSurface.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(15),
+                ),
               ),
-            ),
+              const SizedBox(width: 8),
+            ],
           ],
         ),
       );
@@ -1437,14 +1446,14 @@ class _StorePageState extends State<StorePage> {
     if (_currentSubCategories.isEmpty) return const SizedBox.shrink();
 
     return Padding(
-      padding: const EdgeInsets.only(top: 2, bottom: 0),
+      padding: const EdgeInsets.only(top: 2, bottom: 4),
       child: SizedBox(
-        height: 26,
+        height: 34,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
           itemCount: _currentSubCategories.length + 1,
-          separatorBuilder: (_, _) => const SizedBox(width: 16),
+          separatorBuilder: (_, _) => const SizedBox(width: 8),
           itemBuilder: (context, index) {
             if (index == 0) {
               final isAll = _selectedSubCategoryId == null;
@@ -1482,18 +1491,29 @@ class _StorePageState extends State<StorePage> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: Align(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppColors.primary.withValues(alpha: 0.12)
+              : AppColors.grey100,
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(
+            color: isSelected
+                ? AppColors.primary
+                : AppColors.onSurface.withValues(alpha: 0.12),
+            width: isSelected ? 1.4 : 1,
+          ),
+        ),
         child: Text(
           label,
           style: AppTextStyles.bodySmall.copyWith(
-            color: isSelected
-                ? AppColors.primary
-                : AppColors.onSurface.withValues(alpha: 0.7),
-            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-            decoration: isSelected ? TextDecoration.underline : TextDecoration.none,
-            decorationColor: AppColors.primary,
-            decorationThickness: 2,
+            color: isSelected ? AppColors.primaryDark : AppColors.onSurface,
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+            height: 1.0,
           ),
         ),
       ),

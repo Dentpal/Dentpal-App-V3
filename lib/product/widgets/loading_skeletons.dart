@@ -474,17 +474,17 @@ class StorePageSkeleton extends StatelessWidget {
             const SizedBox(height: 16),
             // Category tabs.
             SizedBox(
-              height: 32,
+              height: 40,
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 physics: const NeverScrollableScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
                 children: const [
-                  SkeletonBox(width: 64, height: 30, radius: 15),
-                  SizedBox(width: 10),
-                  SkeletonBox(width: 88, height: 30, radius: 15),
-                  SizedBox(width: 10),
-                  SkeletonBox(width: 72, height: 30, radius: 15),
+                  SkeletonBox(width: 84, height: 36, radius: 18),
+                  SizedBox(width: 8),
+                  SkeletonBox(width: 118, height: 36, radius: 18),
+                  SizedBox(width: 8),
+                  SkeletonBox(width: 96, height: 36, radius: 18),
                 ],
               ),
             ),
