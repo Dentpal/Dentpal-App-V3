@@ -72,6 +72,26 @@ class SearchResult {
   });
 }
 
+/// A type-ahead entry: the matched product name plus the id it belongs to, so
+/// selecting it can open the product rather than re-running a text search.
+///
+/// [price] is filled in separately — it lives in the product's `Variation`
+/// subcollection, not on the product document — so a row can render its name
+/// and photo immediately and gain the price a moment later.
+class ProductSuggestion {
+  const ProductSuggestion({
+    required this.productId,
+    required this.name,
+    this.brand,
+    this.imageUrl,
+  });
+
+  final String productId;
+  final String name;
+  final String? brand;
+  final String? imageUrl;
+}
+
 class ProductSearchService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static const int _defaultPageSize = 15;
@@ -431,6 +451,102 @@ class ProductSearchService {
     }
     
     return true;
+  }
+
+  /// Gets search suggestions that carry the product they came from, so a tap
+  /// can open that product directly instead of re-running the query.
+  ///
+  /// Same matching as [getSearchSuggestions]; the only difference is that the
+  /// document id travels with the name.
+  Future<List<ProductSuggestion>> getProductSuggestions(
+    String partialQuery,
+  ) async {
+    try {
+      if (partialQuery.trim().isEmpty) return [];
+
+      final lowerQuery = partialQuery.toLowerCase();
+
+      final querySnapshot = await _firestore
+          .collection('Product')
+          .where('isActive', isEqualTo: true)
+          .limit(50) // Limit for performance
+          .get();
+
+      final suggestions = <ProductSuggestion>[];
+      final seenNames = <String>{};
+
+      for (final doc in querySnapshot.docs) {
+        final data = doc.data();
+        if (data['isDraft'] == true || data['isArchived'] == true) continue;
+        final name = (data['name'] ?? '').toString();
+        if (name.isEmpty) continue;
+        if (!name.toLowerCase().contains(lowerQuery)) continue;
+        if (!seenNames.add(name)) continue;
+        suggestions.add(
+          ProductSuggestion(
+            productId: doc.id,
+            name: name,
+            brand: (data['brand'] as String?),
+            imageUrl: (data['thumbnailURL'] as String?)?.isNotEmpty == true
+                ? data['thumbnailURL'] as String
+                : (data['imageURL'] as String?),
+          ),
+        );
+        if (suggestions.length >= 8) break;
+      }
+
+      return suggestions;
+    } catch (e) {
+      AppLogger.e('❌ ProductSearchService: Error getting suggestions', e);
+      return [];
+    }
+  }
+
+  /// Lowest variation price for each of [productIds].
+  ///
+  /// Reads each product's `Variation` subcollection directly by path rather
+  /// than issuing a `collectionGroup` query, which would need a collection
+  /// group index deployed before it would run at all. Callers pass a handful
+  /// of ids (the visible suggestions) and cache what comes back.
+  Future<Map<String, double>> getLowestPrices(
+    Iterable<String> productIds,
+  ) async {
+    final ids = productIds.toList();
+    if (ids.isEmpty) return {};
+
+    final entries = await Future.wait(ids.map(getLowestPrice));
+    return {
+      for (var i = 0; i < ids.length; i++)
+        if (entries[i] != null) ids[i]: entries[i]!,
+    };
+  }
+
+  /// Lowest variation price for a single product, or null when it has no
+  /// priced variation. Resolves independently of any other product, so callers
+  /// showing a list can paint each price as it lands instead of waiting on the
+  /// slowest read in a batch.
+  Future<double?> getLowestPrice(String productId) async {
+    try {
+      final snapshot = await _firestore
+          .collection('Product')
+          .doc(productId)
+          .collection('Variation')
+          .get();
+
+      double? lowest;
+      for (final doc in snapshot.docs) {
+        final raw = doc.data()['price'];
+        final price = raw is num
+            ? raw.toDouble()
+            : (raw is String ? double.tryParse(raw) : null);
+        if (price == null || price <= 0) continue;
+        if (lowest == null || price < lowest) lowest = price;
+      }
+      return lowest;
+    } catch (e) {
+      AppLogger.e('❌ ProductSearchService: Error fetching price', e);
+      return null;
+    }
   }
 
   /// Gets search suggestions based on partial input

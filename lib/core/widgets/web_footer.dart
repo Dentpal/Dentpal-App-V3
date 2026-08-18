@@ -8,7 +8,20 @@ import 'package:flutter/services.dart';
 /// Professional Footer Widget - Web Only
 /// Modern ecommerce footer with branding, navigation, and legal links
 class WebFooter extends StatelessWidget {
-  const WebFooter({super.key});
+  const WebFooter({super.key, this.dark = false});
+
+  /// Opt-in dark palette, for pages that render on a near-black ground.
+  /// Defaults to the light footer every other page already uses.
+  final bool dark;
+
+  Color get _ground => dark ? const Color(0xFF0A0F0D) : Colors.white;
+  Color get _raised => dark ? const Color(0xFF121A17) : AppColors.grey100;
+  Color get _line => dark ? const Color(0xFF23302B) : AppColors.grey300;
+  Color get _heading => dark ? const Color(0xFFEAF1EE) : AppColors.onBackground;
+  Color get _body =>
+      dark ? const Color(0xFFEAF1EE).withValues(alpha: 0.7) : AppColors.grey700;
+  Color get _muted =>
+      dark ? const Color(0xFFEAF1EE).withValues(alpha: 0.5) : AppColors.grey600;
 
   @override
   Widget build(BuildContext context) {
@@ -19,9 +32,7 @@ class WebFooter extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-      ),
+      decoration: BoxDecoration(color: _ground),
       child: Column(
         children: [
           // Main Footer Content
@@ -39,7 +50,7 @@ class WebFooter extends StatelessWidget {
             constraints: const BoxConstraints(maxWidth: 1200),
             margin: EdgeInsets.symmetric(horizontal: isWideWeb ? 48 : 24),
             height: 1,
-            color: AppColors.grey300,
+            color: _line,
           ),
 
           // Bottom Bar (Copyright)
@@ -127,7 +138,7 @@ class WebFooter extends StatelessWidget {
             Text(
               'DentPal',
               style: AppTextStyles.headlineMedium.copyWith(
-                color: AppColors.onBackground,
+                color: _heading,
                 fontWeight: FontWeight.w900,
                 letterSpacing: -0.5,
               ),
@@ -140,7 +151,7 @@ class WebFooter extends StatelessWidget {
         Text(
           'Your trusted dental supplies marketplace',
           style: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.grey700,
+            color: _body,
             height: 1.6,
           ),
         ),
@@ -149,7 +160,7 @@ class WebFooter extends StatelessWidget {
         Text(
           'Connecting dental professionals with quality products and reliable sellers across the Philippines.',
           style: AppTextStyles.bodySmall.copyWith(
-            color: AppColors.grey600,
+            color: _muted,
             height: 1.6,
           ),
         ),
@@ -199,16 +210,16 @@ class WebFooter extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: AppColors.grey100,
+          color: _raised,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: AppColors.grey300,
+            color: _line,
             width: 1,
           ),
         ),
         child: Icon(
           icon,
-          color: AppColors.grey700,
+          color: _body,
           size: 20,
         ),
       ),
@@ -222,7 +233,7 @@ class WebFooter extends StatelessWidget {
         Text(
           'Customer Service',
           style: AppTextStyles.titleMedium.copyWith(
-            color: AppColors.onBackground,
+            color: _heading,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -257,7 +268,7 @@ class WebFooter extends StatelessWidget {
         Text(
           'Legal',
           style: AppTextStyles.titleMedium.copyWith(
-            color: AppColors.onBackground,
+            color: _heading,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -288,7 +299,7 @@ class WebFooter extends StatelessWidget {
         Text(
           'Download Our App',
           style: AppTextStyles.titleMedium.copyWith(
-            color: AppColors.onBackground,
+            color: _heading,
             fontWeight: FontWeight.w700,
             fontSize: 15,
           ),
@@ -305,7 +316,7 @@ class WebFooter extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.grey300, width: 2),
+                border: Border.all(color: _line, width: 2),
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(4),
@@ -326,7 +337,7 @@ class WebFooter extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: AppColors.grey900,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: AppColors.grey300),
+                  border: Border.all(color: _line),
                 ),
                 child: Material(
                   color: Colors.transparent,
@@ -394,7 +405,7 @@ class WebFooter extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.grey300, width: 2),
+                border: Border.all(color: _line, width: 2),
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(4),
@@ -415,7 +426,7 @@ class WebFooter extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: AppColors.grey900,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: AppColors.grey300),
+                  border: Border.all(color: _line),
                 ),
                 child: Material(
                   color: Colors.transparent,
@@ -487,7 +498,7 @@ class WebFooter extends StatelessWidget {
             Text(
               text,
               style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.grey700,
+                color: _body,
                 fontSize: 14,
               ),
             ),
@@ -507,7 +518,7 @@ class WebFooter extends StatelessWidget {
     return Text(
       '© ${DateTime.now().year} DentPal. All rights reserved.',
       style: AppTextStyles.bodySmall.copyWith(
-        color: AppColors.grey700,
+        color: _body,
         fontSize: 13,
         fontWeight: FontWeight.w700,
       ),

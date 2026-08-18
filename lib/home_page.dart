@@ -14,8 +14,11 @@ import 'package:dentpal/product/services/user_service.dart';
 import 'package:dentpal/product/services/cart_service.dart';
 import 'package:dentpal/core/services/sub_account_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:dentpal/product/pages/categories_page.dart';
+import 'package:dentpal/profile/pages/orders_page.dart';
 import 'core/app_theme/app_colors.dart';
 import 'core/app_theme/app_text_styles.dart';
+import 'core/app_theme/ink_palette.dart';
 import 'package:flutter/services.dart';
 
 class HomePage extends StatefulWidget {
@@ -44,7 +47,9 @@ class _HomePageState extends State<HomePage> {
     if (!SignupState.isInSignupFlow) {
       _checkUserRole();
     } else {
-      AppLogger.d('HomePage: Skipping _checkUserRole in initState - user is in signup flow');
+      AppLogger.d(
+        'HomePage: Skipping _checkUserRole in initState - user is in signup flow',
+      );
       setState(() {
         _isLoadingSellerStatus = false;
       });
@@ -60,7 +65,9 @@ class _HomePageState extends State<HomePage> {
       // Skip auth state changes during signup flow to prevent
       // unnecessary rebuilds while SignupFlow is on the navigation stack
       if (SignupState.isInSignupFlow) {
-        AppLogger.d('HomePage: Auth state change ignored - user is in signup flow');
+        AppLogger.d(
+          'HomePage: Auth state change ignored - user is in signup flow',
+        );
         return;
       }
       _checkUserRole();
@@ -126,8 +133,9 @@ class _HomePageState extends State<HomePage> {
       // fails transiently, would trigger an unintended sign-out.
       if (SubAccountSessionManager.resolvedForUid != user.uid) {
         try {
-          final subAccountResult =
-              await SubAccountService.lookupSubAccount(user.uid);
+          final subAccountResult = await SubAccountService.lookupSubAccount(
+            user.uid,
+          );
           if (subAccountResult != null) {
             SubAccountSessionManager.setSubAccountSession(
               subAccount: subAccountResult.subAccount,
@@ -439,6 +447,7 @@ class _HomePageState extends State<HomePage> {
                 ],
               )
             : Scaffold(
+                backgroundColor: InkPalette.of(context).bg,
                 body: _pages[_selectedIndex],
                 // Only show bottom navigation bar for regular users
                 // Sellers use SellerDashboardPage's internal navigation
@@ -466,52 +475,164 @@ class _HomePageState extends State<HomePage> {
         selectedItemColor: Theme.of(context).primaryColor,
         onTap: _onItemTapped,
       );
-    } else {
-      // Regular user navigation - Products, Cart, Profile
-      return BottomNavigationBar(
-        items: <BottomNavigationBarItem>[
-          const BottomNavigationBarItem(icon: Icon(Icons.store), label: 'Products'),
-          BottomNavigationBarItem(
-            icon: Stack(
+    }
+
+    return _buildBuyerTabBar();
+  }
+
+  /// The buyer tab bar, in the marketplace design's dark/light palette.
+  ///
+  /// Five destinations with Home in the middle. Home, Cart and Profile are
+  /// real tabs backed by [_pages]; Categories and Orders push a route instead,
+  /// mirroring how the wide-screen side rail treats them — so neither owns a
+  /// slot in the tab stack, and the highlighted item stays on whichever tab is
+  /// actually underneath.
+  Widget _buildBuyerTabBar() {
+    final ink = InkPalette.of(context);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: ink.surface,
+        border: Border(top: BorderSide(color: ink.border)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 62,
+          child: Row(
+            children: [
+              _buildTabItem(
+                ink: ink,
+                icon: Icons.grid_view_rounded,
+                label: 'Categories',
+                onTap: _openBrowse,
+              ),
+              _buildTabItem(
+                ink: ink,
+                icon: Icons.shopping_cart_outlined,
+                activeIcon: Icons.shopping_cart,
+                label: 'Cart',
+                badgeCount: _cartItemCount,
+                isActive: _selectedIndex == 1,
+                onTap: () => _onItemTapped(1),
+              ),
+              _buildTabItem(
+                ink: ink,
+                icon: Icons.home_outlined,
+                activeIcon: Icons.home_rounded,
+                label: 'Home',
+                isActive: _selectedIndex == 0,
+                onTap: () => _onItemTapped(0),
+              ),
+              _buildTabItem(
+                ink: ink,
+                icon: Icons.receipt_long_outlined,
+                label: 'Orders',
+                onTap: () => _pushProtected(const OrdersPage()),
+              ),
+              _buildTabItem(
+                ink: ink,
+                icon: Icons.person_outline,
+                activeIcon: Icons.person,
+                label: 'Profile',
+                isActive: _selectedIndex == 2,
+                onTap: () => _onItemTapped(2),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTabItem({
+    required InkPalette ink,
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    IconData? activeIcon,
+    bool isActive = false,
+    int badgeCount = 0,
+  }) {
+    final color = isActive ? ink.emerald : ink.text.withValues(alpha: 0.55);
+
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Stack(
               clipBehavior: Clip.none,
               children: [
-                const Icon(Icons.shopping_cart),
-                if (_cartItemCount > 0)
+                Icon(
+                  isActive ? (activeIcon ?? icon) : icon,
+                  size: 23,
+                  color: color,
+                ),
+                if (badgeCount > 0)
                   Positioned(
-                    right: -8,
-                    top: -4,
+                    right: -7,
+                    top: -5,
                     child: Container(
-                      padding: const EdgeInsets.all(4),
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
                       constraints: const BoxConstraints(
-                        minWidth: 18,
-                        minHeight: 18,
+                        minWidth: 17,
+                        minHeight: 17,
                       ),
-                      decoration: const BoxDecoration(
-                        color: Colors.orange,
-                        borderRadius: BorderRadius.all(Radius.circular(9)),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: ink.amber,
+                        shape: BoxShape.circle,
                       ),
                       child: Text(
-                        _cartItemCount > 99 ? '99+' : '$_cartItemCount',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
+                        badgeCount > 99 ? '99+' : '$badgeCount',
+                        style: TextStyle(
+                          color: ink.onAmber,
+                          fontSize: 9.5,
                           fontWeight: FontWeight.bold,
                         ),
-                        textAlign: TextAlign.center,
                       ),
                     ),
                   ),
               ],
             ),
-            label: 'Cart',
-          ),
-          const BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
-        ],
-        currentIndex: _selectedIndex,
-        selectedItemColor: Theme.of(context).primaryColor,
-        onTap: _onItemTapped,
-      );
+            const SizedBox(height: 4),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: color,
+                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                fontSize: 10.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Opens Browse and hands any selection to the listing page. The listing
+  /// page lives inside this widget's tab stack, so it cannot be popped back
+  /// to — the selection travels through [pendingBrowseSelection] instead.
+  Future<void> _openBrowse() async {
+    final selection = await Navigator.of(context).push<BrowseSelection>(
+      MaterialPageRoute(builder: (context) => const CategoriesPage()),
+    );
+    if (!mounted || selection == null) return;
+    // Show the results, then hand the filter over.
+    if (_selectedIndex != 0) setState(() => _selectedIndex = 0);
+    pendingBrowseSelection.value = selection;
+  }
+
+  void _pushProtected(Widget page) {
+    if (FirebaseAuth.instance.currentUser == null) {
+      _showLoginRequiredDialog();
+      return;
     }
+    Navigator.of(context).push(MaterialPageRoute(builder: (context) => page));
   }
 }
 

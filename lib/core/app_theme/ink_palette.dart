@@ -1,0 +1,116 @@
+import 'package:flutter/material.dart';
+
+/// Palette for the marketplace surfaces, resolved against the device's
+/// light/dark setting.
+///
+/// These screens follow the DentPal marketplace design: one emerald brand
+/// colour, amber reserved strictly for urgency (deal timers, alerts), and a
+/// ground that flips between paper and near-black. It reads the *system*
+/// brightness rather than [Theme.of] because the app's [MaterialApp] is still
+/// pinned to `AppTheme.lightTheme` — fold this into [AppTheme] once the app
+/// ships a real dark theme.
+class InkPalette {
+  const InkPalette({
+    required this.isDark,
+    required this.bg,
+    required this.surface,
+    required this.surfaceHigh,
+    required this.border,
+    required this.text,
+    required this.emerald,
+    required this.emeraldSoft,
+    required this.onEmerald,
+    required this.amber,
+    required this.onAmber,
+    required this.heroCard,
+    required this.productBackdrop,
+  });
+
+  final bool isDark;
+
+  /// Page ground.
+  final Color bg;
+
+  /// Raised card surface, and a step above it for nested blocks and chips.
+  final Color surface;
+  final Color surfaceHigh;
+
+  /// Hairline separating cards from the ground.
+  final Color border;
+
+  /// Primary ink. Muted variants come from `.withValues(alpha:)` on this, so in
+  /// dark mode it has to be the lightest tone rather than a mid grey.
+  final Color text;
+
+  /// Brand green, and the teal it pairs with.
+  final Color emerald;
+  final Color emeraldSoft;
+
+  /// Ink to sit *on* a filled emerald surface, and on a filled amber one.
+  final Color onEmerald;
+  final Color amber;
+  final Color onAmber;
+
+  /// Surface for cards that sit inside the emerald hero, which is dark in both
+  /// modes — so this is the one tone that does not simply follow [surface].
+  final Color heroCard;
+
+  /// Pedestal behind product photography. Shots are cut out on white and would
+  /// otherwise float on the card.
+  final RadialGradient productBackdrop;
+
+  /// The hero keeps its emerald gradient in both modes; white text sits on it
+  /// either way, so only the surfaces around it flip.
+  static const LinearGradient heroGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFF2F6F53), Color(0xFF1B4B39), Color(0xFF123528)],
+  );
+
+  static const InkPalette _light = InkPalette(
+    isDark: false,
+    bg: Color(0xFFF4F7F5),
+    surface: Color(0xFFFFFFFF),
+    surfaceHigh: Color(0xFFEFF3F0),
+    border: Color(0xFFDDE5E0),
+    text: Color(0xFF10201B),
+    emerald: Color(0xFF059669),
+    emeraldSoft: Color(0xFF0D9488),
+    onEmerald: Color(0xFFFFFFFF),
+    amber: Color(0xFFD97706),
+    onAmber: Color(0xFFFFFFFF),
+    heroCard: Color(0xFFFFFFFF),
+    productBackdrop: RadialGradient(
+      center: Alignment.center,
+      radius: 0.9,
+      colors: [Color(0xFFFFFFFF), Color(0xFFEFF3F0)],
+    ),
+  );
+
+  static const InkPalette _dark = InkPalette(
+    isDark: true,
+    bg: Color(0xFF0A0F0D),
+    surface: Color(0xFF121A17),
+    surfaceHigh: Color(0xFF18221E),
+    border: Color(0xFF23302B),
+    text: Color(0xFFEAF1EE),
+    emerald: Color(0xFF34D399),
+    emeraldSoft: Color(0xFF2DD4BF),
+    onEmerald: Color(0xFF06251C),
+    amber: Color(0xFFFBBF24),
+    onAmber: Color(0xFF06251C),
+    heroCard: Color(0xFF0B120F),
+    productBackdrop: RadialGradient(
+      center: Alignment.center,
+      radius: 0.9,
+      colors: [Color(0xFF2A3833), Color(0xFF141C19)],
+    ),
+  );
+
+  /// Follows the OS setting and rebuilds with it, since [MediaQuery] is an
+  /// inherited widget.
+  static InkPalette of(BuildContext context) =>
+      MediaQuery.platformBrightnessOf(context) == Brightness.dark
+      ? _dark
+      : _light;
+}
