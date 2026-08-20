@@ -107,9 +107,20 @@ class _OrdersPageState extends State<OrdersPage> with TickerProviderStateMixin {
 
   void _initializeOrdersStream() {
     try {
+      // Paint whatever this session already knows, and only show the loading
+      // state when there is genuinely nothing to show. The stream below
+      // replaces it as soon as the first snapshot arrives.
+      final cached = OrderService.cachedOrders;
+
       setState(() {
-        isLoading = true;
         error = null;
+        if (cached != null) {
+          orders = cached;
+          _applyFilter();
+          isLoading = false;
+        } else {
+          isLoading = true;
+        }
       });
 
       _ordersStream = OrderService.getUserOrdersStream();

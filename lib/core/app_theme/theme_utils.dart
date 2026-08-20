@@ -32,9 +32,26 @@ extension ThemeExtension on BuildContext {
   
   /// Check if screen is considered small (width < 600)
   bool get isSmallScreen => screenWidth < 600;
-  
+
   /// Check if screen is considered large (width >= 1200)
   bool get isLargeScreen => screenWidth >= 1200;
+
+  /// Whether the app shell shows its side rail rather than the bottom tab bar.
+  ///
+  /// The single source of truth for that switch. Pages used to each pick their
+  /// own threshold (800, 900, 1024, 1200), so between 900 and 1024 the shell
+  /// believed it was on desktop while Cart still laid itself out for a phone.
+  bool get isWideLayout => screenWidth >= Breakpoints.wide;
+}
+
+/// Layout breakpoints, in logical pixels.
+class Breakpoints {
+  Breakpoints._();
+
+  /// Rail-vs-bottom-bar threshold. Deliberately a width test rather than
+  /// [kIsWeb]: a tablet held in landscape wants the rail just as much as a
+  /// browser does.
+  static const double wide = 900;
 }
 
 /// Common app gradients

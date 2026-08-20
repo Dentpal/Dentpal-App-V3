@@ -1,12 +1,26 @@
 import 'package:flutter/material.dart';
 
-import '../app_theme/app_colors.dart';
+import '../app_theme/ink_palette.dart';
 
-/// Base tone of a placeholder block.
-const Color kSkeletonBase = AppColors.grey200;
+/// Base tone of a placeholder block, for the current theme.
+///
+/// Resolved per build rather than held as a constant: these used to be fixed
+/// light greys, so every skeleton in the app flashed a white card before
+/// dark-mode content landed behind it.
+Color skeletonBase(BuildContext context) {
+  final ink = InkPalette.of(context);
+  return ink.isDark ? ink.surfaceHigh : const Color(0xFFE6EBE8);
+}
 
-/// Brighter tone that sweeps across [kSkeletonBase] while content loads.
-const Color kSkeletonHighlight = Color(0xFFF7F7F7);
+/// The band that sweeps across [skeletonBase]. Always the brighter of the two,
+/// in both themes — a sweep that darkens reads as a glitch rather than motion.
+Color skeletonHighlight(BuildContext context) {
+  final ink = InkPalette.of(context);
+  final base = skeletonBase(context);
+  return ink.isDark
+      ? Color.lerp(base, ink.text, 0.10)!
+      : Color.lerp(base, Colors.white, 0.72)!;
+}
 
 /// Drives the shimmer for every [SkeletonBox] beneath it.
 ///
@@ -96,18 +110,22 @@ class SkeletonBox extends StatelessWidget {
         shape == BoxShape.circle ? null : BorderRadius.circular(radius);
     final animation = SkeletonScope.maybeOf(context);
 
+    final base = skeletonBase(context);
+
     if (animation == null) {
       return Container(
         width: width,
         height: height,
         margin: margin,
         decoration: BoxDecoration(
-          color: kSkeletonBase,
+          color: base,
           shape: shape,
           borderRadius: borderRadius,
         ),
       );
     }
+
+    final highlight = skeletonHighlight(context);
 
     return AnimatedBuilder(
       animation: animation,
@@ -125,11 +143,7 @@ class SkeletonBox extends StatelessWidget {
             gradient: LinearGradient(
               begin: Alignment(centre - 1, 0),
               end: Alignment(centre + 1, 0),
-              colors: const [
-                kSkeletonBase,
-                kSkeletonHighlight,
-                kSkeletonBase,
-              ],
+              colors: [base, highlight, base],
             ),
           ),
         );

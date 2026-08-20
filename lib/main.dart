@@ -11,6 +11,7 @@ import 'package:dentpal/auth_wrapper.dart';
 import 'package:dentpal/home_page.dart';
 import 'package:dentpal/login_page.dart';
 import 'package:dentpal/core/app_theme/app_theme.dart';
+import 'package:dentpal/core/services/session_cache.dart';
 import 'package:dentpal/services/deep_link_service.dart';
 import 'package:dentpal/services/notification_service.dart';
 import 'package:dentpal/services/in_app_notification_widget.dart';
@@ -56,6 +57,9 @@ void main() async {
     persistenceEnabled: true,
     cacheSizeBytes: 100 * 1024 * 1024, // 100 MB
   );
+
+  // Watch for account changes and drop every per-account cached read.
+  SessionCache.start();
 
   // Initialize notification service (only for mobile platforms)
   if (!kIsWeb) {

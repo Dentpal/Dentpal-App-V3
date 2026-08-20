@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../core/app_theme/app_colors.dart';
+import '../../core/app_theme/ink_palette.dart';
 import '../../core/widgets/skeleton.dart';
 
 /// Placeholder layouts shown while a page's first payload is in flight.
@@ -9,24 +9,24 @@ import '../../core/widgets/skeleton.dart';
 /// roughly the same place, so the page fills in rather than jumping. They all
 /// wrap themselves in a [SkeletonShimmer], so callers just drop them in.
 
-/// White card chrome shared by the list skeletons.
+/// Card chrome shared by the list skeletons.
+///
+/// Takes a [context] so it can follow the theme: it used to paint the light
+/// theme's surface unconditionally, which flashed a white card on every
+/// dark-mode load before the real content arrived.
 Widget _card({
+  required BuildContext context,
   required Widget child,
   EdgeInsetsGeometry? margin,
   double radius = 16,
 }) {
+  final ink = InkPalette.of(context);
   return Container(
     margin: margin,
     decoration: BoxDecoration(
-      color: AppColors.surface,
+      color: ink.surface,
       borderRadius: BorderRadius.circular(radius),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.06),
-          blurRadius: 12,
-          offset: const Offset(0, 4),
-        ),
-      ],
+      border: Border.all(color: ink.border),
     ),
     child: child,
   );
@@ -41,6 +41,7 @@ class TraderCardSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _card(
+      context: context,
       margin: const EdgeInsets.only(bottom: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -114,6 +115,7 @@ class BannerSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     return SkeletonShimmer(
       child: _card(
+        context: context,
         margin: const EdgeInsets.only(bottom: 16),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(16),
@@ -137,9 +139,9 @@ class ProductCardSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: InkPalette.of(context).surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.06)),
+        border: Border.all(color: InkPalette.of(context).border),
       ),
       child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -268,7 +270,7 @@ class _DetailNarrowSkeleton extends StatelessWidget {
           // Fixed add-to-cart bar.
           Container(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            color: AppColors.surface,
+            color: InkPalette.of(context).surface,
             child: const Row(
               children: [
                 SkeletonBox(width: 110, height: 44, radius: 12),
@@ -296,7 +298,7 @@ class _DetailWideSkeleton extends StatelessWidget {
           // below doesn't jump once it arrives.
           Container(
             height: 56,
-            color: AppColors.surface,
+            color: InkPalette.of(context).surface,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: const Row(
               children: [
@@ -426,7 +428,7 @@ class StorePageSkeleton extends StatelessWidget {
                     height: iconDiameter,
                     padding: const EdgeInsets.all(3),
                     decoration: BoxDecoration(
-                      color: AppColors.surface,
+                      color: InkPalette.of(context).surface,
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: const SkeletonBox(radius: 11),
@@ -531,6 +533,7 @@ class _CartGroupSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _card(
+      context: context,
       margin: const EdgeInsets.only(bottom: 16),
       child: Padding(
         padding: const EdgeInsets.all(12),

@@ -8,6 +8,65 @@ class ProductService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
+  // ── Active catalogue snapshot ─────────────────────────────────────────────
+  //
+  // Several parts of the listing page need the whole active catalogue: the
+  // type-ahead index, the Most Popular ranking, and the set of category IDs
+  // that actually contain something. Each used to run its own unbounded
+  // `.get()` on every visit to Home — two full-collection reads per entry, and
+  // Home was re-entered on every tab switch because nothing kept it alive.
+  //
+  // Cached with the same shape as CategoryService: value + timestamp + TTL.
+
+  static List<QueryDocumentSnapshot<Map<String, dynamic>>>? _cachedCatalogue;
+  static DateTime? _catalogueCacheTimestamp;
+  static const Duration _catalogueCacheDuration = Duration(minutes: 5);
+
+  /// In-flight read, so concurrent callers on a cold cache share one query
+  /// rather than each firing their own.
+  static Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>?
+  _cataloguePending;
+
+  /// Every active product, cached for [_catalogueCacheDuration].
+  ///
+  /// Pass [forceRefresh] for pull-to-refresh.
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getActiveCatalogue({bool forceRefresh = false}) {
+    if (!forceRefresh) {
+      final cached = _cachedCatalogue;
+      final at = _catalogueCacheTimestamp;
+      if (cached != null &&
+          at != null &&
+          DateTime.now().difference(at) < _catalogueCacheDuration) {
+        AppLogger.d('Using cached catalogue (${cached.length} products)');
+        return Future.value(cached);
+      }
+
+      final pending = _cataloguePending;
+      if (pending != null) return pending;
+    }
+
+    final future = _firestore
+        .collection('Product')
+        .where('isActive', isEqualTo: true)
+        .get()
+        .then((snapshot) {
+          _cachedCatalogue = snapshot.docs;
+          _catalogueCacheTimestamp = DateTime.now();
+          return snapshot.docs;
+        })
+        .whenComplete(() => _cataloguePending = null);
+
+    _cataloguePending = future;
+    return future;
+  }
+
+  /// Drops the catalogue cache. Called on sign-out and on pull-to-refresh.
+  static void clearCatalogueCache() {
+    _cachedCatalogue = null;
+    _catalogueCacheTimestamp = null;
+  }
+
   // Helper method to get variations for a single product
   Future<List<ProductVariation>> _getProductVariations(String productId) async {
     try {

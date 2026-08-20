@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
@@ -10,25 +11,25 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/product_model.dart';
 import '../models/order_model.dart' as order_model;
+import '../models/seller_display.dart';
 import '../services/product_service.dart';
 import '../services/banned_seller_service.dart';
 import '../services/user_service.dart';
 import '../services/category_service.dart';
-import '../services/cart_service.dart';
 import '../services/click_tracking_service.dart';
-import '../widgets/product_card.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import '../../core/app_theme/ink_palette.dart';
+import '../../core/app_theme/theme_utils.dart';
+import '../../core/services/nav_badge_service.dart';
+import '../../core/widgets/app_shell.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/utils/currency_formatter.dart';
 import 'package:dentpal/utils/navigation_utils.dart';
-import 'cart_page.dart';
 import 'categories_page.dart';
 import 'product_detail_page.dart';
 import '../services/product_search_service.dart';
 import '../../login_page.dart';
 import 'package:flutter/services.dart';
-import '../../profile/pages/profile_page.dart';
 import '../../profile/pages/orders_page.dart';
 import '../../profile/pages/settings/notifications_page.dart';
 import '../../profile/pages/order_details_page.dart';
@@ -36,6 +37,7 @@ import '../../profile/services/address_service.dart';
 import '../../profile/services/order_service.dart';
 import '../../public_support_page.dart';
 import 'package:dentpal/core/widgets/app_network_image.dart';
+import 'package:dentpal/core/widgets/skeleton.dart';
 import 'package:dentpal/core/widgets/web_footer.dart';
 
 // Custom cache manager with web compatibility
@@ -77,8 +79,8 @@ class _ProductListingPageState extends State<ProductListingPage>
   /// change repaints the page.
   InkPalette get ink => InkPalette.of(context);
 
-  /// Width of the wide-screen side rail.
-  static const double _kSideNavWidth = 248;
+  /// Widest the centred content column grows to.
+  static const double _kMaxContentWidth = 1100;
 
   /// Anchors the "Dental traders" heading so a browse selection can bring the
   /// filtered results into view.
@@ -93,21 +95,32 @@ class _ProductListingPageState extends State<ProductListingPage>
   double get _bannerAspectRatio =>
       MediaQuery.of(context).size.width >= 600 ? 8 / 3 : 2.2;
 
-  /// Width available to the content, i.e. the screen minus the side rail.
-  /// Grids size themselves against this rather than the raw screen width, or
-  /// they lay out a column too many next to the rail.
+  /// Width available to the content, i.e. the window minus the shell's side
+  /// rail. Grids size themselves against this rather than the raw window width,
+  /// or they lay out a column too many next to the rail.
+  ///
+  /// The rail belongs to [AppShell] now, but `MediaQuery` still reports the
+  /// whole window to this page, so the subtraction is still ours to do.
   double get _contentWidth {
     final width = MediaQuery.of(context).size.width;
-    return width >= 900 ? width - _kSideNavWidth : width;
+    return width >= Breakpoints.wide ? width - kAppShellRailWidth : width;
   }
 
   final ProductService _productService = ProductService();
   final UserService _userService = UserService();
   final CategoryService _categoryService = CategoryService();
   final ClickTrackingService _clickTrackingService = ClickTrackingService();
-  final CartService _cartService = CartService();
   bool _isLoading = false;
   bool _isLoadingMore = false;
+
+  /// False until the first catalogue fetch has settled, successfully or not.
+  ///
+  /// Distinct from [_isLoading], which only spans the fetch itself. The first
+  /// fetch is preceded by an await on the banned-seller cache, and during that
+  /// window the page has no products and is not "loading" — which used to
+  /// render the "No products found" empty state before anything had been
+  /// asked for. Every first-run placeholder is driven off this instead.
+  bool _firstLoadDone = false;
   List<String> _selectedCategories = [];
   List<String> _categories = ['All'];
   // Number of category rows currently revealed in the default view.
@@ -119,9 +132,13 @@ class _ProductListingPageState extends State<ProductListingPage>
   DateTime? _cacheTimestamp;
   DocumentSnapshot? _lastDocument;
   bool _hasMore = true;
-  final int _pageSize =
-      50; // Fetch products in larger batches to accumulate stores
-  static const int _storePageSize = 10; // Display 10 unique stores per page
+
+  /// Products per page. The grid loads another page when the buyer reaches
+  /// the last row.
+  static const int _pageSize = 30;
+
+  /// Sellers surfaced so far — kept for the "Shipped From" filter, which
+  /// classifies a product by the region its seller ships from.
   Set<String> _loadedSellerIds = {};
   final ScrollController _scrollController = ScrollController();
   final PageController _bannerPageController = PageController();
@@ -132,15 +149,15 @@ class _ProductListingPageState extends State<ProductListingPage>
   String?
   _userRegion; // Classified region: 'NCR' | 'Luzon' | 'Visayas' | 'Mindanao'
 
-  // Cart item count for badge
-  int _cartItemCount = 0;
-  StreamSubscription<int>? _cartCountSubscription;
   StreamSubscription<User?>? _authStateSubscription;
 
-  // Unread notification count for the bell / rail badge.
-  int _unreadNotifications = 0;
-  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
-  _notificationsSubscription;
+  /// Unread count for the mobile header's bell.
+  ///
+  /// Owned by [NavBadgeService] rather than subscribed here: the shell's rail
+  /// shows the same number, and two independent listeners on the same
+  /// collection could disagree for a frame.
+  int get _unreadNotifications =>
+      NavBadgeService.instance.unreadNotifications.value;
 
   // ── Hero state ───────────────────────────────────────────────────────────
   // Most recent order still in flight, surfaced as the hero tracking row.
@@ -159,6 +176,7 @@ class _ProductListingPageState extends State<ProductListingPage>
 
   // Active banner image URLs and target URLs loaded from Realtime Database
   List<String> _bannerImageUrls = [];
+  bool _isLoadingBanner = true;
   List<String?> _bannerTargetUrls = [];
   int _currentBannerIndex = 0;
 
@@ -166,11 +184,6 @@ class _ProductListingPageState extends State<ProductListingPage>
   // A null value means the document was fetched but does not exist in Firestore.
   Map<String, Map<String, dynamic>?> _sellerDataCache = {};
   Set<String> _sellerDataFetching = {};
-
-  // Cache for active vouchers per seller, keyed by sellerId. Each value is
-  // the list of currently-valid voucher documents (already date-filtered).
-  final Map<String, List<Map<String, dynamic>>> _sellerVouchersCache = {};
-  final Set<String> _sellerVouchersFetching = {};
 
   // Mapping between category names and IDs for filtering
   Map<String, String> _categoryNameToId = {};
@@ -237,14 +250,21 @@ class _ProductListingPageState extends State<ProductListingPage>
     _loadUserName();
     _loadUserRegion();
     _loadActiveBanner(); // Load active banner image from Realtime Database
-    _listenToCartCount(); // Listen to cart item count for badge
+    _listenToAccountStreams();
+
+    NavBadgeService.instance.unreadNotifications.addListener(
+      _onUnreadNotificationsChanged,
+    );
 
     // Add scroll listener for pagination
     _scrollController.addListener(_scrollListener);
 
-    // Browse opened from the tab bar can't pop a result back to this page, so
-    // it drops the selection here instead.
+    // Browse is a sibling tab and cannot pop a result back to this page, so it
+    // drops the selection here instead.
     pendingBrowseSelection.addListener(_applyPendingBrowseSelection);
+
+    // Tapping Home while already on Home returns to the top.
+    homeReselectTick.addListener(_onHomeReselected);
 
     // Clean up old click tracking data (run async without waiting)
     _clickTrackingService.cleanupOldClickData();
@@ -255,107 +275,56 @@ class _ProductListingPageState extends State<ProductListingPage>
     );
   }
 
-  // Brands for the brand section — list of {brand, brandImage}
-  List<Map<String, String>> _brandList = [];
-
-  // Load unique brands from Products collection (brand + brandImage)
-  Future<void> _loadStoresForBrandSection() async {
+  /// Reads the active catalogue once and derives everything the page needs
+  /// from it: the type-ahead index and the Most Popular ranking.
+  ///
+  /// The read is cached by [ProductService], so returning to Home costs nothing
+  /// within the cache window.
+  Future<void> _loadCatalogueSnapshot({bool forceRefresh = false}) async {
     try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('Product')
-          .where('isActive', isEqualTo: true)
-          .get();
+      final docs = await _productService.getActiveCatalogue(
+        forceRefresh: forceRefresh,
+      );
 
-      // Use lowercase key for deduplication, store original display name
-      final Map<String, String> brandDisplayName =
-          {}; // lowercased -> display name
-      final Map<String, String> brandImageMap =
-          {}; // lowercased -> brandImage url
-      for (final doc in snapshot.docs) {
-        final data = doc.data();
-        // Filter out drafts client-side to avoid composite index requirement
-        if (data['isDraft'] == true) continue;
-        final rawBrand = data['brand'] as String?;
-        if (rawBrand == null || rawBrand.trim().isEmpty) continue;
-        final brandKey = rawBrand.trim().toLowerCase();
-        if (!brandImageMap.containsKey(brandKey)) {
-          brandDisplayName[brandKey] = rawBrand.trim();
-          final img =
-              (data['brandImage'] as String?) ??
-              (data['brandimage'] as String?) ??
-              '';
-          brandImageMap[brandKey] = img;
-        }
-      }
-
-      final List<Map<String, String>> brands =
-          brandImageMap.entries
-              .map(
-                (e) => {
-                  'brand': brandDisplayName[e.key]!,
-                  'brandImage': e.value,
-                },
-              )
-              .toList()
-            ..sort(
-              (a, b) => a['brand']!.toLowerCase().compareTo(
-                b['brand']!.toLowerCase(),
-              ),
-            );
-
-      if (mounted) {
-        setState(() {
-          _brandList = brands;
-        });
-      }
-      AppLogger.d('Loaded ${_brandList.length} brands');
-
-      // Reuse this same snapshot for the "Most Popular" ranking and the
-      // type-ahead index rather than reading the collection again.
-      _buildCatalogueIndex(snapshot.docs);
-      await _rankPopularProducts(snapshot.docs);
+      _buildCatalogueIndex(docs);
+      await _rankPopularProducts(docs);
     } catch (e) {
-      AppLogger.d('Error loading brands: $e');
+      AppLogger.d('Error loading catalogue snapshot: $e');
       if (mounted) setState(() => _isLoadingPopular = false);
     }
   }
 
-  // Listen to auth state changes and (re)subscribe to cart count accordingly
-  void _listenToCartCount() {
+  /// Keeps the hero tracking row pointed at whichever account is signed in.
+  ///
+  /// The cart badge and the bell used to be subscribed here as well; both now
+  /// come from [NavBadgeService], which the shell starts once per session.
+  void _listenToAccountStreams() {
     _authStateSubscription?.cancel();
     _authStateSubscription = FirebaseAuth.instance.authStateChanges().listen((
       user,
     ) {
-      _cartCountSubscription?.cancel();
-      _cartCountSubscription = null;
-
       if (!mounted) return;
-
-      // The hero tracking row and the bell follow the same account as the
-      // cart badge.
       _listenToActiveOrder(user);
-      _listenToNotifications(user);
-
-      if (user == null) {
-        setState(() {
-          _cartItemCount = 0;
-        });
-        return;
-      }
-
-      _cartCountSubscription = _cartService.cartItemCountStream().listen(
-        (count) {
-          if (mounted) {
-            setState(() {
-              _cartItemCount = count;
-            });
-          }
-        },
-        onError: (error) {
-          AppLogger.d('Error listening to cart count: $error');
-        },
-      );
     });
+  }
+
+  /// Repaints the header bell when the shared unread count moves.
+  void _onUnreadNotificationsChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// Tapping Home while Home is already showing: drop any search and return to
+  /// the top, which is what the rail's Home item used to do directly.
+  void _onHomeReselected() {
+    if (!mounted) return;
+    if (_isSearchMode) _clearSearch();
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
   }
 
   // ── Hero data loaders ────────────────────────────────────────────────────
@@ -394,44 +363,6 @@ class _ProductListingPageState extends State<ProductListingPage>
         AppLogger.d('Error listening to active order: $error');
       },
     );
-  }
-
-  /// Tracks how many notifications the signed-in buyer has not opened yet.
-  void _listenToNotifications(User? user) {
-    _notificationsSubscription?.cancel();
-    _notificationsSubscription = null;
-
-    if (user == null) {
-      if (mounted) setState(() => _unreadNotifications = 0);
-      return;
-    }
-
-    // Counted client-side rather than with `where('read', isEqualTo: false)`:
-    // notification documents are written without a `read` field until they are
-    // first opened, and an equality filter skips documents missing the field
-    // entirely — so the server-side count came back 0 for exactly the
-    // notifications that have never been read. NotificationsPage treats a
-    // missing `read` as unread too, so `read != true` is the rule that matches
-    // what the buyer actually sees in the list.
-    _notificationsSubscription = FirebaseFirestore.instance
-        .collection('User')
-        .doc(user.uid)
-        .collection('user_notifications')
-        .orderBy('createdAt', descending: true)
-        .limit(100)
-        .snapshots()
-        .listen(
-          (snapshot) {
-            if (!mounted) return;
-            final unread = snapshot.docs
-                .where((doc) => doc.data()['read'] != true)
-                .length;
-            setState(() => _unreadNotifications = unread);
-          },
-          onError: (error) {
-            AppLogger.d('Error listening to notifications: $error');
-          },
-        );
   }
 
   /// Picks the four most-clicked active products out of [docs]. `clickCounter`
@@ -566,6 +497,9 @@ class _ProductListingPageState extends State<ProductListingPage>
 
   // Fetch all active banner images from Firebase Realtime Database
   Future<void> _loadActiveBanner() async {
+    // `finally` rather than a flag set at each exit: this method returns early
+    // in several places, and a missed one would leave the banner slot showing
+    // a placeholder forever.
     try {
       final databaseUrl =
           'https://dentpal-161e5-default-rtdb.asia-southeast1.firebasedatabase.app';
@@ -685,6 +619,8 @@ class _ProductListingPageState extends State<ProductListingPage>
       }
     } catch (e) {
       AppLogger.d('Error loading active banners from Realtime Database: $e');
+    } finally {
+      if (mounted) setState(() => _isLoadingBanner = false);
     }
   }
 
@@ -793,12 +729,14 @@ class _ProductListingPageState extends State<ProductListingPage>
     // Remove scroll listener to prevent memory leaks
     _scrollController.removeListener(_scrollListener);
     pendingBrowseSelection.removeListener(_applyPendingBrowseSelection);
+    homeReselectTick.removeListener(_onHomeReselected);
+    NavBadgeService.instance.unreadNotifications.removeListener(
+      _onUnreadNotificationsChanged,
+    );
     _bannerAutoScrollTimer?.cancel();
     _bannerPageController.dispose();
     _authStateSubscription?.cancel();
-    _cartCountSubscription?.cancel();
     _ordersSubscription?.cancel();
-    _notificationsSubscription?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
     _searchDebounceTimer?.cancel();
@@ -863,37 +801,6 @@ class _ProductListingPageState extends State<ProductListingPage>
       });
     }
   }
-
-  // ── Delivery estimation ────────────────────────────────────────────────
-  // Mapping: FROM seller region → TO user region → estimated days label.
-  static const Map<String, Map<String, String>> _deliveryEstimateMap = {
-    'NCR': {
-      'NCR': '2-4 days',
-      'Luzon': '3-5 days',
-      'Visayas': '6-8 days',
-      'Mindanao': '6-10 days',
-    },
-    'Luzon': {
-      'NCR': '3-5 days',
-      'Luzon': '3-5 days',
-      'Visayas': '6-8 days',
-      'Mindanao': '6-8 days',
-    },
-    'Visayas': {
-      'NCR': '5-7 days',
-      'Luzon': '5-8 days',
-      'Visayas': '5-8 days',
-      'Mindanao': '6-9 days',
-    },
-    'Mindanao': {
-      'NCR': '5-7 days',
-      'Luzon': '5-8 days',
-      'Visayas': '7-11 days',
-      'Mindanao': '3-6 days',
-    },
-  };
-
-  static const String _defaultDeliveryLabel = '3-7 days';
 
   // Philippine province / city → region lookup (lowercased keys).
   static const Map<String, String> _provinceToRegion = {
@@ -1021,30 +928,9 @@ class _ProductListingPageState extends State<ProductListingPage>
   /// Extracts the seller's region from cached seller data using
   /// vendor.company.address.location, falling back to address.province.
   String? _sellerRegion(String sellerId) {
-    final raw = _sellerDataCache[sellerId];
-    if (raw == null) return null;
-    final vendor = raw['vendor'] is Map
-        ? raw['vendor'] as Map<String, dynamic>
-        : <String, dynamic>{};
-    final company = vendor['company'] is Map
-        ? vendor['company'] as Map<String, dynamic>
-        : <String, dynamic>{};
-    final address = company['address'] is Map
-        ? company['address'] as Map<String, dynamic>
-        : <String, dynamic>{};
-    final location =
-        (address['location'] as String?) ?? (address['province'] as String?);
-    return _classifyRegion(location);
-  }
-
-  /// Returns a delivery-estimate label for shipping FROM the seller TO the
-  /// current user. Falls back to [_defaultDeliveryLabel] when either side's
-  /// region cannot be determined.
-  String _estimateDelivery(String sellerId) {
-    final from = _sellerRegion(sellerId);
-    final to = _userRegion;
-    if (from == null || to == null) return _defaultDeliveryLabel;
-    return _deliveryEstimateMap[from]?[to] ?? _defaultDeliveryLabel;
+    return _classifyRegion(
+      SellerDisplay.locationOf(_sellerDataCache[sellerId]),
+    );
   }
 
   void _showLoginRequiredDialog() {
@@ -1679,7 +1565,7 @@ class _ProductListingPageState extends State<ProductListingPage>
 
     // Everything below filters on the banned-seller cache, so it waits for the
     // load above rather than racing it.
-    _loadStoresForBrandSection(); // brands + the "Most Popular" ranking
+    _loadCatalogueSnapshot(); // type-ahead index + Most Popular
     _loadDealOfTheDay(); // best live voucher + one of that seller's products
   }
 
@@ -1706,40 +1592,28 @@ class _ProductListingPageState extends State<ProductListingPage>
         filterSubCategoryId = _selectedSubCategories.first;
       }
 
-      // Reset seller tracking for first page
       _loadedSellerIds.clear();
-      List<Product> allFetched = [];
-      DocumentSnapshot? cursor;
-      bool moreAvailable = true;
 
-      // Fetch products in batches until we have _storePageSize unique sellers
-      while (moreAvailable) {
-        final result = await _productService.getProductsPaginated(
-          limit: _pageSize,
-          lastDocument: cursor,
-          categoryId: filterCategoryId,
-          subCategoryId: filterSubCategoryId,
-          includeInactive: false,
-          includeDrafts: false,
-          includeArchived: false,
-          excludeSellerIds: BannedSellerService.instance.bannedSellerIds,
-        );
+      final result = await _productService.getProductsPaginated(
+        limit: _pageSize,
+        categoryId: filterCategoryId,
+        subCategoryId: filterSubCategoryId,
+        includeInactive: false,
+        includeDrafts: false,
+        includeArchived: false,
+        excludeSellerIds: BannedSellerService.instance.bannedSellerIds,
+      );
 
-        if (!mounted) return;
+      if (!mounted) return;
 
-        final batch = result['products'] as List<Product>;
-        cursor = result['lastDocument'] as DocumentSnapshot?;
-        moreAvailable = result['hasMore'] as bool;
+      final allFetched = List<Product>.from(
+        result['products'] as List<Product>,
+      );
+      final cursor = result['lastDocument'] as DocumentSnapshot?;
+      final moreAvailable = result['hasMore'] as bool;
 
-        allFetched.addAll(batch);
-
-        // Count unique sellers so far
-        for (final p in batch) {
-          if (p.sellerId.isNotEmpty) _loadedSellerIds.add(p.sellerId);
-        }
-
-        // Stop if we have enough unique sellers or no more data
-        if (_loadedSellerIds.length >= _storePageSize || !moreAvailable) break;
+      for (final p in allFetched) {
+        if (p.sellerId.isNotEmpty) _loadedSellerIds.add(p.sellerId);
       }
 
       // Confirm ban status for every seller surfaced on this page via direct
@@ -1756,13 +1630,11 @@ class _ProductListingPageState extends State<ProductListingPage>
       if (_categories.length <= 1) {
         try {
           final allCategories = await _categoryService.getCategories();
-          // Collect categoryIDs that are actually used by active products,
-          // so empty categories don't crowd the grid.
-          final productSnap = await FirebaseFirestore.instance
-              .collection('Product')
-              .where('isActive', isEqualTo: true)
-              .get();
-          final usedCategoryIds = productSnap.docs
+          // Collect categoryIDs that are actually used by active products, so
+          // empty categories don't crowd the grid. Shares the cached catalogue
+          // with _loadCatalogueSnapshot rather than re-reading the collection.
+          final catalogue = await _productService.getActiveCatalogue();
+          final usedCategoryIds = catalogue
               .map((d) => (d.data()['categoryID'] as String?) ?? '')
               .where((id) => id.isNotEmpty)
               .toSet();
@@ -1798,6 +1670,7 @@ class _ProductListingPageState extends State<ProductListingPage>
           _lastDocument = cursor;
           _hasMore = moreAvailable;
           _isLoading = false;
+          _firstLoadDone = true;
           _cacheTimestamp = DateTime.now();
         });
       }
@@ -1807,15 +1680,14 @@ class _ProductListingPageState extends State<ProductListingPage>
         if (mounted) setState(() {});
       });
 
-      AppLogger.d(
-        'Loaded ${allFetched.length} products covering ${_loadedSellerIds.length} stores (first page)',
-      );
+      AppLogger.d('Loaded ${allFetched.length} products (first page)');
     } catch (e) {
       AppLogger.d('Error loading first page: $e');
 
       if (mounted) {
         setState(() {
           _isLoading = false;
+          _firstLoadDone = true;
           _errorMessage = e.toString();
         });
       }
@@ -1845,38 +1717,27 @@ class _ProductListingPageState extends State<ProductListingPage>
         filterSubCategoryId = _selectedSubCategories.first;
       }
 
-      final int sellersBefore = _loadedSellerIds.length;
-      List<Product> allNewProducts = [];
-      DocumentSnapshot? cursor = _lastDocument;
-      bool moreAvailable = true;
+      final result = await _productService.getProductsPaginated(
+        limit: _pageSize,
+        lastDocument: _lastDocument,
+        categoryId: filterCategoryId,
+        subCategoryId: filterSubCategoryId,
+        includeInactive: false,
+        includeDrafts: false,
+        includeArchived: false,
+        excludeSellerIds: BannedSellerService.instance.bannedSellerIds,
+      );
 
-      // Fetch batches until we accumulate _storePageSize new sellers
-      while (moreAvailable) {
-        final result = await _productService.getProductsPaginated(
-          limit: _pageSize,
-          lastDocument: cursor,
-          categoryId: filterCategoryId,
-          subCategoryId: filterSubCategoryId,
-          includeInactive: false,
-          includeDrafts: false,
-          includeArchived: false,
-          excludeSellerIds: BannedSellerService.instance.bannedSellerIds,
-        );
+      if (!mounted) return;
 
-        if (!mounted) return;
+      final allNewProducts = List<Product>.from(
+        result['products'] as List<Product>,
+      );
+      final cursor = result['lastDocument'] as DocumentSnapshot?;
+      final moreAvailable = result['hasMore'] as bool;
 
-        final batch = result['products'] as List<Product>;
-        cursor = result['lastDocument'] as DocumentSnapshot?;
-        moreAvailable = result['hasMore'] as bool;
-
-        allNewProducts.addAll(batch);
-
-        for (final p in batch) {
-          if (p.sellerId.isNotEmpty) _loadedSellerIds.add(p.sellerId);
-        }
-
-        final newSellers = _loadedSellerIds.length - sellersBefore;
-        if (newSellers >= _storePageSize || !moreAvailable) break;
+      for (final p in allNewProducts) {
+        if (p.sellerId.isNotEmpty) _loadedSellerIds.add(p.sellerId);
       }
 
       // Confirm ban status for any new sellers surfaced in this batch, then
@@ -1904,10 +1765,7 @@ class _ProductListingPageState extends State<ProductListingPage>
         if (mounted) setState(() {});
       });
 
-      final newSellers = _loadedSellerIds.length - sellersBefore;
-      AppLogger.d(
-        'Loaded ${allNewProducts.length} more products covering $newSellers new stores',
-      );
+      AppLogger.d('Loaded ${allNewProducts.length} more products');
     } catch (e) {
       AppLogger.d('Error loading more products: $e');
 
@@ -1976,8 +1834,9 @@ class _ProductListingPageState extends State<ProductListingPage>
     );
 
     try {
-      // Clear category cache on manual refresh to get fresh data
+      // Clear cached reads on manual refresh to get fresh data
       CategoryService.clearCache();
+      ProductService.clearCatalogueCache();
 
       // Keep current data as backup
       final currentProducts = List<Product>.from(_products);
@@ -1994,9 +1853,8 @@ class _ProductListingPageState extends State<ProductListingPage>
 
       // Rebuild the hero alongside the listing: popularity and live vouchers
       // both move independently of the product pages themselves.
-      _sellerVouchersCache.clear();
       if (mounted) setState(() => _isLoadingPopular = true);
-      _loadStoresForBrandSection();
+      _loadCatalogueSnapshot(forceRefresh: true);
       _loadDealOfTheDay();
 
       // Fetch fresh data from Firebase
@@ -2189,21 +2047,20 @@ class _ProductListingPageState extends State<ProductListingPage>
   }
 
   Widget _buildScaffold() {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isWideScreen = screenWidth >= 900;
+    // Must be the same threshold the shell uses to decide rail-vs-bottom-bar,
+    // or this page lays out for a rail that isn't there (or vice versa).
+    final isWideScreen = context.isWideLayout;
     // The side rail eats into the width the content has to lay out in, so
     // every centring calculation below works off what's left, not the screen.
     final contentWidth = _contentWidth;
-    const double traderListMaxWidth = 720;
-    final double tradersHorizontalPadding = isWideScreen
-        ? ((contentWidth - (kIsWeb ? traderListMaxWidth : 1100)) / 2).clamp(
-            16.0,
-            double.infinity,
-          )
+    // The grid shares the 1100px column the rest of the page uses — the old
+    // 720px cap was sized for a single-file list of trader cards.
+    final double gridHorizontalPadding = isWideScreen
+        ? ((contentWidth - _kMaxContentWidth) / 2).clamp(16.0, double.infinity)
         : 16;
     return Scaffold(
       backgroundColor: ink.bg,
-      body: _buildBody(isWideScreen, tradersHorizontalPadding),
+      body: _buildScrollView(isWideScreen, gridHorizontalPadding),
       floatingActionButton: _isSeller
           ? Container(
               decoration: BoxDecoration(
@@ -2234,553 +2091,403 @@ class _ProductListingPageState extends State<ProductListingPage>
     );
   }
 
-  /// The scrolling content, with the side rail alongside it on wide screens.
-  Widget _buildBody(bool isWideScreen, double tradersHorizontalPadding) {
-    final scroller = _buildScrollView(isWideScreen, tradersHorizontalPadding);
-    if (!isWideScreen) return scroller;
+  Widget _buildScrollView(bool isWideScreen, double gridHorizontalPadding) {
+    final gridContentWidth =
+        math.min(
+          _contentWidth,
+          isWideScreen ? _kMaxContentWidth : _contentWidth,
+        ) -
+        gridHorizontalPadding * 2;
+    final filteredProducts = _filteredProducts();
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _buildSideNav(),
-        Expanded(child: scroller),
-      ],
-    );
-  }
-
-  Widget _buildScrollView(bool isWideScreen, double tradersHorizontalPadding) {
-    return RefreshIndicator(
-      onRefresh: _handleRefresh,
-      color: ink.emerald,
-      backgroundColor: ink.surface,
-      displacement: 40,
-      strokeWidth: 2.5,
-      child: CustomScrollView(
-        controller: _scrollController,
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          // Hero: identity, search, tracking, the deal and the two quick
-          // actions. Outside the search-mode branch below, because the
-          // search field itself lives inside it.
-          SliverToBoxAdapter(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: isWideScreen ? 1100 : double.infinity,
-                ),
-                child: _buildHeroHeader(isWide: isWideScreen),
-              ),
-            ),
-          ),
-          // Type-ahead. Not gated on _isSearchMode, so matches appear as soon
-          // as they load rather than waiting for the first result set.
-          if (_showSearchSuggestions && _searchSuggestions.isNotEmpty)
+    // One shimmer scope for the whole page: every placeholder below — banner,
+    // categories, popular, the catalogue grid — reads its sweep from here, so
+    // they animate in phase rather than each starting its own ticker.
+    return SkeletonShimmer(
+      child: RefreshIndicator(
+        onRefresh: _handleRefresh,
+        color: ink.emerald,
+        backgroundColor: ink.surface,
+        displacement: 40,
+        strokeWidth: 2.5,
+        child: CustomScrollView(
+          controller: _scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            // Hero: identity, search, tracking, the deal and the two quick
+            // actions. Outside the search-mode branch below, because the
+            // search field itself lives inside it.
             SliverToBoxAdapter(
               child: Center(
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
                     maxWidth: isWideScreen ? 1100 : double.infinity,
                   ),
-                  child: Container(
-                    margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                    clipBehavior: Clip.antiAlias,
-                    decoration: BoxDecoration(
-                      color: ink.surface,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: ink.border),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        for (var i = 0; i < _searchSuggestions.length; i++) ...[
-                          if (i > 0)
-                            Divider(height: 1, thickness: 1, color: ink.border),
-                          _buildSuggestionRow(_searchSuggestions[i]),
-                        ],
-                      ],
-                    ),
-                  ),
+                  child: _buildHeroHeader(isWide: isWideScreen),
                 ),
               ),
             ),
-
-          // Search mode content
-          if (_isSearchMode) ...[
-            // Search results header
-            SliverToBoxAdapter(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: isWideScreen ? 1100 : double.infinity,
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: Row(
-                      children: [
-                        Icon(Icons.search, color: ink.emerald, size: 20),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _isSearching
-                                ? 'Searching...'
-                                : 'Results for "$_searchQuery" (${_searchResults.length} products)',
-                            style: AppTextStyles.titleMedium.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: ink.text,
-                            ),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: _clearSearch,
-                          child: const Text('Clear'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            // Search results as trader cards
-            if (_isSearching)
+            // Type-ahead. Not gated on _isSearchMode, so matches appear as soon
+            // as they load rather than waiting for the first result set.
+            if (_showSearchSuggestions && _searchSuggestions.isNotEmpty)
               SliverToBoxAdapter(
-                child: _buildTraderListSkeleton(tradersHorizontalPadding),
-              )
-            else if (_searchResults.isEmpty)
-              SliverFillRemaining(
                 child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.search_off,
-                        size: 64,
-                        color: ink.text.withValues(alpha: 0.3),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No products found.',
-                        style: AppTextStyles.titleMedium.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: ink.text,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Try a different search term',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: ink.text.withValues(alpha: 0.6),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            else
-              SliverPadding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: tradersHorizontalPadding,
-                ),
-                sliver: _buildSearchTradersList(),
-              ),
-            if (_isLoadingMoreSearch)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Center(
-                    child: CircularProgressIndicator(color: ink.emerald),
-                  ),
-                ),
-              ),
-          ],
-
-          // Normal browsing content
-          if (!_isSearchMode) ...[
-            // Main centered content
-            SliverToBoxAdapter(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: isWideScreen ? 1100 : double.infinity,
-                  ),
-                  child: Column(
-                    children: [
-                      // The hero is a top-level sliver above this column — it
-                      // has to survive search mode, which this column does not.
-                      const SizedBox(height: 20),
-                      // Banner Slideshow — a card on every size, rather than
-                      // bleeding to the edges on phones.
-                      if (_bannerImageUrls.isNotEmpty)
-                        Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 16),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(_bannerRadius),
-                            boxShadow: [
-                              BoxShadow(
-                                color: ink.emerald.withValues(alpha: 0.2),
-                                blurRadius: 20,
-                                offset: const Offset(0, 8),
-                              ),
-                            ],
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(_bannerRadius),
-                            child: AspectRatio(
-                              aspectRatio: _bannerAspectRatio,
-                              child: Stack(
-                                children: [
-                                  PageView.builder(
-                                    controller: _bannerPageController,
-                                    physics: kIsWeb
-                                        ? const AlwaysScrollableScrollPhysics()
-                                        : const PageScrollPhysics(),
-                                    onPageChanged: (index) {
-                                      setState(() {
-                                        _currentBannerIndex = index;
-                                      });
-                                      _startBannerAutoScroll();
-                                    },
-                                    itemCount: _bannerImageUrls.length,
-                                    itemBuilder: (context, index) {
-                                      return GestureDetector(
-                                        behavior: HitTestBehavior.opaque,
-                                        onTap: () {
-                                          AppLogger.d(
-                                            'Banner GestureDetector tapped at index: $index',
-                                          );
-                                          _onBannerTap(index);
-                                        },
-                                        child: CachedNetworkImage(
-                                          imageUrl: _bannerImageUrls[index],
-                                          fit: BoxFit.cover,
-                                          width: double.infinity,
-                                          memCacheWidth: 1920,
-                                          memCacheHeight: 720,
-                                          placeholder: (context, url) =>
-                                              Container(
-                                                decoration: BoxDecoration(
-                                                  gradient: LinearGradient(
-                                                    colors: [
-                                                      ink.emerald.withValues(
-                                                        alpha: 0.1,
-                                                      ),
-                                                      ink.amber.withValues(
-                                                        alpha: 0.1,
-                                                      ),
-                                                    ],
-                                                    begin: Alignment.topLeft,
-                                                    end: Alignment.bottomRight,
-                                                  ),
-                                                ),
-                                                child: Center(
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                        color: ink.emerald,
-                                                      ),
-                                                ),
-                                              ),
-                                          errorWidget: (context, url, error) =>
-                                              Container(
-                                                decoration: BoxDecoration(
-                                                  gradient: LinearGradient(
-                                                    colors: [
-                                                      ink.emerald.withValues(
-                                                        alpha: 0.1,
-                                                      ),
-                                                      ink.amber.withValues(
-                                                        alpha: 0.1,
-                                                      ),
-                                                    ],
-                                                    begin: Alignment.topLeft,
-                                                    end: Alignment.bottomRight,
-                                                  ),
-                                                ),
-                                                child: const Center(
-                                                  child: Icon(
-                                                    Icons.image_not_supported,
-                                                    color: Colors.grey,
-                                                    size: 40,
-                                                  ),
-                                                ),
-                                              ),
-                                          cacheManager:
-                                              ProductImageCacheManager.instance,
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      // Dots sit under the card rather than over the art, so
-                      // they never land on top of a banner's own artwork.
-                      if (_bannerImageUrls.length > 1) ...[
-                        const SizedBox(height: 12),
-                        _buildBannerDots(),
-                      ],
-
-                      // Most Popular — the four most-viewed products, in place
-                      // of a weekly deals rail.
-                      const SizedBox(height: 20),
-                      _buildPopularProductsSection(isWideScreen),
-
-                      // Modern Categories Section
-                      const SizedBox(height: 20),
-                      _buildCategoriesSection(),
-
-                      // Subcategories section (grouped by category) — when shown,
-                      // the Shipped From filter is rendered below it; otherwise it
-                      // stays in its default position right under Categories.
-                      if (_selectedCategories.isNotEmpty &&
-                          _subcategoriesByCategory.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: _buildGroupedSubcategoriesSection(),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        _buildFilterSection(),
-                      ] else ...[
-                        const SizedBox(height: 16),
-                        _buildFilterSection(),
-                      ],
-
-                      const SizedBox(height: 24),
-
-                      // Stores / merchants, kept in our own trader-card format
-                      Padding(
-                        key: _tradersSectionKey,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: _buildSectionHead(
-                          'Dental traders',
-                          trailing: _buildPill(
-                            '${_getFilteredProductsCount()} STORES',
-                            color: ink.emerald,
-                            icon: Icons.storefront_rounded,
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 16),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-            // Traders List (Vertical List Layout - Foodpanda style)
-            _isLoading && _products.isEmpty
-                ? SliverToBoxAdapter(
-                    child: _buildTraderListSkeleton(tradersHorizontalPadding),
-                  )
-                : _errorMessage != null && _products.isEmpty
-                ? SliverFillRemaining(child: _buildErrorState())
-                : _products.isEmpty
-                ? SliverFillRemaining(child: _buildEmptyState())
-                : SliverPadding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: tradersHorizontalPadding,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: isWideScreen ? 1100 : double.infinity,
                     ),
-                    sliver: _buildTradersList(),
+                    child: Container(
+                      margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                      clipBehavior: Clip.antiAlias,
+                      decoration: BoxDecoration(
+                        color: ink.surface,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: ink.border),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (
+                            var i = 0;
+                            i < _searchSuggestions.length;
+                            i++
+                          ) ...[
+                            if (i > 0)
+                              Divider(
+                                height: 1,
+                                thickness: 1,
+                                color: ink.border,
+                              ),
+                            _buildSuggestionRow(_searchSuggestions[i]),
+                          ],
+                        ],
+                      ),
+                    ),
                   ),
-          ], // end if (!_isSearchMode)
-          // Web Footer
-          SliverToBoxAdapter(child: WebFooter(dark: ink.isDark)),
-        ],
-      ),
-    );
-  }
+                ),
+              ),
 
-  // ── Side navigation (wide screens) ───────────────────────────────────────
-
-  /// The fixed left rail that replaces the old top bar on wide screens. It is
-  /// this page's web navigation — [HomePage] deliberately renders no chrome of
-  /// its own on web — so every destination pushes a route rather than swapping
-  /// a tab.
-  Widget _buildSideNav() {
-    return Container(
-      width: _kSideNavWidth,
-      decoration: BoxDecoration(
-        color: ink.bg,
-        border: Border(right: BorderSide(color: ink.border)),
-      ),
-      child: SafeArea(
-        // A short browser window would otherwise overflow the rail. Scrolls
-        // only once it has to; `IntrinsicHeight` keeps the `Spacer` working
-        // when there is room to spare.
-        child: LayoutBuilder(
-          builder: (context, constraints) => SingleChildScrollView(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
-              child: IntrinsicHeight(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
+            // Search mode content
+            if (_isSearchMode) ...[
+              // Search results header
+              SliverToBoxAdapter(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: isWideScreen ? 1100 : double.infinity,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                       child: Row(
                         children: [
-                          Image.asset(
-                            'lib/assets/icons/dentpal_icon.png',
-                            width: 34,
-                            height: 34,
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            'DentPal',
-                            style: AppTextStyles.titleLarge.copyWith(
-                              color: ink.text,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 22,
+                          Icon(Icons.search, color: ink.emerald, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _isSearching
+                                  ? 'Searching...'
+                                  : 'Results for "$_searchQuery" (${_searchResults.length} products)',
+                              style: AppTextStyles.titleMedium.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: ink.text,
+                              ),
                             ),
+                          ),
+                          TextButton(
+                            onPressed: _clearSearch,
+                            child: const Text('Clear'),
                           ),
                         ],
                       ),
                     ),
-                    _buildSideNavItem(
-                      icon: Icons.home_rounded,
-                      label: 'Home',
-                      isActive: true,
-                      onTap: () {
-                        if (_isSearchMode) _clearSearch();
-                        if (_scrollController.hasClients) {
-                          _scrollController.animateTo(
-                            0,
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeOut,
-                          );
-                        }
-                      },
-                    ),
-                    _buildSideNavItem(
-                      icon: Icons.grid_view_rounded,
-                      label: 'Categories',
-                      onTap: () => _openBrowsePage(),
-                    ),
-                    _buildSideNavItem(
-                      icon: Icons.shopping_cart_outlined,
-                      label: 'Cart',
-                      badgeCount: _cartItemCount,
-                      onTap: () => _pushIfSignedIn(const CartPage()),
-                    ),
-                    _buildSideNavItem(
-                      icon: Icons.receipt_long_outlined,
-                      label: 'Orders',
-                      onTap: () => _pushIfSignedIn(const OrdersPage()),
-                    ),
-                    _buildSideNavItem(
-                      icon: Icons.notifications_none_rounded,
-                      label: 'Notifications',
-                      badgeCount: _unreadNotifications,
-                      onTap: () => _pushIfSignedIn(const NotificationsPage()),
-                    ),
-                    _buildSideNavItem(
-                      icon: Icons.person_outline,
-                      label: 'Profile',
-                      onTap: () => _pushIfSignedIn(const ProfilePage()),
-                    ),
-                    const Spacer(),
-                    if (_isSeller)
-                      _buildSideNavItem(
-                        icon: Icons.storefront_outlined,
-                        label: 'Seller centre',
-                        onTap: () =>
-                            Navigator.pushNamed(context, '/seller-listings'),
-                      ),
-                    _buildSideNavItem(
-                      icon: Icons.headset_mic_outlined,
-                      label: 'Support',
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => const PublicSupportPage(),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+              // Search results as product tiles
+              if (_isSearching)
+                SliverPadding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: gridHorizontalPadding,
+                  ),
+                  sliver: _buildProductGridSkeleton(gridContentWidth),
+                )
+              else if (_searchResults.isEmpty)
+                SliverFillRemaining(
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.search_off,
+                          size: 64,
+                          color: ink.text.withValues(alpha: 0.3),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No products found.',
+                          style: AppTextStyles.titleMedium.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: ink.text,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Try a different search term',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: ink.text.withValues(alpha: 0.6),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                SliverPadding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: gridHorizontalPadding,
+                  ),
+                  sliver: _buildProductsSliver(
+                    _searchResults,
+                    gridContentWidth,
+                  ),
+                ),
+              if (_isLoadingMoreSearch)
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(
+                    gridHorizontalPadding,
+                    12,
+                    gridHorizontalPadding,
+                    24,
+                  ),
+                  sliver: _buildProductGridSkeleton(gridContentWidth, rows: 1),
+                ),
+            ],
 
-  Widget _buildSideNavItem({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    bool isActive = false,
-    int badgeCount = 0,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-      child: Material(
-        color: isActive
-            ? ink.emerald.withValues(alpha: 0.14)
-            : Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(14),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Row(
-              children: [
-                Icon(
-                  icon,
-                  size: 21,
-                  color: isActive
-                      ? ink.emerald
-                      : ink.text.withValues(alpha: 0.65),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Text(
-                    label,
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: isActive
-                          ? ink.emerald
-                          : ink.text.withValues(alpha: 0.8),
-                      fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                      fontSize: 14.5,
+            // Normal browsing content
+            if (!_isSearchMode) ...[
+              // Main centered content
+              SliverToBoxAdapter(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: isWideScreen ? 1100 : double.infinity,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    child: Column(
+                      children: [
+                        // The hero is a top-level sliver above this column — it
+                        // has to survive search mode, which this column does not.
+                        const SizedBox(height: 20),
+                        // Banner Slideshow — a card on every size, rather than
+                        // bleeding to the edges on phones.
+                        if (_bannerImageUrls.isEmpty && _isLoadingBanner)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(
+                                _bannerRadius,
+                              ),
+                              child: AspectRatio(
+                                aspectRatio: _bannerAspectRatio,
+                                child: const SkeletonBox(radius: 0),
+                              ),
+                            ),
+                          ),
+                        if (_bannerImageUrls.isNotEmpty)
+                          Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 16),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(
+                                _bannerRadius,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: ink.emerald.withValues(alpha: 0.2),
+                                  blurRadius: 20,
+                                  offset: const Offset(0, 8),
+                                ),
+                              ],
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(
+                                _bannerRadius,
+                              ),
+                              child: AspectRatio(
+                                aspectRatio: _bannerAspectRatio,
+                                child: Stack(
+                                  children: [
+                                    PageView.builder(
+                                      controller: _bannerPageController,
+                                      physics: kIsWeb
+                                          ? const AlwaysScrollableScrollPhysics()
+                                          : const PageScrollPhysics(),
+                                      onPageChanged: (index) {
+                                        setState(() {
+                                          _currentBannerIndex = index;
+                                        });
+                                        _startBannerAutoScroll();
+                                      },
+                                      itemCount: _bannerImageUrls.length,
+                                      itemBuilder: (context, index) {
+                                        return GestureDetector(
+                                          behavior: HitTestBehavior.opaque,
+                                          onTap: () {
+                                            AppLogger.d(
+                                              'Banner GestureDetector tapped at index: $index',
+                                            );
+                                            _onBannerTap(index);
+                                          },
+                                          child: CachedNetworkImage(
+                                            imageUrl: _bannerImageUrls[index],
+                                            fit: BoxFit.cover,
+                                            width: double.infinity,
+                                            memCacheWidth: 1920,
+                                            memCacheHeight: 720,
+                                            placeholder: (context, url) =>
+                                                const SkeletonShimmer(
+                                                  child: SkeletonBox(radius: 0),
+                                                ),
+                                            errorWidget:
+                                                (
+                                                  context,
+                                                  url,
+                                                  error,
+                                                ) => Container(
+                                                  decoration: BoxDecoration(
+                                                    gradient: LinearGradient(
+                                                      colors: [
+                                                        ink.emerald.withValues(
+                                                          alpha: 0.1,
+                                                        ),
+                                                        ink.amber.withValues(
+                                                          alpha: 0.1,
+                                                        ),
+                                                      ],
+                                                      begin: Alignment.topLeft,
+                                                      end:
+                                                          Alignment.bottomRight,
+                                                    ),
+                                                  ),
+                                                  child: const Center(
+                                                    child: Icon(
+                                                      Icons.image_not_supported,
+                                                      color: Colors.grey,
+                                                      size: 40,
+                                                    ),
+                                                  ),
+                                                ),
+                                            cacheManager:
+                                                ProductImageCacheManager
+                                                    .instance,
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        // Dots sit under the card rather than over the art, so
+                        // they never land on top of a banner's own artwork.
+                        if (_bannerImageUrls.length > 1) ...[
+                          const SizedBox(height: 12),
+                          _buildBannerDots(),
+                        ],
+
+                        // Most Popular — the four most-viewed products, in place
+                        // of a weekly deals rail.
+                        const SizedBox(height: 20),
+                        _buildPopularProductsSection(isWideScreen),
+
+                        // Modern Categories Section
+                        const SizedBox(height: 20),
+                        _buildCategoriesSection(),
+
+                        // Subcategories section (grouped by category) — when shown,
+                        // the Shipped From filter is rendered below it; otherwise it
+                        // stays in its default position right under Categories.
+                        if (_selectedCategories.isNotEmpty &&
+                            _subcategoriesByCategory.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: _buildGroupedSubcategoriesSection(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          _buildFilterSection(),
+                        ] else ...[
+                          const SizedBox(height: 16),
+                          _buildFilterSection(),
+                        ],
+
+                        const SizedBox(height: 24),
+
+                        // Stores / merchants, kept in our own trader-card format
+                        Padding(
+                          key: _tradersSectionKey,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: _buildSectionHead(
+                            'All products',
+                            trailing: _buildPill(
+                              '${_filteredProducts().length} ITEMS',
+                              color: ink.emerald,
+                              icon: Icons.inventory_2_rounded,
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 16),
+                      ],
+                    ),
                   ),
                 ),
-                if (badgeCount > 0)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    constraints: const BoxConstraints(minWidth: 22),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: ink.emerald,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      badgeCount > 99 ? '99+' : '$badgeCount',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: ink.onEmerald,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 11,
-                      ),
-                    ),
+              ),
+
+              // The catalogue itself
+              if ((_isLoading || !_firstLoadDone) && _products.isEmpty)
+                SliverPadding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: gridHorizontalPadding,
                   ),
-              ],
-            ),
-          ),
+                  sliver: _buildProductGridSkeleton(gridContentWidth),
+                )
+              else if (_errorMessage != null && _products.isEmpty)
+                SliverFillRemaining(child: _buildErrorState())
+              else if (filteredProducts.isEmpty)
+                SliverFillRemaining(child: _buildEmptyState())
+              else
+                SliverPadding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: gridHorizontalPadding,
+                  ),
+                  sliver: _buildProductsSliver(
+                    filteredProducts,
+                    gridContentWidth,
+                  ),
+                ),
+              // Next page lands under the last row.
+              if (_isLoadingMore)
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(
+                    gridHorizontalPadding,
+                    12,
+                    gridHorizontalPadding,
+                    24,
+                  ),
+                  sliver: _buildProductGridSkeleton(gridContentWidth, rows: 1),
+                ),
+            ], // end if (!_isSearchMode)
+            // Web Footer
+            SliverToBoxAdapter(child: WebFooter(dark: ink.isDark)),
+          ],
         ),
       ),
     );
@@ -2984,27 +2691,27 @@ class _ProductListingPageState extends State<ProductListingPage>
     );
   }
 
-  /// Three trader-card-shaped placeholders for the listing's first load.
-  Widget _buildTraderListSkeleton(double horizontalPadding) {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-      child: Column(
-        children: [
-          for (var i = 0; i < 3; i++)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: _buildDarkSkeleton(height: 232, radius: 20),
-            ),
-        ],
+  /// Tile-shaped placeholders matching the catalogue grid, so the first
+  /// payload lands where the skeleton already is.
+  SliverGrid _buildProductGridSkeleton(double contentWidth, {int rows = 2}) {
+    final columns = _productColumns(contentWidth);
+    return SliverGrid(
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: columns,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 0.74,
+      ),
+      delegate: SliverChildBuilderDelegate(
+        (context, index) => _buildDarkSkeleton(radius: 18),
+        childCount: columns * rows,
       ),
     );
   }
 
-  /// Dark stand-in used while a section's first payload is in flight. The
-  /// shared skeletons are built for the light theme, so this page pulses its
-  /// own tone instead of dropping white blocks onto the dark ground.
+  /// Stand-in used while a section's first payload is in flight.
   Widget _buildDarkSkeleton({double? height, double radius = 16}) {
-    return _PulsingBlock(height: height, radius: radius);
+    return SkeletonBox(height: height, radius: radius);
   }
 
   // ── Hero header ──────────────────────────────────────────────────────────
@@ -3705,141 +3412,15 @@ class _ProductListingPageState extends State<ProductListingPage>
               // rather than a guessed constant.
               final cellWidth =
                   (width - 32 - 12 * (crossAxisCount - 1)) / crossAxisCount;
-              return _buildPopularProductCard(
+              // Same tile as the catalogue grid, with its rank badge on.
+              return _buildProductCard(
                 _popularProducts[index],
-                index + 1,
                 cellWidth,
+                rank: index + 1,
               );
             },
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildPopularProductCard(Product product, int rank, double cellWidth) {
-    final variation = product.variations?.isNotEmpty == true
-        ? product.variations!.first
-        : null;
-    final imageUrl =
-        variation?.thumbnailURL ??
-        product.thumbnailURL ??
-        variation?.imageURL ??
-        product.imageURL;
-    final price = product.lowestPrice;
-    final brand = product.brand ?? '';
-
-    return GestureDetector(
-      onTap: () {
-        _clickTrackingService.trackProductClick(product.productId);
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) =>
-                ProductDetailPage(productId: product.productId),
-          ),
-        );
-      },
-      child: Container(
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          color: ink.surface,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: ink.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Product shots are cut out on white, so they get a neutral
-            // pedestal rather than floating on the card.
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(gradient: ink.productBackdrop),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: AppNetworkImage(
-                        url: imageUrl,
-                        width: cellWidth,
-                        height: cellWidth,
-                        fit: BoxFit.contain,
-                        backgroundColor: Colors.transparent,
-                      ),
-                    ),
-                    Positioned(
-                      top: 8,
-                      left: 8,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: ink.amber,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          '#$rank',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: ink.onAmber,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 10,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 9, 10, 11),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (brand.isNotEmpty)
-                    Text(
-                      brand.toUpperCase(),
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: ink.text.withValues(alpha: 0.45),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 9,
-                        letterSpacing: 0.7,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  Text(
-                    product.name,
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: ink.text,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12.5,
-                      height: 1.25,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    price != null
-                        ? CurrencyFormatter.formatWithPeso(price)
-                        : 'Price on request',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: ink.text,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -3992,222 +3573,6 @@ class _ProductListingPageState extends State<ProductListingPage>
   }
 
   // Build modern product grid with enhanced design
-  Widget _buildModernProductGrid() {
-    AppLogger.d('DEBUG: _buildModernProductGrid called');
-    AppLogger.d('Selected categories: $_selectedCategories');
-    AppLogger.d('Selected subcategories: $_selectedSubCategories');
-    AppLogger.d('Category name to ID mapping: $_categoryNameToId');
-    AppLogger.d('Total products: ${_products.length}');
-
-    // Calculate filtered products first
-    final filteredProducts = _products.where((product) {
-      // Exclude draft products from product listing page
-      if (product.isDraft == true) return false;
-
-      // Exclude inactive products from product listing page
-      if (product.isActive == false) return false;
-
-      // Exclude archived products from product listing page
-      if (product.isArchived == true) return false;
-
-      // If no categories selected, show all
-      if (_selectedCategories.isEmpty) return true;
-
-      // Get selected category IDs
-      final selectedCategoryIds = _selectedCategories
-          .map((categoryName) => _categoryNameToId[categoryName])
-          .where((id) => id != null)
-          .cast<String>()
-          .toList();
-
-      if (_selectedSubCategories.isNotEmpty) {
-        final isInSelectedCategory = selectedCategoryIds.contains(
-          product.categoryId,
-        );
-
-        final hasSubCategory = product.subCategoryId.isNotEmpty;
-        final isInSelectedSubCategory = _selectedSubCategories.contains(
-          product.subCategoryId,
-        );
-        final shouldShowProduct = !hasSubCategory || isInSelectedSubCategory;
-
-        if (_products.indexOf(product) < 3) {
-          // Only log first 3 products to avoid spam
-          AppLogger.d(
-            'Product ${product.name}: categoryId=${product.categoryId}, subCategoryId=${product.subCategoryId}',
-          );
-          AppLogger.d(
-            'Is in selected category: $isInSelectedCategory, Has subcategory: $hasSubCategory, Is in selected subcategory: $isInSelectedSubCategory',
-          );
-          AppLogger.d(
-            'Should show product: $shouldShowProduct (category match: $isInSelectedCategory)',
-          );
-        }
-
-        return isInSelectedCategory && shouldShowProduct;
-      }
-
-      // Otherwise, filter by selected categories only
-      return selectedCategoryIds.contains(product.categoryId);
-    }).toList();
-
-    final categoryDisplay = _selectedCategories.isEmpty
-        ? 'All'
-        : _selectedCategories.join(', ');
-    AppLogger.d(
-      'Displaying ${filteredProducts.length} products for categories: $categoryDisplay',
-    );
-
-    if (filteredProducts.isEmpty) {
-      return SliverToBoxAdapter(
-        child: Container(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: ink.emeraldSoft.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.category, size: 48, color: ink.emeraldSoft),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                _selectedCategories.isEmpty
-                    ? 'No products available'
-                    : 'No products in ${_selectedCategories.join(', ')}',
-                style: AppTextStyles.titleMedium.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: ink.text,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Try selecting a different category',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: ink.text.withValues(alpha: 0.7),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return SliverGrid(
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: _getResponsiveCrossAxisCount(context),
-        childAspectRatio: _getResponsiveAspectRatio(context),
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-      ),
-      delegate: SliverChildBuilderDelegate((context, index) {
-        if (index >= filteredProducts.length) {
-          // Show loading indicator if we're loading more
-          if (_isLoadingMore) {
-            return Container(
-              padding: const EdgeInsets.all(32),
-              child: Center(
-                child: CircularProgressIndicator(color: ink.emerald),
-              ),
-            );
-          }
-          return null;
-        }
-
-        final product = filteredProducts[index];
-        return ProductCard(
-          product: product,
-          onTap: () {
-            // Track product click
-            _clickTrackingService.trackProductClick(product.productId);
-
-            // Navigate to product detail page with deep linking support
-            NavigationUtils.navigateToProductDetail(context, product.productId);
-          },
-        );
-      }, childCount: filteredProducts.length + (_isLoadingMore ? 1 : 0)),
-    );
-  }
-
-  // Helper method to get responsive cross axis count based on screen width
-  int _getResponsiveCrossAxisCount(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-
-    if (screenWidth >= 1200) {
-      return 6; // Large desktop screens
-    } else if (screenWidth >= 900) {
-      return 5; // Desktop screens
-    } else if (screenWidth >= 600) {
-      return 4; // Tablet screens
-    } else if (screenWidth >= 480) {
-      return 3; // Large mobile screens
-    } else {
-      return 2; // Small mobile screens
-    }
-  }
-
-  // Helper method to get responsive aspect ratio based on screen width
-  double _getResponsiveAspectRatio(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-
-    if (screenWidth >= 1200) {
-      return 0.85; // Slightly taller cards for large desktop
-    } else if (screenWidth >= 900) {
-      return 0.8; // Desktop screens
-    } else if (screenWidth >= 600) {
-      return 0.78; // Tablet screens
-    } else {
-      return 0.75; // Mobile screens (same as original)
-    }
-  }
-
-  int _getFilteredProductsCount() {
-    // Collect unique seller IDs from filtered products
-    final Set<String> sellerIds = {};
-    for (final product in _products) {
-      if (product.isDraft == true) continue;
-      if (product.isActive == false) continue;
-      if (product.isArchived == true) continue;
-
-      // Apply brand filter
-      if (_selectedBrand != null && product.brand != _selectedBrand) continue;
-
-      // Apply category/subcategory filters
-      if (_selectedCategories.isNotEmpty) {
-        final selectedCategoryIds = _selectedCategories
-            .map((categoryName) => _categoryNameToId[categoryName])
-            .where((id) => id != null)
-            .cast<String>()
-            .toList();
-
-        if (!selectedCategoryIds.contains(product.categoryId)) continue;
-
-        if (_selectedSubCategories.isNotEmpty) {
-          final hasSubCategory = product.subCategoryId.isNotEmpty;
-          final isInSelectedSubCategory = _selectedSubCategories.contains(
-            product.subCategoryId,
-          );
-          if (hasSubCategory && !isInSelectedSubCategory) continue;
-        }
-      }
-
-      if (product.sellerId.isNotEmpty) {
-        sellerIds.add(product.sellerId);
-      }
-    }
-
-    // Only count parent seller accounts (not sub-accounts)
-    return sellerIds.where((sid) {
-      final data = _sellerDataCache[sid];
-      if (data == null) return true; // include if not yet cached
-      final isSubAccount = data['isSubAccount'] == true;
-      final role = data['role'] as String? ?? '';
-      return !isSubAccount && role == 'seller';
-    }).length;
-  }
-
   // Get subcategory click count from Firestore
   Future<int> _getSubCategoryClickCount(String subCategoryId) async {
     try {
@@ -4298,313 +3663,6 @@ class _ProductListingPageState extends State<ProductListingPage>
   // ═══════════════════════════════════════════════════════════════════════════
 
   // Build Brand Section (horizontally scrollable, matches Categories style)
-  Widget _buildBrandSection() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: ink.amber.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(Icons.verified_rounded, color: ink.amber, size: 18),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                'Brands',
-                style: AppTextStyles.titleMedium.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: ink.text,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (_brandList.isEmpty)
-            const SizedBox.shrink()
-          else
-            SizedBox(
-              height: 100,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: _brandList.length + 1, // +1 for "All" option
-                itemBuilder: (context, index) {
-                  // First item is "All"
-                  if (index == 0) {
-                    final isSelected = _selectedBrand == null;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 10),
-                      child: GestureDetector(
-                        onTap: () {
-                          if (_selectedBrand != null) {
-                            setState(() {
-                              _selectedBrand = null;
-                              _products = [];
-                              _lastDocument = null;
-                              _hasMore = true;
-                              _loadedSellerIds = {};
-                            });
-                            _loadFirstPage();
-                          }
-                        },
-                        child: IntrinsicWidth(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(minWidth: 80),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              decoration: BoxDecoration(
-                                color: isSelected ? ink.amber : ink.surface,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: isSelected
-                                      ? ink.amber
-                                      : ink.text.withValues(alpha: 0.12),
-                                  width: 1.5,
-                                ),
-                                boxShadow: isSelected
-                                    ? [
-                                        BoxShadow(
-                                          color: ink.amber.withValues(
-                                            alpha: 0.25,
-                                          ),
-                                          blurRadius: 8,
-                                          offset: const Offset(0, 3),
-                                        ),
-                                      ]
-                                    : [
-                                        BoxShadow(
-                                          color: Colors.black.withValues(
-                                            alpha: 0.04,
-                                          ),
-                                          blurRadius: 4,
-                                          offset: const Offset(0, 2),
-                                        ),
-                                      ],
-                              ),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Container(
-                                      width: 48,
-                                      height: 48,
-                                      decoration: BoxDecoration(
-                                        color: isSelected
-                                            ? Colors.white.withValues(
-                                                alpha: 0.2,
-                                              )
-                                            : ink.amber.withValues(alpha: 0.08),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Center(
-                                        child: Icon(
-                                          Icons.grid_view_rounded,
-                                          color: isSelected
-                                              ? Colors.white.withValues(
-                                                  alpha: 0.9,
-                                                )
-                                              : ink.amber.withValues(
-                                                  alpha: 0.7,
-                                                ),
-                                          size: 22,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                    ),
-                                    child: Text(
-                                      'All',
-                                      style: AppTextStyles.bodySmall.copyWith(
-                                        color: isSelected
-                                            ? ink.onEmerald
-                                            : ink.text,
-                                        fontWeight: isSelected
-                                            ? FontWeight.bold
-                                            : FontWeight.w500,
-                                        fontSize: 10,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-
-                  final brandIndex = index - 1;
-                  final brand = _brandList[brandIndex]['brand'] ?? '';
-                  final brandImage = _brandList[brandIndex]['brandImage'] ?? '';
-                  final isSelected = _selectedBrand == brand;
-
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 10),
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _selectedBrand = isSelected ? null : brand;
-                          _products = [];
-                          _lastDocument = null;
-                          _hasMore = true;
-                          _loadedSellerIds = {};
-                        });
-                        _loadFirstPage();
-                      },
-                      child: IntrinsicWidth(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(minWidth: 80),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            decoration: BoxDecoration(
-                              color: isSelected ? ink.amber : ink.surface,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: isSelected
-                                    ? ink.amber
-                                    : ink.text.withValues(alpha: 0.12),
-                                width: 1.5,
-                              ),
-                              boxShadow: isSelected
-                                  ? [
-                                      BoxShadow(
-                                        color: ink.amber.withValues(
-                                          alpha: 0.25,
-                                        ),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 3),
-                                      ),
-                                    ]
-                                  : [
-                                      BoxShadow(
-                                        color: Colors.black.withValues(
-                                          alpha: 0.04,
-                                        ),
-                                        blurRadius: 4,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Container(
-                                    width: 48,
-                                    height: 48,
-                                    decoration: BoxDecoration(
-                                      color: brandImage.isNotEmpty
-                                          ? Colors.transparent
-                                          : isSelected
-                                          ? Colors.white.withValues(alpha: 0.2)
-                                          : ink.amber.withValues(alpha: 0.08),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: brandImage.isNotEmpty
-                                        ? CachedNetworkImage(
-                                            imageUrl: brandImage,
-                                            fit: BoxFit.cover,
-                                            memCacheWidth: 120,
-                                            maxWidthDiskCache: 120,
-                                            placeholder: (context, url) =>
-                                                Center(
-                                                  child: Icon(
-                                                    Icons.verified_rounded,
-                                                    color: isSelected
-                                                        ? Colors.white
-                                                              .withValues(
-                                                                alpha: 0.7,
-                                                              )
-                                                        : ink.amber.withValues(
-                                                            alpha: 0.5,
-                                                          ),
-                                                    size: 20,
-                                                  ),
-                                                ),
-                                            errorWidget:
-                                                (context, url, error) => Center(
-                                                  child: Icon(
-                                                    Icons.verified_rounded,
-                                                    color: isSelected
-                                                        ? Colors.white
-                                                              .withValues(
-                                                                alpha: 0.7,
-                                                              )
-                                                        : ink.amber.withValues(
-                                                            alpha: 0.5,
-                                                          ),
-                                                    size: 20,
-                                                  ),
-                                                ),
-                                          )
-                                        : Center(
-                                            child: Icon(
-                                              Icons.verified_rounded,
-                                              color: isSelected
-                                                  ? Colors.white.withValues(
-                                                      alpha: 0.9,
-                                                    )
-                                                  : ink.amber.withValues(
-                                                      alpha: 0.7,
-                                                    ),
-                                              size: 22,
-                                            ),
-                                          ),
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                  ),
-                                  child: Text(
-                                    brand.length > 17
-                                        ? '${brand.substring(0, 17)}...'
-                                        : brand,
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color: isSelected
-                                          ? ink.onEmerald
-                                          : ink.text,
-                                      fontWeight: isSelected
-                                          ? FontWeight.bold
-                                          : FontWeight.w500,
-                                      fontSize: 10,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
   int _categoryCrossAxisCount(BuildContext context) {
     final w = _contentWidth;
     if (w >= 1200) return 7;
@@ -4614,6 +3672,11 @@ class _ProductListingPageState extends State<ProductListingPage>
   }
 
   // Build Categories Section (responsive grid)
+  /// True while the real category set is still on its way. The list is seeded
+  /// with a lone 'All' entry, which is not something worth rendering on its own.
+  bool get _categoriesPending =>
+      (_isLoading || !_firstLoadDone) && _categories.length <= 1;
+
   Widget _buildCategoriesSection() {
     final crossAxisCount = _categoryCrossAxisCount(context);
 
@@ -4658,34 +3721,49 @@ class _ProductListingPageState extends State<ProductListingPage>
                 _openBrowsePage(initialFilter: BrowseFilter.categories),
           ),
           const SizedBox(height: 14),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            padding: EdgeInsets.zero,
-            itemCount: visibleIndices.length,
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: crossAxisCount,
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 8,
-              // Portrait 3:4 (width:height) category artwork.
-              childAspectRatio: 1086 / 1448,
+          if (_categoriesPending)
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              padding: EdgeInsets.zero,
+              itemCount: crossAxisCount,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: crossAxisCount,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+                childAspectRatio: 1086 / 1448,
+              ),
+              itemBuilder: (context, index) => const SkeletonBox(radius: 14),
+            )
+          else
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              padding: EdgeInsets.zero,
+              itemCount: visibleIndices.length,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: crossAxisCount,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+                // Portrait 3:4 (width:height) category artwork.
+                childAspectRatio: 1086 / 1448,
+              ),
+              itemBuilder: (context, index) {
+                final categoryIndex = visibleIndices[index];
+                final category = _categories[categoryIndex];
+                final isSelected = category == 'All'
+                    ? _selectedCategories.isEmpty
+                    : _selectedCategories.contains(category);
+                final imageUrl = category == 'All'
+                    ? null
+                    : _categoryNameToImage[category];
+                return _buildCategoryGridTile(
+                  category: category,
+                  isSelected: isSelected,
+                  imageUrl: imageUrl,
+                );
+              },
             ),
-            itemBuilder: (context, index) {
-              final categoryIndex = visibleIndices[index];
-              final category = _categories[categoryIndex];
-              final isSelected = category == 'All'
-                  ? _selectedCategories.isEmpty
-                  : _selectedCategories.contains(category);
-              final imageUrl = category == 'All'
-                  ? null
-                  : _categoryNameToImage[category];
-              return _buildCategoryGridTile(
-                category: category,
-                isSelected: isSelected,
-                imageUrl: imageUrl,
-              );
-            },
-          ),
           if (isCollapsedToSelection) ...[
             const SizedBox(height: 8),
             Center(
@@ -5016,45 +4094,6 @@ class _ProductListingPageState extends State<ProductListingPage>
       await Future.wait(uncachedSellerIds.map(_getSellerDataCached));
       AppLogger.d('Seller data pre-fetch complete');
     }
-
-    // Pre-fetch active vouchers for all sellers in view.
-    final uncachedVoucherIds = sellerIds
-        .where((id) => !_sellerVouchersCache.containsKey(id))
-        .toSet();
-    if (uncachedVoucherIds.isNotEmpty) {
-      await Future.wait(uncachedVoucherIds.map(_fetchSellerVouchers));
-    }
-  }
-
-  /// Fetches active, currently-valid vouchers for a single seller and caches
-  /// them in [_sellerVouchersCache]. Caches an empty list on error so we don't
-  /// retry on every rebuild.
-  Future<void> _fetchSellerVouchers(String sellerId) async {
-    if (_sellerVouchersCache.containsKey(sellerId)) return;
-    if (_sellerVouchersFetching.contains(sellerId)) return;
-    _sellerVouchersFetching.add(sellerId);
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('Vouchers')
-          .where('sellerId', isEqualTo: sellerId)
-          .where('status', isEqualTo: 'active')
-          .get();
-
-      final now = DateTime.now();
-      final valid = snapshot.docs.map((d) => d.data()).where((v) {
-        final start = _parseVoucherDate(v['startDate']);
-        final end = _parseVoucherDate(v['endDate']);
-        if (start == null || end == null) return false;
-        return !start.isAfter(now) && !end.isBefore(now);
-      }).toList();
-
-      _sellerVouchersCache[sellerId] = valid;
-    } catch (e) {
-      AppLogger.d('Error fetching vouchers for $sellerId: $e');
-      _sellerVouchersCache[sellerId] = const [];
-    } finally {
-      _sellerVouchersFetching.remove(sellerId);
-    }
   }
 
   DateTime? _parseVoucherDate(dynamic value) {
@@ -5123,558 +4162,196 @@ class _ProductListingPageState extends State<ProductListingPage>
     }
   }
 
-  /// Renders a single orange voucher badge matching the existing tag style.
-  Widget _buildVoucherBadge(String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            ink.amber.withValues(alpha: 0.15),
-            ink.emerald.withValues(alpha: 0.15),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: ink.amber.withValues(alpha: 0.3), width: 1),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.local_offer_rounded, size: 14, color: ink.amber),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: AppTextStyles.bodySmall.copyWith(
-              color: ink.amber,
-              fontWeight: FontWeight.w600,
-              fontSize: 11,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ),
-    );
-  }
+  /// Products left after every active filter. Category and subcategory are
+  /// applied server-side when exactly one is selected, so this re-applies them
+  /// for the multi-select case and handles the rest client-side.
+  List<Product> _filteredProducts() {
+    final targetRegion = _selectedShippedFrom == 'All'
+        ? null
+        : (_selectedShippedFrom == 'Nearest You'
+              ? _userRegion
+              : _selectedShippedFrom);
 
-  // Build Traders List (Foodpanda-style vertical list layout)
-  Widget _buildTradersList() {
-    // Group products by seller to create "business" cards
-    final Map<String, List<Product>> productsBySeller = {};
-
-    final filteredProducts = _products.where((product) {
+    return _products.where((product) {
       if (product.isDraft == true) return false;
       if (product.isActive == false) return false;
       if (product.isArchived == true) return false;
+      if (BannedSellerService.instance.isBanned(product.sellerId)) return false;
 
-      // Apply brand filter
-      if (_selectedBrand != null && product.brand != _selectedBrand)
+      if (_selectedBrand != null && product.brand != _selectedBrand) {
         return false;
+      }
 
-      // Apply category filter
       if (_selectedCategories.isNotEmpty) {
         final selectedCategoryIds = _selectedCategories
-            .map((categoryName) => _categoryNameToId[categoryName])
-            .where((id) => id != null)
-            .cast<String>()
+            .map((name) => _categoryNameToId[name])
+            .whereType<String>()
             .toList();
-
         if (!selectedCategoryIds.contains(product.categoryId)) return false;
 
-        // Apply subcategory filter
         if (_selectedSubCategories.isNotEmpty) {
           final hasSubCategory = product.subCategoryId.isNotEmpty;
-          final isInSelectedSubCategory = _selectedSubCategories.contains(
+          final isSelected = _selectedSubCategories.contains(
             product.subCategoryId,
           );
-          if (hasSubCategory && !isInSelectedSubCategory) return false;
+          if (hasSubCategory && !isSelected) return false;
         }
+      }
+
+      // Shipped From reads the seller's region, so it only bites once that
+      // seller's document has been fetched.
+      if (targetRegion != null &&
+          _sellerRegion(product.sellerId) != targetRegion) {
+        return false;
       }
 
       return true;
     }).toList();
+  }
 
-    // Group by seller
-    for (final product in filteredProducts) {
-      final sellerId = product.sellerId.isNotEmpty
-          ? product.sellerId
-          : 'unknown';
-      if (BannedSellerService.instance.isBanned(sellerId)) continue;
-      productsBySeller.putIfAbsent(sellerId, () => []).add(product);
-    }
+  /// The catalogue grid. Paginates by scroll position rather than a button —
+  /// [_scrollListener] asks for the next page as the last row comes into view.
+  Widget _buildProductsSliver(List<Product> products, double contentWidth) {
+    final columns = _productColumns(contentWidth);
+    final cellWidth = (contentWidth - 12 * (columns - 1)) / columns;
 
-    // Apply Shipped From filter — based on seller region classified from
-    // vendor.company.address.location. "Nearest You" matches the current
-    // user's region; the four named regions filter strictly.
-    List<String> sellerIds = productsBySeller.keys.toList();
-    final String? targetRegion;
-    if (_selectedShippedFrom == 'All') {
-      targetRegion = null;
-    } else if (_selectedShippedFrom == 'Nearest You') {
-      targetRegion = _userRegion;
-    } else {
-      targetRegion = _selectedShippedFrom;
-    }
-    if (targetRegion != null) {
-      sellerIds = sellerIds
-          .where((sid) => _sellerRegion(sid) == targetRegion)
-          .toList();
-    }
-
-    if (sellerIds.isEmpty) {
-      return SliverToBoxAdapter(child: _buildEmptyState());
-    }
-
-    return SliverList(
-      delegate: SliverChildBuilderDelegate((context, index) {
-        if (index >= sellerIds.length) {
-          if (_isLoadingMore) {
-            return Center(
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: CircularProgressIndicator(color: ink.emerald),
-              ),
-            );
-          }
-          return const SizedBox.shrink();
-        }
-
-        final sellerId = sellerIds[index];
-        final sellerProducts = productsBySeller[sellerId]!;
-
-        return _buildTraderCard(sellerId, sellerProducts);
-      }, childCount: sellerIds.length + (_isLoadingMore ? 1 : 0)),
+    return SliverGrid(
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: columns,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 0.74,
+      ),
+      delegate: SliverChildBuilderDelegate(
+        (context, index) => _buildProductCard(products[index], cellWidth),
+        childCount: products.length,
+      ),
     );
   }
 
-  // Build trader cards from search results grouped by seller
-  Widget _buildSearchTradersList() {
-    final Map<String, List<Product>> productsBySeller = {};
-    for (final product in _searchResults) {
-      if (product.isDraft == true) continue;
-      if (product.isActive == false) continue;
-      if (product.isArchived == true) continue;
-      final sellerId = product.sellerId.isNotEmpty
-          ? product.sellerId
-          : 'unknown';
-      if (BannedSellerService.instance.isBanned(sellerId)) continue;
-      productsBySeller.putIfAbsent(sellerId, () => []).add(product);
-    }
-
-    final sellerIds = productsBySeller.keys.toList();
-
-    if (sellerIds.isEmpty) {
-      return SliverToBoxAdapter(child: _buildEmptyState());
-    }
-
-    // Pre-fetch seller data for search results
-    _prefetchSellerData(_searchResults);
-
-    return SliverList(
-      delegate: SliverChildBuilderDelegate((context, index) {
-        if (index >= sellerIds.length) return const SizedBox.shrink();
-        final sellerId = sellerIds[index];
-        final sellerProducts = productsBySeller[sellerId]!;
-        return _buildTraderCard(sellerId, sellerProducts);
-      }, childCount: sellerIds.length),
-    );
+  int _productColumns(double contentWidth) {
+    if (contentWidth >= 1000) return 5;
+    if (contentWidth >= 760) return 4;
+    if (contentWidth >= 520) return 3;
+    return 2;
   }
 
-  /// Extracts display-ready vendor fields from a raw Firestore Seller document.
-  /// Falls back gracefully at every level so the card always renders.
-  static _SellerDisplayData _extractSellerDisplay(
-    Map<String, dynamic>? raw,
-    List<Product> products,
-    Map<String, String> categoryIdToName,
-  ) {
-    // Fallback values derived from product data
-    final fallbackName = products.first.brand?.isNotEmpty == true
-        ? products.first.brand!
-        : 'Dental Trader';
-    var fallbackCats = products
-        .map((p) => categoryIdToName[p.categoryId])
-        .whereType<String>()
-        .toSet()
-        .take(2)
-        .join(', ');
-    if (fallbackCats.isEmpty) fallbackCats = 'Dental Products';
-
-    if (raw == null) {
-      return _SellerDisplayData(
-        storeName: fallbackName,
-        province: 'Metro Manila',
-        coverImageUrl: products.first.imageURL,
-        categories: fallbackCats,
-      );
-    }
-
-    final vendor = raw['vendor'] is Map
-        ? raw['vendor'] as Map<String, dynamic>
-        : <String, dynamic>{};
-    final company = vendor['company'] is Map
-        ? vendor['company'] as Map<String, dynamic>
-        : <String, dynamic>{};
-    final address = company['address'] is Map
-        ? company['address'] as Map<String, dynamic>
-        : <String, dynamic>{};
-    final coverImg = vendor['coverImage'];
-
-    // Cover image: url → path → product image fallback
-    String coverUrl = products.first.imageURL;
-    if (coverImg is Map) {
-      final u = coverImg['url'] as String?;
-      final p = coverImg['path'] as String?;
-      if (u != null && u.isNotEmpty) {
-        coverUrl = u;
-      } else if (p != null && p.isNotEmpty) {
-        coverUrl = p;
-      }
-    }
-
-    // Store name
-    final storeName = (company['storeName'] as String?)?.isNotEmpty == true
-        ? company['storeName'] as String
-        : ((raw['storeName'] as String?) ?? fallbackName);
-
-    // Province
-    final province = (address['province'] as String?)?.isNotEmpty == true
-        ? address['province'] as String
-        : 'Metro Manila';
-
-    // Categories — vendor.categories is an array of name strings
-    var cats = fallbackCats;
-    final rawCats = vendor['categories'];
-    if (rawCats is List && rawCats.isNotEmpty) {
-      final joined = rawCats.whereType<String>().take(2).join(', ');
-      if (joined.isNotEmpty) cats = joined;
-    }
-
-    return _SellerDisplayData(
-      storeName: storeName,
-      province: province,
-      coverImageUrl: coverUrl,
-      categories: cats,
-    );
-  }
-
-  // Build individual Trader/Business Card (Foodpanda style)
-  Widget _buildTraderCard(String sellerId, List<Product> products) {
-    // Price range indicator (₱/₱₱/₱₱₱) — hidden per request, leaving logic commented for future use.
-    // final prices = products.map((p) => p.lowestPrice ?? 0).where((p) => p > 0).toList();
-    // String priceIndicator = '₱';
-    // if (prices.isNotEmpty) {
-    //   final avgPrice = prices.reduce((a, b) => a + b) / prices.length;
-    //   if (avgPrice > 5000) {
-    //     priceIndicator = '₱₱₱';
-    //   } else if (avgPrice > 1000) {
-    //     priceIndicator = '₱₱';
-    //   }
-    // }
-
-    // Read vendor data from cache (populated by pre-fetch before build)
-    final stillLoading = !_sellerDataCache.containsKey(sellerId);
-    final display = _extractSellerDisplay(
-      stillLoading ? null : _sellerDataCache[sellerId],
-      products,
-      _categoryIdToName,
-    );
-
-    // Show loading skeleton while vendor fetch is in flight (edge case)
-    if (stillLoading) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: _buildDarkSkeleton(height: 232, radius: 20),
-      );
-    }
-
-    // Dynamic vouchers fetched from Firestore (pre-cached by _prefetchSellerData).
-    // Sort by priority, format each into a label, drop invalid (null) entries.
-    final sortedVouchers = _sortVouchersByPriority(
-      _sellerVouchersCache[sellerId] ?? const [],
-    );
-    final voucherLabels = sortedVouchers
-        .map(_formatSingleVoucher)
-        .whereType<String>()
-        .toList();
-
-    // Display rules:
-    //   1 voucher  → show it
-    //   2 vouchers → show both
-    //   3+         → show first 2 + "+X more"
-    final List<String> displayedVoucherLabels;
-    if (voucherLabels.length <= 2) {
-      displayedVoucherLabels = voucherLabels;
-    } else {
-      displayedVoucherLabels = [
-        voucherLabels[0],
-        voucherLabels[1],
-        '+${voucherLabels.length - 2} more',
-      ];
-    }
-    final hasVoucher = displayedVoucherLabels.isNotEmpty;
+  /// One catalogue tile, in the same shape as the Most Popular cards so the
+  /// page reads as one surface.
+  Widget _buildProductCard(Product product, double cellWidth, {int? rank}) {
+    final variation = product.variations?.isNotEmpty == true
+        ? product.variations!.first
+        : null;
+    final imageUrl =
+        variation?.thumbnailURL ??
+        product.thumbnailURL ??
+        variation?.imageURL ??
+        product.imageURL;
+    final price = product.lowestPrice;
+    final brand = product.brand ?? '';
 
     return GestureDetector(
       onTap: () {
-        if (BannedSellerService.instance.isBanned(sellerId)) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('This store is not available.'),
-              behavior: SnackBarBehavior.floating,
-              duration: Duration(seconds: 2),
-            ),
-          );
-          return;
-        }
-        final initialCategoryIds = _selectedCategories
-            .map((name) => _categoryNameToId[name])
-            .whereType<String>()
-            .toList();
-        NavigationUtils.navigateToStore(
-          context,
-          sellerId,
-          sellerData: _sellerDataCache[sellerId],
-          initialCategoryIds: initialCategoryIds.isEmpty
-              ? null
-              : initialCategoryIds,
-          initialSubCategoryIds: _selectedSubCategories.isEmpty
-              ? null
-              : List<String>.from(_selectedSubCategories),
-        );
+        _clickTrackingService.trackProductClick(product.productId);
+        NavigationUtils.navigateToProductDetail(context, product.productId);
       },
       child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: ink.surface,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(color: ink.border),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Banner image from vendor coverImage
-            ClipRRect(
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(20),
-                topRight: Radius.circular(20),
-              ),
-              // 8:3 ratio to match a 1920x720 source image.
-              child: AspectRatio(
-                aspectRatio: 8 / 3,
+            // Product shots are cut out on white, so they get a neutral
+            // pedestal rather than floating on the card.
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(gradient: ink.productBackdrop),
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    CachedNetworkImage(
-                      imageUrl: display.coverImageUrl,
-                      fit: BoxFit.cover,
-                      memCacheWidth: 1080,
-                      maxWidthDiskCache: 1080,
-                      placeholder: (context, url) => Container(
-                        color: ink.emerald.withValues(alpha: 0.1),
-                        child: Center(
-                          child: CircularProgressIndicator(color: ink.emerald),
-                        ),
+                    Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: AppNetworkImage(
+                        url: imageUrl,
+                        width: cellWidth,
+                        height: cellWidth,
+                        fit: BoxFit.contain,
+                        backgroundColor: Colors.transparent,
                       ),
-                      errorWidget: (context, url, error) => Container(
-                        color: ink.emerald.withValues(alpha: 0.1),
-                        child: Icon(
-                          Icons.store_rounded,
-                          size: 40,
-                          color: ink.emerald,
-                        ),
-                      ),
-                      cacheManager: ProductImageCacheManager.instance,
                     ),
-                    // Gradient overlay for text readability
-                    Positioned(
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      child: Container(
-                        height: 60,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.transparent,
-                              Colors.black.withValues(alpha: 0.4),
-                            ],
+                    if (rank != null)
+                      Positioned(
+                        top: 8,
+                        left: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: ink.amber,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            '#$rank',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: ink.onAmber,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 10,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    // Product count badge
-                    Positioned(
-                      top: 12,
-                      right: 12,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.6),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.inventory_2_outlined,
-                              size: 14,
-                              color: ink.emerald,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${products.length} items',
-                              style: AppTextStyles.bodySmall.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: ink.text,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
             ),
-
-            // Info section
             Padding(
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.fromLTRB(10, 9, 10, 11),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Top row: store name + price range badge
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          display.storeName,
-                          style: AppTextStyles.titleMedium.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: ink.text,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                  if (brand.isNotEmpty)
+                    Text(
+                      brand.toUpperCase(),
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: ink.text.withValues(alpha: 0.45),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 9,
+                        letterSpacing: 0.7,
                       ),
-                      // Price range badge (₱/₱₱/₱₱₱) — hidden per request.
-                      // const SizedBox(width: 8),
-                      // Container(
-                      //   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      //   decoration: BoxDecoration(
-                      //     color: ink.amber.withValues(alpha: 0.1),
-                      //     borderRadius: BorderRadius.circular(6),
-                      //   ),
-                      //   child: Text(
-                      //     priceIndicator,
-                      //     style: AppTextStyles.bodySmall.copyWith(
-                      //       color: ink.amber,
-                      //       fontWeight: FontWeight.bold,
-                      //     ),
-                      //   ),
-                      // ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 4),
-
-                  // Province / location row
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.location_on_outlined,
-                        size: 14,
-                        color: ink.text.withValues(alpha: 0.6),
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          display.province,
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: ink.text.withValues(alpha: 0.7),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  // Middle row: ETA pill + categories
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: ink.emerald.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.access_time_rounded,
-                              size: 12,
-                              color: ink.emerald,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              _estimateDelivery(sellerId),
-                              style: AppTextStyles.bodySmall.copyWith(
-                                color: ink.emerald,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          display.categories,
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: ink.text.withValues(alpha: 0.6),
-                            fontSize: 11,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  // Bottom row: voucher badges (horizontal list)
-                  if (hasVoucher) ...[
-                    const SizedBox(height: 10),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          for (
-                            int i = 0;
-                            i < displayedVoucherLabels.length;
-                            i++
-                          ) ...[
-                            if (i > 0) const SizedBox(width: 6),
-                            _buildVoucherBadge(displayedVoucherLabels[i]),
-                          ],
-                        ],
-                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ],
+                  Text(
+                    product.name,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: ink.text,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12.5,
+                      height: 1.25,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    price != null
+                        ? CurrencyFormatter.formatWithPeso(price)
+                        : 'Price on request',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: ink.text,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ],
               ),
             ),
@@ -5776,66 +4453,3 @@ class _DealCountdownState extends State<_DealCountdown> {
 // ─────────────────────────────────────────────────────────────────────────────
 // Dark loading placeholder
 // ─────────────────────────────────────────────────────────────────────────────
-
-/// A card-shaped block that breathes between two dark tones.
-///
-/// The shared skeletons in `loading_skeletons.dart` are built against the light
-/// palette and would drop bright grey slabs onto this page's dark ground, so
-/// the listing page pulses its own.
-class _PulsingBlock extends StatefulWidget {
-  const _PulsingBlock({this.height, this.radius = 16});
-
-  final double? height;
-  final double radius;
-
-  @override
-  State<_PulsingBlock> createState() => _PulsingBlockState();
-}
-
-class _PulsingBlockState extends State<_PulsingBlock>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1100),
-  )..repeat(reverse: true);
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, _) {
-        final ink = InkPalette.of(context);
-        return Container(
-          height: widget.height,
-          decoration: BoxDecoration(
-            color: Color.lerp(ink.surface, ink.surfaceHigh, _controller.value),
-            borderRadius: BorderRadius.circular(widget.radius),
-            border: Border.all(color: ink.border),
-          ),
-        );
-      },
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Value object holding display-ready vendor fields for a trader card
-// ─────────────────────────────────────────────────────────────────────────────
-class _SellerDisplayData {
-  final String storeName;
-  final String province;
-  final String coverImageUrl;
-  final String categories;
-  const _SellerDisplayData({
-    required this.storeName,
-    required this.province,
-    required this.coverImageUrl,
-    required this.categories,
-  });
-}

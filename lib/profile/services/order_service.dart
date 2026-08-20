@@ -98,6 +98,28 @@ class OrderService {
     }
   }
 
+  /// The most recent orders this session has seen, so a screen opening on them
+  /// can paint immediately instead of starting on a spinner.
+  ///
+  /// The stream below is live and self-correcting, so a slightly stale first
+  /// frame is replaced as soon as the next snapshot lands — the point is only
+  /// to avoid showing nothing in the meantime.
+  static List<order_model.Order>? _lastOrders;
+  static String? _lastOrdersUid;
+
+  /// Last known orders for the *current* account, or null if there are none
+  /// cached (or the cache belongs to a different account).
+  static List<order_model.Order>? get cachedOrders {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null || uid != _lastOrdersUid) return null;
+    return _lastOrders;
+  }
+
+  static void clearCache() {
+    _lastOrders = null;
+    _lastOrdersUid = null;
+  }
+
   /// Get orders stream for real-time updates (using Firestore directly)
   static Stream<List<order_model.Order>> getUserOrdersStream() {
     final user = _auth.currentUser;
@@ -115,10 +137,13 @@ class OrderService {
           final orders = snapshot.docs
               .map((doc) => order_model.Order.fromFirestore(doc))
               .toList();
-          
+
           // Sort in memory by createdAt (descending - newest first)
           orders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-          
+
+          _lastOrders = orders;
+          _lastOrdersUid = user.uid;
+
           AppLogger.d('Stream update: ${orders.length} orders');
           return orders;
         });

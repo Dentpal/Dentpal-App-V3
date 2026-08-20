@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart'; // Added for kIsWeb check
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import '../../login_page.dart';
-import '../../product/services/user_service.dart';
+import '../../core/services/session_cache.dart';
 import '../../core/services/sub_account_service.dart';
 import 'shipping_addresses_page.dart';
 import 'orders_page.dart';
@@ -29,12 +29,50 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  Map<String, dynamic>? _userCache;
-  Map<String, dynamic>? _sellerCache;
-  bool _hasLoadedData = false;
+  // Cached across instances, keyed by account: ProfilePage is a shell tab in
+  // one place and a pushed route in another (seller dashboard), and both used
+  // to pay for the same two document reads.
+  static Map<String, dynamic>? _userCache;
+  static Map<String, dynamic>? _sellerCache;
+  static String? _cachedUid;
+  static DateTime? _cachedAt;
+  static const Duration _cacheDuration = Duration(minutes: 5);
+
+  /// Created once, in [initState].
+  ///
+  /// This used to be built inside `build()`, which meant a brand new Firestore
+  /// read on every single rebuild — and a rebuild happened on every parent
+  /// setState.
+  late Future<Map<String, dynamic>> _userDataFuture;
+
+  bool get _hasLoadedData => _userCache != null && _isCacheFresh;
+
+  static bool get _isCacheFresh {
+    final at = _cachedAt;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    return at != null &&
+        uid != null &&
+        _cachedUid == uid &&
+        DateTime.now().difference(at) < _cacheDuration;
+  }
+
+  /// Drops the cached profile. Called on sign-out so the next account does not
+  /// see the previous one's name and avatar.
+  static void clearCache() {
+    _userCache = null;
+    _sellerCache = null;
+    _cachedUid = null;
+    _cachedAt = null;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _userDataFuture = _getUserData();
+  }
 
   Future<Map<String, dynamic>> _getUserData() async {
-    if (_hasLoadedData && _userCache != null) {
+    if (_hasLoadedData) {
       return {'user': _userCache, 'seller': _sellerCache};
     }
 
@@ -62,7 +100,8 @@ class _ProfilePageState extends State<ProfilePage> {
               _sellerCache = sellerDoc.data();
             }
           }
-          _hasLoadedData = true;
+          _cachedUid = user.uid;
+          _cachedAt = DateTime.now();
         }
       }
     } catch (e) {
@@ -74,8 +113,12 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _signOut(BuildContext context) async {
     try {
-      // Clear UserService cache before signing out
-      UserService.clearCache();
+      // Drop every cached read before signing out, so the next account never
+      // sees the previous one's data. SessionCache also does this off the auth
+      // stream; doing it here too means the caches are already empty by the
+      // time any widget rebuilds.
+      SessionCache.clearAll();
+      clearCache();
       await FirebaseAuth.instance.signOut();
       if (context.mounted) {
         Navigator.of(context).pushAndRemoveUntil(
@@ -383,7 +426,9 @@ class _ProfilePageState extends State<ProfilePage> {
         backgroundColor: AppColors.surface,
         elevation: 0,
         automaticallyImplyLeading: false,
-        leading: kIsWeb
+        // Only when there is something to go back to. As a shell tab this page
+        // is not a route of its own, so a back arrow here would do nothing.
+        leading: kIsWeb && Navigator.of(context).canPop()
             ? IconButton(
                 icon: Icon(Icons.arrow_back, color: AppColors.onSurface),
                 onPressed: () => Navigator.of(context).pop(),
@@ -428,7 +473,7 @@ class _ProfilePageState extends State<ProfilePage> {
         ],
       ),
       body: FutureBuilder<Map<String, dynamic>>(
-        future: _getUserData(),
+        future: _userDataFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting &&
               !_hasLoadedData) {

@@ -1,12 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../models/cart_model.dart';
-import '../../core/app_theme/app_colors.dart';
-import '../../core/widgets/app_network_image.dart';
 import '../../core/app_theme/app_text_styles.dart';
+import '../../core/app_theme/ink_palette.dart';
+import '../../core/widgets/app_network_image.dart';
 import 'package:dentpal/utils/app_logger.dart';
+import 'package:dentpal/utils/currency_formatter.dart';
 import 'voucher_picker_sheet.dart';
 
+/// One supplier's slice of the cart.
+///
+/// Grouped by seller because a real order routinely splits across two
+/// distributors with different lead times and different vouchers. Hiding that
+/// until checkout is how a marketplace loses a purchasing manager's trust — the
+/// split, and what each seller's total comes to, belongs on this screen.
 class SellerGroupWidget extends StatefulWidget {
   final SellerGroup sellerGroup;
   final Function(CartItem, int) onUpdateQuantity;
@@ -40,6 +48,13 @@ class SellerGroupWidget extends StatefulWidget {
 class _SellerGroupWidgetState extends State<SellerGroupWidget> {
   Map<String, dynamic>? _freeDeliveryVoucher;
   bool _voucherLoading = true;
+
+  InkPalette get ink => InkPalette.of(context);
+
+  /// Destructive red. [InkPalette] has no error tone of its own, and amber is
+  /// reserved for urgency rather than danger.
+  Color get _danger =>
+      ink.isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626);
 
   @override
   void initState() {
@@ -97,7 +112,10 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
         }).toList();
         setState(() {
           if (validDocs.isNotEmpty) {
-            _freeDeliveryVoucher = {...validDocs.first.data(), 'id': validDocs.first.id};
+            _freeDeliveryVoucher = {
+              ...validDocs.first.data(),
+              'id': validDocs.first.id,
+            };
           } else {
             _freeDeliveryVoucher = null;
           }
@@ -119,29 +137,24 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        color: ink.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: ink.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildSellerHeader(),
           if (widget.sellerGroup.items.isNotEmpty) ...[
-            const Divider(height: 1, color: AppColors.grey200),
+            _buildShipsFrom(),
             _buildItemsList(context),
-            const Divider(height: 1, color: AppColors.grey200),
+            _divider(),
             _buildSellerSummary(),
-            const Divider(height: 1, color: AppColors.grey200),
+            _divider(),
             _buildDiscountVoucherRow(),
-            const Divider(height: 1, color: AppColors.grey200),
+            _divider(),
             _buildShippingVoucherRow(),
           ],
         ],
@@ -149,115 +162,107 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
     );
   }
 
+  Widget _divider() => Divider(height: 1, thickness: 1, color: ink.border);
+
+  // ── Header ───────────────────────────────────────────────────────────────
+
+  /// Supplier strip: select-all, store name, and a way through to the store.
   Widget _buildSellerHeader() {
-    final hideProgressBar = widget.selectedShippingVoucher != null;
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: ink.surfaceHigh,
+        border: Border(bottom: BorderSide(color: ink.border)),
+      ),
+      child: Row(
+        children: [
+          _QuietCheckbox(
+            ink: ink,
+            state: widget.sellerGroup.allItemsSelected
+                ? _CheckState.checked
+                : widget.sellerGroup.hasSelectedItems
+                ? _CheckState.partial
+                : _CheckState.unchecked,
+            onTap: () => widget.onToggleGroupSelection(widget.sellerGroup),
+            semanticLabel: 'Select all items from '
+                '${widget.sellerGroup.sellerName}',
+          ),
+          const SizedBox(width: 10),
+          Icon(
+            Icons.storefront_outlined,
+            size: 16,
+            color: ink.text.withValues(alpha: 0.6),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: GestureDetector(
+              onTap: widget.onSellerNameTap,
+              behavior: HitTestBehavior.opaque,
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      widget.sellerGroup.sellerName,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: ink.text,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13.5,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (widget.onSellerNameTap != null)
+                    Icon(
+                      Icons.chevron_right,
+                      size: 18,
+                      color: ink.text.withValues(alpha: 0.45),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '${widget.sellerGroup.items.length} item'
+            '${widget.sellerGroup.items.length != 1 ? 's' : ''}',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: ink.text.withValues(alpha: 0.5),
+              fontSize: 11.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Where the order ships from, plus the free-shipping bar when this seller is
+  /// running one. Both are lead-time information a buyer needs before checkout,
+  /// not after.
+  Widget _buildShipsFrom() {
+    final address = widget.sellerGroup.sellerShippingAddress?.trim();
+    final hideProgressBar = widget.selectedShippingVoucher != null;
+    final showBar =
+        !_voucherLoading && _freeDeliveryVoucher != null && !hideProgressBar;
+
+    if ((address == null || address.isEmpty) && !showBar) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              // Seller selection checkbox
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: () => widget.onToggleGroupSelection(widget.sellerGroup),
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    child: Icon(
-                      widget.sellerGroup.allItemsSelected
-                          ? Icons.check_circle
-                          : widget.sellerGroup.hasSelectedItems
-                          ? Icons.indeterminate_check_box
-                          : Icons.circle_outlined,
-                      color: widget.sellerGroup.allItemsSelected
-                          ? AppColors.primary
-                          : widget.sellerGroup.hasSelectedItems
-                          ? AppColors.warning
-                          : AppColors.grey400,
-                      size: 24,
-                    ),
-                  ),
-                ),
+          if (address != null && address.isNotEmpty)
+            Text(
+              'Ships from $address',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: ink.text.withValues(alpha: 0.55),
+                fontSize: 11.5,
               ),
-
-              const SizedBox(width: 12),
-
-              // Seller info
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    GestureDetector(
-                      onTap: widget.onSellerNameTap,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.store, size: 14, color: AppColors.primary),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'SELLER',
-                                  style: AppTextStyles.labelSmall.copyWith(
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              widget.sellerGroup.sellerName,
-                              style: AppTextStyles.titleMedium.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: widget.onSellerNameTap != null
-                                    ? AppColors.primary
-                                    : AppColors.onSurface,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (widget.onSellerNameTap != null) ...[
-                            const SizedBox(width: 4),
-                            Icon(
-                              Icons.chevron_right,
-                              size: 20,
-                              color: AppColors.primary,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${widget.sellerGroup.items.length} item${widget.sellerGroup.items.length != 1 ? 's' : ''}',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.onSurface.withValues(alpha: 0.6),
-                      ),
-                    ),
-                    // Free Shipping Progress Bar — hidden when a shipping voucher is already selected
-                    if (!_voucherLoading && _freeDeliveryVoucher != null && !hideProgressBar)
-                      _buildFreeShippingProgressBar(),
-                  ],
-                ),
-              ),
-            ],
-          ),
+            ),
+          if (showBar) _buildFreeShippingProgressBar(),
         ],
       ),
     );
@@ -265,10 +270,11 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
 
   Widget _buildFreeShippingProgressBar() {
     final minAmount = _freeDeliveryVoucher!['minimumOrderAmount'] as num? ?? 0;
-    if (minAmount <= 0) return SizedBox.shrink();
+    if (minAmount <= 0) return const SizedBox.shrink();
 
-    final progress = (widget.sellerGroup.selectedItemsTotal / minAmount).clamp(0.0, 1.0);
-    final remaining = (minAmount - widget.sellerGroup.selectedItemsTotal).clamp(0, double.infinity);
+    final total = widget.sellerGroup.selectedItemsTotal;
+    final progress = (total / minAmount).clamp(0.0, 1.0);
+    final remaining = (minAmount - total).clamp(0, double.infinity);
 
     return Padding(
       padding: const EdgeInsets.only(top: 8),
@@ -277,56 +283,44 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
         children: [
           if (remaining > 0)
             Text(
-              'Add ₱${remaining.toStringAsFixed(2)} to get free shipping',
+              'Add ${CurrencyFormatter.formatWithPeso(remaining.toDouble())} '
+              'to get free shipping',
               style: AppTextStyles.bodySmall.copyWith(
-                color: AppColors.onSurface.withValues(alpha: 0.7),
+                color: ink.text.withValues(alpha: 0.7),
                 fontSize: 12,
-                fontFamily: 'Roboto'
               ),
             )
           else
-            RichText(
-              text: TextSpan(
-                children: [
-                  TextSpan(
-                    text: "You've enjoyed ",
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.primary,
-                      fontSize: 12,
-                    ),
+            Row(
+              children: [
+                Icon(Icons.check_circle, size: 14, color: ink.emerald),
+                const SizedBox(width: 6),
+                Text(
+                  "You've earned free shipping",
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: ink.emerald,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
                   ),
-                  TextSpan(
-                    text: "Free Shipping",
-                    style: AppTextStyles.bodySmall.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
-                      fontSize: 12,
-                    ),
-                  ),
-                  TextSpan(
-                    text: "!",
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.primary,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           const SizedBox(height: 6),
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
               value: progress,
-              minHeight: 6,
-              backgroundColor: AppColors.grey200,
-              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+              minHeight: 5,
+              backgroundColor: ink.border,
+              valueColor: AlwaysStoppedAnimation<Color>(ink.emerald),
             ),
           ),
         ],
       ),
     );
   }
+
+  // ── Vouchers ─────────────────────────────────────────────────────────────
 
   String _voucherCodeSuffix(Map<String, dynamic> voucher) {
     final code = (voucher['code'] as String?)?.trim();
@@ -343,7 +337,7 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
     if (discountType == 'percentage') {
       benefit = '-${discountValue.toStringAsFixed(0)}%';
     } else if (discountType == 'fixed') {
-      benefit = '-₱${discountValue.toStringAsFixed(2)}';
+      benefit = '-${CurrencyFormatter.formatWithPeso(discountValue.toDouble())}';
     }
 
     if (benefit == null) return null;
@@ -366,91 +360,53 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
     return '$label${_voucherCodeSuffix(voucher)}';
   }
 
-  Widget _buildDiscountVoucherRow() {
-    final discountLabel = _formatDiscountVoucherLabel(widget.selectedDiscountVoucher);
-    final baseStyle = AppTextStyles.bodyMedium.copyWith(
-      fontWeight: FontWeight.w500,
-      fontFamily: 'Roboto',
-    );
-    final selectedStyle = baseStyle.copyWith(
-      color: AppColors.primary,
-      fontWeight: FontWeight.w700,
-    );
+  Widget _buildDiscountVoucherRow() => _buildVoucherRow(
+    icon: Icons.local_offer_outlined,
+    prompt: 'Add shop voucher',
+    value: _formatDiscountVoucherLabel(widget.selectedDiscountVoucher),
+    mode: VoucherPickerMode.discount,
+  );
+
+  Widget _buildShippingVoucherRow() => _buildVoucherRow(
+    icon: Icons.local_shipping_outlined,
+    prompt: 'Add shipping voucher',
+    value: _formatShippingVoucherLabel(widget.selectedShippingVoucher),
+    mode: VoucherPickerMode.shipping,
+  );
+
+  Widget _buildVoucherRow({
+    required IconData icon,
+    required String prompt,
+    required String? value,
+    required VoucherPickerMode mode,
+  }) {
+    final applied = value != null;
 
     return InkWell(
-      onTap: () => _openVoucherPicker(VoucherPickerMode.discount),
+      onTap: () => _openVoucherPicker(mode),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
-            Icon(Icons.local_offer_outlined, color: AppColors.primary, size: 18),
-            const SizedBox(width: 8),
+            Icon(icon, color: ink.emerald, size: 17),
+            const SizedBox(width: 10),
             Expanded(
-              child: Text.rich(
-                TextSpan(
-                  text: 'Add Shop Voucher Code',
-                  style: baseStyle,
-                  children: discountLabel == null
-                      ? const []
-                      : [
-                          const TextSpan(text: ' - '),
-                          TextSpan(text: discountLabel, style: selectedStyle),
-                        ],
+              child: Text(
+                applied ? value : prompt,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: applied ? ink.emerald : ink.text.withValues(alpha: 0.7),
+                  fontWeight: applied ? FontWeight.w700 : FontWeight.w500,
+                  fontSize: 13,
                 ),
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
             const SizedBox(width: 8),
             Icon(
               Icons.chevron_right,
-              color: AppColors.grey400,
-              size: 20,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildShippingVoucherRow() {
-    final shippingLabel = _formatShippingVoucherLabel(widget.selectedShippingVoucher);
-    final baseStyle = AppTextStyles.bodyMedium.copyWith(
-      fontWeight: FontWeight.w500,
-      fontFamily: 'Roboto',
-    );
-    final selectedStyle = baseStyle.copyWith(
-      color: AppColors.primary,
-      fontWeight: FontWeight.w700,
-    );
-
-    return InkWell(
-      onTap: () => _openVoucherPicker(VoucherPickerMode.shipping),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Icon(Icons.local_shipping_outlined, color: AppColors.primary, size: 18),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text.rich(
-                TextSpan(
-                  text: 'Add Shipping Voucher Code',
-                  style: baseStyle,
-                  children: shippingLabel == null
-                      ? const []
-                      : [
-                          const TextSpan(text: ' - '),
-                          TextSpan(text: shippingLabel, style: selectedStyle),
-                        ],
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Icon(
-              Icons.chevron_right,
-              color: AppColors.grey400,
-              size: 20,
+              color: ink.text.withValues(alpha: 0.4),
+              size: 19,
             ),
           ],
         ),
@@ -460,8 +416,12 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
 
   void _openVoucherPicker(VoucherPickerMode mode) {
     final isShipping = mode == VoucherPickerMode.shipping;
-    final current = isShipping ? widget.selectedShippingVoucher : widget.selectedDiscountVoucher;
-    final callback = isShipping ? widget.onShippingVoucherSelected : widget.onDiscountVoucherSelected;
+    final current = isShipping
+        ? widget.selectedShippingVoucher
+        : widget.selectedDiscountVoucher;
+    final callback = isShipping
+        ? widget.onShippingVoucherSelected
+        : widget.onDiscountVoucherSelected;
     VoucherPickerSheet.show(
       context: context,
       mode: mode,
@@ -476,201 +436,76 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
     );
   }
 
+  // ── Items ────────────────────────────────────────────────────────────────
+
   Widget _buildItemsList(BuildContext context) {
+    final items = widget.sellerGroup.items;
     return Column(
-      children: widget.sellerGroup.items
-          .map((item) => _buildCartItem(context, item))
-          .toList(),
+      children: [
+        for (var i = 0; i < items.length; i++) ...[
+          if (i > 0) _divider(),
+          _buildCartItem(context, items[i]),
+        ],
+      ],
     );
   }
 
   Widget _buildCartItem(BuildContext context, CartItem item) {
-    final bool isUnavailable = item.isUnavailable;
+    final isUnavailable = item.isUnavailable;
 
+    // Swipe right-to-left to remove, with a confirmation. Kept deliberately:
+    // it is the fastest way to prune a cart on a phone.
     return Dismissible(
       key: Key(item.cartItemId),
       direction: DismissDirection.endToStart,
       background: Container(
         alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
-        decoration: BoxDecoration(
-          color: AppColors.error,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            const Icon(Icons.delete_outline, color: Colors.white, size: 24),
-            const SizedBox(width: 8),
-          ],
-        ),
+        padding: const EdgeInsets.only(right: 22),
+        color: _danger,
+        child: const Icon(Icons.delete_outline, color: Colors.white, size: 22),
       ),
-      confirmDismiss: (direction) async {
-        return await _showDeleteConfirmation(context, item);
-      },
-      onDismissed: (direction) {
-        widget.onRemoveItem(item);
-      },
+      confirmDismiss: (_) => _showDeleteConfirmation(context, item),
+      onDismissed: (_) => widget.onRemoveItem(item),
       child: Opacity(
-        opacity: isUnavailable ? 0.5 : 1.0,
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: isUnavailable ? BoxDecoration(
-            color: AppColors.grey100.withValues(alpha: 0.5),
-          ) : null,
+        opacity: isUnavailable ? 0.55 : 1.0,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (isUnavailable) ...[
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: AppColors.error.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: AppColors.error.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.warning_amber_rounded,
-                        color: AppColors.error,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          item.unavailableReason ?? 'This product is unavailable',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.error,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                _buildNotice(
+                  icon: Icons.warning_amber_rounded,
+                  tone: _danger,
+                  text: item.unavailableReason ?? 'This product is unavailable',
                 ),
+                const SizedBox(height: 10),
               ],
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Tooltip(
-                    message: isUnavailable
-                        ? item.unavailableReason ?? 'This product is unavailable'
-                        : 'Select item',
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(8),
-                        onTap: isUnavailable
-                            ? null
-                            : () => widget.onToggleItemSelection(item, !item.isSelected),
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          child: Icon(
-                            isUnavailable
-                                ? Icons.block
-                                : item.isSelected
-                                    ? Icons.check_circle
-                                    : Icons.circle_outlined,
-                            color: isUnavailable
-                                ? AppColors.error
-                                : item.isSelected
-                                    ? AppColors.primary
-                                    : AppColors.grey400,
-                            size: 20,
-                          ),
-                        ),
-                      ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 22),
+                    child: _QuietCheckbox(
+                      ink: ink,
+                      state: isUnavailable
+                          ? _CheckState.blocked
+                          : item.isSelected
+                          ? _CheckState.checked
+                          : _CheckState.unchecked,
+                      onTap: isUnavailable
+                          ? null
+                          : () => widget.onToggleItemSelection(
+                              item,
+                              !item.isSelected,
+                            ),
+                      semanticLabel: 'Select ${item.productName ?? 'item'}',
                     ),
                   ),
-
+                  const SizedBox(width: 10),
+                  _buildThumbnail(item),
                   const SizedBox(width: 12),
-
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      width: 60,
-                      height: 60,
-                      decoration: BoxDecoration(
-                        color: AppColors.grey100,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: AppNetworkImage(
-                        url: item.productImage,
-                        width: 60,
-                        height: 60,
-                        fit: BoxFit.cover,
-                        maxDecodeDimension: 160,
-                        backgroundColor: AppColors.grey100,
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(width: 12),
-
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          item.productName ?? 'Loading...',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (item.variationName != null && item.variationName!.isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            item.variationName!,
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.onSurface.withValues(alpha: 0.6),
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                        const SizedBox(height: 4),
-                        Text(
-                          '₱${(item.productPrice ?? 0).toStringAsFixed(2)}',
-                          style: AppTextStyles.titleSmall.copyWith(
-                            color: isUnavailable ? AppColors.grey400 : AppColors.primary,
-                            fontWeight: FontWeight.w700,
-                            fontFamily: 'Roboto',
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-
-                        if (!isUnavailable && item.availableStock != null &&
-                            item.quantity > item.availableStock!)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.error.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              'Only ${item.availableStock} in stock',
-                              style: AppTextStyles.labelSmall.copyWith(
-                                color: AppColors.error,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(width: 12),
-
-                  _buildQuantitySelector(item, isUnavailable: isUnavailable),
+                  Expanded(child: _buildItemBody(item, isUnavailable)),
                 ],
               ),
             ],
@@ -680,80 +515,200 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
     );
   }
 
+  Widget _buildThumbnail(CartItem item) {
+    return Container(
+      width: 62,
+      height: 62,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: ink.isDark ? ink.surfaceHigh : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: ink.border),
+      ),
+      child: AppNetworkImage(
+        url: item.productImage,
+        width: 62,
+        height: 62,
+        fit: BoxFit.cover,
+        maxDecodeDimension: 160,
+        backgroundColor: ink.isDark ? ink.surfaceHigh : Colors.white,
+      ),
+    );
+  }
+
+  Widget _buildItemBody(CartItem item, bool isUnavailable) {
+    final brand = item.brand?.trim();
+    final variation = item.variationName?.trim();
+    final lineTotal = (item.productPrice ?? 0) * item.quantity;
+    final exceedsStock =
+        item.availableStock != null && item.quantity > item.availableStock!;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (brand != null && brand.isNotEmpty)
+          Text(
+            brand.toUpperCase(),
+            style: AppTextStyles.labelSmall.copyWith(
+              color: ink.text.withValues(alpha: 0.5),
+              fontWeight: FontWeight.w800,
+              fontSize: 10,
+              letterSpacing: 0.9,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        Text(
+          item.productName ?? 'Loading…',
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: ink.text,
+            fontWeight: FontWeight.w700,
+            fontSize: 13.5,
+            height: 1.25,
+          ),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        if (variation != null && variation.isNotEmpty)
+          Text(
+            variation,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: ink.text.withValues(alpha: 0.5),
+              fontSize: 11,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        if (exceedsStock && !isUnavailable) ...[
+          const SizedBox(height: 5),
+          Text(
+            'Only ${item.availableStock} in stock',
+            style: AppTextStyles.labelSmall.copyWith(
+              color: _danger,
+              fontWeight: FontWeight.w700,
+              fontSize: 11,
+            ),
+          ),
+        ],
+        const SizedBox(height: 9),
+        Row(
+          children: [
+            _buildQuantitySelector(item, isUnavailable: isUnavailable),
+            const Spacer(),
+            Text(
+              CurrencyFormatter.formatWithPeso(lineTotal),
+              style: AppTextStyles.titleSmall.copyWith(
+                color: ink.text,
+                fontWeight: FontWeight.w800,
+                fontSize: 15,
+              ),
+            ),
+            const SizedBox(width: 2),
+            IconButton(
+              onPressed: () async {
+                final confirmed = await _showDeleteConfirmation(context, item);
+                if (confirmed == true) widget.onRemoveItem(item);
+              },
+              icon: const Icon(Icons.delete_outline, size: 18),
+              color: ink.text.withValues(alpha: 0.45),
+              splashRadius: 18,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              padding: EdgeInsets.zero,
+              tooltip: 'Remove ${item.productName ?? 'item'}',
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   Widget _buildQuantitySelector(CartItem item, {bool isUnavailable = false}) {
-    final bool canDecrease = item.quantity > 1 && !isUnavailable;
-    final bool canIncrease = !isUnavailable &&
+    final canDecrease = item.quantity > 1 && !isUnavailable;
+    final canIncrease =
+        !isUnavailable &&
         (item.availableStock == null || item.quantity < item.availableStock!);
-    final bool exceedsStock =
+    final exceedsStock =
         item.availableStock != null && item.quantity > item.availableStock!;
 
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(
-          color: exceedsStock ? AppColors.error : AppColors.grey300,
-          width: exceedsStock ? 2 : 1,
-        ),
-        borderRadius: BorderRadius.circular(12),
-        color: AppColors.surface,
+        color: ink.surfaceHigh,
+        border: Border.all(color: exceedsStock ? _danger : ink.border),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(12),
-                bottomLeft: Radius.circular(12),
-              ),
-              onTap: canDecrease
-                  ? () => widget.onUpdateQuantity(item, item.quantity - 1)
-                  : null,
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                child: Icon(
-                  Icons.remove,
-                  size: 16,
-                  color: canDecrease ? AppColors.onSurface : AppColors.grey400,
-                ),
-              ),
-            ),
+          _stepButton(
+            icon: Icons.remove,
+            enabled: canDecrease,
+            onTap: () => widget.onUpdateQuantity(item, item.quantity - 1),
           ),
-
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: exceedsStock
-                  ? AppColors.error.withValues(alpha: 0.1)
-                  : AppColors.grey50,
-            ),
+          SizedBox(
+            width: 30,
             child: Text(
               '${item.quantity}',
+              textAlign: TextAlign.center,
               style: AppTextStyles.bodyMedium.copyWith(
-                fontWeight: FontWeight.w600,
-                color: exceedsStock ? AppColors.error : AppColors.onSurface,
+                color: exceedsStock ? _danger : ink.text,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
               ),
             ),
           ),
+          _stepButton(
+            icon: Icons.add,
+            enabled: canIncrease,
+            onTap: () => widget.onUpdateQuantity(item, item.quantity + 1),
+          ),
+        ],
+      ),
+    );
+  }
 
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: const BorderRadius.only(
-                topRight: Radius.circular(12),
-                bottomRight: Radius.circular(12),
-              ),
-              onTap: canIncrease
-                  ? () => widget.onUpdateQuantity(item, item.quantity + 1)
-                  : null,
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                child: Icon(
-                  Icons.add,
-                  size: 16,
-                  color: canIncrease ? AppColors.onSurface : AppColors.grey400,
-                ),
-              ),
+  Widget _stepButton({
+    required IconData icon,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: enabled ? onTap : null,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        child: Icon(
+          icon,
+          size: 15,
+          color: ink.text.withValues(alpha: enabled ? 0.85 : 0.3),
+        ),
+      ),
+    );
+  }
+
+  // ── Per-seller total ─────────────────────────────────────────────────────
+
+  Widget _buildSellerSummary() {
+    final count = widget.sellerGroup.selectedItemsCount;
+    final total = widget.sellerGroup.selectedItemsTotal;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Text(
+            'Subtotal ($count item${count != 1 ? 's' : ''})',
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: ink.text.withValues(alpha: 0.65),
+              fontSize: 13,
+            ),
+          ),
+          const Spacer(),
+          Text(
+            CurrencyFormatter.formatWithPeso(total),
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: ink.text,
+              fontWeight: FontWeight.w700,
+              fontSize: 13.5,
             ),
           ),
         ],
@@ -761,54 +716,33 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
     );
   }
 
-  Widget _buildSellerSummary() {
+  Widget _buildNotice({
+    required IconData icon,
+    required Color tone,
+    required String text,
+  }) {
     return Container(
-      padding: const EdgeInsets.all(16),
-      child: Column(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: tone.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: tone.withValues(alpha: 0.3)),
+      ),
+      child: Row(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Subtotal (${widget.sellerGroup.selectedItemsCount} item${widget.sellerGroup.selectedItemsCount != 1 ? 's' : ''})',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.onSurface.withValues(alpha: 0.8),
-                ),
+          Icon(icon, color: tone, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: tone,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
               ),
-              Text(
-                '₱${widget.sellerGroup.selectedItemsTotal.toStringAsFixed(2)}',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  fontWeight: FontWeight.w600,
-                  fontFamily: 'Roboto',
-                ),
-              ),
-            ],
-          ),
-
-          if (widget.sellerGroup.hasSelectedItems) ...[
-            const SizedBox(height: 8),
-            const Divider(height: 1, color: AppColors.grey200),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Total from ${widget.sellerGroup.sellerName}',
-                  style: AppTextStyles.titleSmall.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                Text(
-                  '₱${widget.sellerGroup.selectedItemsTotal.toStringAsFixed(2)}',
-                  style: AppTextStyles.titleSmall.copyWith(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w700,
-                    fontFamily: 'Roboto',
-                  ),
-                ),
-              ],
             ),
-          ],
+          ),
         ],
       ),
     );
@@ -820,67 +754,51 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
   ) async {
     return showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surface,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: ink.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: AppColors.error.withValues(alpha: 0.1),
+                color: _danger.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(
-                Icons.delete_outline,
-                color: AppColors.error,
-                size: 24,
-              ),
+              child: Icon(Icons.delete_outline, color: _danger, size: 22),
             ),
             const SizedBox(width: 12),
             Text(
-              'Remove Item',
+              'Remove item',
               style: AppTextStyles.titleMedium.copyWith(
+                color: ink.text,
                 fontWeight: FontWeight.w700,
               ),
             ),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Are you sure you want to remove "${item.productName ?? 'this item'}" from your cart?',
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.onSurface.withValues(alpha: 0.8),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'This action cannot be undone.',
-              style: AppTextStyles.bodySmall.copyWith(
-                color: AppColors.onSurface.withValues(alpha: 0.6),
-                fontStyle: FontStyle.italic,
-              ),
-            ),
-          ],
+        content: Text(
+          'Remove "${item.productName ?? 'this item'}" from your cart?',
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: ink.text.withValues(alpha: 0.8),
+          ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
             child: Text(
               'Cancel',
               style: AppTextStyles.labelLarge.copyWith(
-                color: AppColors.onSurface.withValues(alpha: 0.6),
+                color: ink.text.withValues(alpha: 0.6),
               ),
             ),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
+              backgroundColor: _danger,
               foregroundColor: Colors.white,
+              elevation: 0,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -894,6 +812,69 @@ class _SellerGroupWidgetState extends State<SellerGroupWidget> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+enum _CheckState { checked, unchecked, partial, blocked }
+
+/// A small, low-contrast selection control.
+///
+/// Selection drives what actually gets checked out, so it cannot go away — but
+/// it is a mechanic, not the point of the row. Drawn at 18px in the ink tone
+/// rather than as a filled brand-coloured circle, so the product is what reads
+/// first.
+class _QuietCheckbox extends StatelessWidget {
+  const _QuietCheckbox({
+    required this.ink,
+    required this.state,
+    required this.onTap,
+    required this.semanticLabel,
+  });
+
+  final InkPalette ink;
+  final _CheckState state;
+  final VoidCallback? onTap;
+  final String semanticLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected =
+        state == _CheckState.checked || state == _CheckState.partial;
+
+    Widget box;
+    if (state == _CheckState.blocked) {
+      box = Icon(Icons.block, size: 18, color: ink.text.withValues(alpha: 0.3));
+    } else {
+      box = Container(
+        width: 18,
+        height: 18,
+        decoration: BoxDecoration(
+          color: selected ? ink.emerald : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: selected ? ink.emerald : ink.text.withValues(alpha: 0.3),
+            width: 1.5,
+          ),
+        ),
+        child: selected
+            ? Icon(
+                state == _CheckState.partial ? Icons.remove : Icons.check,
+                size: 13,
+                color: ink.onEmerald,
+              )
+            : null,
+      );
+    }
+
+    return Semantics(
+      label: semanticLabel,
+      checked: state == _CheckState.checked,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(padding: const EdgeInsets.all(3), child: box),
       ),
     );
   }
