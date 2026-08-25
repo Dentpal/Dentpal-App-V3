@@ -1,17 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart' show kIsWeb; // Added for web detection
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geocoding/geocoding.dart' as geo;
 import '../models/shipping_address.dart';
 import '../services/address_service.dart';
 import '../services/ph_locations_service.dart';
-import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
+import '../../core/app_theme/ink_palette.dart';
+import '../../core/app_theme/theme_utils.dart';
+import '../../core/widgets/app_page_header.dart';
+import '../../core/widgets/skeleton.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import '../../core/services/sub_account_service.dart';
 
+/// Where this account's orders get delivered.
 class ShippingAddressesPage extends StatefulWidget {
   const ShippingAddressesPage({super.key});
 
@@ -20,53 +23,538 @@ class ShippingAddressesPage extends StatefulWidget {
 }
 
 class _ShippingAddressesPageState extends State<ShippingAddressesPage> {
-  bool _isLoading = false;
-  String? _error;
+  /// Held in a field rather than built inside `build()`, so a rebuild does not
+  /// re-open the query — and so [_retry] has something to actually replace.
+  late Stream<List<ShippingAddress>> _addressesStream =
+      AddressService.getAddressesStream();
+
+  void _retry() => setState(
+    () => _addressesStream = AddressService.getAddressesStream(),
+  );
+
+  // ── Palette ──────────────────────────────────────────────────────────────
+
+  InkPalette get ink => InkPalette.of(context);
+
+  /// Destructive red. [InkPalette] reserves amber for urgency, so danger needs
+  /// its own tone that still reads in both themes.
+  Color get _danger =>
+      ink.isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626);
+
+  Color get _muted => ink.text.withValues(alpha: 0.6);
+
+  static const EdgeInsets _listPadding = EdgeInsets.fromLTRB(
+    AppLayout.gutter,
+    4,
+    AppLayout.gutter,
+    28,
+  );
 
   @override
-  void initState() {
-    super.initState();
-    _loadAddresses();
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: ink.bg,
+      body: SafeArea(
+        bottom: false,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: AppLayout.maxContentWidth,
+            ),
+            child: StreamBuilder<List<ShippingAddress>>(
+              stream: _addressesStream,
+              builder: (context, snapshot) {
+                final addresses = snapshot.data ?? const <ShippingAddress>[];
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildHeader(snapshot, addresses),
+                    Expanded(child: _buildBody(snapshot, addresses)),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
-  Future<void> _loadAddresses() async {
-    try {
-      setState(() {
-        _isLoading = true;
-        _error = null;
-      });
-      // The stream will handle loading data
-      await Future.delayed(const Duration(milliseconds: 500));
-      setState(() {
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _error = e.toString();
-      });
+  // ── Header ───────────────────────────────────────────────────────────────
+
+  Widget _buildHeader(
+    AsyncSnapshot<List<ShippingAddress>> snapshot,
+    List<ShippingAddress> addresses,
+  ) {
+    final String subtitle;
+    if (snapshot.hasError) {
+      subtitle = 'Couldn’t load your addresses';
+    } else if (snapshot.connectionState == ConnectionState.waiting) {
+      subtitle = 'Loading your addresses…';
+    } else if (addresses.isEmpty) {
+      subtitle = 'No addresses yet';
+    } else {
+      subtitle =
+          '${addresses.length} address${addresses.length == 1 ? '' : 'es'} saved';
     }
+
+    return AppPageHeader(
+      title: 'Shipping addresses',
+      subtitle: subtitle,
+      subtitleColor: snapshot.hasError ? _danger : null,
+      // Below ~430px the labelled button and the title fight over the same
+      // row, so the action collapses to its icon.
+      trailing: _buildAddButton(
+        compact: MediaQuery.sizeOf(context).width < 430,
+      ),
+    );
   }
+
+  Widget _buildAddButton({bool compact = false}) {
+    if (compact) {
+      return Tooltip(
+        message: 'Add address',
+        child: IconButton(
+          onPressed: () => _openEditor(),
+          icon: Icon(Icons.add, size: 20, color: ink.onEmerald),
+          style: IconButton.styleFrom(
+            backgroundColor: ink.emerald,
+            shape: const CircleBorder(),
+          ),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 38,
+      child: ElevatedButton.icon(
+        onPressed: () => _openEditor(),
+        icon: const Icon(Icons.add, size: 16),
+        label: Text(
+          'Add address',
+          style: AppTextStyles.buttonMedium.copyWith(fontSize: 12.5),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: ink.emerald,
+          foregroundColor: ink.onEmerald,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Body ─────────────────────────────────────────────────────────────────
+
+  Widget _buildBody(
+    AsyncSnapshot<List<ShippingAddress>> snapshot,
+    List<ShippingAddress> addresses,
+  ) {
+    if (snapshot.hasError) {
+      return _buildStateMessage(
+        icon: Icons.cloud_off,
+        tone: _danger,
+        title: 'Couldn’t load addresses',
+        detail:
+            'Check your connection and try again — nothing has been lost.',
+        action: _buildStateAction(
+          label: 'Retry',
+          icon: Icons.refresh,
+          onTap: _retry,
+        ),
+      );
+    }
+
+    if (snapshot.connectionState == ConnectionState.waiting) {
+      return const _AddressesSkeleton(padding: _listPadding);
+    }
+
+    if (addresses.isEmpty) {
+      return _buildStateMessage(
+        icon: Icons.location_on_outlined,
+        tone: ink.emerald,
+        title: 'No addresses yet',
+        detail:
+            'Add where your orders should be delivered — you can save more '
+            'than one and pick at checkout.',
+        action: _buildStateAction(
+          label: 'Add address',
+          icon: Icons.add,
+          onTap: () => _openEditor(),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: _listPadding,
+      itemCount: addresses.length,
+      itemBuilder: (context, index) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: _buildAddressCard(addresses[index]),
+      ),
+    );
+  }
+
+  /// One saved address, with the default one outlined in emerald so it can be
+  /// picked out without reading a badge.
+  Widget _buildAddressCard(ShippingAddress address) {
+    final isDefault = address.isDefault;
+    final hasNotes = address.notes != null && address.notes!.isNotEmpty;
+    final hasPin = address.latitude != null && address.longitude != null;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: ink.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: isDefault ? ink.emerald.withValues(alpha: 0.55) : ink.border,
+          width: isDefault ? 1.5 : 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: ink.emerald.withValues(
+                    alpha: ink.isDark ? 0.16 : 0.11,
+                  ),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(
+                  Icons.location_on_outlined,
+                  color: ink.emerald,
+                  size: 19,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      address.fullName,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: ink.text,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (isDefault) ...[
+                      const SizedBox(height: 6),
+                      _buildBadge(
+                        label: 'Default',
+                        icon: Icons.check_circle_outline,
+                        tone: ink.emerald,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Delete used to hide inside a three-dot menu alongside Edit and
+              // Set as default; those two now have their own buttons below, so
+              // this is all the menu had left.
+              Tooltip(
+                message: 'Delete address',
+                child: IconButton(
+                  onPressed: () => _deleteAddress(address),
+                  icon: Icon(Icons.delete_outline, size: 19, color: _danger),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 10),
+
+          // The place itself, laid out by the model so this card and every
+          // other reader of an address agree on the shape.
+          for (final line in address.addressLines)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Text(
+                line,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: ink.text.withValues(alpha: 0.75),
+                  fontSize: 13.5,
+                  height: 1.35,
+                ),
+              ),
+            ),
+
+          const SizedBox(height: 8),
+          _buildDetailRow(Icons.phone_outlined, address.phoneNumber),
+
+          if (hasNotes) ...[
+            const SizedBox(height: 6),
+            _buildDetailRow(Icons.note_outlined, address.notes!, italic: true),
+          ],
+
+          if (hasPin) ...[
+            const SizedBox(height: 10),
+            _buildBadge(
+              label: 'Location pinned',
+              icon: Icons.my_location,
+              tone: ink.emeraldSoft,
+            ),
+          ],
+
+          const SizedBox(height: 12),
+          Divider(height: 1, color: ink.border),
+          const SizedBox(height: 12),
+
+          Row(
+            children: [
+              Expanded(
+                child: _buildOutlinedButton(
+                  label: 'Edit',
+                  icon: Icons.edit_outlined,
+                  onTap: () => _openEditor(address: address),
+                ),
+              ),
+              if (!isDefault) ...[
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _buildFilledButton(
+                    label: 'Set as default',
+                    icon: Icons.check_circle_outline,
+                    onTap: () => _setAsDefault(address.id),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(IconData icon, String text, {bool italic = false}) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 1),
+          child: Icon(icon, size: 14, color: ink.text.withValues(alpha: 0.45)),
+        ),
+        const SizedBox(width: 7),
+        Expanded(
+          child: Text(
+            text,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: ink.text.withValues(alpha: 0.55),
+              fontSize: 12.5,
+              fontStyle: italic ? FontStyle.italic : FontStyle.normal,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── Small parts ──────────────────────────────────────────────────────────
+
+  Widget _buildBadge({
+    required String label,
+    required IconData icon,
+    required Color tone,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: tone.withValues(alpha: ink.isDark ? 0.16 : 0.11),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: tone.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: tone),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: tone,
+              fontWeight: FontWeight.w700,
+              fontSize: 11.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilledButton({
+    required String label,
+    required IconData icon,
+    required VoidCallback? onTap,
+  }) {
+    return SizedBox(
+      height: 40,
+      child: ElevatedButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 16),
+        label: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppTextStyles.buttonMedium.copyWith(fontSize: 13),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: ink.emerald,
+          foregroundColor: ink.onEmerald,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOutlinedButton({
+    required String label,
+    required IconData icon,
+    required VoidCallback? onTap,
+    Color? tone,
+  }) {
+    final foreground = tone ?? ink.text;
+    return SizedBox(
+      height: 40,
+      child: OutlinedButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 16),
+        label: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppTextStyles.buttonMedium.copyWith(fontSize: 13),
+        ),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: foreground,
+          backgroundColor: Colors.transparent,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          side: BorderSide(
+            color: tone == null ? ink.border : tone.withValues(alpha: 0.45),
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStateAction({
+    required String label,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return SizedBox(
+      height: 46,
+      child: ElevatedButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 18),
+        label: Text(label, style: AppTextStyles.buttonMedium),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: ink.emerald,
+          foregroundColor: ink.onEmerald,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 22),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStateMessage({
+    required IconData icon,
+    required Color tone,
+    required String title,
+    required String detail,
+    Widget? action,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(32, 40, 32, 60),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 68,
+                      height: 68,
+                      decoration: BoxDecoration(
+                        color: tone.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(icon, size: 30, color: tone),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.titleMedium.copyWith(
+                        color: ink.text,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 18,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      detail,
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: _muted,
+                        fontSize: 13.5,
+                        height: 1.45,
+                      ),
+                    ),
+                    if (action != null) ...[
+                      const SizedBox(height: 24),
+                      action,
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ── Actions ──────────────────────────────────────────────────────────────
 
   Future<void> _setAsDefault(String addressId) async {
     try {
       await AddressService.setAsDefault(addressId);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Default address updated'),
-            backgroundColor: AppColors.success,
-          ),
-        );
+        _showSnack('Default address updated', ink.emerald);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        _showSnack('Error: $e', _danger);
       }
     }
   }
@@ -75,462 +563,126 @@ class _ShippingAddressesPageState extends State<ShippingAddressesPage> {
     final shouldDelete = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surface,
+        backgroundColor: ink.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.error.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                Icons.delete_outline,
-                color: AppColors.error,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              'Delete Address',
-              style: AppTextStyles.titleMedium.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+            Icon(Icons.delete_outline, color: _danger),
+            const SizedBox(width: 8),
+            Text('Delete address?', style: TextStyle(color: ink.text)),
           ],
         ),
         content: Text(
-          'Are you sure you want to delete this address?',
-          style: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.onSurface.withValues(alpha: 0.8),
-          ),
+          'This address will be permanently removed from your account.',
+          style: AppTextStyles.bodyMedium.copyWith(color: _muted),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.onSurface.withValues(alpha: 0.6),
-            ),
-            child: Text('Cancel', style: AppTextStyles.buttonMedium),
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Keep', style: TextStyle(color: _muted)),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-              foregroundColor: AppColors.onPrimary,
+              backgroundColor: _danger,
+              foregroundColor: Colors.white,
               elevation: 0,
             ),
-            child: Text('Delete', style: AppTextStyles.buttonMedium),
+            child: const Text('Delete'),
           ),
         ],
       ),
     );
 
-    if (shouldDelete == true) {
-      try {
-        await AddressService.deleteAddress(address.id);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Address deleted successfully'),
-              backgroundColor: AppColors.success,
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error deleting address: $e'),
-              backgroundColor: AppColors.error,
-            ),
-          );
-        }
+    if (shouldDelete != true) return;
+
+    try {
+      await AddressService.deleteAddress(address.id);
+      if (mounted) {
+        _showSnack('Address deleted', ink.emerald);
+      }
+    } catch (e) {
+      if (mounted) {
+        _showSnack('Error deleting address: $e', _danger);
       }
     }
   }
 
+  void _showSnack(String message, Color tone) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: tone,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  /// Named routes, so the address bar reads `/profile/address/add` or
+  /// `/profile/address/edit`. The path deliberately carries no address id, so
+  /// which one to edit travels in arguments.
+  void _openEditor({ShippingAddress? address}) {
+    final navigator = Navigator.of(context);
+    if (address == null) {
+      navigator.pushNamed('/profile/address/add');
+    } else {
+      navigator.pushNamed('/profile/address/edit', arguments: address);
+    }
+  }
+}
+
+/// Placeholder cards in the shape the real list settles into, so the page does
+/// not jump when the stream arrives.
+class _AddressesSkeleton extends StatelessWidget {
+  const _AddressesSkeleton({this.padding = EdgeInsets.zero});
+
+  final EdgeInsetsGeometry padding;
+
+  /// Enough cards to fill a phone screen; the real list replaces them before a
+  /// reader could count.
+  static const int _itemCount = 3;
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: AppColors.onSurface),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: Text(
-          'Shipping Addresses',
-          style: AppTextStyles.titleLarge.copyWith(fontWeight: FontWeight.w700),
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.add, color: AppColors.primary),
-            onPressed: () => _showAddAddressDialog(),
-            tooltip: 'Add Address',
-          ),
-        ],
-      ),
-      // Responsive wrapper
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final isWideWeb = kIsWeb && constraints.maxWidth > 800; // BREAKPOINT
-          final content = _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _error != null
-              ? _buildErrorState()
-              : StreamBuilder<List<ShippingAddress>>(
-                  stream: AddressService.getAddressesStream(),
-                  builder: (context, snapshot) {
-                    if (snapshot.hasError) {
-                      return _buildErrorState(snapshot.error.toString());
-                    }
+    final ink = InkPalette.of(context);
 
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-
-                    final addresses = snapshot.data ?? [];
-
-                    if (addresses.isEmpty) {
-                      return _buildEmptyState();
-                    }
-
-                    return _buildAddressList(addresses);
-                  },
-                );
-          if (isWideWeb) {
-            return Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 640), // MAX_WIDTH
-                child: Material(color: Colors.transparent, child: content),
-              ),
-            );
-          }
-          return content; // mobile & narrow web full width
-        },
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddAddressDialog(),
-        backgroundColor: AppColors.primary,
-        foregroundColor: AppColors.onPrimary,
-        child: const Icon(Icons.add),
-      ),
-    );
-  }
-
-  Widget _buildErrorState([String? errorMessage]) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.error_outline, size: 64, color: AppColors.error),
-            const SizedBox(height: 16),
-            Text(
-              'Something went wrong',
-              style: AppTextStyles.titleMedium.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+    return SkeletonShimmer(
+      child: ListView.builder(
+        padding: padding,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: _itemCount,
+        itemBuilder: (context, index) => Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: ink.surface,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: ink.border),
             ),
-            const SizedBox(height: 8),
-            Text(
-              errorMessage ?? _error ?? 'Please try again later',
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.onSurface.withValues(alpha: 0.7),
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: _loadAddresses,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.onPrimary,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.location_off_outlined,
-              size: 64,
-              color: AppColors.onSurface.withValues(alpha: 0.4),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No addresses yet',
-              style: AppTextStyles.titleMedium.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Add your first shipping address to get started',
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.onSurface.withValues(alpha: 0.7),
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: () => _showAddAddressDialog(),
-              icon: const Icon(Icons.add),
-              label: const Text('Add Address'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.onPrimary,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAddressList(List<ShippingAddress> addresses) {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: addresses.length,
-      itemBuilder: (context, index) {
-        final address = addresses[index];
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 16),
-          child: _buildAddressCard(address),
-        );
-      },
-    );
-  }
-
-  Widget _buildAddressCard(ShippingAddress address) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: address.isDefault
-            ? Border.all(color: AppColors.primary, width: 2)
-            : null,
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header with default badge and actions
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Row(
-                    children: [
-                      Text(
-                        address.fullName,
-                        style: AppTextStyles.titleMedium.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      if (address.isDefault) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            'DEFAULT',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.onPrimary,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                PopupMenuButton<String>(
-                  onSelected: (value) {
-                    switch (value) {
-                      case 'edit':
-                        _showAddAddressDialog(address: address);
-                        break;
-                      case 'default':
-                        _setAsDefault(address.id);
-                        break;
-                      case 'delete':
-                        _deleteAddress(address);
-                        break;
-                    }
-                  },
-                  itemBuilder: (context) => [
-                    const PopupMenuItem(
-                      value: 'edit',
-                      child: Row(
-                        children: [
-                          Icon(Icons.edit_outlined, size: 18),
-                          SizedBox(width: 8),
-                          Text('Edit'),
-                        ],
-                      ),
-                    ),
-                    if (!address.isDefault)
-                      const PopupMenuItem(
-                        value: 'default',
-                        child: Row(
-                          children: [
-                            Icon(Icons.check_circle_outline, size: 18),
-                            SizedBox(width: 8),
-                            Text('Set as Default'),
-                          ],
-                        ),
-                      ),
-                    const PopupMenuItem(
-                      value: 'delete',
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.delete_outline,
-                            size: 18,
-                            color: Colors.red,
-                          ),
-                          SizedBox(width: 8),
-                          Text('Delete', style: TextStyle(color: Colors.red)),
-                        ],
-                      ),
-                    ),
-                  ],
-                  child: Icon(
-                    Icons.more_vert,
-                    color: AppColors.onSurface.withValues(alpha: 0.6),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Address details
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(address.addressLine1, style: AppTextStyles.bodyMedium),
-                if (address.addressLine2 != null &&
-                    address.addressLine2!.isNotEmpty)
-                  Text(address.addressLine2!, style: AppTextStyles.bodyMedium),
-                Text(
-                  '${address.city}, ${address.state} ${address.postalCode}',
-                  style: AppTextStyles.bodyMedium,
-                ),
-                Text(address.country, style: AppTextStyles.bodyMedium),
-                const SizedBox(height: 8),
                 Row(
-                  children: [
-                    Icon(
-                      Icons.phone_outlined,
-                      size: 16,
-                      color: AppColors.onSurface.withValues(alpha: 0.6),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      address.phoneNumber, // Display the full +63 format
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.onSurface.withValues(alpha: 0.7),
-                      ),
-                    ),
+                  children: const [
+                    SkeletonBox(width: 38, height: 38, radius: 11),
+                    SizedBox(width: 14),
+                    Expanded(child: SkeletonLine(width: 140, height: 13)),
                   ],
                 ),
-                // Show notes if available
-                if (address.notes != null && address.notes!.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.note_outlined,
-                        size: 16,
-                        color: AppColors.onSurface.withValues(alpha: 0.6),
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          address.notes!,
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.onSurface.withValues(alpha: 0.7),
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-                // Show location pin if available
-                if (address.latitude != null && address.longitude != null) ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.location_on,
-                        size: 16,
-                        color: AppColors.primary,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Location pinned',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                const SizedBox(height: 14),
+                const SkeletonLine(widthFactor: 0.9, height: 11),
+                const SizedBox(height: 7),
+                const SkeletonLine(widthFactor: 0.7, height: 11),
+                const SizedBox(height: 7),
+                const SkeletonLine(widthFactor: 0.5, height: 11),
+                const SizedBox(height: 16),
+                const SkeletonBox(height: 40, radius: 12),
               ],
             ),
           ),
-
-          const SizedBox(height: 16),
-        ],
-      ),
-    );
-  }
-
-  void _showAddAddressDialog({ShippingAddress? address}) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => AddEditAddressPage(address: address),
-        fullscreenDialog: true,
+        ),
       ),
     );
   }
@@ -622,12 +774,13 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
         if (userDoc.exists) {
           final userData = userDoc.data();
           AppLogger.d('User data from Firestore: $userData');
-          
+
           // Try different possible field names for full name
-          userName = userData?['fullName'] ??
+          userName =
+              userData?['fullName'] ??
               userData?['displayName'] ??
               userData?['name'];
-          
+
           AppLogger.d('Extracted userName: $userName');
         } else {
           AppLogger.d('User document does not exist in Firestore');
@@ -668,8 +821,9 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
     _phoneController.text = displayPhone;
 
     _isDefault = address.isDefault;
-    _selectedLocation =
-        _locationOptions.contains(address.location) ? address.location : null;
+    _selectedLocation = _locationOptions.contains(address.location)
+        ? address.location
+        : null;
   }
 
   @override
@@ -699,6 +853,12 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
     setState(() {
       _isLoading = true;
     });
+
+    // Captured before the awaits: on success this page is popped, so reaching
+    // for its Navigator or messenger afterwards would be reaching through a
+    // context that is on its way out.
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
 
     try {
       final now = DateTime.now();
@@ -735,8 +895,10 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
         postalCode: _postalCodeController.text.trim(),
         country: _countryController.text.trim(),
         phoneNumber: formattedPhone,
-        latitude: coords?.latitude ?? (_isEditing ? widget.address!.latitude : null),
-        longitude: coords?.longitude ?? (_isEditing ? widget.address!.longitude : null),
+        latitude:
+            coords?.latitude ?? (_isEditing ? widget.address!.latitude : null),
+        longitude:
+            coords?.longitude ?? (_isEditing ? widget.address!.longitude : null),
         notes: _notesController.text.trim().isEmpty
             ? null
             : _notesController.text.trim(),
@@ -757,27 +919,21 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
         await AddressService.createAddress(address);
       }
 
-      if (mounted) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              _isEditing
-                  ? 'Address updated successfully'
-                  : 'Address added successfully',
-            ),
-            backgroundColor: AppColors.success,
+      if (!mounted) return;
+      navigator.pop();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(_isEditing ? 'Address updated' : 'Address added'),
+          backgroundColor: ink.emerald,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
           ),
-        );
-      }
+        ),
+      );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        _showSnack('Error: $e', _danger);
       }
     } finally {
       if (mounted) {
@@ -791,18 +947,38 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
   /// NCR cities/municipalities — used only for a non-blocking "no same-day"
   /// hint. Backend (metroManila.ts) remains the authoritative coverage check.
   static const List<String> _ncrCities = [
-    'manila', 'quezon city', 'caloocan', 'las pinas', 'las piñas', 'makati',
-    'malabon', 'mandaluyong', 'marikina', 'muntinlupa', 'navotas', 'paranaque',
-    'parañaque', 'pasay', 'pasig', 'pateros', 'san juan', 'taguig', 'valenzuela',
+    'manila',
+    'quezon city',
+    'caloocan',
+    'las pinas',
+    'las piñas',
+    'makati',
+    'malabon',
+    'mandaluyong',
+    'marikina',
+    'muntinlupa',
+    'navotas',
+    'paranaque',
+    'parañaque',
+    'pasay',
+    'pasig',
+    'pateros',
+    'san juan',
+    'taguig',
+    'valenzuela',
   ];
 
   bool _looksMetroManila(String city, String state) {
     final c = city.toLowerCase().trim();
     final s = state.toLowerCase().trim();
-    if (s.contains('metro manila') || s.contains('ncr') || c.contains('metro manila')) {
+    if (s.contains('metro manila') ||
+        s.contains('ncr') ||
+        c.contains('metro manila')) {
       return true;
     }
-    return _ncrCities.any((nc) => c == nc || s == nc || c.contains(nc) || s.contains(nc));
+    return _ncrCities.any(
+      (nc) => c == nc || s == nc || c.contains(nc) || s.contains(nc),
+    );
   }
 
   /// Best-effort geocode of the entered address to coordinates. Returns null on
@@ -825,14 +1001,11 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
     ].join(', ');
 
     if (!_looksMetroManila(city, state) && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(
-            'Heads up: Same Day Delivery is only available within Metro Manila.',
-          ),
-          backgroundColor: AppColors.info,
-          duration: const Duration(seconds: 4),
-        ),
+      _showSnack(
+        'Heads up: Same Day Delivery is only available within Metro Manila.',
+        ink.amber,
+        onTone: ink.onAmber,
+        seconds: 4,
       );
     }
 
@@ -845,274 +1018,381 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
     return null;
   }
 
+  // ── Palette ──────────────────────────────────────────────────────────────
+
+  InkPalette get ink => InkPalette.of(context);
+
+  Color get _danger =>
+      ink.isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626);
+
+  /// A form reads best in a narrower column than a browse grid, so the fields
+  /// stop short of the page's full width — but it still centres inside the same
+  /// frame every other buyer surface uses.
+  static const double _formMaxWidth = 640;
+
+  static const EdgeInsets _listPadding = EdgeInsets.fromLTRB(
+    AppLayout.gutter,
+    4,
+    AppLayout.gutter,
+    32,
+  );
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.close, color: AppColors.onSurface),
-          onPressed: () => Navigator.of(context).pop(),
+      backgroundColor: ink.bg,
+      body: SafeArea(
+        bottom: false,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _formMaxWidth),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AppPageHeader(
+                  title: _isEditing ? 'Edit address' : 'New address',
+                  subtitle: 'Where your orders are delivered',
+                ),
+                Expanded(child: _buildForm()),
+              ],
+            ),
+          ),
         ),
-        title: Text(
-          _isEditing ? 'Edit Address' : 'Add Address',
-          style: AppTextStyles.titleLarge.copyWith(fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+
+  Widget _buildForm() {
+    return Form(
+      key: _formKey,
+      autovalidateMode: _autovalidateMode,
+      child: ListView(
+        padding: _listPadding,
+        children: [
+          _buildInfoBanner(),
+          const SizedBox(height: 18),
+
+          _buildSectionHeader('Recipient'),
+          const SizedBox(height: 10),
+          _buildTextField(
+            controller: _fullNameController,
+            label: 'Full name',
+            icon: Icons.person_outline,
+            validator: (value) => (value == null || value.trim().isEmpty)
+                ? 'Full name is required'
+                : null,
+          ),
+          const SizedBox(height: 14),
+          _buildTextField(
+            controller: _phoneController,
+            label: 'Phone number (09123456789)',
+            icon: Icons.phone_outlined,
+            keyboardType: TextInputType.phone,
+            enabled: _selectedLocation != null,
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return 'Phone number is required';
+              }
+              final clean = value.replaceAll(RegExp(r'[^\d]'), '');
+              if (clean.length != 11) {
+                return 'Phone number must be 11 digits';
+              }
+              if (!clean.startsWith('09')) {
+                return 'Phone number must start with 09';
+              }
+              return null;
+            },
+          ),
+
+          const SizedBox(height: 22),
+          _buildSectionHeader('Location'),
+          const SizedBox(height: 10),
+          _buildLocationDropdown(),
+          const SizedBox(height: 14),
+          _buildTextField(
+            controller: _countryController,
+            label: 'Country',
+            icon: Icons.public_outlined,
+            enabled: false,
+            helperText: 'Currently only Philippines is supported',
+            validator: (value) => (value == null || value.trim().isEmpty)
+                ? 'Country is required'
+                : null,
+          ),
+          const SizedBox(height: 14),
+          _buildProvinceDropdown(),
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(flex: 2, child: _buildCityDropdown()),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildTextField(
+                  controller: _postalCodeController,
+                  label: 'Postal code',
+                  icon: Icons.markunread_mailbox_outlined,
+                  keyboardType: TextInputType.number,
+                  enabled: _selectedLocation != null,
+                  helperText: 'Auto-filled; edit if needed',
+                  validator: (value) => (value == null || value.trim().isEmpty)
+                      ? 'Postal code is required'
+                      : null,
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 22),
+          _buildSectionHeader('Street'),
+          const SizedBox(height: 10),
+          _buildTextField(
+            controller: _addressLine1Controller,
+            label: 'Address line 1',
+            icon: Icons.home_outlined,
+            enabled: _selectedLocation != null,
+            validator: (value) => (value == null || value.trim().isEmpty)
+                ? 'Address line 1 is required'
+                : null,
+          ),
+          const SizedBox(height: 14),
+          _buildTextField(
+            controller: _addressLine2Controller,
+            label: 'Address line 2 (optional)',
+            icon: Icons.home_outlined,
+            enabled: _selectedLocation != null,
+          ),
+          const SizedBox(height: 14),
+          _buildTextField(
+            controller: _notesController,
+            label: 'Delivery notes (optional)',
+            icon: Icons.note_outlined,
+            maxLines: 3,
+            enabled: _selectedLocation != null,
+          ),
+
+          const SizedBox(height: 22),
+          _buildDefaultToggle(),
+
+          const SizedBox(height: 24),
+          _buildSaveButton(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 2),
+      child: Text(
+        title,
+        style: AppTextStyles.titleMedium.copyWith(
+          color: ink.text,
+          fontWeight: FontWeight.w800,
+          fontSize: 15,
         ),
-        actions: [
-          TextButton(
-            onPressed: _isLoading ? null : _saveAddress,
+      ),
+    );
+  }
+
+  Widget _buildInfoBanner() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: ink.emerald.withValues(alpha: ink.isDark ? 0.14 : 0.09),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: ink.emerald.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline, color: ink.emerald, size: 19),
+          const SizedBox(width: 12),
+          Expanded(
             child: Text(
-              'Save',
-              style: AppTextStyles.buttonMedium.copyWith(
-                color: AppColors.primary,
-                fontWeight: FontWeight.w600,
+              'Pick your location, province and city from the lists. The '
+              'postal code is filled in for you — edit it if needed.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: ink.text.withValues(alpha: 0.75),
+                fontSize: 12.5,
+                height: 1.45,
               ),
             ),
           ),
         ],
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final isWideWeb = kIsWeb && constraints.maxWidth > 800; // BREAKPOINT
-          final formContent = Form(
-            key: _formKey,
-            autovalidateMode: _autovalidateMode,
-            child: ListView(
-              padding: const EdgeInsets.all(16),
+    );
+  }
+
+  Widget _buildDefaultToggle() {
+    final enabled = _selectedLocation != null;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+      decoration: BoxDecoration(
+        color: ink.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: ink.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: ink.emerald.withValues(
+                alpha: enabled ? (ink.isDark ? 0.16 : 0.11) : 0.06,
+              ),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Icon(
+              Icons.check_circle_outline,
+              color: ink.emerald.withValues(alpha: enabled ? 1 : 0.4),
+              size: 19,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Info banner about address validation
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: AppColors.primary.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.info_outline,
-                        color: AppColors.primary,
-                        size: 24,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Pick your Location, Province, and City from the lists. The postal code is filled in for you — you can edit it if needed.',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.onSurface.withValues(alpha: 0.8),
-                          ),
-                        ),
-                      ),
-                    ],
+                Text(
+                  'Set as default',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: ink.text,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
                   ),
                 ),
-                const SizedBox(height: 20),
-                _buildTextField(
-                  controller: _fullNameController,
-                  label: 'Full Name',
-                  icon: Icons.person_outline,
-                  validator: (value) => (value == null || value.trim().isEmpty)
-                      ? 'Full name is required'
-                      : null,
-                ),
-                const SizedBox(height: 16),
-                _buildLocationDropdown(),
-                const SizedBox(height: 16),
-                _buildTextField(
-                  controller: _countryController,
-                  label: 'Country',
-                  icon: Icons.public_outlined,
-                  enabled: false,
-                  helperText: 'Currently only Philippines is supported',
-                  validator: (value) => (value == null || value.trim().isEmpty)
-                      ? 'Country is required'
-                      : null,
-                ),
-                const SizedBox(height: 16),
-                _buildProvinceDropdown(),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: _buildCityDropdown(),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      flex: 1,
-                      child: _buildTextField(
-                        controller: _postalCodeController,
-                        label: 'Postal Code',
-                        icon: Icons.markunread_mailbox_outlined,
-                        keyboardType: TextInputType.number,
-                        enabled: _selectedLocation != null,
-                        helperText: 'Auto-filled from city; edit if needed',
-                        validator: (value) =>
-                            (value == null || value.trim().isEmpty)
-                            ? 'Postal code is required'
-                            : null,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _buildTextField(
-                  controller: _addressLine1Controller,
-                  label: 'Address Line 1',
-                  icon: Icons.home_outlined,
-                  enabled: _selectedLocation != null,
-                  validator: (value) => (value == null || value.trim().isEmpty)
-                      ? 'Address line 1 is required'
-                      : null,
-                ),
-                const SizedBox(height: 16),
-                _buildTextField(
-                  controller: _addressLine2Controller,
-                  label: 'Address Line 2 (Optional)',
-                  icon: Icons.home_outlined,
-                  enabled: _selectedLocation != null,
-                ),
-                const SizedBox(height: 16),
-                _buildTextField(
-                  controller: _phoneController,
-                  label: 'Phone Number (09123456789)',
-                  icon: Icons.phone_outlined,
-                  keyboardType: TextInputType.phone,
-                  enabled: _selectedLocation != null,
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty)
-                      return 'Phone number is required';
-                    final clean = value.replaceAll(RegExp(r'[^\d]'), '');
-                    if (clean.length != 11)
-                      return 'Phone number must be 11 digits';
-                    if (!clean.startsWith('09'))
-                      return 'Phone number must start with 09';
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                _buildTextField(
-                  controller: _notesController,
-                  label: 'Delivery Notes (Optional)',
-                  icon: Icons.note_outlined,
-                  maxLines: 3,
-                  enabled: _selectedLocation != null,
-                ),
-                const SizedBox(height: 24),
-
-                // Default address toggle
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: AppColors.onSurface.withValues(alpha: 0.1),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.check_circle_outline,
-                        color: AppColors.primary,
-                        size: 24,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Set as Default Address',
-                              style: AppTextStyles.bodyLarge.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Text(
-                              'Use this address as your default shipping address',
-                              style: AppTextStyles.bodySmall.copyWith(
-                                color: AppColors.onSurface.withValues(
-                                  alpha: 0.7,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Switch(
-                        value: _isDefault,
-                        onChanged: _selectedLocation == null
-                            ? null
-                            : (value) {
-                                setState(() {
-                                  _isDefault = value;
-                                });
-                              },
-                        activeThumbColor: AppColors.primary,
-                      ),
-                    ],
+                const SizedBox(height: 2),
+                Text(
+                  'Pre-selected at checkout',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: ink.text.withValues(alpha: 0.5),
+                    fontSize: 12,
                   ),
                 ),
-                const SizedBox(height: 32),
-
-                // Save button
-                SizedBox(
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _saveAddress,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: AppColors.onPrimary,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: _isLoading
-                        ? Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: AppColors.onPrimary,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Text(
-                                'Saving...',
-                                style: AppTextStyles.buttonLarge,
-                              ),
-                            ],
-                          )
-                        : Text(
-                            _isEditing ? 'Update Address' : 'Add Address',
-                            style: AppTextStyles.buttonLarge,
-                          ),
-                  ),
-                ),
-
-                const SizedBox(height: 20),
               ],
             ),
-          );
-          if (isWideWeb) {
-            return Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 640), // MAX_WIDTH
-                child: Material(color: Colors.transparent, child: formContent),
+          ),
+          Switch(
+            value: _isDefault,
+            onChanged: enabled
+                ? (value) => setState(() => _isDefault = value)
+                : null,
+            activeThumbColor: ink.onEmerald,
+            activeTrackColor: ink.emerald,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSaveButton() {
+    return SizedBox(
+      height: 52,
+      child: ElevatedButton(
+        onPressed: _isLoading ? null : _saveAddress,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: ink.emerald,
+          foregroundColor: ink.onEmerald,
+          disabledBackgroundColor: ink.emerald.withValues(alpha: 0.5),
+          disabledForegroundColor: ink.onEmerald.withValues(alpha: 0.8),
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        child: _isLoading
+            ? Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: ink.onEmerald,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text('Saving…', style: AppTextStyles.buttonLarge),
+                ],
+              )
+            : Text(
+                _isEditing ? 'Update address' : 'Save address',
+                style: AppTextStyles.buttonLarge,
               ),
-            );
-          }
-          return formContent; // mobile & narrow web
-        },
+      ),
+    );
+  }
+
+  // ── Fields ───────────────────────────────────────────────────────────────
+
+  /// The one decoration every field and dropdown on this form wears.
+  ///
+  /// Text fields and the three dropdowns each carried their own copy of eight
+  /// `OutlineInputBorder`s; they now share this, so a disabled dropdown and a
+  /// disabled text field cannot look like different controls.
+  InputDecoration _fieldDecoration({
+    required String label,
+    required IconData icon,
+    required bool enabled,
+    String? helperText,
+  }) {
+    OutlineInputBorder border(Color color, {double width = 1}) {
+      return OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: color, width: width),
+      );
+    }
+
+    return InputDecoration(
+      labelText: label,
+      helperText: helperText,
+      helperMaxLines: 2,
+      errorMaxLines: 2,
+      helperStyle: AppTextStyles.bodySmall.copyWith(
+        color: ink.text.withValues(alpha: 0.45),
+        fontSize: 11.5,
+      ),
+      errorStyle: AppTextStyles.bodySmall.copyWith(
+        color: _danger,
+        fontSize: 11.5,
+      ),
+      prefixIcon: Icon(
+        icon,
+        size: 19,
+        color: enabled ? ink.emerald : ink.text.withValues(alpha: 0.25),
+      ),
+      border: border(ink.border),
+      enabledBorder: border(ink.border),
+      disabledBorder: border(ink.border.withValues(alpha: 0.5)),
+      focusedBorder: border(ink.emerald, width: 1.5),
+      errorBorder: border(_danger),
+      focusedErrorBorder: border(_danger, width: 1.5),
+      filled: true,
+      fillColor: enabled ? ink.surface : ink.surfaceHigh,
+      labelStyle: AppTextStyles.bodyMedium.copyWith(
+        color: ink.text.withValues(alpha: 0.6),
+        fontSize: 14,
+      ),
+      floatingLabelStyle: AppTextStyles.bodyMedium.copyWith(
+        color: ink.emerald,
+        fontWeight: FontWeight.w600,
+        fontSize: 14,
+      ),
+    );
+  }
+
+  /// Menu entry styling, shared by all three cascading dropdowns.
+  DropdownMenuItem<String> _dropdownItem(String value) {
+    return DropdownMenuItem<String>(
+      value: value,
+      child: Text(
+        value,
+        style: AppTextStyles.bodyMedium.copyWith(color: ink.text, fontSize: 14),
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }
@@ -1121,14 +1401,13 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
     return DropdownButtonFormField<String>(
       initialValue: _selectedLocation,
       isExpanded: true,
-      items: _locationOptions
-          .map(
-            (loc) => DropdownMenuItem<String>(
-              value: loc,
-              child: Text(loc, style: AppTextStyles.bodyMedium),
-            ),
-          )
-          .toList(),
+      dropdownColor: ink.surface,
+      borderRadius: BorderRadius.circular(14),
+      icon: Icon(
+        Icons.keyboard_arrow_down,
+        color: ink.text.withValues(alpha: 0.4),
+      ),
+      items: _locationOptions.map(_dropdownItem).toList(),
       onChanged: (value) {
         setState(() {
           _selectedLocation = value;
@@ -1142,107 +1421,13 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
       },
       validator: (value) =>
           (value == null || value.isEmpty) ? 'Location is required' : null,
-      decoration: InputDecoration(
-        labelText: 'Location',
+      decoration: _fieldDecoration(
+        label: 'Location',
+        icon: Icons.location_on_outlined,
+        enabled: true,
         helperText: _selectedLocation == null
             ? 'Select your location to continue'
             : 'NCR, Luzon, Visayas, or Mindanao',
-        helperMaxLines: 2,
-        errorMaxLines: 2,
-        helperStyle: AppTextStyles.bodySmall.copyWith(
-          color: AppColors.primary.withValues(alpha: 0.7),
-        ),
-        errorStyle: AppTextStyles.bodySmall.copyWith(color: AppColors.error),
-        prefixIcon: const Icon(
-          Icons.location_on_outlined,
-          color: AppColors.primary,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(
-            color: AppColors.onSurface.withValues(alpha: 0.2),
-          ),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(
-            color: AppColors.onSurface.withValues(alpha: 0.2),
-          ),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.primary, width: 2),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.error, width: 2),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.error, width: 2),
-        ),
-        filled: true,
-        fillColor: AppColors.surface,
-        labelStyle: AppTextStyles.bodyMedium.copyWith(
-          color: AppColors.onSurface.withValues(alpha: 0.7),
-        ),
-      ),
-    );
-  }
-
-  /// Shared decoration for the cascading location dropdowns (matches the
-  /// text-field / location-dropdown styling).
-  InputDecoration _dropdownDecoration({
-    required String label,
-    required String helperText,
-    required IconData icon,
-    required bool enabled,
-  }) {
-    return InputDecoration(
-      labelText: label,
-      helperText: helperText,
-      helperMaxLines: 2,
-      errorMaxLines: 2,
-      helperStyle: AppTextStyles.bodySmall.copyWith(
-        color: AppColors.primary.withValues(alpha: 0.7),
-      ),
-      errorStyle: AppTextStyles.bodySmall.copyWith(color: AppColors.error),
-      prefixIcon: Icon(
-        icon,
-        color: enabled
-            ? AppColors.primary
-            : AppColors.onSurface.withValues(alpha: 0.3),
-      ),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: AppColors.onSurface.withValues(alpha: 0.2)),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: AppColors.onSurface.withValues(alpha: 0.2)),
-      ),
-      disabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: AppColors.onSurface.withValues(alpha: 0.1)),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: AppColors.primary, width: 2),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: AppColors.error, width: 2),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: AppColors.error, width: 2),
-      ),
-      filled: true,
-      fillColor: enabled
-          ? AppColors.surface
-          : AppColors.surface.withValues(alpha: 0.5),
-      labelStyle: AppTextStyles.bodyMedium.copyWith(
-        color: AppColors.onSurface.withValues(alpha: 0.7),
       ),
     );
   }
@@ -1263,12 +1448,13 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
       key: ValueKey('province-${_selectedLocation ?? ''}-$_locationsLoaded'),
       initialValue: _selectedProvince,
       isExpanded: true,
-      items: values
-          .map((p) => DropdownMenuItem<String>(
-                value: p,
-                child: Text(p, style: AppTextStyles.bodyMedium, overflow: TextOverflow.ellipsis),
-              ))
-          .toList(),
+      dropdownColor: ink.surface,
+      borderRadius: BorderRadius.circular(14),
+      icon: Icon(
+        Icons.keyboard_arrow_down,
+        color: ink.text.withValues(alpha: enabled ? 0.4 : 0.2),
+      ),
+      items: values.map(_dropdownItem).toList(),
       onChanged: enabled
           ? (value) {
               setState(() {
@@ -1281,15 +1467,16 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
               });
             }
           : null,
-      validator: (value) =>
-          (value == null || value.isEmpty) ? 'State/Province is required' : null,
-      decoration: _dropdownDecoration(
+      validator: (value) => (value == null || value.isEmpty)
+          ? 'State/Province is required'
+          : null,
+      decoration: _fieldDecoration(
         label: 'State/Province',
-        helperText: _selectedLocation == null
-            ? 'Select a Location first'
-            : (_locationsLoaded ? 'Select your province' : 'Loading provinces…'),
         icon: Icons.map_outlined,
         enabled: enabled,
+        helperText: _selectedLocation == null
+            ? 'Select a location first'
+            : (_locationsLoaded ? 'Select your province' : 'Loading provinces…'),
       ),
     );
   }
@@ -1298,8 +1485,10 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
   /// province. Selecting a city auto-fills the postal code (still editable).
   Widget _buildCityDropdown() {
     final enabled = _selectedProvince != null && _locationsLoaded;
-    final options =
-        PhLocationsService.citiesFor(_selectedLocation, _selectedProvince);
+    final options = PhLocationsService.citiesFor(
+      _selectedLocation,
+      _selectedProvince,
+    );
     final values = <String>[...options];
     if (_selectedCity != null && !values.contains(_selectedCity)) {
       values.insert(0, _selectedCity!);
@@ -1308,15 +1497,17 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
       // Rebuild when the parent Location/Province changes (or data loads) so the
       // city resets on province change and edit-mode preselect displays.
       key: ValueKey(
-          'city-${_selectedLocation ?? ''}-${_selectedProvince ?? ''}-$_locationsLoaded'),
+        'city-${_selectedLocation ?? ''}-${_selectedProvince ?? ''}-$_locationsLoaded',
+      ),
       initialValue: _selectedCity,
       isExpanded: true,
-      items: values
-          .map((c) => DropdownMenuItem<String>(
-                value: c,
-                child: Text(c, style: AppTextStyles.bodyMedium, overflow: TextOverflow.ellipsis),
-              ))
-          .toList(),
+      dropdownColor: ink.surface,
+      borderRadius: BorderRadius.circular(14),
+      icon: Icon(
+        Icons.keyboard_arrow_down,
+        color: ink.text.withValues(alpha: enabled ? 0.4 : 0.2),
+      ),
+      items: values.map(_dropdownItem).toList(),
       onChanged: enabled
           ? (value) {
               setState(() {
@@ -1325,20 +1516,23 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
                 // Auto-fill a representative ZIP when we have one; otherwise
                 // clear so a stale ZIP from the previous city isn't kept.
                 final zip = PhLocationsService.zipFor(
-                    _selectedLocation, _selectedProvince, value);
+                  _selectedLocation,
+                  _selectedProvince,
+                  value,
+                );
                 _postalCodeController.text = zip ?? '';
               });
             }
           : null,
       validator: (value) =>
           (value == null || value.isEmpty) ? 'City is required' : null,
-      decoration: _dropdownDecoration(
+      decoration: _fieldDecoration(
         label: 'City',
+        icon: Icons.location_city_outlined,
+        enabled: enabled,
         helperText: _selectedProvince == null
             ? 'Select a province first'
             : 'Select your city',
-        icon: Icons.location_city_outlined,
-        enabled: enabled,
       ),
     );
   }
@@ -1359,68 +1553,43 @@ class _AddEditAddressPageState extends State<AddEditAddressPage> {
       keyboardType: keyboardType,
       maxLines: maxLines ?? 1,
       enabled: enabled,
+      cursorColor: ink.emerald,
       style: AppTextStyles.bodyMedium.copyWith(
-        color: enabled ? null : AppColors.onSurface.withValues(alpha: 0.5),
+        color: enabled ? ink.text : ink.text.withValues(alpha: 0.45),
+        fontSize: 14,
       ),
-      inputFormatters: label.contains('Phone')
+      inputFormatters: label.toLowerCase().contains('phone')
           ? [
               // Only allow digits and basic formatting for phone
               FilteringTextInputFormatter.allow(RegExp(r'[0-9]')),
               LengthLimitingTextInputFormatter(11),
             ]
           : null,
-      decoration: InputDecoration(
-        labelText: label,
+      decoration: _fieldDecoration(
+        label: label,
+        icon: icon,
+        enabled: enabled,
         helperText: helperText,
-        helperMaxLines: 2,
-        errorMaxLines: 2,
-        helperStyle: AppTextStyles.bodySmall.copyWith(
-          color: AppColors.primary.withValues(alpha: 0.7),
+      ),
+    );
+  }
+
+  void _showSnack(
+    String message,
+    Color tone, {
+    Color? onTone,
+    int seconds = 3,
+  }) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: TextStyle(color: onTone ?? Colors.white),
         ),
-        errorStyle: AppTextStyles.bodySmall.copyWith(color: AppColors.error),
-        prefixIcon: Icon(
-          icon,
-          color: enabled
-              ? AppColors.primary
-              : AppColors.onSurface.withValues(alpha: 0.3),
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(
-            color: AppColors.onSurface.withValues(alpha: 0.2),
-          ),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(
-            color: AppColors.onSurface.withValues(alpha: 0.2),
-          ),
-        ),
-        disabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(
-            color: AppColors.onSurface.withValues(alpha: 0.1),
-          ),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: AppColors.primary, width: 2),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: AppColors.error, width: 2),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: AppColors.error, width: 2),
-        ),
-        filled: true,
-        fillColor: enabled
-            ? AppColors.surface
-            : AppColors.surface.withValues(alpha: 0.5),
-        labelStyle: AppTextStyles.bodyMedium.copyWith(
-          color: AppColors.onSurface.withValues(alpha: 0.7),
-        ),
+        backgroundColor: tone,
+        duration: Duration(seconds: seconds),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }

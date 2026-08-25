@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/app_theme/app_text_styles.dart';
 import '../../core/app_theme/ink_palette.dart';
+import '../../core/app_theme/theme_utils.dart';
+import '../../core/widgets/app_page_header.dart';
 import '../../core/widgets/app_network_image.dart';
 import '../../core/widgets/skeleton.dart';
 import '../../utils/app_logger.dart';
@@ -104,7 +106,7 @@ class CategoriesPage extends StatefulWidget {
 
 /// Widest the browse content grows to; beyond this it centres instead of
 /// stretching every tile.
-const double _kMaxContentWidth = 1200;
+const double _kMaxContentWidth = AppLayout.maxContentWidth;
 
 class _CategoriesPageState extends State<CategoriesPage> {
   final CategoryService _categoryService = CategoryService();
@@ -397,7 +399,7 @@ class _CategoriesPageState extends State<CategoriesPage> {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    final horizontalPadding = width >= 900 ? 32.0 : 16.0;
+    const horizontalPadding = AppLayout.gutter;
     final searching = _query.trim().isNotEmpty;
 
     return Scaffold(
@@ -410,7 +412,7 @@ class _CategoriesPageState extends State<CategoriesPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildHeader(horizontalPadding),
+                _buildHeader(),
                 Expanded(
                   child: searching
                       ? _buildResults(horizontalPadding)
@@ -424,44 +426,18 @@ class _CategoriesPageState extends State<CategoriesPage> {
     );
   }
 
-  Widget _buildHeader(double horizontalPadding) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(horizontalPadding, 12, horizontalPadding, 4),
-      child: Column(
+  Widget _buildHeader() {
+    return AppPageHeader(
+      title: 'Browse',
+      subtitle: _query.trim().isEmpty
+          ? 'Categories, brands and stores'
+          : 'Results for “${_query.trim()}”',
+      bottom: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              // A pushed route needs its own way back. As a shell tab there is
-              // no route to pop, so the arrow would be a dead control — the
-              // rail and the bottom bar are the way out of this tab.
-              if (Navigator.of(context).canPop()) ...[
-                IconButton(
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  icon: Icon(Icons.arrow_back, color: ink.text),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 40,
-                    minHeight: 40,
-                  ),
-                ),
-                const SizedBox(width: 4),
-              ],
-              Text(
-                'Browse',
-                style: AppTextStyles.titleLarge.copyWith(
-                  color: ink.text,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 30,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
           _buildSearchField(),
           const SizedBox(height: 14),
           _buildFilterPills(),
-          const SizedBox(height: 4),
         ],
       ),
     );

@@ -25,7 +25,10 @@ class NavBadgeService {
   final ValueNotifier<int> cartCount = ValueNotifier<int>(0);
   final ValueNotifier<int> unreadNotifications = ValueNotifier<int>(0);
 
-  final CartService _cartService = CartService();
+  // Lazy: this singleton is constructed the first time any surface reads a
+  // badge, which can happen before Firebase is up (and in a widget test, where
+  // it never is). CartService grabs Firestore in its own field initialiser.
+  late final CartService _cartService = CartService();
 
   StreamSubscription<User?>? _authSubscription;
   StreamSubscription<int>? _cartSubscription;

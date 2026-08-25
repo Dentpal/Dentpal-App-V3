@@ -151,17 +151,20 @@ class ShippingAddress {
   @override
   int get hashCode => id.hashCode;
 
+  /// The place itself, one line at a time, without the recipient.
+  ///
+  /// What a card shows under the name — [formattedAddress] is the same thing
+  /// with [fullName] on top, so the two can never disagree about how an
+  /// address is laid out.
+  List<String> get addressLines => [
+    addressLine1,
+    if (addressLine2 != null && addressLine2!.isNotEmpty) addressLine2!,
+    '$city, $state $postalCode',
+    country,
+  ];
+
   // Helper method to get formatted address string
-  String get formattedAddress {
-    List<String> parts = [
-      fullName,
-      addressLine1,
-      if (addressLine2 != null && addressLine2!.isNotEmpty) addressLine2!,
-      '$city, $state $postalCode',
-      country,
-    ];
-    return parts.join('\n');
-  }
+  String get formattedAddress => [fullName, ...addressLines].join('\n');
 
   // Helper method to get single line address
   String get singleLineAddress {

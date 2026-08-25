@@ -2,13 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import '../../../core/app_theme/app_colors.dart';
 import '../../../core/app_theme/app_text_styles.dart';
+import '../../../core/app_theme/ink_palette.dart';
+import '../../../core/app_theme/theme_utils.dart';
+import '../../../core/widgets/app_page_header.dart';
 import '../../../utils/app_logger.dart';
 import '../../../product/models/order_model.dart' as order_model;
+import '../../../product/widgets/loading_skeletons.dart';
 import '../order_details_page.dart';
-import '../chat_detail_page.dart';
 
+/// The buyer's notification inbox.
+///
+/// Grouped by age rather than listed flat: "did anything happen today" is the
+/// question this screen exists to answer, and unread items are tinted so the
+/// answer survives a glance.
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
 
@@ -17,24 +24,45 @@ class NotificationsPage extends StatefulWidget {
 }
 
 class _NotificationsPageState extends State<NotificationsPage> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  // Lazy so that merely constructing the page does not require a live Firebase
+  // app — the plugins are only touched once the stream is actually built.
+  late final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  late final FirebaseAuth _auth = FirebaseAuth.instance;
   bool _isMarkingAllRead = false;
 
   String get _userId => _auth.currentUser?.uid ?? '';
 
+  /// The inbox feed, opened once per signed-in account.
+  ///
+  /// This used to be built inline as `stream: _getNotificationsStream()`, which
+  /// handed `StreamBuilder` a brand new query object on every rebuild: it
+  /// cancelled the live listener, opened a fresh Firestore subscription and
+  /// dropped back to the loading skeleton — losing the scroll position — even
+  /// though nothing about the inbox had changed. Marking one notification read
+  /// was enough to do it, and so was switching to another tab and back.
+  ///
+  /// Holding the stream keeps the subscription alive across rebuilds while
+  /// still delivering new notifications the moment they are written, because
+  /// it is a snapshot stream rather than a one-shot read.
+  Stream<QuerySnapshot>? _notificationsStream;
+  String? _streamUserId;
+
   Stream<QuerySnapshot> _getNotificationsStream() {
-    if (_userId.isEmpty) {
-      return const Stream.empty();
+    final userId = _userId;
+    if (_notificationsStream != null && _streamUserId == userId) {
+      return _notificationsStream!;
     }
 
-    return _firestore
-        .collection('User')
-        .doc(_userId)
-        .collection('user_notifications')
-        .orderBy('createdAt', descending: true)
-        .limit(100)
-        .snapshots();
+    _streamUserId = userId;
+    return _notificationsStream = userId.isEmpty
+        ? const Stream.empty()
+        : _firestore
+              .collection('User')
+              .doc(userId)
+              .collection('user_notifications')
+              .orderBy('createdAt', descending: true)
+              .limit(100)
+              .snapshots();
   }
 
   Future<void> _markAsRead(String notificationId) async {
@@ -44,10 +72,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
           .doc(_userId)
           .collection('user_notifications')
           .doc(notificationId)
-          .update({
-        'read': true,
-        'readAt': FieldValue.serverTimestamp(),
-      });
+          .update({'read': true, 'readAt': FieldValue.serverTimestamp()});
     } catch (e) {
       AppLogger.e('Error marking notification as read: $e');
     }
@@ -77,29 +102,19 @@ class _NotificationsPageState extends State<NotificationsPage> {
       await batch.commit();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${unreadNotifications.docs.length} notifications marked as read'),
-            backgroundColor: AppColors.success,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
+        _showSnack(
+          '${unreadNotifications.docs.length} notification'
+          '${unreadNotifications.docs.length == 1 ? '' : 's'} marked as read',
+          icon: Icons.done_all,
         );
       }
     } catch (e) {
       AppLogger.e('Error marking all as read: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Failed to mark notifications as read'),
-            backgroundColor: AppColors.error,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
+        _showSnack(
+          'Failed to mark notifications as read',
+          tone: _danger,
+          icon: Icons.error_outline,
         );
       }
     } finally {
@@ -119,16 +134,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
           .delete();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Notification deleted'),
-            backgroundColor: AppColors.success,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
+        _showSnack('Notification deleted', icon: Icons.delete_outline);
       }
     } catch (e) {
       AppLogger.e('Error deleting notification: $e');
@@ -152,13 +158,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
       final orderId = data['orderId'] as String?;
       if (orderId != null) {
         AppLogger.i('Navigate to order: $orderId');
-        
+
         // Show loading indicator
         if (!mounted) return;
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (context) => const Center(child: CircularProgressIndicator()),
+          builder: (context) =>
+              Center(child: CircularProgressIndicator(color: ink.emerald)),
         );
 
         try {
@@ -169,14 +176,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
               .get();
 
           if (!mounted) return;
-          
+
           // Close loading dialog
           Navigator.of(context).pop();
 
           if (orderDoc.exists) {
             // Convert to Order model using fromFirestore
             final order = order_model.Order.fromFirestore(orderDoc);
-            
+
             // Navigate to order details page
             Navigator.of(context).push(
               MaterialPageRoute(
@@ -184,433 +191,605 @@ class _NotificationsPageState extends State<NotificationsPage> {
               ),
             );
           } else {
-            _showErrorSnackBar('Order not found');
+            _showSnack(
+              'Order not found',
+              tone: _danger,
+              icon: Icons.error_outline,
+            );
           }
         } catch (e) {
           AppLogger.e('Error loading order: $e');
           if (mounted) {
             Navigator.of(context).pop(); // Close loading dialog
-            _showErrorSnackBar('Failed to load order details');
+            _showSnack(
+              'Failed to load order details',
+              tone: _danger,
+              icon: Icons.error_outline,
+            );
           }
         }
       }
     } else if (type == 'message' && data != null) {
-      final chatRoomId = data['chatRoomId'] as String? ?? data['chatId'] as String?;
-      final otherUserId = data['otherUserId'] as String? ?? data['senderId'] as String?;
+      final chatRoomId =
+          data['chatRoomId'] as String? ?? data['chatId'] as String?;
+      final otherUserId =
+          data['otherUserId'] as String? ?? data['senderId'] as String?;
       final otherUserName = data['otherUserName'] as String?;
-      
+
       if (chatRoomId != null && otherUserId != null) {
         AppLogger.i('Navigate to chat: $chatRoomId');
-        
+
         // Get other user's details if not in data
         String displayName = otherUserName ?? 'User';
         String? shopName;
-        
+
         if (otherUserName == null || otherUserName.isEmpty) {
           try {
             final userDoc = await FirebaseFirestore.instance
                 .collection('User')
                 .doc(otherUserId)
                 .get();
-            
+
             if (userDoc.exists) {
               final userData = userDoc.data();
-              displayName = userData?['displayName'] ?? userData?['fullName'] ?? 'User';
+              displayName =
+                  userData?['displayName'] ?? userData?['fullName'] ?? 'User';
               shopName = userData?['shopName'];
             }
           } catch (e) {
             AppLogger.e('Error fetching user data: $e');
           }
         }
-        
+
         if (!mounted) return;
-        
+
         // Navigate to chat detail page
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => ChatDetailPage(
-              chatRoomId: chatRoomId,
-              otherUserId: otherUserId,
-              otherUserName: displayName,
-              otherUserShopName: shopName,
-            ),
-          ),
+        Navigator.of(context).pushNamed(
+          '/profile/chats/$chatRoomId',
+          arguments: <String, dynamic>{
+            'otherUserId': otherUserId,
+            'otherUserName': displayName,
+            'otherUserShopName': shopName,
+          },
         );
       }
     }
   }
 
-  void _showErrorSnackBar(String message) {
-    if (!mounted) return;
+  void _showSnack(String message, {Color? tone, IconData? icon}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
-        backgroundColor: AppColors.error,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
+        content: Row(
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 18, color: Colors.white),
+              const SizedBox(width: 8),
+            ],
+            Expanded(child: Text(message)),
+          ],
         ),
+        backgroundColor: tone ?? ink.emerald,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
 
-  String _formatTimestamp(Timestamp? timestamp) {
-    if (timestamp == null) return '';
+  // ── Palette ──────────────────────────────────────────────────────────────
 
-    final date = timestamp.toDate();
-    final now = DateTime.now();
-    final difference = now.difference(date);
+  InkPalette get ink => InkPalette.of(context);
 
-    if (difference.inMinutes < 1) {
-      return 'Just now';
-    } else if (difference.inMinutes < 60) {
-      return '${difference.inMinutes}m ago';
-    } else if (difference.inHours < 24) {
-      return '${difference.inHours}h ago';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays}d ago';
-    } else {
-      return DateFormat('MMM d, yyyy').format(date);
-    }
-  }
+  /// Destructive red. [InkPalette] reserves amber for urgency, so danger needs
+  /// its own tone that still reads in both themes.
+  Color get _danger =>
+      ink.isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626);
 
-  IconData _getNotificationIcon(String? type) {
-    switch (type) {
-      case 'order':
-        return Icons.shopping_bag_outlined;
-      case 'message':
-        return Icons.chat_bubble_outline;
-      case 'promotion':
-        return Icons.local_offer_outlined;
-      default:
-        return Icons.notifications_outlined;
-    }
-  }
-
-  Color _getNotificationColor(String? type) {
-    switch (type) {
-      case 'order':
-        return AppColors.primary;
-      case 'message':
-        return AppColors.success;
-      case 'promotion':
-        return AppColors.warning;
-      default:
-        return AppColors.primary;
-    }
-  }
+  Color get _muted => ink.text.withValues(alpha: 0.6);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        toolbarHeight: 60,
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: AppColors.onSurface),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: Row(
-          children: [
-            Icon(Icons.notifications, color: AppColors.primary, size: 24),
-            const SizedBox(width: 8),
-            Text(
-              'Notifications',
-              style: AppTextStyles.titleLarge.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
+      backgroundColor: ink.bg,
+      body: SafeArea(
+        bottom: false,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: AppLayout.maxContentWidth,
             ),
-          ],
-        ),
-        actions: [
-          if (!_isMarkingAllRead)
-            TextButton(
-              onPressed: _markAllAsRead,
-              child: Text(
-                'Mark all read',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            )
-          else
-            const Padding(
-              padding: EdgeInsets.all(16.0),
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _getNotificationsStream(),
+              builder: (context, snapshot) {
+                final docs = snapshot.data?.docs ?? const [];
+                final unreadCount = docs.where((doc) {
+                  final data = doc.data() as Map<String, dynamic>?;
+                  return data?['read'] == false;
+                }).length;
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildHeader(unreadCount),
+                    Expanded(child: _buildBody(snapshot, docs)),
+                  ],
+                );
+              },
             ),
-        ],
+          ),
+        ),
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _getNotificationsStream(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.error_outline,
-                    size: 64,
-                    color: AppColors.error,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Error loading notifications',
-                    style: AppTextStyles.bodyLarge,
-                  ),
-                ],
-              ),
-            );
-          }
+    );
+  }
 
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+  // ── Header ───────────────────────────────────────────────────────────────
 
-          final notifications = snapshot.data?.docs ?? [];
+  Widget _buildHeader(int unreadCount) {
+    return AppPageHeader(
+      title: 'Notifications',
+      subtitle: unreadCount > 0
+          ? '$unreadCount unread'
+          : 'You’re all caught up',
+      subtitleColor: unreadCount > 0 ? ink.emerald : null,
+      trailing: unreadCount > 0
+          // Below ~430px the labelled button and the title fight over the same
+          // row, so the action collapses to its icon.
+          ? _buildMarkAllButton(compact: MediaQuery.sizeOf(context).width < 430)
+          : null,
+    );
+  }
 
-          if (notifications.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.notifications_none,
-                    size: 80,
-                    color: AppColors.onSurface.withValues(alpha: 0.3),
+  /// Only offered when there is something to clear — a permanently visible
+  /// "Mark all read" on an empty inbox is a control that can do nothing.
+  Widget _buildMarkAllButton({bool compact = false}) {
+    if (compact) {
+      return Tooltip(
+        message: 'Mark all read',
+        child: IconButton(
+          onPressed: _isMarkingAllRead ? null : _markAllAsRead,
+          icon: _isMarkingAllRead
+              ? SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: ink.emerald,
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No notifications yet',
-                    style: AppTextStyles.titleMedium.copyWith(
-                      color: AppColors.onSurface.withValues(alpha: 0.6),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'You\'ll see updates about your orders here',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.onSurface.withValues(alpha: 0.4),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
+                )
+              : Icon(Icons.done_all, size: 20, color: ink.emerald),
+          style: IconButton.styleFrom(
+            backgroundColor: ink.emerald.withValues(
+              alpha: ink.isDark ? 0.16 : 0.11,
+            ),
+            shape: const CircleBorder(),
+          ),
+        ),
+      );
+    }
 
-          // Count unread notifications
-          final unreadCount = notifications.where((doc) {
-            final data = doc.data() as Map<String, dynamic>?;
-            return data?['read'] == false;
-          }).length;
-
-          return Column(
-            children: [
-              if (unreadCount > 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  color: AppColors.primary.withValues(alpha: 0.05),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.circle,
-                        size: 8,
-                        color: AppColors.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '$unreadCount unread notification${unreadCount > 1 ? 's' : ''}',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
+    return SizedBox(
+      height: 38,
+      child: OutlinedButton.icon(
+        onPressed: _isMarkingAllRead ? null : _markAllAsRead,
+        icon: _isMarkingAllRead
+            ? SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: ink.emerald,
                 ),
-              Expanded(
-                child: ListView.separated(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: notifications.length,
-                  separatorBuilder: (context, index) => const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    final doc = notifications[index];
-                    final data = doc.data() as Map<String, dynamic>?;
-                    
-                    if (data == null) return const SizedBox.shrink();
+              )
+            : const Icon(Icons.done_all, size: 16),
+        label: Text(
+          'Mark all read',
+          style: AppTextStyles.buttonMedium.copyWith(fontSize: 12.5),
+        ),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: ink.emerald,
+          disabledForegroundColor: ink.emerald.withValues(alpha: 0.6),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          side: BorderSide(color: ink.emerald.withValues(alpha: 0.4)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+        ),
+      ),
+    );
+  }
 
-                    final notificationData = {
-                      ...data,
-                      'id': doc.id,
-                    };
+  // ── Body ─────────────────────────────────────────────────────────────────
 
-                    final isRead = data['read'] as bool? ?? false;
-                    final title = data['title'] as String? ?? 'Notification';
-                    final body = data['body'] as String? ?? '';
-                    final type = data['type'] as String?;
-                    final createdAt = data['createdAt'] as Timestamp?;
+  Widget _buildBody(
+    AsyncSnapshot<QuerySnapshot> snapshot,
+    List<QueryDocumentSnapshot> docs,
+  ) {
+    const listPadding = EdgeInsets.fromLTRB(
+      AppLayout.gutter,
+      4,
+      AppLayout.gutter,
+      24,
+    );
 
-                    return Dismissible(
-                      key: Key(doc.id),
-                      direction: DismissDirection.endToStart,
-                      background: Container(
-                        alignment: Alignment.centerRight,
-                        padding: const EdgeInsets.only(right: 20),
-                        decoration: BoxDecoration(
-                          color: AppColors.error,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.delete_outline,
-                          color: Colors.white,
-                          size: 24,
-                        ),
-                      ),
-                      confirmDismiss: (direction) async {
-                        return await showDialog<bool>(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text('Delete notification?'),
-                            content: const Text(
-                              'This notification will be permanently deleted.',
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, false),
-                                child: const Text('Cancel'),
-                              ),
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, true),
-                                child: Text(
-                                  'Delete',
-                                  style: TextStyle(color: AppColors.error),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                      onDismissed: (direction) {
-                        _deleteNotification(doc.id);
-                      },
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () => _handleNotificationTap(notificationData),
-                          borderRadius: BorderRadius.circular(12),
-                          child: Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: isRead
-                                  ? AppColors.surface
-                                  : AppColors.primary.withValues(alpha: 0.05),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: isRead
-                                    ? AppColors.onSurface.withValues(alpha: 0.1)
-                                    : AppColors.primary.withValues(alpha: 0.2),
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppColors.onSurface.withValues(alpha: 0.05),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Icon
-                                Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: _getNotificationColor(type)
-                                        .withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Icon(
-                                    _getNotificationIcon(type),
-                                    color: _getNotificationColor(type),
-                                    size: 24,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                // Content
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          if (!isRead)
-                                            Container(
-                                              margin: const EdgeInsets.only(right: 8),
-                                              width: 8,
-                                              height: 8,
-                                              decoration: BoxDecoration(
-                                                color: AppColors.primary,
-                                                shape: BoxShape.circle,
-                                              ),
-                                            ),
-                                          Expanded(
-                                            child: Text(
-                                              title,
-                                              style: AppTextStyles.bodyLarge.copyWith(
-                                                fontWeight: isRead
-                                                    ? FontWeight.w500
-                                                    : FontWeight.w700,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      if (body.isNotEmpty) ...[
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          body,
-                                          style: AppTextStyles.bodyMedium.copyWith(
-                                            color: AppColors.onSurface
-                                                .withValues(alpha: 0.7),
-                                          ),
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ],
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        _formatTimestamp(createdAt),
-                                        style: AppTextStyles.bodySmall.copyWith(
-                                          color: AppColors.onSurface
-                                              .withValues(alpha: 0.5),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
+    if (snapshot.hasError) {
+      return _buildStateMessage(
+        icon: Icons.cloud_off,
+        tone: _danger,
+        title: 'Couldn’t load notifications',
+        detail:
+            'Check your connection — this list updates on its own once it '
+            'reconnects.',
+      );
+    }
+
+    if (snapshot.connectionState == ConnectionState.waiting) {
+      return NotificationsSkeleton(padding: listPadding);
+    }
+
+    if (docs.isEmpty) {
+      return _buildStateMessage(
+        icon: Icons.notifications_none,
+        tone: ink.emerald,
+        title: 'Nothing here yet',
+        detail:
+            'Order updates, seller replies and offers will land here as they '
+            'happen.',
+      );
+    }
+
+    // Grouped by age, newest group first. The query is already sorted, so this
+    // only has to break the run at each boundary.
+    final groups = <String, List<QueryDocumentSnapshot>>{};
+    for (final doc in docs) {
+      final data = doc.data() as Map<String, dynamic>?;
+      final label = notificationGroupLabel(
+        (data?['createdAt'] as Timestamp?)?.toDate(),
+      );
+      groups.putIfAbsent(label, () => []).add(doc);
+    }
+
+    return ListView(
+      padding: listPadding,
+      children: [
+        for (final entry in groups.entries) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(2, 12, 0, 10),
+            child: Text(
+              entry.key,
+              style: AppTextStyles.titleMedium.copyWith(
+                color: ink.text,
+                fontWeight: FontWeight.w800,
+                fontSize: 15,
+              ),
+            ),
+          ),
+          for (final doc in entry.value) _buildDismissible(doc),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildDismissible(QueryDocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>?;
+    if (data == null) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Dismissible(
+        key: Key(doc.id),
+        direction: DismissDirection.endToStart,
+        background: Container(
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.only(right: 22),
+          decoration: BoxDecoration(
+            color: _danger.withValues(alpha: ink.isDark ? 0.22 : 0.12),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: _danger.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Icon(Icons.delete_outline, color: _danger, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Delete',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: _danger,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12.5,
                 ),
               ),
             ],
-          );
-        },
+          ),
+        ),
+        confirmDismiss: (direction) => _confirmDelete(),
+        onDismissed: (direction) => _deleteNotification(doc.id),
+        child: NotificationCard(
+          data: data,
+          onTap: () => _handleNotificationTap({...data, 'id': doc.id}),
+        ),
       ),
     );
+  }
+
+  Future<bool?> _confirmDelete() {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: ink.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Icon(Icons.delete_outline, color: _danger),
+            const SizedBox(width: 8),
+            Text('Delete notification?', style: TextStyle(color: ink.text)),
+          ],
+        ),
+        content: Text(
+          'This notification will be permanently deleted.',
+          style: AppTextStyles.bodyMedium.copyWith(color: _muted),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Keep', style: TextStyle(color: _muted)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _danger,
+              foregroundColor: Colors.white,
+              elevation: 0,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStateMessage({
+    required IconData icon,
+    required Color tone,
+    required String title,
+    required String detail,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(32, 40, 32, 60),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 68,
+                      height: 68,
+                      decoration: BoxDecoration(
+                        color: tone.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(icon, size: 30, color: tone),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.titleMedium.copyWith(
+                        color: ink.text,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 18,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      detail,
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: _muted,
+                        fontSize: 13.5,
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// One notification: type tile, title, body and stamp, tinted while unread.
+///
+/// Public and data-driven so the list's look can be exercised without a live
+/// Firestore behind it.
+class NotificationCard extends StatelessWidget {
+  const NotificationCard({super.key, required this.data, required this.onTap});
+
+  final Map<String, dynamic> data;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = InkPalette.of(context);
+
+    final isRead = data['read'] as bool? ?? false;
+    final title = data['title'] as String? ?? 'Notification';
+    final body = data['body'] as String? ?? '';
+    final type = data['type'] as String?;
+    final createdAt = data['createdAt'];
+    final tone = notificationTone(type, ink);
+
+    return Material(
+      color: isRead
+          ? ink.surface
+          : Color.alphaBlend(
+              ink.emerald.withValues(alpha: ink.isDark ? 0.10 : 0.07),
+              ink.surface,
+            ),
+      clipBehavior: Clip.antiAlias,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: isRead ? ink.border : ink.emerald.withValues(alpha: 0.35),
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: tone.withValues(alpha: ink.isDark ? 0.18 : 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(notificationIcon(type), color: tone, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: ink.text,
+                              fontWeight: isRead
+                                  ? FontWeight.w600
+                                  : FontWeight.w800,
+                              fontSize: 13.5,
+                              height: 1.3,
+                            ),
+                          ),
+                        ),
+                        if (!isRead) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            width: 8,
+                            height: 8,
+                            margin: const EdgeInsets.only(top: 5),
+                            decoration: BoxDecoration(
+                              color: ink.emerald,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    if (body.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        body,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: ink.text.withValues(alpha: 0.65),
+                          fontSize: 12.5,
+                          height: 1.4,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Text(
+                          formatNotificationTime(
+                            createdAt is Timestamp ? createdAt.toDate() : null,
+                          ),
+                          style: AppTextStyles.bodySmall.copyWith(
+                            fontFamily: AppTextStyles.secondaryFont,
+                            color: ink.text.withValues(alpha: 0.45),
+                            fontSize: 11.5,
+                          ),
+                        ),
+                        const Spacer(),
+                        Icon(
+                          Icons.chevron_right,
+                          size: 16,
+                          color: ink.text.withValues(alpha: 0.3),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Section a notification belongs to, by age.
+String notificationGroupLabel(DateTime? date, {DateTime? now}) {
+  if (date == null) return 'Earlier';
+
+  final today = now ?? DateTime.now();
+  final startOfToday = DateTime(today.year, today.month, today.day);
+  final startOfDate = DateTime(date.year, date.month, date.day);
+  final days = startOfToday.difference(startOfDate).inDays;
+
+  if (days <= 0) return 'Today';
+  if (days == 1) return 'Yesterday';
+  if (days < 7) return 'This week';
+  if (days < 30) return 'This month';
+  return 'Earlier';
+}
+
+/// Relative stamp — exact clock time matters less than "how long ago".
+String formatNotificationTime(DateTime? date, {DateTime? now}) {
+  if (date == null) return '';
+
+  final difference = (now ?? DateTime.now()).difference(date);
+
+  if (difference.inMinutes < 1) return 'Just now';
+  if (difference.inMinutes < 60) return '${difference.inMinutes}m ago';
+  if (difference.inHours < 24) return '${difference.inHours}h ago';
+  if (difference.inDays < 7) return '${difference.inDays}d ago';
+  return DateFormat('MMM d, yyyy').format(date);
+}
+
+IconData notificationIcon(String? type) {
+  switch (type) {
+    case 'order':
+      return Icons.local_shipping_outlined;
+    case 'message':
+      return Icons.chat_bubble_outline;
+    case 'promotion':
+      return Icons.local_offer_outlined;
+    default:
+      return Icons.notifications_outlined;
+  }
+}
+
+/// Type colour, taken from the palette so both themes stay in step. Amber is
+/// reserved for urgency, which is exactly what a promotion's countdown is.
+Color notificationTone(String? type, InkPalette ink) {
+  switch (type) {
+    case 'order':
+      return ink.emerald;
+    case 'message':
+      return ink.emeraldSoft;
+    case 'promotion':
+      return ink.amber;
+    default:
+      return ink.emerald;
   }
 }

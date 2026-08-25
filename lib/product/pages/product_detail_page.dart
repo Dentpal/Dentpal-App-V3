@@ -20,7 +20,6 @@ import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/utils/navigation_utils.dart';
 import 'package:dentpal/utils/currency_formatter.dart';
 import 'package:dentpal/services/chat_service.dart';
-import 'package:dentpal/profile/pages/chat_detail_page.dart';
 import 'package:dentpal/core/widgets/web_footer.dart';
 import '../widgets/loading_skeletons.dart';
 
@@ -689,16 +688,13 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
 
       // Navigate to chat
       if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ChatDetailPage(
-              chatRoomId: chatRoomId,
-              otherUserId: product.sellerId,
-              otherUserName:
-                  'Seller', // Will be updated with actual seller name in chat page
-            ),
-          ),
+        Navigator.of(context).pushNamed(
+          '/profile/chats/$chatRoomId',
+          arguments: <String, dynamic>{
+            'otherUserId': product.sellerId,
+            // Left unnamed: the chat page reads the real shop name off the
+            // room, which beats showing a placeholder 'Seller' until it does.
+          },
         );
       }
     } catch (e) {

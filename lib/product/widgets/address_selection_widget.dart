@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../profile/models/shipping_address.dart';
 import '../../profile/services/address_service.dart';
-import '../../profile/pages/shipping_addresses_page.dart';
 import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
 
@@ -533,11 +532,7 @@ class _AddressSelectionWidgetState extends State<AddressSelectionWidget> {
   }
 
   void _showAddAddressDialog() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => const ShippingAddressesPage(),
-      ),
-    ).then((_) {
+    Navigator.of(context).pushNamed('/profile/address').then((_) {
       // Reload addresses when returning from the addresses page
       // This ensures any new addresses added or changes made are reflected
       _loadAddresses();

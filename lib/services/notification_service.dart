@@ -9,7 +9,6 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/product/models/order_model.dart' as order_model;
 import 'package:dentpal/profile/pages/order_details_page.dart';
-import 'package:dentpal/profile/pages/chat_detail_page.dart';
 
 /// Background message handler must be a top-level function
 @pragma('vm:entry-point')
@@ -430,15 +429,13 @@ class NotificationService {
       // Navigate to chat detail page
       final navContext = _navigatorKey?.currentContext;
       if (navContext != null) {
-        Navigator.of(navContext).push(
-          MaterialPageRoute(
-            builder: (context) => ChatDetailPage(
-              chatRoomId: chatRoomId,
-              otherUserId: otherUserId,
-              otherUserName: displayName,
-              otherUserShopName: shopName,
-            ),
-          ),
+        Navigator.of(navContext).pushNamed(
+          '/profile/chats/$chatRoomId',
+          arguments: <String, dynamic>{
+            'otherUserId': otherUserId,
+            'otherUserName': displayName,
+            'otherUserShopName': shopName,
+          },
         );
       }
     } catch (e) {

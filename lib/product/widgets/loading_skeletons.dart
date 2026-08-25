@@ -233,7 +233,9 @@ class ProductDetailSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     final isWide = MediaQuery.of(context).size.width > 768;
     return SkeletonShimmer(
-      child: isWide ? const _DetailWideSkeleton() : const _DetailNarrowSkeleton(),
+      child: isWide
+          ? const _DetailWideSkeleton()
+          : const _DetailNarrowSkeleton(),
     );
   }
 }
@@ -480,7 +482,10 @@ class StorePageSkeleton extends StatelessWidget {
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 physics: const NeverScrollableScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 2,
+                ),
                 children: const [
                   SkeletonBox(width: 84, height: 36, radius: 18),
                   SizedBox(width: 8),
@@ -618,6 +623,369 @@ class AmountSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SkeletonShimmer(
-        child: SkeletonBox(width: width, height: height, radius: 4),
-      );
+    child: SkeletonBox(width: width, height: height, radius: 4),
+  );
+}
+
+// ── Orders ──────────────────────────────────────────────────────────────────
+
+/// Placeholder for the orders list: the live-order hero followed by a short
+/// stack of order cards, in the same shapes the real list lands in.
+class OrdersSkeleton extends StatelessWidget {
+  const OrdersSkeleton({super.key, this.cardCount = 3, this.showHero = true});
+
+  final int cardCount;
+  final bool showHero;
+
+  @override
+  Widget build(BuildContext context) {
+    return SkeletonShimmer(
+      child: SingleChildScrollView(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (showHero) ...[
+              const _ActiveOrderSkeleton(),
+              const SizedBox(height: 26),
+            ],
+            const SkeletonLine(width: 120, height: 18),
+            const SizedBox(height: 14),
+            for (var i = 0; i < cardCount; i++) const _OrderCardSkeleton(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The hero: status pill, headline, totals line, and the four-stop rail.
+class _ActiveOrderSkeleton extends StatelessWidget {
+  const _ActiveOrderSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return _card(
+      context: context,
+      radius: 18,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                SkeletonBox(width: 104, height: 26, radius: 13),
+                Spacer(),
+                SkeletonBox(width: 76, height: 12, radius: 4),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const SkeletonLine(widthFactor: 0.6, height: 22),
+            const SizedBox(height: 10),
+            const SkeletonLine(widthFactor: 0.38, height: 12),
+            const SizedBox(height: 22),
+            Row(
+              children: [
+                for (var i = 0; i < 4; i++) ...[
+                  const SkeletonCircle(size: 18),
+                  if (i < 3)
+                    const Expanded(child: SkeletonBox(height: 2, radius: 1)),
+                ],
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                SkeletonBox(width: 42, height: 9, radius: 4),
+                SkeletonBox(width: 42, height: 9, radius: 4),
+                SkeletonBox(width: 42, height: 9, radius: 4),
+                SkeletonBox(width: 42, height: 9, radius: 4),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One row of the order history: id / date / totals, a badge, thumbnails and
+/// the action buttons.
+class _OrderCardSkeleton extends StatelessWidget {
+  const _OrderCardSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return _card(
+      context: context,
+      radius: 18,
+      margin: const EdgeInsets.only(bottom: 12),
+      child: const Padding(
+        padding: EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SkeletonLine(width: 84, height: 10),
+                      SizedBox(height: 8),
+                      SkeletonLine(width: 120, height: 14),
+                      SizedBox(height: 8),
+                      SkeletonLine(width: 150, height: 11),
+                    ],
+                  ),
+                ),
+                SkeletonBox(width: 96, height: 26, radius: 13),
+              ],
+            ),
+            SizedBox(height: 14),
+            Row(
+              children: [
+                SkeletonBox(width: 44, height: 44, radius: 10),
+                SizedBox(width: 8),
+                SkeletonBox(width: 44, height: 44, radius: 10),
+                SizedBox(width: 8),
+                SkeletonBox(width: 44, height: 44, radius: 10),
+              ],
+            ),
+            SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(child: SkeletonBox(height: 38, radius: 12)),
+                SizedBox(width: 10),
+                Expanded(child: SkeletonBox(height: 38, radius: 12)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Placeholder for a tracking card's payload — the courier rows and the event
+/// history — while a carrier lookup is in flight.
+class TrackingSkeleton extends StatelessWidget {
+  const TrackingSkeleton({super.key, this.eventCount = 3});
+
+  final int eventCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return SkeletonShimmer(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SkeletonLine(widthFactor: 0.5, height: 12),
+          const SizedBox(height: 10),
+          const SkeletonLine(widthFactor: 0.34, height: 12),
+          const SizedBox(height: 18),
+          for (var i = 0; i < eventCount; i++) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SkeletonCircle(size: 10, margin: EdgeInsets.only(top: 3)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      SkeletonLine(widthFactor: 0.55, height: 12),
+                      SizedBox(height: 7),
+                      SkeletonLine(widthFactor: 0.35, height: 10),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (i < eventCount - 1) const SizedBox(height: 16),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ── Settings ────────────────────────────────────────────────────────────────
+
+/// Placeholder for a long-form policy document: a section title followed by
+/// runs of prose, in the same card the real text lands in.
+class PolicyDocumentSkeleton extends StatelessWidget {
+  const PolicyDocumentSkeleton({super.key, this.padding = EdgeInsets.zero});
+
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return SkeletonShimmer(
+      child: SingleChildScrollView(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: padding,
+        child: _card(
+          context: context,
+          radius: 18,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 22, 18, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var section = 0; section < 3; section++) ...[
+                  if (section > 0) const SizedBox(height: 26),
+                  SkeletonLine(widthFactor: section.isEven ? 0.5 : 0.62, height: 15),
+                  const SizedBox(height: 14),
+                  for (var line = 0; line < 4; line++) ...[
+                    if (line > 0) const SizedBox(height: 9),
+                    SkeletonLine(widthFactor: line == 3 ? 0.55 : 1, height: 10),
+                  ],
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Placeholder for the notifications list: icon tile, title, body and stamp.
+class NotificationsSkeleton extends StatelessWidget {
+  const NotificationsSkeleton({super.key, this.count = 5, this.padding = EdgeInsets.zero});
+
+  final int count;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return SkeletonShimmer(
+      child: SingleChildScrollView(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: padding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SkeletonLine(width: 90, height: 12),
+            const SizedBox(height: 12),
+            for (var i = 0; i < count; i++)
+              _card(
+                context: context,
+                radius: 18,
+                margin: const EdgeInsets.only(bottom: 10),
+                child: const Padding(
+                  padding: EdgeInsets.all(14),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SkeletonBox(width: 42, height: 42, radius: 12),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SkeletonLine(widthFactor: 0.55, height: 13),
+                            SizedBox(height: 9),
+                            SkeletonLine(widthFactor: 0.9, height: 10),
+                            SizedBox(height: 9),
+                            SkeletonLine(width: 64, height: 9),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Placeholder for the profile screen: identity card, then the menu rows.
+class ProfileSkeleton extends StatelessWidget {
+  const ProfileSkeleton({super.key, this.padding = EdgeInsets.zero, this.rows = 5});
+
+  final EdgeInsetsGeometry padding;
+  final int rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return SkeletonShimmer(
+      child: SingleChildScrollView(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: padding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _card(
+              context: context,
+              radius: 18,
+              child: const Padding(
+                padding: EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    SkeletonCircle(size: 64),
+                    SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SkeletonLine(widthFactor: 0.55, height: 16),
+                          SizedBox(height: 10),
+                          SkeletonLine(widthFactor: 0.75, height: 11),
+                          SizedBox(height: 14),
+                          Row(
+                            children: [
+                              SkeletonBox(width: 84, height: 24, radius: 12),
+                              SizedBox(width: 8),
+                              SkeletonBox(width: 96, height: 24, radius: 12),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            _card(
+              context: context,
+              radius: 18,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Column(
+                  children: [
+                    for (var i = 0; i < rows; i++)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                        child: Row(
+                          children: [
+                            SkeletonBox(width: 38, height: 38, radius: 11),
+                            SizedBox(width: 14),
+                            Expanded(
+                              child: SkeletonLine(widthFactor: 0.45, height: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

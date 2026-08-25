@@ -31,7 +31,6 @@ import '../services/product_search_service.dart';
 import '../../login_page.dart';
 import 'package:flutter/services.dart';
 import '../../profile/pages/orders_page.dart';
-import '../../profile/pages/settings/notifications_page.dart';
 import '../../profile/pages/order_details_page.dart';
 import '../../profile/services/address_service.dart';
 import '../../profile/services/order_service.dart';
@@ -960,6 +959,7 @@ class _ProductListingPageState extends State<ProductListingPage>
               Text(
                 'Login Required',
                 style: AppTextStyles.titleMedium.copyWith(
+                  color: ink.text,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -1504,7 +1504,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                           ),
                           const SizedBox(width: 4),
                           FutureBuilder<int>(
-                            future: _getSubCategoryClickCount(
+                            future: _subCategoryClickCount(
                               subcategory.subCategoryId,
                             ),
                             builder: (context, snapshot) {
@@ -1837,6 +1837,7 @@ class _ProductListingPageState extends State<ProductListingPage>
       // Clear cached reads on manual refresh to get fresh data
       CategoryService.clearCache();
       ProductService.clearCatalogueCache();
+      _subCategoryClickCounts.clear();
 
       // Keep current data as backup
       final currentProducts = List<Product>.from(_products);
@@ -1987,6 +1988,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                 Text(
                   'Exit App',
                   style: AppTextStyles.titleMedium.copyWith(
+                    color: ink.text,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -2012,7 +2014,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: ink.amber,
-                  foregroundColor: ink.onEmerald,
+                  foregroundColor: ink.onAmber,
                   elevation: 0,
                 ),
                 child: Text('Exit', style: AppTextStyles.buttonMedium),
@@ -2121,7 +2123,9 @@ class _ProductListingPageState extends State<ProductListingPage>
               child: Center(
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
-                    maxWidth: isWideScreen ? 1100 : double.infinity,
+                    maxWidth: isWideScreen
+                        ? AppLayout.maxContentWidth
+                        : double.infinity,
                   ),
                   child: _buildHeroHeader(isWide: isWideScreen),
                 ),
@@ -2134,7 +2138,9 @@ class _ProductListingPageState extends State<ProductListingPage>
                 child: Center(
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
-                      maxWidth: isWideScreen ? 1100 : double.infinity,
+                      maxWidth: isWideScreen
+                          ? AppLayout.maxContentWidth
+                          : double.infinity,
                     ),
                     child: Container(
                       margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
@@ -2174,7 +2180,9 @@ class _ProductListingPageState extends State<ProductListingPage>
                 child: Center(
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
-                      maxWidth: isWideScreen ? 1100 : double.infinity,
+                      maxWidth: isWideScreen
+                          ? AppLayout.maxContentWidth
+                          : double.infinity,
                     ),
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -2270,7 +2278,9 @@ class _ProductListingPageState extends State<ProductListingPage>
                 child: Center(
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
-                      maxWidth: isWideScreen ? 1100 : double.infinity,
+                      maxWidth: isWideScreen
+                          ? AppLayout.maxContentWidth
+                          : double.infinity,
                     ),
                     child: Column(
                       children: [
@@ -2491,15 +2501,6 @@ class _ProductListingPageState extends State<ProductListingPage>
         ),
       ),
     );
-  }
-
-  /// Every rail destination past Home needs an account.
-  void _pushIfSignedIn(Widget page) {
-    if (FirebaseAuth.instance.currentUser == null) {
-      _showLoginRequiredDialog();
-      return;
-    }
-    Navigator.of(context).push(MaterialPageRoute(builder: (context) => page));
   }
 
   // ── Shared chrome ────────────────────────────────────────────────────────
@@ -2859,7 +2860,9 @@ class _ProductListingPageState extends State<ProductListingPage>
           icon: Icons.notifications_none_rounded,
           badgeCount: _unreadNotifications,
           tooltip: 'Notifications',
-          onTap: () => _pushIfSignedIn(const NotificationsPage()),
+          // Switches to the inbox destination rather than pushing a copy of
+          // it over this page.
+          onTap: () => AppShell.openNotifications(context),
         ),
       ],
     );
@@ -3574,7 +3577,23 @@ class _ProductListingPageState extends State<ProductListingPage>
 
   // Build modern product grid with enhanced design
   // Get subcategory click count from Firestore
-  Future<int> _getSubCategoryClickCount(String subCategoryId) async {
+  /// Click counts behind the subcategory pills, memoised per subcategory.
+  ///
+  /// The future used to be created inside `build`, so every rebuild of this
+  /// page fired one uncached Firestore read per pill on screen *and* reset each
+  /// `FutureBuilder` to its empty state while they were in flight — the counts
+  /// visibly blinked out and back on any setState. Holding the future keeps
+  /// both the reads and the rendered number stable for the life of the page;
+  /// [_handleRefresh] clears the map when the buyer explicitly asks for fresh
+  /// data.
+  final Map<String, Future<int>> _subCategoryClickCounts = {};
+
+  Future<int> _subCategoryClickCount(String subCategoryId) =>
+      _subCategoryClickCounts[subCategoryId] ??= _fetchSubCategoryClickCount(
+        subCategoryId,
+      );
+
+  Future<int> _fetchSubCategoryClickCount(String subCategoryId) async {
     try {
       final doc = await FirebaseFirestore.instance
           .collection('SubCategoryClicks')

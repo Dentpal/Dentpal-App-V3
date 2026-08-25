@@ -2,14 +2,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show kIsWeb; // Added for web detection
-import '../../../core/app_theme/app_colors.dart';
 import '../../../core/app_theme/app_text_styles.dart';
+import '../../../core/app_theme/ink_palette.dart';
+import '../../../core/app_theme/theme_utils.dart';
+import '../../../core/widgets/app_page_header.dart';
 import '../../../core/services/sub_account_service.dart';
 import 'change_mobile_page.dart';
 import 'change_password_page.dart';
 import 'edit_profile_page.dart';
-import 'data_privacy_page.dart';
 import 'terms_conditions_page.dart';
 import 'privacy_policy_page.dart';
 
@@ -50,254 +50,143 @@ class _SettingsPageState extends State<SettingsPage> {
     return _userCache;
   }
 
+  // ── Palette ──────────────────────────────────────────────────────────────
+
+  InkPalette get ink => InkPalette.of(context);
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        toolbarHeight: 60,
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: AppColors.onSurface),
-          onPressed: () => Navigator.of(context).pop(),
+      backgroundColor: ink.bg,
+      body: SafeArea(
+        bottom: false,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: AppLayout.maxContentWidth,
+            ),
+            child: FutureBuilder<Map<String, dynamic>?>(
+              future: _getUserData(),
+              builder: (context, snapshot) {
+                final loading =
+                    snapshot.connectionState == ConnectionState.waiting &&
+                    !_hasLoadedData;
+                final userRole = snapshot.data?['role'] ?? 'buyer';
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildHeader(),
+                    Expanded(
+                      child: loading
+                          ? const Center(child: CircularProgressIndicator())
+                          : _buildBody(userRole),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
         ),
-        title: Row(
-          children: [
-            Icon(Icons.settings, color: AppColors.primary, size: 24),
-            const SizedBox(width: 8),
-            Text(
-              'Settings',
-              style: AppTextStyles.titleLarge.copyWith(
-                fontWeight: FontWeight.w700,
+      ),
+    );
+  }
+
+  static const EdgeInsets _listPadding = EdgeInsets.fromLTRB(
+    AppLayout.gutter,
+    4,
+    AppLayout.gutter,
+    28,
+  );
+
+  // ── Header ───────────────────────────────────────────────────────────────
+
+  Widget _buildHeader() {
+    return const AppPageHeader(
+      title: 'Settings',
+      subtitle: 'Account, legal and privacy',
+    );
+  }
+
+  // ── Body ─────────────────────────────────────────────────────────────────
+
+  Widget _buildBody(String userRole) {
+    final showAccountSettings = !SubAccountSessionManager.isSubAccount;
+
+    return ListView(
+      padding: _listPadding,
+      children: [
+        if (showAccountSettings) ...[
+          _buildSectionHeader('Account Settings'),
+          const SizedBox(height: 12),
+          _buildCard([
+            _menuRow(
+              icon: Icons.phone_outlined,
+              label: 'Change mobile number',
+              detail: 'Update the number on your account',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const ChangeMobilePage(),
+                ),
               ),
             ),
-          ],
-        ),
-      ),
-      body: FutureBuilder<Map<String, dynamic>?>(
-        future: _getUserData(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              !_hasLoadedData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          final userData = snapshot.data;
-          final userRole = userData?['role'] ?? 'buyer';
-
-          final content = SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 8),
-
-                // Account Settings Section
-                // Only show for main accounts (not sub accounts)
-                if (!SubAccountSessionManager.isSubAccount) ...[
-                _buildSectionHeader('Account Settings'),
-                const SizedBox(height: 16),
-                Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.onSurface.withValues(alpha: 0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      _buildSettingsOption(
-                        context,
-                        'Change Mobile Number',
-                        Icons.phone_outlined,
-                        () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const ChangeMobilePage(),
-                            ),
-                          );
-                        },
-                      ),
-                      _buildDivider(),
-                      _buildSettingsOption(
-                        context,
-                        'Change Password',
-                        Icons.lock_outline,
-                        () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const ChangePasswordPage(),
-                            ),
-                          );
-                        },
-                      ),
-                      if (userRole == 'buyer') ...[
-                        _buildDivider(),
-                        _buildSettingsOption(
-                        context,
-                        'Edit Profile',
-                        Icons.person_outline,
-                        () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const EditProfilePage(),
-                            ),
-                          );
-                        },
-                      ),
-                      ],
-                      // Show Edit Seller Profile only for sellers
-                      if (userRole == 'seller') ...[
-                        _buildDivider(),
-                        _buildSettingsOption(
-                          context,
-                          'Edit Seller Profile',
-                          Icons.store_outlined,
-                          () {
-                            _showComingSoonSnackBar(
-                              context,
-                              'Edit seller profile',
-                            );
-                          },
-                        ),
-                      ],
-                    ],
-                  ),
+            _menuRow(
+              icon: Icons.lock_outline,
+              label: 'Change password',
+              detail: 'Keep your account secure',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const ChangePasswordPage(),
                 ),
-
-                const SizedBox(height: 32),
-                ],
-
-                /* Business Settings Section (for non-sellers)
-                if (userRole != 'seller') ...[
-                  _buildSectionHeader('Business'),
-                  const SizedBox(height: 16),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.onSurface.withValues(alpha: 0.05),
-                          blurRadius: 10,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: _buildSettingsOption(
-                      context,
-                      'Upgrade to Seller Account',
-                      Icons.trending_up_outlined,
-                      () {
-                        _showComingSoonSnackBar(
-                          context,
-                          'Upgrade to seller account',
-                        );
-                      },
-                      isPromoted: true,
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-                ],*/
-
-                // Legal & Privacy Section
-                _buildSectionHeader('Legal & Privacy'),
-                const SizedBox(height: 16),
-                Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.onSurface.withValues(alpha: 0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      // _buildSettingsOption(
-                      //   context,
-                      //   'Data Privacy',
-                      //   Icons.privacy_tip_outlined,
-                      //   () {
-                      //     Navigator.of(context).push(
-                      //       MaterialPageRoute(
-                      //         builder: (context) => const DataPrivacyPage(),
-                      //       ),
-                      //     );
-                      //   },
-                      // ),
-                      // _buildDivider(),
-                      _buildSettingsOption(
-                        context,
-                        'Terms and Conditions',
-                        Icons.description_outlined,
-                        () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const TermsConditionsPage(),
-                            ),
-                          );
-                        },
-                      ),
-                      _buildDivider(),
-                      _buildSettingsOption(
-                        context,
-                        'Privacy Policy',
-                        Icons.shield_outlined,
-                        () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const PrivacyPolicyPage(),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 32),
-              ],
+              ),
             ),
-          );
-
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              final isWideWeb =
-                  kIsWeb && constraints.maxWidth > 800; // BREAKPOINT
-              if (isWideWeb) {
-                return Align(
-                  alignment: Alignment.topCenter, // top-centered vertically
-                  child: Padding(
-                    padding: const EdgeInsets.only(
-                      top: 16,
-                    ), // slight top offset
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        maxWidth: 840,
-                      ), // MAX_WIDTH
-                      child: Material(
-                        color: Colors.transparent,
-                        child: content,
-                      ),
-                    ),
+            if (userRole == 'buyer')
+              _menuRow(
+                icon: Icons.person_outline,
+                label: 'Edit profile',
+                detail: 'Name, photo and personal info',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const EditProfilePage(),
                   ),
-                );
-              }
-              return content; 
-            },
-          );
-        },
-      ),
+                ),
+              ),
+            if (userRole == 'seller')
+              _menuRow(
+                icon: Icons.store_outlined,
+                label: 'Edit seller profile',
+                detail: 'Store name, logo and details',
+                onTap: () => _showComingSoonSnackBar('Edit seller profile'),
+              ),
+          ]),
+          const SizedBox(height: 24),
+        ],
+
+        _buildSectionHeader('Legal & Privacy'),
+        const SizedBox(height: 12),
+        _buildCard([
+          _menuRow(
+            icon: Icons.description_outlined,
+            label: 'Terms and Conditions',
+            detail: 'What you agree to when using DentPal',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => const TermsConditionsPage(),
+              ),
+            ),
+          ),
+          _menuRow(
+            icon: Icons.shield_outlined,
+            label: 'Privacy Policy',
+            detail: 'How we handle your data',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => const PrivacyPolicyPage(),
+              ),
+            ),
+          ),
+        ]),
+      ],
     );
   }
 
@@ -308,76 +197,89 @@ class _SettingsPageState extends State<SettingsPage> {
         title,
         style: AppTextStyles.titleMedium.copyWith(
           fontWeight: FontWeight.w700,
-          color: AppColors.onSurface.withValues(alpha: 0.8),
+          color: ink.text.withValues(alpha: 0.8),
         ),
       ),
     );
   }
 
-  Widget _buildSettingsOption(
-    BuildContext context,
-    String title,
-    IconData icon,
-    VoidCallback onTap, {
-    bool isPromoted = false,
+  Widget _buildCard(List<Widget> rows) {
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: ink.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: ink.border),
+      ),
+      child: Column(
+        children: [
+          for (var i = 0; i < rows.length; i++) ...[
+            if (i > 0)
+              Padding(
+                padding: const EdgeInsets.only(left: 68),
+                child: Divider(height: 1, color: ink.border),
+              ),
+            rows[i],
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _menuRow({
+    required IconData icon,
+    required String label,
+    required String detail,
+    required VoidCallback onTap,
   }) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(8),
+                width: 38,
+                height: 38,
                 decoration: BoxDecoration(
-                  color: isPromoted
-                      ? AppColors.success.withValues(alpha: 0.1)
-                      : AppColors.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
+                  color: ink.emerald.withValues(
+                    alpha: ink.isDark ? 0.16 : 0.11,
+                  ),
+                  borderRadius: BorderRadius.circular(11),
                 ),
-                child: Icon(
-                  icon,
-                  color: isPromoted ? AppColors.success : AppColors.primary,
-                  size: 20,
-                ),
+                child: Icon(icon, color: ink.emerald, size: 19),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 14),
               Expanded(
-                child: Text(
-                  title,
-                  style: AppTextStyles.bodyLarge.copyWith(
-                    fontWeight: FontWeight.w500,
-                    color: isPromoted ? AppColors.success : null,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: ink.text,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      detail,
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: ink.text.withValues(alpha: 0.5),
+                        fontSize: 12,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
               ),
-              if (isPromoted) ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.success.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    'NEW',
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.success,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 10,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-              ],
               Icon(
                 Icons.chevron_right,
-                color: AppColors.onSurface.withValues(alpha: 0.4),
+                color: ink.text.withValues(alpha: 0.3),
                 size: 20,
               ),
             ],
@@ -387,21 +289,11 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _buildDivider() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Divider(
-        height: 1,
-        color: AppColors.onSurface.withValues(alpha: 0.1),
-      ),
-    );
-  }
-
-  void _showComingSoonSnackBar(BuildContext context, String feature) {
+  void _showComingSoonSnackBar(String feature) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('$feature feature coming soon'),
-        backgroundColor: AppColors.primary,
+        backgroundColor: ink.emerald,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),

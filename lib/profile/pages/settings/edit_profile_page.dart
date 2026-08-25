@@ -11,6 +11,7 @@ import '../../../core/app_theme/app_colors.dart';
 import '../../../core/app_theme/app_text_styles.dart';
 import '../../../utils/app_logger.dart';
 import '../../../signup/specialty_selection_widget.dart';
+import '../profile_page.dart';
 import 'package:intl/intl.dart';
 
 class EditProfilePage extends StatefulWidget {
@@ -709,7 +710,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
         
         // Mark data as loaded after successful save
         _hasLoadedData = true;
-        
+
+        // The profile tab is kept alive by the app shell, so it will not
+        // refetch on its own when this route pops. Drop its cache instead and
+        // it re-reads the moment the buyer lands back on it.
+        ProfilePage.invalidate();
+
         if (mounted) {
           _showSuccessSnackBar('Profile updated successfully');
           Navigator.of(context).pop();

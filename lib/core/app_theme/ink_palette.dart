@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 
-/// Palette for the marketplace surfaces, resolved against the device's
-/// light/dark setting.
+import 'theme_controller.dart';
+
+/// Palette for the marketplace surfaces, resolved against the appearance the
+/// user has chosen (Profile → Appearance), or the device's setting under
+/// "Auto".
 ///
 /// These screens follow the DentPal marketplace design: one emerald brand
 /// colour, amber reserved strictly for urgency (deal timers, alerts), and a
-/// ground that flips between paper and near-black. It reads the *system*
-/// brightness rather than [Theme.of] because the app's [MaterialApp] is still
-/// pinned to `AppTheme.lightTheme` — fold this into [AppTheme] once the app
-/// ships a real dark theme.
+/// ground that flips between paper and near-black. It resolves the brightness
+/// itself rather than reading [Theme.of], because `AppTheme.darkTheme` is still
+/// the light theme — the screens that have been redesigned carry their own dark
+/// surfaces, the rest are still hardcoded light. Fold this into [AppTheme] once
+/// the app ships a real dark theme.
 class InkPalette {
   const InkPalette({
     required this.isDark,
@@ -107,10 +111,16 @@ class InkPalette {
     ),
   );
 
-  /// Follows the OS setting and rebuilds with it, since [MediaQuery] is an
-  /// inherited widget.
-  static InkPalette of(BuildContext context) =>
-      MediaQuery.platformBrightnessOf(context) == Brightness.dark
-      ? _dark
-      : _light;
+  /// Follows the user's [ThemeController] choice, falling back to the OS
+  /// setting when that choice is "Auto".
+  ///
+  /// The OS path reads [MediaQuery], so it rebuilds when the device flips; an
+  /// explicit Light/Dark choice rebuilds the app from the notifier instead.
+  static InkPalette of(BuildContext context) {
+    final mode = AppearanceScope.modeOf(context);
+    final dark = mode == ThemeMode.system
+        ? MediaQuery.platformBrightnessOf(context) == Brightness.dark
+        : mode == ThemeMode.dark;
+    return dark ? _dark : _light;
+  }
 }

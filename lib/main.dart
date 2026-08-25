@@ -7,10 +7,19 @@ import 'package:dentpal/product/products_module.dart';
 import 'package:dentpal/product/pages/edit_product_page.dart';
 import 'package:dentpal/product/pages/store_page.dart';
 import 'package:dentpal/profile/pages/seller_listings_page.dart';
+import 'package:dentpal/profile/pages/settings/settings_page.dart';
+import 'package:dentpal/profile/pages/chats_page.dart';
+import 'package:dentpal/profile/pages/chat_detail_page.dart';
+import 'package:dentpal/profile/pages/shipping_addresses_page.dart';
+import 'package:dentpal/profile/pages/settings/manage_sub_accounts_page.dart';
+import 'package:dentpal/core/models/sub_account_model.dart';
+import 'package:dentpal/profile/models/shipping_address.dart';
 import 'package:dentpal/auth_wrapper.dart';
 import 'package:dentpal/home_page.dart';
 import 'package:dentpal/login_page.dart';
 import 'package:dentpal/core/app_theme/app_theme.dart';
+import 'package:dentpal/core/app_theme/theme_controller.dart';
+import 'package:dentpal/core/widgets/app_shell.dart';
 import 'package:dentpal/core/services/session_cache.dart';
 import 'package:dentpal/services/deep_link_service.dart';
 import 'package:dentpal/services/notification_service.dart';
@@ -78,6 +87,10 @@ void main() async {
     AppLogger.i('Skipping notification service (running on web)');
   }
 
+  // Restore the saved appearance before the first frame, so the app never
+  // flashes the wrong one on launch.
+  await ThemeController.instance.load();
+
   runApp(const MyApp());
 }
 
@@ -90,6 +103,15 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The whole app is rebuilt when the appearance changes, so both the
+    // Material theme and every InkPalette surface flip together.
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: ThemeController.instance,
+      builder: (context, themeMode, _) => _buildApp(context, themeMode),
+    );
+  }
+
+  Widget _buildApp(BuildContext context, ThemeMode themeMode) {
     // Set the navigator key in NotificationService for push notification navigation
     NotificationService.setNavigatorKey(navigatorKey);
 
@@ -99,8 +121,10 @@ class MyApp extends StatelessWidget {
     final materialApp = MaterialApp(
       title: 'DentPal',
       theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: themeMode,
       navigatorKey: navigatorKey,
-      navigatorObservers: [DebugNavigatorObserver()],
+      navigatorObservers: [DebugNavigatorObserver(), ShellUrlObserver()],
       initialRoute: _getInitialRoute(),
       routes: {
         '/': (context) => const HomePage(),
@@ -113,6 +137,10 @@ class MyApp extends StatelessWidget {
         '/cart': (context) => const CartPage(),
         '/add-product': (context) => const AddProductPage(),
         '/seller-listings': (context) => const SellerListingsPage(),
+        '/profile/settings': (context) => const SettingsPage(),
+        '/profile/chats': (context) => const ChatsPage(),
+        '/profile/address': (context) => const ShippingAddressesPage(),
+        '/profile/sub-accounts': (context) => const ManageSubAccountsPage(),
         '/privacy-policy': (context) => const PublicPrivacyPolicyPage(),
         '/terms-of-service': (context) => const PublicTermsOfServicePage(),
         '/support-url': (context) => const PublicSupportPage(),
@@ -138,6 +166,76 @@ class MyApp extends StatelessWidget {
           }
         }
 
+        // One conversation: /profile/chats/<chatRoomId>.
+        //
+        // In-app pushes hand the counterparty over in `arguments` so the header
+        // is right on the first frame; a pasted or reloaded link has none, and
+        // ChatDetailPage reads them off the room instead.
+        const chatPrefix = '/profile/chats/';
+        if (settings.name?.startsWith(chatPrefix) ?? false) {
+          final chatRoomId = settings.name!.substring(chatPrefix.length);
+          if (chatRoomId.isNotEmpty) {
+            final args = settings.arguments as Map<String, dynamic>?;
+            return MaterialPageRoute(
+              settings: settings,
+              builder: (context) => ChatDetailPage(
+                chatRoomId: chatRoomId,
+                otherUserId: args?['otherUserId'] as String?,
+                otherUserName: args?['otherUserName'] as String?,
+                otherUserShopName: args?['otherUserShopName'] as String?,
+              ),
+            );
+          }
+        }
+
+        // The address editor. Adding needs nothing; editing needs to know which
+        // address, and the path deliberately does not say — so it travels in
+        // `arguments`.
+        if (settings.name == '/profile/address/add') {
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => const AddEditAddressPage(),
+          );
+        }
+        if (settings.name == '/profile/address/edit') {
+          final address = settings.arguments as ShippingAddress?;
+          // Null means the URL was opened cold rather than pushed from a card,
+          // so there is no address to edit. Returning null drops just this
+          // segment and leaves the buyer on the list underneath it.
+          if (address == null) return null;
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => AddEditAddressPage(address: address),
+          );
+        }
+
+        // The assistant editor, same shape as the address one: adding needs
+        // nothing, editing needs to know which assistant, and the path
+        // deliberately does not say — so it travels in `arguments`.
+        if (settings.name == '/profile/sub-accounts/add') {
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => const SubAccountEditorPage(),
+          );
+        }
+        if (settings.name == '/profile/sub-accounts/edit') {
+          final subAccount = settings.arguments as SubAccount?;
+          // Null means the URL was opened cold rather than pushed from a card,
+          // so there is nobody to edit. Returning null drops just this segment
+          // and leaves the buyer on the list underneath it.
+          if (subAccount == null) return null;
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => SubAccountEditorPage(subAccount: subAccount),
+          );
+        }
+
+        // '/profile' itself is a shell tab, not a route — it only turns up here
+        // as an intermediate segment while Navigator builds the stack for a
+        // deep link like '/profile/chats/<id>'. Null skips it; falling through
+        // to the AuthWrapper default would wedge a stray page mid-stack.
+        if (settings.name == '/profile') return null;
+
         // Handle dynamic product routes
         if (settings.name?.startsWith('/product/') ?? false) {
           final productId = settings.name!.split('/')[2];
@@ -152,8 +250,8 @@ class MyApp extends StatelessWidget {
           final sellerId = settings.name!.split('/')[2];
           final args = settings.arguments as Map<String, dynamic>?;
           final sellerData = args?['sellerData'] as Map<String, dynamic>?;
-          final initialCategoryIds =
-              (args?['initialCategoryIds'] as List?)?.cast<String>();
+          final initialCategoryIds = (args?['initialCategoryIds'] as List?)
+              ?.cast<String>();
           final initialSubCategoryIds =
               (args?['initialSubCategoryIds'] as List?)?.cast<String>();
 
@@ -221,10 +319,14 @@ class MyApp extends StatelessWidget {
         // But during signup flow, ignore unknown routes to prevent
         // navigation away from the signup screen (e.g. from reCAPTCHA callback URLs)
         if (SignupState.isInSignupFlow) {
-          AppLogger.d('onGenerateRoute: Unknown route "${settings.name}" ignored during signup flow');
+          AppLogger.d(
+            'onGenerateRoute: Unknown route "${settings.name}" ignored during signup flow',
+          );
           return null;
         }
-        AppLogger.d('onGenerateRoute: Unknown route "${settings.name}" -> AuthWrapper');
+        AppLogger.d(
+          'onGenerateRoute: Unknown route "${settings.name}" -> AuthWrapper',
+        );
         return MaterialPageRoute(
           settings: settings,
           builder: (context) => const AuthWrapper(),
@@ -233,15 +335,22 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
     );
 
+    // Publishes the appearance into the tree so every route below rebuilds
+    // when it changes, rather than only when the OS brightness flips.
+    final app = AppearanceScope(
+      controller: ThemeController.instance,
+      child: materialApp,
+    );
+
     // Wrap with InAppNotificationWrapper only for mobile platforms
     if (!kIsWeb) {
       return InAppNotificationWrapper(
         notificationStream: NotificationService().messageStream,
-        child: materialApp,
+        child: app,
       );
     }
 
-    return materialApp;
+    return app;
   }
 
   // Helper method to get product for editing
@@ -253,13 +362,24 @@ class MyApp extends StatelessWidget {
   String _getInitialRoute() {
     if (kIsWeb) {
       final currentPath = getCurrentPath();
+
+      // A shell destination is a tab, not a route of its own. Handing '/cart'
+      // to `initialRoute` would make Navigator build the stack ['/', '/cart']
+      // and stack a second, back-buttoned copy of the app over the first — so
+      // note which tab was asked for and let AppShell open it on mount.
+      final shellTab = shellTabForPath(currentPath);
+      if (shellTab != null) {
+        pendingShellTab = shellTab;
+        return '/';
+      }
+
       // If we're on a payment route, return it directly
       if (currentPath == '/payment-success' ||
           currentPath == '/payment-failed') {
         return currentPath;
       }
       // For other routes, check if they're valid
-      final validRoutes = ['/products', '/cart', '/add-product'];
+      final validRoutes = ['/products', '/add-product'];
       if (validRoutes.contains(currentPath)) {
         return currentPath;
       }
@@ -269,6 +389,29 @@ class MyApp extends StatelessWidget {
       }
       // For store routes
       if (currentPath.startsWith('/store/')) {
+        return currentPath;
+      }
+      // Pages pushed from Profile — Settings, Chats, Addresses. Unlike a shell
+      // destination these are real routes, so the path is handed straight to
+      // Navigator, which builds the stack segment by segment: '/profile/chats'
+      // under '/profile/chats/<id>', so Back walks up the same way it would
+      // have in the app. Profile is marked pending so the shell underneath is
+      // on the right tab once that stack unwinds.
+      if (currentPath.startsWith('/profile/')) {
+        pendingShellTab = ShellTab.profile;
+        // '/…/edit' names no record — which one to edit travels in route
+        // arguments, and a cold load has none. Handing the path to Navigator
+        // anyway means its last segment builds to null, and Navigator answers
+        // that by reporting 'Could not navigate to initial route', disposing
+        // every route it had already built, and dropping the buyer on Home.
+        // Open the list the editor belongs to instead.
+        const editSuffix = '/edit';
+        if (currentPath.endsWith(editSuffix)) {
+          return currentPath.substring(
+            0,
+            currentPath.length - editSuffix.length,
+          );
+        }
         return currentPath;
       }
     }

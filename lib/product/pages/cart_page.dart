@@ -11,6 +11,7 @@ import 'checkout_page.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import '../../core/app_theme/ink_palette.dart';
 import '../../core/app_theme/theme_utils.dart';
+import '../../core/widgets/app_page_header.dart';
 import '../../core/widgets/app_shell.dart';
 import 'package:dentpal/utils/currency_formatter.dart';
 
@@ -23,7 +24,9 @@ class CartPage extends StatefulWidget {
   // Static method to mark the cart as needing refresh (only when items are actually added/removed)
   static void markCartAsStale() {
     _CartPageState._wasPopped = true;
-    AppLogger.d(" Cart has been marked as stale, will refresh when user returns");
+    AppLogger.d(
+      " Cart has been marked as stale, will refresh when user returns",
+    );
   }
 
   // Static method to mark cart as stale specifically for item additions
@@ -63,14 +66,17 @@ class CartPage extends StatefulWidget {
 }
 
 class _CartPageState extends State<CartPage>
-    with AutomaticKeepAliveClientMixin<CartPage> {
+    with AutomaticKeepAliveClientMixin<CartPage>, ShellTabResume<CartPage> {
   // Static instance for singleton pattern
   static _CartPageState? _instance;
 
   // Flag to indicate the cart needs a refresh
   static bool _wasPopped = false;
 
-  final CartService _cartService = CartService();
+  // Lazy: CartService grabs Firestore in its own field initialiser, so building
+  // it eagerly meant the page could not be laid out without a live Firebase
+  // app. Resolved inside _loadSellerGroups, where a failure is already handled.
+  late final CartService _cartService = CartService();
   Future<List<SellerGroup>>? _sellerGroupsFuture;
   List<SellerGroup>? _cachedSellerGroups;
   CartSummary? _cartSummary;
@@ -105,19 +111,28 @@ class _CartPageState extends State<CartPage>
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
+  ShellTab get shellTab => ShellTab.cart;
 
-    // Only refresh if we actually need to (not on normal navigation)
-    if (_shouldRefreshCart()) {
-      AppLogger.d(
-        "Cart needs refresh, refreshing data",
-      );
-      _refreshCart();
-      _wasPopped = false;
-    } else {
-      AppLogger.d("Cart page shown via navigation, using cached data");
+  /// Re-check the cart each time the buyer comes back to this tab.
+  ///
+  /// This check used to live in `didChangeDependencies`, which was wrong in
+  /// both directions: it fired once at mount — when [initState] had just
+  /// started a load and `_cachedSellerGroups` was still null, so every mount
+  /// loaded the cart twice — and never fired again, because switching tabs
+  /// changes no inherited dependency. Returning to the tab is the moment that
+  /// actually matters, since that is when another page may have added an item.
+  ///
+  /// Still conditional: within the cache window and with nothing marked stale
+  /// this does no work at all, so an ordinary tab switch costs nothing.
+  @override
+  void onShellTabResumed() {
+    if (!_shouldRefreshCart()) {
+      AppLogger.d('Cart resumed with fresh cache, nothing to do');
+      return;
     }
+    AppLogger.d('Cart needs refresh, refreshing data');
+    _refreshCart();
+    _wasPopped = false;
   }
 
   // Method to refresh the cart data
@@ -153,12 +168,14 @@ class _CartPageState extends State<CartPage>
 
   Future<List<SellerGroup>> _loadSellerGroups() async {
     final stopwatch = Stopwatch()..start();
-    
+
     // Check if we have valid cached data
     if (_cachedSellerGroups != null && _lastCacheTime != null) {
       final cacheAge = DateTime.now().difference(_lastCacheTime!);
       if (cacheAge < _cacheDuration) {
-        AppLogger.d("Using cached seller groups: ${_cachedSellerGroups!.length} (age: ${cacheAge.inSeconds}s)");
+        AppLogger.d(
+          "Using cached seller groups: ${_cachedSellerGroups!.length} (age: ${cacheAge.inSeconds}s)",
+        );
         _updateCartSummary();
         return _cachedSellerGroups!;
       } else {
@@ -168,7 +185,9 @@ class _CartPageState extends State<CartPage>
       }
     } else if (_cachedSellerGroups != null) {
       // Have cached data but no timestamp - still use it for better UX
-      AppLogger.d("Using cached seller groups: ${_cachedSellerGroups!.length} (no timestamp)");
+      AppLogger.d(
+        "Using cached seller groups: ${_cachedSellerGroups!.length} (no timestamp)",
+      );
       _updateCartSummary();
       return _cachedSellerGroups!;
     }
@@ -180,7 +199,7 @@ class _CartPageState extends State<CartPage>
 
     try {
       final sellerGroups = await _cartService.getCartItemsGroupedBySeller();
-      
+
       stopwatch.stop();
       AppLogger.d("Cart loaded in ${stopwatch.elapsedMilliseconds}ms");
 
@@ -195,8 +214,10 @@ class _CartPageState extends State<CartPage>
       return sellerGroups;
     } catch (e) {
       stopwatch.stop();
-      AppLogger.d("Cart loading failed after ${stopwatch.elapsedMilliseconds}ms: $e");
-      
+      AppLogger.d(
+        "Cart loading failed after ${stopwatch.elapsedMilliseconds}ms: $e",
+      );
+
       setState(() {
         _isLoading = false;
       });
@@ -215,7 +236,7 @@ class _CartPageState extends State<CartPage>
   bool _shouldRefreshCart() {
     // Always refresh if no cached data
     if (_cachedSellerGroups == null) return true;
-    
+
     // Check cache age
     if (_lastCacheTime != null) {
       final cacheAge = DateTime.now().difference(_lastCacheTime!);
@@ -224,36 +245,37 @@ class _CartPageState extends State<CartPage>
         return true;
       }
     }
-    
+
     // Only refresh if explicitly marked as stale
     if (_wasPopped) {
       AppLogger.d("Cart marked as stale, should refresh");
       return true;
     }
-    
+
     return false;
   }
 
   // Cache-first refresh with change detection
   Future<void> _handleRefresh() async {
     AppLogger.d("Cart refresh started - cache-first approach");
-    
+
     try {
       // Store current cached data for comparison
       final currentSellerGroups = _cachedSellerGroups;
-      
+
       // Fetch new data from API
       final newSellerGroups = await _cartService.getCartItemsGroupedBySeller();
-      
+
       // Compare with cached data
-      if (currentSellerGroups != null && _hasSellerGroupsDataChanged(currentSellerGroups, newSellerGroups)) {
+      if (currentSellerGroups != null &&
+          _hasSellerGroupsDataChanged(currentSellerGroups, newSellerGroups)) {
         AppLogger.d("Cart data has changed, updating UI and cache");
-        
+
         // Update cache and UI
         _cachedSellerGroups = newSellerGroups;
         _lastCacheTime = DateTime.now();
         _updateCartSummary();
-        
+
         if (mounted) {
           setState(() {
             // UI will rebuild with new data
@@ -262,10 +284,9 @@ class _CartPageState extends State<CartPage>
       } else {
         AppLogger.d("Cart data unchanged, keeping existing cache");
       }
-      
+
       // Reset the stale flag since we've refreshed
       _wasPopped = false;
-      
     } catch (e) {
       AppLogger.d("Error during cart refresh: $e");
       rethrow;
@@ -273,65 +294,78 @@ class _CartPageState extends State<CartPage>
   }
 
   // Helper method to compare seller groups data
-  bool _hasSellerGroupsDataChanged(List<SellerGroup> oldData, List<SellerGroup> newData) {
+  bool _hasSellerGroupsDataChanged(
+    List<SellerGroup> oldData,
+    List<SellerGroup> newData,
+  ) {
     if (oldData.length != newData.length) {
-      AppLogger.d("Seller groups count changed: ${oldData.length} -> ${newData.length}");
+      AppLogger.d(
+        "Seller groups count changed: ${oldData.length} -> ${newData.length}",
+      );
       return true;
     }
-    
+
     // Create maps for easier comparison
     final oldMap = <String, SellerGroup>{};
     final newMap = <String, SellerGroup>{};
-    
+
     for (var group in oldData) {
       oldMap[group.sellerId] = group;
     }
-    
+
     for (var group in newData) {
       newMap[group.sellerId] = group;
     }
-    
+
     // Check if seller IDs are the same
     if (oldMap.keys.toSet().difference(newMap.keys.toSet()).isNotEmpty ||
         newMap.keys.toSet().difference(oldMap.keys.toSet()).isNotEmpty) {
       AppLogger.d("Seller groups composition changed");
       return true;
     }
-    
+
     // Compare each seller group's items
     for (var sellerId in oldMap.keys) {
       final oldGroup = oldMap[sellerId]!;
       final newGroup = newMap[sellerId]!;
-      
+
       if (oldGroup.items.length != newGroup.items.length) {
-        AppLogger.d("Items count changed for seller $sellerId: ${oldGroup.items.length} -> ${newGroup.items.length}");
+        AppLogger.d(
+          "Items count changed for seller $sellerId: ${oldGroup.items.length} -> ${newGroup.items.length}",
+        );
         return true;
       }
-      
+
       // Create maps for cart items comparison
       final oldItemsMap = <String, CartItem>{};
       final newItemsMap = <String, CartItem>{};
-      
+
       for (var item in oldGroup.items) {
         oldItemsMap[item.cartItemId] = item;
       }
-      
+
       for (var item in newGroup.items) {
         newItemsMap[item.cartItemId] = item;
       }
-      
+
       // Check if cart item IDs are the same
-      if (oldItemsMap.keys.toSet().difference(newItemsMap.keys.toSet()).isNotEmpty ||
-          newItemsMap.keys.toSet().difference(oldItemsMap.keys.toSet()).isNotEmpty) {
+      if (oldItemsMap.keys
+              .toSet()
+              .difference(newItemsMap.keys.toSet())
+              .isNotEmpty ||
+          newItemsMap.keys
+              .toSet()
+              .difference(oldItemsMap.keys.toSet())
+              .isNotEmpty) {
         AppLogger.d("Cart items composition changed for seller $sellerId");
         return true;
       }
-      
+
       // Compare individual cart items
       for (var cartItemId in oldItemsMap.keys) {
         final oldItem = oldItemsMap[cartItemId]!;
         final newItem = newItemsMap[cartItemId]!;
-        
+
         if (oldItem.quantity != newItem.quantity ||
             oldItem.isSelected != newItem.isSelected ||
             oldItem.productPrice != newItem.productPrice ||
@@ -342,7 +376,7 @@ class _CartPageState extends State<CartPage>
         }
       }
     }
-    
+
     AppLogger.d("No changes detected in seller groups data");
     return false;
   }
@@ -411,12 +445,7 @@ class _CartPageState extends State<CartPage>
     } catch (e) {
       AppLogger.d("Error updating item: $e");
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error updating item: $e'),
-            backgroundColor: _danger,
-          ),
-        );
+        _showSnack('Error updating item: $e', tone: _danger);
       }
     }
   }
@@ -445,16 +474,12 @@ class _CartPageState extends State<CartPage>
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Item removed from cart')));
+        _showSnack('Item removed from cart');
       }
     } catch (e) {
       AppLogger.d("Error removing item: $e");
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error removing item: $e')));
+        _showSnack('Error removing item: $e', tone: _danger);
       }
     }
   }
@@ -479,7 +504,9 @@ class _CartPageState extends State<CartPage>
       // Save to Firestore in background
       try {
         await _cartService.updateItemSelection(item.cartItemId, isSelected);
-        AppLogger.d("Item selection saved to Firestore: ${item.cartItemId} = $isSelected");
+        AppLogger.d(
+          "Item selection saved to Firestore: ${item.cartItemId} = $isSelected",
+        );
       } catch (e) {
         AppLogger.d("Error saving item selection to Firestore: $e");
         // Optionally revert the local state if Firestore update fails
@@ -505,8 +532,10 @@ class _CartPageState extends State<CartPage>
   void _onToggleGroupSelection(SellerGroup sellerGroup) async {
     if (_cachedSellerGroups != null) {
       // Store original states in case we need to revert
-      final originalStates = sellerGroup.items.map((item) => item.isSelected).toList();
-      
+      final originalStates = sellerGroup.items
+          .map((item) => item.isSelected)
+          .toList();
+
       // Update local state immediately for responsive UI
       setState(() {
         sellerGroup.toggleAllItems();
@@ -519,9 +548,11 @@ class _CartPageState extends State<CartPage>
         for (var item in sellerGroup.items) {
           itemSelections[item.cartItemId] = item.isSelected;
         }
-        
+
         await _cartService.batchUpdateItemSelections(itemSelections);
-        AppLogger.d("Group selection saved to Firestore for seller: ${sellerGroup.sellerName}");
+        AppLogger.d(
+          "Group selection saved to Firestore for seller: ${sellerGroup.sellerName}",
+        );
       } catch (e) {
         AppLogger.d("Error saving group selection to Firestore: $e");
         // Revert to original states if Firestore update fails
@@ -538,11 +569,10 @@ class _CartPageState extends State<CartPage>
     }
   }
 
-
   // ── Layout ───────────────────────────────────────────────────────────────
 
   /// Widest the two-column layout grows to before it centres.
-  static const double _kMaxContentWidth = 1100;
+  static const double _kMaxContentWidth = AppLayout.maxContentWidth;
 
   /// The money column, per the reference design.
   static const double _kSummaryWidth = 360;
@@ -556,6 +586,31 @@ class _CartPageState extends State<CartPage>
 
   Color get _warning => ink.amber;
 
+  /// Every message this page raises, in one shape.
+  ///
+  /// These were nine snackbars in four different styles — some floating with a
+  /// rounded corner, some square and flush to the bottom edge, some with no
+  /// colour at all — so one page could tell you two things and look like two
+  /// apps. Amber carries its own ink, which white text does not survive in dark
+  /// mode.
+  void _showSnack(String message, {Color? tone, int seconds = 3}) {
+    final background = tone ?? ink.emerald;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: TextStyle(
+            color: background == ink.amber ? ink.onAmber : Colors.white,
+          ),
+        ),
+        backgroundColor: background,
+        duration: Duration(seconds: seconds),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
@@ -568,11 +623,19 @@ class _CartPageState extends State<CartPage>
       backgroundColor: ink.bg,
       body: SafeArea(
         bottom: false,
-        child: Column(
-          children: [
-            _buildHeader(),
-            Expanded(child: _buildBody(isWide)),
-          ],
+        // The whole page shares one centred column, header included. It used to
+        // sit outside it, so on a wide window the title hugged the side rail
+        // while the cards below started an inch further in.
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _kMaxContentWidth),
+            child: Column(
+              children: [
+                _buildHeader(),
+                Expanded(child: _buildBody(isWide)),
+              ],
+            ),
+          ),
         ),
       ),
       // On a phone the total and the action that commits to it ride above the
@@ -587,47 +650,22 @@ class _CartPageState extends State<CartPage>
   Widget _buildHeader() {
     final count = _cartSummary?.selectedItemsCount ?? 0;
     final hasItems = (_cachedSellerGroups?.isNotEmpty ?? false);
-    final canPop = Navigator.of(context).canPop();
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
-      decoration: BoxDecoration(
-        color: ink.bg,
-        border: Border(bottom: BorderSide(color: ink.border)),
-      ),
-      child: Row(
-        children: [
-          if (canPop)
-            IconButton(
-              onPressed: () => Navigator.of(context).maybePop(),
-              icon: const Icon(Icons.arrow_back),
-              color: ink.text,
-              tooltip: 'Back',
-            )
-          else
-            const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              count > 0 ? 'Cart ($count)' : 'Cart',
-              textAlign: TextAlign.center,
-              style: AppTextStyles.titleLarge.copyWith(
-                color: ink.text,
-                fontWeight: FontWeight.w800,
-                fontSize: 19,
-              ),
-            ),
-          ),
-          if (hasItems)
-            IconButton(
+    return AppPageHeader(
+      title: 'Cart',
+      subtitle: !hasItems
+          ? 'Your cart is empty'
+          : count > 0
+          ? '$count item${count == 1 ? '' : 's'} selected'
+          : 'Nothing selected',
+      trailing: hasItems
+          ? IconButton(
               onPressed: _showClearCartConfirmation,
               icon: const Icon(Icons.delete_outline, size: 21),
               color: ink.text.withValues(alpha: 0.55),
               tooltip: 'Clear cart',
             )
-          else
-            const SizedBox(width: 8),
-        ],
-      ),
+          : null,
     );
   }
 
@@ -666,7 +704,12 @@ class _CartPageState extends State<CartPage>
       backgroundColor: ink.surface,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.fromLTRB(16, 14, isWide ? 8 : 16, 24),
+        padding: EdgeInsets.fromLTRB(
+          AppLayout.gutter,
+          14,
+          isWide ? 8 : AppLayout.gutter,
+          24,
+        ),
         children: [
           _buildShippingNotice(),
           const SizedBox(height: 14),
@@ -681,23 +724,18 @@ class _CartPageState extends State<CartPage>
 
     if (!isWide) return list;
 
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: _kMaxContentWidth),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: list),
-            SizedBox(
-              width: _kSummaryWidth,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(8, 14, 16, 24),
-                child: _buildSummaryCard(includeButton: true),
-              ),
-            ),
-          ],
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: list),
+        SizedBox(
+          width: _kSummaryWidth,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(8, 14, AppLayout.gutter, 24),
+            child: _buildSummaryCard(includeButton: true),
+          ),
         ),
-      ),
+      ],
     );
   }
 
@@ -806,7 +844,9 @@ class _CartPageState extends State<CartPage>
           const SizedBox(height: 10),
           _summaryRow(
             'Shipping',
-            shippingVoucherLabels.isNotEmpty ? 'Voucher applied' : 'At checkout',
+            shippingVoucherLabels.isNotEmpty
+                ? 'Voucher applied'
+                : 'At checkout',
             good: shippingVoucherLabels.isNotEmpty,
             muted: shippingVoucherLabels.isEmpty,
           ),
@@ -922,7 +962,8 @@ class _CartPageState extends State<CartPage>
         _buildNotice(
           icon: Icons.warning_amber_rounded,
           tone: _danger,
-          text: 'Some selected items exceed available stock. '
+          text:
+              'Some selected items exceed available stock. '
               'Please adjust quantities.',
         ),
       ],
@@ -931,7 +972,8 @@ class _CartPageState extends State<CartPage>
         _buildNotice(
           icon: Icons.warning_amber_rounded,
           tone: _danger,
-          text: 'Some selected items are no longer available. '
+          text:
+              'Some selected items are no longer available. '
               'Please remove them to continue.',
         ),
       ],
@@ -940,7 +982,8 @@ class _CartPageState extends State<CartPage>
         _buildNotice(
           icon: Icons.info_outline,
           tone: _warning,
-          text: 'Sub accounts cannot start a checkout. Please ask the main '
+          text:
+              'Sub accounts cannot start a checkout. Please ask the main '
               'account holder to complete the purchase.',
         ),
       ],
@@ -1283,7 +1326,6 @@ class _CartPageState extends State<CartPage>
     );
   }
 
-
   /// Compute the total voucher discount across all selected sellers.
   double _calculateTotalCartDiscount() {
     if (_cachedSellerGroups == null) return 0.0;
@@ -1295,14 +1337,16 @@ class _CartPageState extends State<CartPage>
       final sellerSubtotal = group.selectedItemsTotal;
       final discountType = voucher['discountType'] as String? ?? '';
       final discountValue = (voucher['discountValue'] as num? ?? 0).toDouble();
-      final minimumOrderAmount = (voucher['minimumOrderAmount'] as num? ?? 0).toDouble();
+      final minimumOrderAmount = (voucher['minimumOrderAmount'] as num? ?? 0)
+          .toDouble();
       final maximumSpend = (voucher['maximumSpend'] as num?)?.toDouble();
 
       if (sellerSubtotal < minimumOrderAmount) continue;
 
       if (discountType == 'percentage') {
         double discount = sellerSubtotal * (discountValue / 100.0);
-        if (maximumSpend != null && discount > maximumSpend) discount = maximumSpend;
+        if (maximumSpend != null && discount > maximumSpend)
+          discount = maximumSpend;
         total += discount.clamp(0.0, sellerSubtotal);
       } else if (discountType == 'fixed') {
         total += discountValue.clamp(0.0, sellerSubtotal);
@@ -1344,29 +1388,17 @@ class _CartPageState extends State<CartPage>
     // Check if the user is a sub account without checkout permission
     if (SubAccountSessionManager.isSubAccount &&
         !SubAccountSessionManager.canCheckout) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(
-            'Sub accounts are not allowed to initiate checkout. Please ask the main account holder to complete the purchase.',
-          ),
-          backgroundColor: _warning,
-          duration: const Duration(seconds: 4),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
+      _showSnack(
+        'Sub accounts are not allowed to initiate checkout. Please ask the '
+        'main account holder to complete the purchase.',
+        tone: _warning,
+        seconds: 4,
       );
       return;
     }
 
     if (_cartSummary == null || !_cartSummary!.hasSelectedItems) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Please select items to checkout'),
-          backgroundColor: _warning,
-        ),
-      );
+      _showSnack('Please select items to checkout', tone: _warning);
       return;
     }
 
@@ -1377,15 +1409,13 @@ class _CartPageState extends State<CartPage>
           .take(3)
           .map((item) => item.productName ?? 'Unknown')
           .join(', ');
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Cannot checkout: ${unavailableItems.length} item(s) are no longer available${unavailableItems.length <= 3 ? ' ($itemNames)' : ''}. Please remove them from your cart.',
-          ),
-          backgroundColor: _danger,
-          duration: const Duration(seconds: 4),
-        ),
+
+      _showSnack(
+        'Cannot checkout: ${unavailableItems.length} item(s) are no longer '
+        'available${unavailableItems.length <= 3 ? ' ($itemNames)' : ''}. '
+        'Please remove them from your cart.',
+        tone: _danger,
+        seconds: 4,
       );
       return;
     }
@@ -1397,15 +1427,12 @@ class _CartPageState extends State<CartPage>
           .take(3)
           .map((item) => item.productName ?? 'Unknown')
           .join(', ');
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Cannot checkout: ${insufficientItems.length} item(s) exceed available stock${insufficientItems.length <= 3 ? ' ($itemNames)' : ''}',
-          ),
-          backgroundColor: _danger,
-          duration: const Duration(seconds: 4),
-        ),
+
+      _showSnack(
+        'Cannot checkout: ${insufficientItems.length} item(s) exceed available '
+        'stock${insufficientItems.length <= 3 ? ' ($itemNames)' : ''}',
+        tone: _danger,
+        seconds: 4,
       );
       return;
     }
@@ -1426,12 +1453,7 @@ class _CartPageState extends State<CartPage>
     }
 
     if (selectedItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('No items selected for checkout'),
-          backgroundColor: _warning,
-        ),
-      );
+      _showSnack('No items selected for checkout', tone: _warning);
       return;
     }
 
@@ -1440,16 +1462,18 @@ class _CartPageState extends State<CartPage>
         .where((group) => group.hasSelectedItems)
         .map((group) => group.sellerId)
         .toSet();
-    final relevantDiscountVouchers = Map<String, Map<String, dynamic>?>.fromEntries(
-      _selectedDiscountVouchers.entries.where(
-        (e) => selectedSellerIds.contains(e.key),
-      ),
-    );
-    final relevantShippingVouchers = Map<String, Map<String, dynamic>?>.fromEntries(
-      _selectedShippingVouchers.entries.where(
-        (e) => selectedSellerIds.contains(e.key),
-      ),
-    );
+    final relevantDiscountVouchers =
+        Map<String, Map<String, dynamic>?>.fromEntries(
+          _selectedDiscountVouchers.entries.where(
+            (e) => selectedSellerIds.contains(e.key),
+          ),
+        );
+    final relevantShippingVouchers =
+        Map<String, Map<String, dynamic>?>.fromEntries(
+          _selectedShippingVouchers.entries.where(
+            (e) => selectedSellerIds.contains(e.key),
+          ),
+        );
 
     // Navigate to checkout page
     Navigator.push(
@@ -1526,15 +1550,11 @@ class _CartPageState extends State<CartPage>
                 await _cartService.clearCart();
                 _refreshCart();
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Cart cleared successfully')),
-                  );
+                  _showSnack('Cart cleared');
                 }
               } catch (e) {
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error clearing cart: $e')),
-                  );
+                  _showSnack('Error clearing cart: $e', tone: _danger);
                 }
               }
             },

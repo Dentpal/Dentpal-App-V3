@@ -7,6 +7,8 @@ import 'package:image_cropper/image_cropper.dart';
 import 'package:image/image.dart' as img;
 import 'package:dentpal/utils/app_logger.dart';
 import '../../core/app_theme/app_colors.dart';
+import '../../core/app_theme/app_text_styles.dart';
+import '../../core/app_theme/ink_palette.dart';
 
 class ImageUploadService {
   final FirebaseStorage _storage = FirebaseStorage.instance;
@@ -259,44 +261,111 @@ class ImageUploadService {
     }
   }
 
-  /// Show image source selection dialog
+  /// "Camera or gallery?", in the marketplace sheet shape.
+  ///
+  /// Carried no colours at all before, so it fell back to the Material theme —
+  /// which is still the light one — and opened as a white sheet over pages that
+  /// had already gone dark.
   Future<ImageSource?> showImageSourceDialog(BuildContext context) async {
+    final ink = InkPalette.of(context);
+
     return await showModalBottomSheet<ImageSource>(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => SafeArea(
-        child: Wrap(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Select Image Source',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  ListTile(
-                    leading: const Icon(Icons.camera_alt),
-                    title: const Text('Camera'),
-                    onTap: () => Navigator.pop(context, ImageSource.camera),
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.photo_library),
-                    title: const Text('Gallery'),
-                    onTap: () => Navigator.pop(context, ImageSource.gallery),
-                  ),
-                  const SizedBox(height: 16),
-                ],
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => Container(
+        decoration: BoxDecoration(
+          color: ink.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border.all(color: ink.border),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                margin: const EdgeInsets.only(top: 10, bottom: 14),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: ink.text.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
-          ],
+              _imageSourceRow(
+                ink: ink,
+                icon: Icons.photo_camera_outlined,
+                label: 'Camera',
+                detail: 'Take a new photo',
+                onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
+              ),
+              _imageSourceRow(
+                ink: ink,
+                icon: Icons.photo_library_outlined,
+                label: 'Gallery',
+                detail: 'Choose one you already have',
+                onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
+              ),
+              const SizedBox(height: 14),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// One option in the sheet, in the icon-tile row shape the menus use.
+  Widget _imageSourceRow({
+    required InkPalette ink,
+    required IconData icon,
+    required String label,
+    required String detail,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: ink.emerald.withValues(
+                    alpha: ink.isDark ? 0.16 : 0.11,
+                  ),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(icon, color: ink.emerald, size: 19),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: ink.text,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      detail,
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: ink.text.withValues(alpha: 0.5),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
