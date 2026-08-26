@@ -4,9 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart' show kIsWeb; // Added for web detection
-import '../../../core/app_theme/app_colors.dart';
 import '../../../core/app_theme/app_text_styles.dart';
+import '../../../core/app_theme/ink_palette.dart';
+import '../../../core/app_theme/theme_utils.dart';
+import '../../../core/widgets/app_page_header.dart';
 import '../../../utils/app_logger.dart';
 
 enum VerificationStep {
@@ -16,6 +17,9 @@ enum VerificationStep {
   completed,
 }
 
+/// Moving the account to a different number, proving both ends along the way:
+/// the old number confirms it is really you, the new one confirms it is really
+/// yours.
 class ChangeMobilePage extends StatefulWidget {
   const ChangeMobilePage({super.key});
 
@@ -103,9 +107,11 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
       AppLogger.d('Error loading current phone number: $e');
     }
 
-    setState(() {
-      _isLoading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   String get _formattedNewPhoneNumber {
@@ -125,149 +131,136 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
     if (_currentPhoneNumber != null && _currentPhoneNumber!.startsWith('+63')) {
       return '0${_currentPhoneNumber!.substring(3)}';
     }
-    return _currentPhoneNumber ?? 'Loading...';
+    return _currentPhoneNumber ?? '—';
   }
+
+  // ── Palette ──────────────────────────────────────────────────────────────
+
+  InkPalette get ink => InkPalette.of(context);
+
+  /// Destructive red. [InkPalette] reserves amber for urgency, so danger needs
+  /// its own tone that still reads in both themes.
+  Color get _danger =>
+      ink.isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626);
+
+  Color get _muted => ink.text.withValues(alpha: 0.6);
+
+  /// A form reads best in a narrower column than a browse grid, so the fields
+  /// stop short of the page's full width — but it still centres inside the same
+  /// frame every other buyer surface uses.
+  static const double _formMaxWidth = 640;
+
+  static const EdgeInsets _listPadding = EdgeInsets.fromLTRB(
+    AppLayout.gutter,
+    4,
+    AppLayout.gutter,
+    32,
+  );
+
+  static const List<String> _stepLabels = [
+    'New number',
+    'Verify current',
+    'Verify new',
+    'Done',
+  ];
 
   @override
   Widget build(BuildContext context) {
-    final content = _isLoading
-        ? const Center(child: CircularProgressIndicator())
-        : SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
+    return Scaffold(
+      backgroundColor: ink.bg,
+      body: SafeArea(
+        bottom: false,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _formMaxWidth),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildStepIndicator(),
-                const SizedBox(height: 32),
-                _buildStepContent(),
+                AppPageHeader(
+                  title: 'Change phone number',
+                  subtitle: _currentStep == VerificationStep.completed
+                      ? 'All done'
+                      : 'Step ${_currentStep.index + 1} of 4 — '
+                            '${_stepLabels[_currentStep.index].toLowerCase()}',
+                  subtitleColor: _currentStep == VerificationStep.completed
+                      ? ink.emerald
+                      : null,
+                ),
+                Expanded(
+                  child: _isLoading && _currentPhoneNumber == null
+                      ? Center(
+                          child: CircularProgressIndicator(color: ink.emerald),
+                        )
+                      : ListView(
+                          padding: _listPadding,
+                          children: [
+                            _buildStepRail(),
+                            const SizedBox(height: 20),
+                            _buildStepContent(),
+                          ],
+                        ),
+                ),
               ],
             ),
-          );
-
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        toolbarHeight: 60,
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: AppColors.onSurface),
-          onPressed: () => Navigator.of(context).pop(),
+          ),
         ),
-        title: Row(
+      ),
+    );
+  }
+
+  // ── Progress ─────────────────────────────────────────────────────────────
+
+  /// Where you are in the four steps.
+  ///
+  /// This was four numbered circles joined by grey rules, with the labels on a
+  /// second row that never lined up with them. One rail of segments, with only
+  /// the step you are on named, says the same thing in a third of the height.
+  Widget _buildStepRail() {
+    final current = _currentStep.index;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            Icon(Icons.phone_outlined, color: AppColors.primary, size: 24),
-            const SizedBox(width: 8),
+            for (var i = 0; i < _stepLabels.length; i++) ...[
+              if (i > 0) const SizedBox(width: 6),
+              Expanded(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: i <= current ? ink.emerald : ink.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
             Text(
-              'Change Mobile Number',
-              style: AppTextStyles.titleLarge.copyWith(
+              _stepLabels[current],
+              style: AppTextStyles.bodySmall.copyWith(
+                color: ink.emerald,
                 fontWeight: FontWeight.w700,
+                fontSize: 12.5,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              '${current + 1}/${_stepLabels.length}',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: ink.text.withValues(alpha: 0.4),
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
               ),
             ),
           ],
         ),
-      ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final isWideWeb = kIsWeb && constraints.maxWidth > 800; // BREAKPOINT
-          if (isWideWeb) {
-            return Align(
-              alignment: Alignment.topCenter, // top-centered vertically
-              child: Padding(
-                padding: const EdgeInsets.only(top: 16), // slight top spacing
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 640), // MAX_WIDTH
-                  child: Material(color: Colors.transparent, child: content),
-                ),
-              ),
-            );
-          }
-          return content; // mobile & narrow web full width
-        },
-      ),
-    );
-  }
-
-  Widget _buildStepIndicator() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              _buildStepIcon(1, _currentStep.index >= 0),
-              _buildStepLine(_currentStep.index >= 1),
-              _buildStepIcon(2, _currentStep.index >= 1),
-              _buildStepLine(_currentStep.index >= 2),
-              _buildStepIcon(3, _currentStep.index >= 2),
-              _buildStepLine(_currentStep.index >= 3),
-              _buildStepIcon(4, _currentStep.index >= 3),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _buildStepLabel('New\nNumber'),
-              _buildStepLabel('Verify\nCurrent'),
-              _buildStepLabel('Verify\nNew'),
-              _buildStepLabel('Complete'),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStepIcon(int step, bool isActive) {
-    return Container(
-      width: 32,
-      height: 32,
-      decoration: BoxDecoration(
-        color: isActive ? AppColors.primary : AppColors.grey200,
-        shape: BoxShape.circle,
-      ),
-      child: Center(
-        child: Text(
-          '$step',
-          style: AppTextStyles.bodyMedium.copyWith(
-            color: isActive ? AppColors.onPrimary : AppColors.grey600,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStepLine(bool isActive) {
-    return Expanded(
-      child: Container(
-        height: 2,
-        color: isActive ? AppColors.primary : AppColors.grey200,
-        margin: const EdgeInsets.symmetric(horizontal: 8),
-      ),
-    );
-  }
-
-  Widget _buildStepLabel(String label) {
-    return Text(
-      label,
-      style: AppTextStyles.bodySmall.copyWith(
-        color: AppColors.grey600,
-        fontWeight: FontWeight.w500,
-      ),
-      textAlign: TextAlign.center,
+      ],
     );
   }
 
@@ -284,181 +277,137 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
     }
   }
 
+  // ── Step 1 ───────────────────────────────────────────────────────────────
+
   Widget _buildEnterNewPhoneStep() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+    return _buildCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.phone_android, size: 48, color: AppColors.primary),
-          const SizedBox(height: 16),
-          Text(
-            'Current Phone Number',
-            style: AppTextStyles.titleMedium.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
+          _buildCardHeading(
+            icon: Icons.smartphone_outlined,
+            title: 'Your new number',
+            detail: 'We’ll text a code to both numbers to confirm the change.',
           ),
+          const SizedBox(height: 18),
+
+          _buildFieldLabel('Current number'),
           const SizedBox(height: 8),
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
             decoration: BoxDecoration(
-              color: AppColors.grey50,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.grey200),
+              color: ink.surfaceHigh,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: ink.border),
             ),
-            child: Text(
-              _displayPhoneNumber,
-              style: AppTextStyles.bodyLarge.copyWith(
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'New Phone Number',
-            style: AppTextStyles.titleMedium.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: _newPhoneController,
-            keyboardType: TextInputType.phone,
-            maxLength: 11,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(11),
-            ],
-            decoration: InputDecoration(
-              hintText: '09123456789',
-              prefixText: '',
-              helperText: 'Format: 09XXXXXXXXX (11 digits)',
-              helperStyle: AppTextStyles.bodySmall.copyWith(
-                color: AppColors.grey600,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: AppColors.grey200),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: AppColors.grey200),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: AppColors.primary, width: 2),
-              ),
-              filled: true,
-              fillColor: AppColors.surface,
-            ),
-            style: AppTextStyles.bodyLarge,
-          ),
-          const SizedBox(height: 32),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _validateAndProceed,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.onPrimary,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.phone_outlined,
+                  size: 18,
+                  color: ink.text.withValues(alpha: 0.35),
                 ),
-                elevation: 0,
-              ),
-              child: Text('Continue', style: AppTextStyles.buttonLarge),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _displayPhoneNumber,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: ink.text.withValues(alpha: 0.7),
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+                Icon(
+                  Icons.lock_outline,
+                  size: 15,
+                  color: ink.text.withValues(alpha: 0.3),
+                ),
+              ],
             ),
+          ),
+
+          const SizedBox(height: 16),
+          _buildFieldLabel('New number'),
+          const SizedBox(height: 8),
+          _buildPhoneField(),
+
+          const SizedBox(height: 22),
+          _buildPrimaryButton(
+            label: 'Continue',
+            busy: _isLoading,
+            onPressed: _isLoading ? null : _validateAndProceed,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildVerifyCurrentPhoneStep() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
+  Widget _buildPhoneField() {
+    OutlineInputBorder border(Color color, {double width = 1}) {
+      return OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: color, width: width),
+      );
+    }
+
+    return TextFormField(
+      controller: _newPhoneController,
+      keyboardType: TextInputType.phone,
+      maxLength: 11,
+      enabled: !_isLoading,
+      cursorColor: ink.emerald,
+      inputFormatters: [
+        FilteringTextInputFormatter.digitsOnly,
+        LengthLimitingTextInputFormatter(11),
+      ],
+      style: AppTextStyles.bodyMedium.copyWith(color: ink.text, fontSize: 14),
+      decoration: InputDecoration(
+        hintText: '09123456789',
+        hintStyle: AppTextStyles.bodyMedium.copyWith(
+          color: ink.text.withValues(alpha: 0.35),
+          fontSize: 14,
+        ),
+        helperText: '11 digits, starting 09',
+        helperStyle: AppTextStyles.bodySmall.copyWith(
+          color: ink.text.withValues(alpha: 0.45),
+          fontSize: 11.5,
+        ),
+        counterText: '',
+        prefixIcon: Icon(
+          Icons.phone_android_outlined,
+          size: 19,
+          color: ink.emerald,
+        ),
+        border: border(ink.border),
+        enabledBorder: border(ink.border),
+        disabledBorder: border(ink.border.withValues(alpha: 0.5)),
+        focusedBorder: border(ink.emerald, width: 1.5),
+        filled: true,
+        fillColor: ink.surface,
       ),
+    );
+  }
+
+  // ── Steps 2 and 3 ────────────────────────────────────────────────────────
+
+  Widget _buildVerifyCurrentPhoneStep() {
+    return _buildCard(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.verified_user, size: 48, color: AppColors.primary),
-          const SizedBox(height: 16),
-          Text(
-            'Verify Current Number',
-            style: AppTextStyles.titleMedium.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
+          _buildCardHeading(
+            icon: Icons.verified_user_outlined,
+            title: 'Confirm it’s you',
+            detail: 'Enter the code we sent to $_displayPhoneNumber.',
           ),
-          const SizedBox(height: 8),
-          Text(
-            'We sent a verification code to your current number:\n $_displayPhoneNumber',
-            textAlign: TextAlign.center,
-            style: AppTextStyles.bodyMedium.copyWith(color: AppColors.grey600),
-          ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
           _buildOtpInput(_currentOtpControllers, _currentOtpFocusNodes),
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: TextButton(
-                  onPressed: _isLoading ? null : () => _resendCurrentOtp(),
-                  child: Text(
-                    'Resend Code',
-                    style: AppTextStyles.buttonMedium.copyWith(
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _verifyCurrentOtp,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: AppColors.onPrimary,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: _isLoading
-                      ? SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            color: AppColors.onPrimary,
-                            strokeWidth: 2.5,
-                          ),
-                        )
-                      : Text('Verify', style: AppTextStyles.buttonMedium),
-                ),
-              ),
-            ],
+          const SizedBox(height: 20),
+          _buildOtpActions(
+            busy: _isLoading,
+            onResend: _isLoading ? null : _resendCurrentOtp,
+            onVerify: _isLoading ? null : _verifyCurrentOtp,
           ),
         ],
       ),
@@ -466,191 +415,304 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
   }
 
   Widget _buildVerifyNewPhoneStep() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+    final busy = _isLoading || _isUpdatingPhone;
+
+    return _buildCard(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.smartphone, size: 48, color: AppColors.success),
-          const SizedBox(height: 16),
-          Text(
-            'Verify New Number',
-            style: AppTextStyles.titleMedium.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
+          _buildCardHeading(
+            icon: Icons.sms_outlined,
+            title: 'Confirm the new number',
+            detail: _isUpdatingPhone
+                ? 'Saving your new number…'
+                : 'Enter the code we sent to '
+                      '${_newPhoneController.text.trim()}.',
           ),
-          const SizedBox(height: 8),
-          Text(
-            _isUpdatingPhone
-                ? 'Updating your phone number...'
-                : 'We sent a verification code to your new number:\n${_newPhoneController.text.trim()}',
-            textAlign: TextAlign.center,
-            style: AppTextStyles.bodyMedium.copyWith(color: AppColors.grey600),
-          ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
           _buildOtpInput(_newOtpControllers, _newOtpFocusNodes),
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: TextButton(
-                  onPressed: (_isLoading || _isUpdatingPhone)
-                      ? null
-                      : () => _resendNewOtp(),
-                  child: Text(
-                    'Resend Code',
-                    style: AppTextStyles.buttonMedium.copyWith(
-                      color: AppColors.success,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: (_isLoading || _isUpdatingPhone)
-                      ? null
-                      : _verifyNewOtp,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.success,
-                    foregroundColor: AppColors.onPrimary,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: (_isLoading || _isUpdatingPhone)
-                      ? SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            color: AppColors.onPrimary,
-                            strokeWidth: 2.5,
-                          ),
-                        )
-                      : Text('Verify', style: AppTextStyles.buttonMedium),
-                ),
-              ),
-            ],
+          const SizedBox(height: 20),
+          _buildOtpActions(
+            busy: busy,
+            onResend: busy ? null : _resendNewOtp,
+            onVerify: busy ? null : _verifyNewOtp,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildCompletedStep() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Container(
-            width: 80,
-            height: 80,
-            decoration: BoxDecoration(
-              color: AppColors.success.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(Icons.check_circle, size: 48, color: AppColors.success),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'Phone Number Updated!',
-            style: AppTextStyles.titleLarge.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Your phone number has been successfully updated to:\n${_newPhoneController.text.trim()}',
-            textAlign: TextAlign.center,
-            style: AppTextStyles.bodyMedium.copyWith(color: AppColors.grey600),
-          ),
-          const SizedBox(height: 32),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.success,
-                foregroundColor: AppColors.onPrimary,
-                padding: const EdgeInsets.symmetric(vertical: 16),
+  Widget _buildOtpActions({
+    required bool busy,
+    required VoidCallback? onResend,
+    required VoidCallback? onVerify,
+  }) {
+    return Row(
+      children: [
+        Expanded(
+          child: SizedBox(
+            height: 52,
+            child: OutlinedButton(
+              onPressed: onResend,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: ink.text,
+                disabledForegroundColor: ink.text.withValues(alpha: 0.35),
+                side: BorderSide(color: ink.border),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                elevation: 0,
               ),
-              child: Text('Done', style: AppTextStyles.buttonLarge),
+              child: Text(
+                'Resend code',
+                style: AppTextStyles.buttonMedium.copyWith(fontSize: 13.5),
+              ),
             ),
           ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildPrimaryButton(
+            label: 'Verify',
+            busy: busy,
+            onPressed: onVerify,
+          ),
+        ),
+      ],
     );
   }
 
+  /// Six boxes, each lighting up as it takes a digit.
   Widget _buildOtpInput(
     List<TextEditingController> controllers,
     List<FocusNode> focusNodes,
   ) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: List.generate(6, (index) {
-        return Container(
-          width: 45,
-          height: 45,
-          decoration: BoxDecoration(
-            color: AppColors.grey50,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.grey200),
-          ),
-          child: TextFormField(
-            controller: controllers[index],
-            focusNode: focusNodes[index],
-            keyboardType: TextInputType.number,
-            textAlign: TextAlign.center,
-            maxLength: 1,
-            style: AppTextStyles.titleMedium.copyWith(
-              fontWeight: FontWeight.w600,
+      children: [
+        for (var index = 0; index < 6; index++) ...[
+          if (index > 0) const SizedBox(width: 8),
+          Expanded(
+            child: AspectRatio(
+              aspectRatio: 0.82,
+              child: _buildOtpBox(controllers, focusNodes, index),
             ),
-            decoration: const InputDecoration(
-              border: InputBorder.none,
-              counterText: '',
-              contentPadding: EdgeInsets.zero,
-            ),
-            onChanged: (value) {
-              if (value.isNotEmpty && index < 5) {
-                focusNodes[index + 1].requestFocus();
-              }
-              if (value.isEmpty && index > 0) {
-                focusNodes[index - 1].requestFocus();
-              }
-            },
           ),
-        );
-      }),
+        ],
+      ],
     );
   }
+
+  Widget _buildOtpBox(
+    List<TextEditingController> controllers,
+    List<FocusNode> focusNodes,
+    int index,
+  ) {
+    final filled = controllers[index].text.isNotEmpty;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: filled ? ink.surface : ink.surfaceHigh,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: filled ? ink.emerald.withValues(alpha: 0.6) : ink.border,
+          width: filled ? 1.5 : 1,
+        ),
+      ),
+      child: TextFormField(
+        controller: controllers[index],
+        focusNode: focusNodes[index],
+        keyboardType: TextInputType.number,
+        textAlign: TextAlign.center,
+        maxLength: 1,
+        cursorColor: ink.emerald,
+        style: AppTextStyles.titleMedium.copyWith(
+          color: ink.text,
+          fontWeight: FontWeight.w800,
+          fontSize: 18,
+        ),
+        decoration: const InputDecoration(
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          filled: false,
+          counterText: '',
+          contentPadding: EdgeInsets.zero,
+        ),
+        onChanged: (value) {
+          if (value.isNotEmpty && index < 5) {
+            focusNodes[index + 1].requestFocus();
+          }
+          if (value.isEmpty && index > 0) {
+            focusNodes[index - 1].requestFocus();
+          }
+          // Repaints the box's filled state — without this the boxes stayed
+          // uniformly empty-looking no matter how much had been typed.
+          setState(() {});
+        },
+      ),
+    );
+  }
+
+  // ── Step 4 ───────────────────────────────────────────────────────────────
+
+  Widget _buildCompletedStep() {
+    return _buildCard(
+      child: Column(
+        children: [
+          Container(
+            width: 68,
+            height: 68,
+            decoration: BoxDecoration(
+              color: ink.emerald.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.check_circle_outline,
+              size: 30,
+              color: ink.emerald,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Number updated',
+            textAlign: TextAlign.center,
+            style: AppTextStyles.titleMedium.copyWith(
+              color: ink.text,
+              fontWeight: FontWeight.w800,
+              fontSize: 18,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Your account now uses ${_newPhoneController.text.trim()}.',
+            textAlign: TextAlign.center,
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: _muted,
+              fontSize: 13.5,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: _buildPrimaryButton(
+              label: 'Done',
+              busy: false,
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Shared parts ─────────────────────────────────────────────────────────
+
+  Widget _buildCard({required Widget child}) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: ink.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: ink.border),
+      ),
+      child: child,
+    );
+  }
+
+  Widget _buildCardHeading({
+    required IconData icon,
+    required String title,
+    required String detail,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: ink.emerald.withValues(alpha: ink.isDark ? 0.16 : 0.11),
+            borderRadius: BorderRadius.circular(11),
+          ),
+          child: Icon(icon, color: ink.emerald, size: 19),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: ink.text,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                detail,
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: ink.text.withValues(alpha: 0.55),
+                  fontSize: 12.5,
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFieldLabel(String label) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 2),
+      child: Text(
+        label,
+        style: AppTextStyles.bodySmall.copyWith(
+          color: ink.text.withValues(alpha: 0.5),
+          fontWeight: FontWeight.w700,
+          fontSize: 11.5,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPrimaryButton({
+    required String label,
+    required bool busy,
+    required VoidCallback? onPressed,
+  }) {
+    return SizedBox(
+      height: 52,
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: ink.emerald,
+          foregroundColor: ink.onEmerald,
+          disabledBackgroundColor: ink.emerald.withValues(alpha: 0.5),
+          disabledForegroundColor: ink.onEmerald.withValues(alpha: 0.8),
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        child: busy
+            ? SizedBox(
+                height: 18,
+                width: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: ink.onEmerald,
+                ),
+              )
+            : Text(label, style: AppTextStyles.buttonLarge),
+      ),
+    );
+  }
+
+  // ── Flow ─────────────────────────────────────────────────────────────────
 
   void _validateAndProceed() async {
     final phoneNumber = _newPhoneController.text.trim();
@@ -1151,9 +1213,9 @@ class _ChangeMobilePageState extends State<ChangeMobilePage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: isSuccess ? AppColors.success : AppColors.error,
+        backgroundColor: isSuccess ? ink.emerald : _danger,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }

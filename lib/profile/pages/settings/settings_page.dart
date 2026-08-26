@@ -7,9 +7,6 @@ import '../../../core/app_theme/ink_palette.dart';
 import '../../../core/app_theme/theme_utils.dart';
 import '../../../core/widgets/app_page_header.dart';
 import '../../../core/services/sub_account_service.dart';
-import 'change_mobile_page.dart';
-import 'change_password_page.dart';
-import 'edit_profile_page.dart';
 import 'terms_conditions_page.dart';
 import 'privacy_policy_page.dart';
 
@@ -124,32 +121,26 @@ class _SettingsPageState extends State<SettingsPage> {
               icon: Icons.phone_outlined,
               label: 'Change mobile number',
               detail: 'Update the number on your account',
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => const ChangeMobilePage(),
-                ),
-              ),
+              onTap: () => Navigator.of(
+                context,
+              ).pushNamed('/profile/settings/change-phone-number'),
             ),
             _menuRow(
               icon: Icons.lock_outline,
               label: 'Change password',
               detail: 'Keep your account secure',
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => const ChangePasswordPage(),
-                ),
-              ),
+              onTap: () => Navigator.of(
+                context,
+              ).pushNamed('/profile/settings/change-password'),
             ),
             if (userRole == 'buyer')
               _menuRow(
                 icon: Icons.person_outline,
                 label: 'Edit profile',
                 detail: 'Name, photo and personal info',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => const EditProfilePage(),
-                  ),
-                ),
+                onTap: () => Navigator.of(
+                  context,
+                ).pushNamed('/profile/settings/edit-profile'),
               ),
             if (userRole == 'seller')
               _menuRow(

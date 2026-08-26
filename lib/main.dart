@@ -12,6 +12,9 @@ import 'package:dentpal/profile/pages/chats_page.dart';
 import 'package:dentpal/profile/pages/chat_detail_page.dart';
 import 'package:dentpal/profile/pages/shipping_addresses_page.dart';
 import 'package:dentpal/profile/pages/settings/manage_sub_accounts_page.dart';
+import 'package:dentpal/profile/pages/settings/change_mobile_page.dart';
+import 'package:dentpal/profile/pages/settings/change_password_page.dart';
+import 'package:dentpal/profile/pages/settings/edit_profile_page.dart';
 import 'package:dentpal/core/models/sub_account_model.dart';
 import 'package:dentpal/profile/models/shipping_address.dart';
 import 'package:dentpal/auth_wrapper.dart';
@@ -141,6 +144,11 @@ class MyApp extends StatelessWidget {
         '/profile/chats': (context) => const ChatsPage(),
         '/profile/address': (context) => const ShippingAddressesPage(),
         '/profile/sub-accounts': (context) => const ManageSubAccountsPage(),
+        '/profile/settings/change-phone-number': (context) =>
+            const ChangeMobilePage(),
+        '/profile/settings/change-password': (context) =>
+            const ChangePasswordPage(),
+        '/profile/settings/edit-profile': (context) => const EditProfilePage(),
         '/privacy-policy': (context) => const PublicPrivacyPolicyPage(),
         '/terms-of-service': (context) => const PublicTermsOfServicePage(),
         '/support-url': (context) => const PublicSupportPage(),

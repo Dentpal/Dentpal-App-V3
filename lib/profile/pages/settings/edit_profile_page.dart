@@ -7,13 +7,17 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:io';
 import 'dart:typed_data';
-import '../../../core/app_theme/app_colors.dart';
 import '../../../core/app_theme/app_text_styles.dart';
+import '../../../core/app_theme/ink_palette.dart';
+import '../../../core/app_theme/theme_utils.dart';
+import '../../../core/widgets/app_page_header.dart';
 import '../../../utils/app_logger.dart';
 import '../../../signup/specialty_selection_widget.dart';
 import '../profile_page.dart';
 import 'package:intl/intl.dart';
 
+/// Name, photo and personal details, with an explicit diff before anything is
+/// written.
 class EditProfilePage extends StatefulWidget {
   const EditProfilePage({super.key});
 
@@ -23,13 +27,13 @@ class EditProfilePage extends StatefulWidget {
 
 class _EditProfilePageState extends State<EditProfilePage> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-  
+
   // Controllers
   final TextEditingController _displayNameController = TextEditingController();
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _middleNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
-  
+
   // Current values for comparison
   String _originalDisplayName = '';
   String _originalFirstName = '';
@@ -39,14 +43,14 @@ class _EditProfilePageState extends State<EditProfilePage> {
   DateTime? _originalBirthdate;
   String _originalPhotoURL = '';
   List<String> _originalSpecialties = [];
-  
+
   // Form state
   String _selectedGender = '';
   DateTime? _selectedBirthdate;
   bool _isLoading = false;
   bool _hasLoadedData = false;
   List<String> _selectedSpecialties = [];
-  
+
   // Photo state
   File? _selectedImageFile;
   Uint8List? _selectedImageBytes; // For web
@@ -58,7 +62,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   void initState() {
     super.initState();
     _loadUserData();
-    
+
     // Add listeners to text controllers to detect changes
     _displayNameController.addListener(_onFieldChanged);
     _firstNameController.addListener(_onFieldChanged);
@@ -79,7 +83,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _firstNameController.removeListener(_onFieldChanged);
     _middleNameController.removeListener(_onFieldChanged);
     _lastNameController.removeListener(_onFieldChanged);
-    
+
     // Dispose controllers
     _displayNameController.dispose();
     _firstNameController.dispose();
@@ -100,17 +104,19 @@ class _EditProfilePageState extends State<EditProfilePage> {
             .collection('User')
             .doc(user.uid)
             .get();
-        
+
         if (userDoc.exists && mounted) {
           final userData = userDoc.data()!;
-          
+
           // Load current values
           _originalDisplayName = userData['displayName'] ?? '';
           _displayNameController.text = _originalDisplayName;
-          
+
           // Load individual name fields first (preferred method)
           // Check if we have individual name fields (even if some are null/empty)
-          if (userData.containsKey('firstName') || userData.containsKey('middleName') || userData.containsKey('lastName')) {
+          if (userData.containsKey('firstName') ||
+              userData.containsKey('middleName') ||
+              userData.containsKey('lastName')) {
             // Use individual name fields if they exist
             _originalFirstName = userData['firstName'] ?? '';
             _originalMiddleName = userData['middleName'] ?? '';
@@ -118,65 +124,64 @@ class _EditProfilePageState extends State<EditProfilePage> {
           } else {
             // Fall back to parsing fullName for backward compatibility
             final fullName = userData['fullName'] ?? '';
-            final nameParts = fullName.split(' ').where((part) => part.isNotEmpty).toList();
-            
+            final nameParts = fullName
+                .split(' ')
+                .where((part) => part.isNotEmpty)
+                .toList();
+
             _originalFirstName = '';
             _originalMiddleName = '';
             _originalLastName = '';
-            
+
             if (nameParts.isNotEmpty) {
               _originalFirstName = nameParts[0];
             }
-            
+
             if (nameParts.length > 2) {
               // If more than 2 parts, middle name is everything except first and last
-              _originalMiddleName = nameParts.sublist(1, nameParts.length - 1).join(' ');
+              _originalMiddleName = nameParts
+                  .sublist(1, nameParts.length - 1)
+                  .join(' ');
               _originalLastName = nameParts.last;
             } else if (nameParts.length == 2) {
               // Only first and last name
               _originalLastName = nameParts[1];
             }
           }
-          
+
           // Set the controller values
           _firstNameController.text = _originalFirstName;
           _middleNameController.text = _originalMiddleName;
           _lastNameController.text = _originalLastName;
-          
-          // Debug logging
-          AppLogger.d('Loaded Profile Data:');
-          AppLogger.d('  firstName: $_originalFirstName');
-          AppLogger.d('  middleName: $_originalMiddleName');
-          AppLogger.d('  lastName: $_originalLastName');
-          AppLogger.d('  Has individual fields: ${userData.containsKey('firstName') || userData.containsKey('middleName') || userData.containsKey('lastName')}');
-          
+
           _originalGender = userData['gender'] ?? '';
-          _selectedGender = _originalGender.toLowerCase(); // Normalize to lowercase to match dropdown items
-          
+          // Normalize to lowercase to match dropdown items
+          _selectedGender = _originalGender.toLowerCase();
+
           // Handle photo URL
           _originalPhotoURL = userData['photoURL'] ?? '';
           _currentPhotoURL = _originalPhotoURL;
-          
+
           // Handle birthdate
           if (userData['birthdate'] != null) {
             final timestamp = userData['birthdate'] as Timestamp;
             _originalBirthdate = timestamp.toDate();
             _selectedBirthdate = _originalBirthdate;
           }
-          
+
           // Handle specialties
           if (userData['specialties'] != null) {
             _originalSpecialties = List<String>.from(userData['specialties']);
             _selectedSpecialties = List<String>.from(_originalSpecialties);
           }
-          
+
           _hasLoadedData = true;
         }
       }
     } catch (e) {
       AppLogger.d('Error loading user data: $e');
       if (mounted) {
-        _showErrorSnackBar('Failed to load profile data');
+        _showSnack('Failed to load profile data', _danger);
       }
     } finally {
       if (mounted) {
@@ -191,25 +196,26 @@ class _EditProfilePageState extends State<EditProfilePage> {
     final firstName = _firstNameController.text.trim();
     final middleName = _middleNameController.text.trim();
     final lastName = _lastNameController.text.trim();
-    
+
     String fullName = firstName;
-    
+
     if (middleName.isNotEmpty) {
       // Add middle initial(s)
-      final middleInitials = middleName.split(' ')
+      final middleInitials = middleName
+          .split(' ')
           .map((name) => name.isNotEmpty ? '${name[0]}.' : '')
           .where((initial) => initial.isNotEmpty)
           .join(' ');
-      
+
       if (middleInitials.isNotEmpty) {
         fullName += ' $middleInitials';
       }
     }
-    
+
     if (lastName.isNotEmpty) {
       fullName += ' $lastName';
     }
-    
+
     return fullName;
   }
 
@@ -220,42 +226,45 @@ class _EditProfilePageState extends State<EditProfilePage> {
       final currentFirstName = _firstNameController.text.trim();
       final currentMiddleName = _middleNameController.text.trim();
       final currentLastName = _lastNameController.text.trim();
-      
+
       // Return true if user has entered any data
       return currentDisplayName.isNotEmpty ||
-             currentFirstName.isNotEmpty ||
-             currentMiddleName.isNotEmpty ||
-             currentLastName.isNotEmpty ||
-             _selectedGender.isNotEmpty ||
-             _selectedBirthdate != null ||
-             _selectedImageFile != null ||
-             _selectedImageBytes != null ||
-             _hasNewPhoto ||
-             _selectedSpecialties.isNotEmpty;
+          currentFirstName.isNotEmpty ||
+          currentMiddleName.isNotEmpty ||
+          currentLastName.isNotEmpty ||
+          _selectedGender.isNotEmpty ||
+          _selectedBirthdate != null ||
+          _selectedImageFile != null ||
+          _selectedImageBytes != null ||
+          _hasNewPhoto ||
+          _selectedSpecialties.isNotEmpty;
     }
-    
+
     final currentDisplayName = _displayNameController.text.trim();
     final currentFirstName = _firstNameController.text.trim();
     final currentMiddleName = _middleNameController.text.trim();
     final currentLastName = _lastNameController.text.trim();
-    
+
     // Normalize gender for comparison (handle empty strings)
     final originalGenderNormalized = _originalGender.toLowerCase();
     final selectedGenderNormalized = _selectedGender.toLowerCase();
-    
+
     // Check if specialties have changed
-    final specialtiesChanged = !_areListsEqual(_selectedSpecialties, _originalSpecialties);
-    
+    final specialtiesChanged = !_areListsEqual(
+      _selectedSpecialties,
+      _originalSpecialties,
+    );
+
     return currentDisplayName != _originalDisplayName ||
-           currentFirstName != _originalFirstName ||
-           currentMiddleName != _originalMiddleName ||
-           currentLastName != _originalLastName ||
-           selectedGenderNormalized != originalGenderNormalized ||
-           _selectedBirthdate != _originalBirthdate ||
-           _selectedImageFile != null ||
-           _selectedImageBytes != null ||
-           _hasNewPhoto ||
-           specialtiesChanged;
+        currentFirstName != _originalFirstName ||
+        currentMiddleName != _originalMiddleName ||
+        currentLastName != _originalLastName ||
+        selectedGenderNormalized != originalGenderNormalized ||
+        _selectedBirthdate != _originalBirthdate ||
+        _selectedImageFile != null ||
+        _selectedImageBytes != null ||
+        _hasNewPhoto ||
+        specialtiesChanged;
   }
 
   bool _areListsEqual(List<String> list1, List<String> list2) {
@@ -268,25 +277,612 @@ class _EditProfilePageState extends State<EditProfilePage> {
     return true;
   }
 
+  // ── Palette ──────────────────────────────────────────────────────────────
+
+  InkPalette get ink => InkPalette.of(context);
+
+  /// Destructive red. [InkPalette] reserves amber for urgency, so danger needs
+  /// its own tone that still reads in both themes.
+  Color get _danger =>
+      ink.isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626);
+
+  Color get _muted => ink.text.withValues(alpha: 0.6);
+
+  /// A form reads best in a narrower column than a browse grid, so the fields
+  /// stop short of the page's full width — but it still centres inside the same
+  /// frame every other buyer surface uses.
+  static const double _formMaxWidth = 640;
+
+  static const EdgeInsets _listPadding = EdgeInsets.fromLTRB(
+    AppLayout.gutter,
+    4,
+    AppLayout.gutter,
+    32,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final dirty = _hasChanges();
+
+    return PopScope(
+      canPop: !dirty,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (!didPop && _hasChanges()) {
+          await _showDiscardChangesDialog();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: ink.bg,
+        body: SafeArea(
+          bottom: false,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: _formMaxWidth),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AppPageHeader(
+                    title: 'Edit profile',
+                    subtitle: dirty && _hasLoadedData
+                        ? 'Unsaved changes'
+                        : 'Your name, photo and details',
+                    subtitleColor: dirty && _hasLoadedData ? ink.amber : null,
+                    onBack: _handleBack,
+                  ),
+                  Expanded(
+                    child: _isLoading && !_hasLoadedData
+                        ? Center(
+                            child: CircularProgressIndicator(
+                              color: ink.emerald,
+                            ),
+                          )
+                        : _buildForm(),
+                  ),
+                  // One bar on every platform. This used to be a web-only
+                  // `bottomNavigationBar` plus a second, near-identical pair of
+                  // buttons inlined at the end of the form for mobile.
+                  if (dirty && _hasLoadedData) _buildActionBar(),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleBack() async {
+    if (_hasChanges()) {
+      await _showDiscardChangesDialog();
+    } else if (mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  // ── Form ─────────────────────────────────────────────────────────────────
+
+  Widget _buildForm() {
+    return Form(
+      key: _formKey,
+      child: ListView(
+        padding: _listPadding,
+        children: [
+          _buildPhotoCard(),
+
+          const SizedBox(height: 22),
+          _buildSectionHeader('Basic information'),
+          const SizedBox(height: 10),
+          _buildTextField(
+            controller: _displayNameController,
+            label: 'Display name',
+            icon: Icons.badge_outlined,
+            validator: (value) => (value == null || value.trim().isEmpty)
+                ? 'Display name is required'
+                : null,
+          ),
+          const SizedBox(height: 14),
+          _buildTextField(
+            controller: _firstNameController,
+            label: 'First name',
+            icon: Icons.person_outline,
+            validator: (value) => (value == null || value.trim().isEmpty)
+                ? 'First name is required'
+                : null,
+          ),
+          const SizedBox(height: 14),
+          _buildTextField(
+            controller: _middleNameController,
+            label: 'Middle name (optional)',
+            icon: Icons.person_outline,
+          ),
+          const SizedBox(height: 14),
+          _buildTextField(
+            controller: _lastNameController,
+            label: 'Last name',
+            icon: Icons.person_outline,
+            validator: (value) => (value == null || value.trim().isEmpty)
+                ? 'Last name is required'
+                : null,
+          ),
+
+          const SizedBox(height: 22),
+          _buildSectionHeader('Personal details'),
+          const SizedBox(height: 10),
+          _buildGenderDropdown(),
+          const SizedBox(height: 14),
+          _buildBirthdateField(),
+
+          const SizedBox(height: 22),
+          _buildSectionHeader('Professional'),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: ink.surface,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: ink.border),
+            ),
+            child: SpecialtySelectionWidget(
+              selectedSpecialties: _selectedSpecialties,
+              onSelectionChanged: (specialties) {
+                setState(() {
+                  _selectedSpecialties = specialties;
+                });
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 2),
+      child: Text(
+        title,
+        style: AppTextStyles.titleMedium.copyWith(
+          color: ink.text,
+          fontWeight: FontWeight.w800,
+          fontSize: 15,
+        ),
+      ),
+    );
+  }
+
+  // ── Photo ────────────────────────────────────────────────────────────────
+
+  Widget _buildPhotoCard() {
+    final hasNewSelection =
+        _selectedImageFile != null || _selectedImageBytes != null;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: ink.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: ink.border),
+      ),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: _isUploadingPhoto ? null : _showPhotoSelectionSheet,
+            child: SizedBox(
+              width: 76,
+              height: 76,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    width: 76,
+                    height: 76,
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: ink.emerald.withValues(
+                        alpha: ink.isDark ? 0.16 : 0.11,
+                      ),
+                      border: Border.all(
+                        color: ink.emerald.withValues(alpha: 0.3),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: _buildPhotoContent(),
+                  ),
+                  Positioned(
+                    bottom: -2,
+                    right: -2,
+                    child: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: ink.emerald,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: ink.surface, width: 2),
+                      ),
+                      child: Icon(
+                        Icons.photo_camera_outlined,
+                        color: ink.onEmerald,
+                        size: 14,
+                      ),
+                    ),
+                  ),
+                  if (_isUploadingPhoto)
+                    Container(
+                      width: 76,
+                      height: 76,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.black.withValues(alpha: 0.55),
+                      ),
+                      child: Center(
+                        child: SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Profile photo',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: ink.text,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  hasNewSelection
+                      ? 'New photo ready to save'
+                      : 'Tap the picture to change it',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: hasNewSelection
+                        ? ink.emerald
+                        : ink.text.withValues(alpha: 0.5),
+                    fontWeight: hasNewSelection
+                        ? FontWeight.w600
+                        : FontWeight.w400,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 34,
+                  child: OutlinedButton.icon(
+                    onPressed: _isUploadingPhoto
+                        ? null
+                        : _showPhotoSelectionSheet,
+                    icon: const Icon(Icons.image_outlined, size: 15),
+                    label: Text(
+                      'Change',
+                      style: AppTextStyles.buttonMedium.copyWith(fontSize: 12),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: ink.text,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      side: BorderSide(color: ink.border),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(11),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPhotoContent() {
+    if (_selectedImageBytes != null) {
+      return Image.memory(_selectedImageBytes!, fit: BoxFit.cover);
+    }
+
+    if (_selectedImageFile != null) {
+      return Image.file(_selectedImageFile!, fit: BoxFit.cover);
+    }
+
+    if (_currentPhotoURL != null && _currentPhotoURL!.isNotEmpty) {
+      return Image.network(
+        _currentPhotoURL!,
+        fit: BoxFit.cover,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Center(
+            child: SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: ink.emerald,
+                value: loadingProgress.expectedTotalBytes != null
+                    ? loadingProgress.cumulativeBytesLoaded /
+                          loadingProgress.expectedTotalBytes!
+                    : null,
+              ),
+            ),
+          );
+        },
+        errorBuilder: (context, error, stackTrace) => _buildDefaultAvatar(),
+      );
+    }
+
+    return _buildDefaultAvatar();
+  }
+
+  Widget _buildDefaultAvatar() =>
+      Icon(Icons.person, size: 38, color: ink.emerald);
+
+  /// "Camera, gallery, or remove?", in the marketplace sheet shape.
+  ///
+  /// Was an `AlertDialog` of bare `ListTile`s on a hardcoded light surface.
+  Future<void> _showPhotoSelectionSheet() async {
+    final hasPhoto = _currentPhotoURL != null && _currentPhotoURL!.isNotEmpty;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => Container(
+        decoration: BoxDecoration(
+          color: ink.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border.all(color: ink.border),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                margin: const EdgeInsets.only(top: 10, bottom: 14),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: ink.text.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // Camera only exists off the web.
+              if (!kIsWeb)
+                _buildSheetRow(
+                  icon: Icons.photo_camera_outlined,
+                  tone: ink.emerald,
+                  label: 'Take photo',
+                  detail: 'Use the camera',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _takePhoto();
+                  },
+                ),
+              _buildSheetRow(
+                icon: Icons.photo_library_outlined,
+                tone: ink.emerald,
+                label: kIsWeb ? 'Upload photo' : 'Choose from gallery',
+                detail: 'Pick one you already have',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _pickImageFromGallery();
+                },
+              ),
+              if (hasPhoto)
+                _buildSheetRow(
+                  icon: Icons.delete_outline,
+                  tone: _danger,
+                  label: 'Remove photo',
+                  detail: 'Go back to the default avatar',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _removePhoto();
+                  },
+                ),
+              const SizedBox(height: 14),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// One option in a sheet, in the icon-tile row shape the menus use.
+  Widget _buildSheetRow({
+    required IconData icon,
+    required Color tone,
+    required String label,
+    required String detail,
+    VoidCallback? onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppLayout.gutter,
+            vertical: 12,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: tone.withValues(alpha: ink.isDark ? 0.16 : 0.11),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(icon, color: tone, size: 19),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: tone,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      detail,
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: ink.text.withValues(alpha: 0.5),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Personal detail fields ───────────────────────────────────────────────
+
+  Widget _buildGenderDropdown() {
+    return DropdownButtonFormField<String>(
+      initialValue: _selectedGender.isEmpty ? null : _selectedGender,
+      isExpanded: true,
+      dropdownColor: ink.surface,
+      borderRadius: BorderRadius.circular(14),
+      icon: Icon(
+        Icons.keyboard_arrow_down,
+        color: ink.text.withValues(alpha: 0.4),
+      ),
+      hint: Text(
+        'Select gender',
+        style: AppTextStyles.bodyMedium.copyWith(
+          color: ink.text.withValues(alpha: 0.4),
+          fontSize: 14,
+        ),
+      ),
+      items: [
+        for (final entry in const {
+          'male': 'Male',
+          'female': 'Female',
+          'rather not say': 'Rather not say',
+        }.entries)
+          DropdownMenuItem(
+            value: entry.key,
+            child: Text(
+              entry.value,
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: ink.text,
+                fontSize: 14,
+              ),
+            ),
+          ),
+      ],
+      onChanged: (value) => setState(() => _selectedGender = value ?? ''),
+      validator: (value) => (value == null || value.isEmpty)
+          ? 'Please select your gender'
+          : null,
+      decoration: _fieldDecoration(label: 'Gender', icon: Icons.wc_outlined),
+    );
+  }
+
+  Widget _buildBirthdateField() {
+    final hasDate = _selectedBirthdate != null;
+
+    return InkWell(
+      onTap: _selectBirthdate,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+        decoration: BoxDecoration(
+          color: ink.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: ink.border),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.calendar_today_outlined,
+              size: 19,
+              color: ink.emerald,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Birthdate',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: hasDate
+                          ? ink.text.withValues(alpha: 0.45)
+                          : ink.text.withValues(alpha: 0.6),
+                      fontSize: hasDate ? 11.5 : 14,
+                    ),
+                  ),
+                  if (hasDate) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      DateFormat('MMMM d, yyyy').format(_selectedBirthdate!),
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: ink.text,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Icon(
+              Icons.keyboard_arrow_down,
+              color: ink.text.withValues(alpha: 0.4),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _selectBirthdate() async {
-    final DateTime? picked = await showDatePicker(
+    final picked = await showDatePicker(
       context: context,
       initialDate: _selectedBirthdate ?? DateTime(2000),
       firstDate: DateTime(1900),
       lastDate: DateTime.now(),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: Theme.of(context).colorScheme.copyWith(
-              primary: AppColors.primary,
-              onSurface: AppColors.onSurface,
-            ),
-          ),
-          child: child!,
-        );
-      },
+      // The Material theme is still the light one, so a date picker left to
+      // inherit it opens white over a dark page.
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme:
+              (ink.isDark
+                      ? const ColorScheme.dark()
+                      : const ColorScheme.light())
+                  .copyWith(
+                    primary: ink.emerald,
+                    onPrimary: ink.onEmerald,
+                    surface: ink.surface,
+                    onSurface: ink.text,
+                  ),
+          dialogTheme: DialogThemeData(backgroundColor: ink.surface),
+        ),
+        child: child!,
+      ),
     );
-    
+
     if (picked != null && picked != _selectedBirthdate) {
       setState(() {
         _selectedBirthdate = picked;
@@ -294,102 +890,184 @@ class _EditProfilePageState extends State<EditProfilePage> {
     }
   }
 
-  Future<void> _showPhotoSelectionDialog() async {
-    await showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Row(
+  /// The one decoration every field on this form wears.
+  InputDecoration _fieldDecoration({
+    required String label,
+    required IconData icon,
+  }) {
+    OutlineInputBorder border(Color color, {double width = 1}) {
+      return OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: color, width: width),
+      );
+    }
+
+    return InputDecoration(
+      labelText: label,
+      errorMaxLines: 2,
+      errorStyle: AppTextStyles.bodySmall.copyWith(
+        color: _danger,
+        fontSize: 11.5,
+      ),
+      prefixIcon: Icon(icon, size: 19, color: ink.emerald),
+      border: border(ink.border),
+      enabledBorder: border(ink.border),
+      focusedBorder: border(ink.emerald, width: 1.5),
+      errorBorder: border(_danger),
+      focusedErrorBorder: border(_danger, width: 1.5),
+      filled: true,
+      fillColor: ink.surface,
+      labelStyle: AppTextStyles.bodyMedium.copyWith(
+        color: ink.text.withValues(alpha: 0.6),
+        fontSize: 14,
+      ),
+      floatingLabelStyle: AppTextStyles.bodyMedium.copyWith(
+        color: ink.emerald,
+        fontWeight: FontWeight.w600,
+        fontSize: 14,
+      ),
+    );
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    String? Function(String?)? validator,
+    TextInputType keyboardType = TextInputType.text,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      validator: validator,
+      enabled: !_isLoading,
+      cursorColor: ink.emerald,
+      style: AppTextStyles.bodyMedium.copyWith(color: ink.text, fontSize: 14),
+      decoration: _fieldDecoration(label: label, icon: icon),
+    );
+  }
+
+  // ── Action bar ───────────────────────────────────────────────────────────
+
+  Widget _buildActionBar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: ink.surface,
+        border: Border(top: BorderSide(color: ink.border)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppLayout.gutter,
+            10,
+            AppLayout.gutter,
+            10,
+          ),
+          child: Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  Icons.photo_camera_outlined,
-                  color: AppColors.primary,
-                  size: 20,
+              Expanded(
+                child: SizedBox(
+                  height: 48,
+                  child: OutlinedButton(
+                    onPressed: _isLoading ? null : _showDiscardChangesDialog,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: ink.amber,
+                      side: BorderSide(color: ink.amber.withValues(alpha: 0.45)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: Text(
+                      'Discard',
+                      style: AppTextStyles.buttonMedium.copyWith(fontSize: 14),
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
-              Text(
-                'Select Photo',
-                style: AppTextStyles.titleMedium.copyWith(
-                  fontWeight: FontWeight.w700,
+              Expanded(
+                child: SizedBox(
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _saveProfile,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: ink.emerald,
+                      foregroundColor: ink.onEmerald,
+                      disabledBackgroundColor: ink.emerald.withValues(
+                        alpha: 0.5,
+                      ),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: _isLoading
+                        ? SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: ink.onEmerald,
+                            ),
+                          )
+                        : Text(
+                            'Save changes',
+                            style: AppTextStyles.buttonMedium.copyWith(
+                              fontSize: 14,
+                            ),
+                          ),
+                  ),
                 ),
               ),
             ],
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Show camera option only for mobile platforms
-              if (!kIsWeb)
-                ListTile(
-                  leading: Icon(Icons.camera_alt_outlined, color: AppColors.primary),
-                  title: Text('Take Photo', style: AppTextStyles.bodyLarge),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    _takePhoto();
-                  },
-                ),
-              ListTile(
-                leading: Icon(Icons.photo_library_outlined, color: AppColors.primary),
-                title: Text(kIsWeb ? 'Upload Photo' : 'Choose from Gallery', style: AppTextStyles.bodyLarge),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _pickImageFromGallery();
-                },
-              ),
-              if (_currentPhotoURL != null && _currentPhotoURL!.isNotEmpty)
-                ListTile(
-                  leading: Icon(Icons.delete_outline, color: AppColors.error),
-                  title: Text('Remove Photo', style: AppTextStyles.bodyLarge.copyWith(color: AppColors.error)),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    _removePhoto();
-                  },
-                ),
-            ],
-          ),
-        );
-      },
+        ),
+      ),
     );
   }
+
+  // ── Photo capture ────────────────────────────────────────────────────────
 
   Future<void> _takePhoto() async {
     try {
       // Camera functionality only available on mobile platforms
       if (kIsWeb) {
-        _showErrorSnackBar('Camera is not available on web. Please use the upload option.');
+        _showSnack(
+          'Camera is not available on web. Please use the upload option.',
+          _danger,
+        );
         return;
       }
 
       final ImagePicker picker = ImagePicker();
-      
+
       // For iOS, let ImagePicker handle the permission request automatically
       // For Android, we can still do permission checks if needed
       if (Theme.of(context).platform == TargetPlatform.android) {
         // Check current permission status for Android
         PermissionStatus cameraStatus = await Permission.camera.status;
-        
+
         if (cameraStatus.isDenied) {
           // Request permission if not granted
           cameraStatus = await Permission.camera.request();
         }
-        
+
         if (cameraStatus.isPermanentlyDenied) {
           // Show dialog to go to settings if permanently denied
-          await _showPermissionDeniedDialog();
+          await _showPermissionDeniedDialog(
+            icon: Icons.photo_camera_outlined,
+            title: 'Camera permission needed',
+            what: 'Camera',
+          );
           return;
         }
-        
+
         if (!cameraStatus.isGranted) {
-          _showErrorSnackBar('Camera permission is required to take photos. Please grant permission in your device settings.');
+          _showSnack(
+            'Camera permission is required to take photos.',
+            _danger,
+          );
           return;
         }
       }
@@ -406,46 +1084,56 @@ class _EditProfilePageState extends State<EditProfilePage> {
       }
     } catch (e) {
       AppLogger.d('Error taking photo: $e');
-      
+      if (!mounted) return;
+
       // Check if it's a permission error and handle accordingly
-      if (e.toString().contains('camera_access_denied') || 
+      if (e.toString().contains('camera_access_denied') ||
           e.toString().contains('Permission denied') ||
           e.toString().contains('NotAllowedError')) {
         // For iOS, show dialog to go to settings after permission denial
         if (Theme.of(context).platform == TargetPlatform.iOS) {
-          await _showPermissionDeniedDialog();
+          await _showPermissionDeniedDialog(
+            icon: Icons.photo_camera_outlined,
+            title: 'Camera permission needed',
+            what: 'Camera',
+          );
         } else {
-          _showErrorSnackBar('Camera permission is required to take photos. Please grant permission in your device settings.');
+          _showSnack('Camera permission is required to take photos.', _danger);
         }
       } else {
-        _showErrorSnackBar('Failed to take photo. Please try again.');
+        _showSnack('Failed to take photo. Please try again.', _danger);
       }
     }
   }
 
-
-
   Future<void> _pickImageFromGallery() async {
     try {
       final ImagePicker picker = ImagePicker();
-      
+
       // For iOS, let ImagePicker handle the permission request automatically
       // For Android, we can still do permission checks if needed
       if (!kIsWeb && Theme.of(context).platform == TargetPlatform.android) {
         // Check photo library permission for Android if needed
         PermissionStatus photosStatus = await Permission.photos.status;
-        
+
         if (photosStatus.isDenied) {
           photosStatus = await Permission.photos.request();
         }
-        
+
         if (photosStatus.isPermanentlyDenied) {
-          await _showPhotoLibraryPermissionDeniedDialog();
+          await _showPermissionDeniedDialog(
+            icon: Icons.photo_library_outlined,
+            title: 'Photo access needed',
+            what: 'Photos',
+          );
           return;
         }
-        
+
         if (!photosStatus.isGranted) {
-          _showErrorSnackBar('Photo library access is required to select images. Please grant permission in your device settings.');
+          _showSnack(
+            'Photo library access is required to select images.',
+            _danger,
+          );
           return;
         }
       }
@@ -462,19 +1150,27 @@ class _EditProfilePageState extends State<EditProfilePage> {
       }
     } catch (e) {
       AppLogger.d('Error picking image: $e');
-      
+      if (!mounted) return;
+
       // Check if it's a permission error and handle accordingly
-      if (e.toString().contains('photo_access_denied') || 
+      if (e.toString().contains('photo_access_denied') ||
           e.toString().contains('Permission denied') ||
           e.toString().contains('NotAllowedError')) {
         // For iOS, show dialog to go to settings after permission denial
         if (Theme.of(context).platform == TargetPlatform.iOS) {
-          await _showPhotoLibraryPermissionDeniedDialog();
+          await _showPermissionDeniedDialog(
+            icon: Icons.photo_library_outlined,
+            title: 'Photo access needed',
+            what: 'Photos',
+          );
         } else {
-          _showErrorSnackBar('Photo library access is required to select images. Please grant permission in your device settings.');
+          _showSnack(
+            'Photo library access is required to select images.',
+            _danger,
+          );
         }
       } else {
-        _showErrorSnackBar('Failed to select image. Please try again.');
+        _showSnack('Failed to select image. Please try again.', _danger);
       }
     }
   }
@@ -485,40 +1181,46 @@ class _EditProfilePageState extends State<EditProfilePage> {
       const int maxSizeBytes = 3 * 1024 * 1024; // 3MB
 
       if (fileSize > maxSizeBytes) {
-        _showErrorSnackBar('Image size must be less than 3MB');
+        _showSnack('Image must be smaller than 3MB', _danger);
         return;
       }
 
       // Check file extension
       final String extension = image.name.toLowerCase().split('.').last;
-      const List<String> allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
-      
+      const List<String> allowedExtensions = [
+        'jpg',
+        'jpeg',
+        'png',
+        'gif',
+        'bmp',
+        'webp',
+      ];
+
       if (!allowedExtensions.contains(extension)) {
-        _showErrorSnackBar('Please select a valid image file (JPG, PNG, GIF, etc.)');
+        _showSnack('Please pick a JPG, PNG, GIF or WebP image', _danger);
         return;
       }
 
-      setState(() {
-        if (kIsWeb) {
+      if (kIsWeb) {
+        final bytes = await image.readAsBytes();
+        if (!mounted) return;
+        setState(() {
           _selectedImageFile = null;
-          // For web, we'll load bytes
-          image.readAsBytes().then((bytes) {
-            setState(() {
-              _selectedImageBytes = bytes;
-              _hasNewPhoto = true;
-            });
-          });
-        } else {
+          _selectedImageBytes = bytes;
+          _hasNewPhoto = true;
+        });
+      } else {
+        setState(() {
           _selectedImageFile = File(image.path);
           _selectedImageBytes = null;
           _hasNewPhoto = true;
-        }
-      });
+        });
+      }
 
-      _showSuccessSnackBar('Image selected successfully');
+      if (mounted) _showSnack('Photo selected', ink.emerald);
     } catch (e) {
       AppLogger.d('Error processing image: $e');
-      _showErrorSnackBar('Failed to process image');
+      if (mounted) _showSnack('Failed to process image', _danger);
     }
   }
 
@@ -529,7 +1231,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
       _currentPhotoURL = null;
       _hasNewPhoto = true; // Removing is also a change
     });
-    _showSuccessSnackBar('Photo removed');
+    _showSnack('Photo removed', ink.emerald);
   }
 
   Future<String?> _uploadPhotoToFirebase() async {
@@ -542,20 +1244,20 @@ class _EditProfilePageState extends State<EditProfilePage> {
       if (user == null) return null;
 
       final FirebaseStorage storage = FirebaseStorage.instance;
-      
+
       // Determine file extension
       String extension = 'jpg'; // default
       if (_selectedImageFile != null) {
         extension = _selectedImageFile!.path.split('.').last.toLowerCase();
-      } else if (_selectedImageBytes != null) {
-        extension = 'jpg'; // default for web
       }
 
       final String fileName = 'displayimage.$extension';
-      final Reference ref = storage.ref().child('UserImages/${user.uid}/$fileName');
+      final Reference ref = storage.ref().child(
+        'UserImages/${user.uid}/$fileName',
+      );
 
       UploadTask uploadTask;
-      
+
       if (kIsWeb && _selectedImageBytes != null) {
         uploadTask = ref.putData(_selectedImageBytes!);
       } else if (_selectedImageFile != null) {
@@ -566,34 +1268,45 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
       final TaskSnapshot snapshot = await uploadTask;
       final String downloadUrl = await snapshot.ref.getDownloadURL();
-      
+
       return downloadUrl;
     } catch (e) {
       AppLogger.d('Error uploading photo: $e');
-      _showErrorSnackBar('Failed to upload photo');
+      if (mounted) _showSnack('Failed to upload photo', _danger);
       return null;
     } finally {
-      setState(() {
-        _isUploadingPhoto = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isUploadingPhoto = false;
+        });
+      }
     }
   }
 
+  // ── Save ─────────────────────────────────────────────────────────────────
+
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     if (!_hasChanges()) {
-      _showInfoSnackBar('No changes detected');
+      _showSnack('Nothing to save', ink.amber, onTone: ink.onAmber);
       return;
     }
 
     // Show confirmation dialog
     final shouldSave = await _showConfirmationDialog();
-    if (!shouldSave) return;
+    if (!shouldSave || !mounted) return;
 
     setState(() {
       _isLoading = true;
     });
+
+    // Captured before the awaits: on success this page is popped, so reaching
+    // for its Navigator or messenger afterwards would be reaching through a
+    // context that is on its way out.
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final emerald = ink.emerald;
 
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -602,52 +1315,45 @@ class _EditProfilePageState extends State<EditProfilePage> {
       }
 
       final updates = <String, dynamic>{};
-      
+
       // Update display name
       final newDisplayName = _displayNameController.text.trim();
       if (newDisplayName != _originalDisplayName) {
         updates['displayName'] = newDisplayName;
       }
-      
+
       // Update full name
       final newFullName = _buildFullName();
       final originalFullName = _buildOriginalFullName();
       if (newFullName != originalFullName) {
         updates['fullName'] = newFullName;
       }
-      
+
       // Update individual name fields
       final newFirstName = _firstNameController.text.trim();
       final newMiddleName = _middleNameController.text.trim();
       final newLastName = _lastNameController.text.trim();
-      
-      // Debug logging
-      AppLogger.d('Save Profile - Name Fields:');
-      AppLogger.d('  Original: $_originalFirstName | $_originalMiddleName | $_originalLastName');
-      AppLogger.d('  New: $newFirstName | $newMiddleName | $newLastName');
-      
+
       // Check if any name field has changed
-      bool nameFieldsChanged = newFirstName != _originalFirstName ||
-                              newMiddleName != _originalMiddleName ||
-                              newLastName != _originalLastName;
-      
-      AppLogger.d('  Name fields changed: $nameFieldsChanged');
-      
+      bool nameFieldsChanged =
+          newFirstName != _originalFirstName ||
+          newMiddleName != _originalMiddleName ||
+          newLastName != _originalLastName;
+
       // If any name field changed, update all name fields to ensure consistency
       if (nameFieldsChanged) {
         updates['firstName'] = newFirstName;
         updates['middleName'] = newMiddleName;
         updates['lastName'] = newLastName;
-        AppLogger.d('  Added name updates to batch: firstName=$newFirstName, middleName=$newMiddleName, lastName=$newLastName');
       }
-      
+
       // Update gender
       final originalGenderNormalized = _originalGender.toLowerCase();
       final selectedGenderNormalized = _selectedGender.toLowerCase();
       if (selectedGenderNormalized != originalGenderNormalized) {
         updates['gender'] = _selectedGender;
       }
-      
+
       // Update birthdate
       if (_selectedBirthdate != _originalBirthdate) {
         if (_selectedBirthdate != null) {
@@ -660,17 +1366,16 @@ class _EditProfilePageState extends State<EditProfilePage> {
             0,
             0,
           ).add(const Duration(hours: 8)); // UTC+8
-          
+
           updates['birthdate'] = Timestamp.fromDate(birthdatePhilippines);
         } else {
           updates['birthdate'] = null;
         }
       }
-      
+
       // Upload photo if selected
-      String? newPhotoURL;
       if (_selectedImageFile != null || _selectedImageBytes != null) {
-        newPhotoURL = await _uploadPhotoToFirebase();
+        final newPhotoURL = await _uploadPhotoToFirebase();
         if (newPhotoURL != null) {
           updates['photoURL'] = newPhotoURL;
           _currentPhotoURL = newPhotoURL;
@@ -679,21 +1384,21 @@ class _EditProfilePageState extends State<EditProfilePage> {
         // Photo was removed
         updates['photoURL'] = null;
       }
-      
+
       // Update specialties
       if (!_areListsEqual(_selectedSpecialties, _originalSpecialties)) {
         updates['specialties'] = _selectedSpecialties;
       }
-      
+
       if (updates.isNotEmpty) {
         updates['updatedAt'] = FieldValue.serverTimestamp();
-        
-        // If data wasn't loaded, it means the document might not exist or we're creating new data
-        // Use set with merge instead of update to handle both cases
+
+        // If data wasn't loaded, it means the document might not exist or we're
+        // creating new data. Use set with merge to handle both cases.
         if (!_hasLoadedData) {
           // For new profiles, add createdAt timestamp
           updates['createdAt'] = FieldValue.serverTimestamp();
-          
+
           await FirebaseFirestore.instance
               .collection('User')
               .doc(user.uid)
@@ -704,10 +1409,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
               .doc(user.uid)
               .update(updates);
         }
-        
+
         // Update original values after successful save
         _updateOriginalValues();
-        
+
         // Mark data as loaded after successful save
         _hasLoadedData = true;
 
@@ -716,15 +1421,23 @@ class _EditProfilePageState extends State<EditProfilePage> {
         // it re-reads the moment the buyer lands back on it.
         ProfilePage.invalidate();
 
-        if (mounted) {
-          _showSuccessSnackBar('Profile updated successfully');
-          Navigator.of(context).pop();
-        }
+        if (!mounted) return;
+        navigator.pop();
+        messenger.showSnackBar(
+          SnackBar(
+            content: const Text('Profile updated'),
+            backgroundColor: emerald,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
       }
     } catch (e) {
       AppLogger.d('Error updating profile: $e');
       if (mounted) {
-        _showErrorSnackBar('Failed to update profile');
+        _showSnack('Failed to update profile', _danger);
       }
     } finally {
       if (mounted) {
@@ -737,22 +1450,23 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   String _buildOriginalFullName() {
     String fullName = _originalFirstName;
-    
+
     if (_originalMiddleName.isNotEmpty) {
-      final middleInitials = _originalMiddleName.split(' ')
+      final middleInitials = _originalMiddleName
+          .split(' ')
           .map((name) => name.isNotEmpty ? '${name[0]}.' : '')
           .where((initial) => initial.isNotEmpty)
           .join(' ');
-      
+
       if (middleInitials.isNotEmpty) {
         fullName += ' $middleInitials';
       }
     }
-    
+
     if (_originalLastName.isNotEmpty) {
       fullName += ' $_originalLastName';
     }
-    
+
     return fullName;
   }
 
@@ -765,1195 +1479,321 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _originalBirthdate = _selectedBirthdate;
     _originalPhotoURL = _currentPhotoURL ?? '';
     _originalSpecialties = List<String>.from(_selectedSpecialties);
-    
+
     // Clear selected image after successful save
     _selectedImageFile = null;
     _selectedImageBytes = null;
     _hasNewPhoto = false; // Reset photo change flag
   }
 
+  // ── Dialogs ──────────────────────────────────────────────────────────────
+
   Future<bool> _showConfirmationDialog() async {
     return await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            backgroundColor: ink.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: Row(
+              children: [
+                Icon(Icons.save_outlined, color: ink.emerald),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Save changes?',
+                    style: TextStyle(color: ink.text),
+                  ),
                 ),
-                child: Icon(
-                  Icons.save_outlined,
-                  color: AppColors.primary,
-                  size: 20,
-                ),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: _buildChangesList(),
               ),
-              const SizedBox(width: 12),
-              Text(
-                'Save Changes',
-                style: AppTextStyles.titleMedium.copyWith(
-                  fontWeight: FontWeight.w700,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: Text('Keep editing', style: TextStyle(color: _muted)),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ink.emerald,
+                  foregroundColor: ink.onEmerald,
+                  elevation: 0,
                 ),
+                child: const Text('Save'),
               ),
             ],
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Are you sure you want to save the following changes?',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.onSurface.withValues(alpha: 0.8),
-                ),
-              ),
-              const SizedBox(height: 16),
-              ..._buildChangesList(),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.onSurface.withValues(alpha: 0.6),
-              ),
-              child: Text('Cancel', style: AppTextStyles.buttonMedium),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.onPrimary,
-                elevation: 0,
-              ),
-              child: Text('Save Changes', style: AppTextStyles.buttonMedium),
-            ),
-          ],
-        );
-      },
-    ) ?? false;
+        ) ??
+        false;
   }
 
   Future<void> _showDiscardChangesDialog() async {
+    final navigator = Navigator.of(context);
+
     final shouldDiscard = await showDialog<bool>(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.warning.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  Icons.warning_outlined,
-                  color: AppColors.warning,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Discard Changes',
-                style: AppTextStyles.titleMedium.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          content: Text(
-            'You have unsaved changes. Are you sure you want to discard them?',
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.onSurface.withValues(alpha: 0.8),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.onSurface.withValues(alpha: 0.6),
-              ),
-              child: Text('Keep Editing', style: AppTextStyles.buttonMedium),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.warning,
-                foregroundColor: AppColors.onPrimary,
-                elevation: 0,
-              ),
-              child: Text('Discard', style: AppTextStyles.buttonMedium),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (shouldDiscard == true && mounted) {
-      Navigator.of(context).pop();
-    }
-  }
-
-  Future<void> _showPermissionDeniedDialog() async {
-    await showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.warning.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  Icons.camera_alt_outlined,
-                  color: AppColors.warning,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Camera Permission Required',
-                style: AppTextStyles.titleMedium.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Camera access has been permanently denied. To take photos, please:',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.onSurface.withValues(alpha: 0.8),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                '1. Go to device Settings\n2. Find DentPal app\n3. Enable Camera permission',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.onSurface.withValues(alpha: 0.7),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.onSurface.withValues(alpha: 0.6),
-              ),
-              child: Text('Cancel', style: AppTextStyles.buttonMedium),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                openAppSettings();
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.onPrimary,
-                elevation: 0,
-              ),
-              child: Text('Open Settings', style: AppTextStyles.buttonMedium),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<void> _showPhotoLibraryPermissionDeniedDialog() async {
-    await showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.warning.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  Icons.photo_library_outlined,
-                  color: AppColors.warning,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Photo Access Required',
-                style: AppTextStyles.titleMedium.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Photo library access has been permanently denied. To select photos, please:',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.onSurface.withValues(alpha: 0.8),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                '1. Go to device Settings\n2. Find DentPal app\n3. Enable Photos permission',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.onSurface.withValues(alpha: 0.7),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.onSurface.withValues(alpha: 0.6),
-              ),
-              child: Text('Cancel', style: AppTextStyles.buttonMedium),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                openAppSettings();
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.onPrimary,
-                elevation: 0,
-              ),
-              child: Text('Open Settings', style: AppTextStyles.buttonMedium),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  List<Widget> _buildChangesList() {
-    final changes = <Widget>[];
-    
-    // Display Name changes
-    final currentDisplayName = _displayNameController.text.trim();
-    if (currentDisplayName != _originalDisplayName) {
-      changes.add(_buildChangeItem(
-        'Display Name',
-        _originalDisplayName.isEmpty ? '(Empty)' : _originalDisplayName,
-        currentDisplayName.isEmpty ? '(Empty)' : currentDisplayName,
-      ));
-    }
-    
-    // Full Name changes
-    final currentFullName = _buildFullName();
-    final originalFullName = _buildOriginalFullName();
-    if (currentFullName != originalFullName) {
-      changes.add(_buildChangeItem(
-        'Full Name',
-        originalFullName.isEmpty ? '(Empty)' : originalFullName,
-        currentFullName.isEmpty ? '(Empty)' : currentFullName,
-      ));
-    }
-    
-    // Gender changes
-    final originalGenderNormalized = _originalGender.toLowerCase();
-    final selectedGenderNormalized = _selectedGender.toLowerCase();
-    if (selectedGenderNormalized != originalGenderNormalized) {
-      changes.add(_buildChangeItem(
-        'Gender',
-        _originalGender.isEmpty ? '(Not set)' : _originalGender,
-        _selectedGender.isEmpty ? '(Not set)' : _selectedGender,
-      ));
-    }
-    
-    // Birthdate changes
-    if (_selectedBirthdate != _originalBirthdate) {
-      final originalDateStr = _originalBirthdate != null 
-          ? DateFormat('MMMM d, yyyy').format(_originalBirthdate!)
-          : '(Not set)';
-      final newDateStr = _selectedBirthdate != null 
-          ? DateFormat('MMMM d, yyyy').format(_selectedBirthdate!)
-          : '(Not set)';
-      
-      changes.add(_buildChangeItem(
-        'Birthdate',
-        originalDateStr,
-        newDateStr,
-      ));
-    }
-    
-    // Photo changes
-    if (_selectedImageFile != null || _selectedImageBytes != null || _hasNewPhoto) {
-      changes.add(_buildChangeItem(
-        'Profile Photo',
-        _originalPhotoURL.isEmpty ? '(No photo)' : 'Current photo',
-        'New photo selected',
-      ));
-    }
-    
-    // Specialty changes
-    if (!_areListsEqual(_selectedSpecialties, _originalSpecialties)) {
-      final originalStr = _originalSpecialties.isEmpty 
-          ? '(Not set)' 
-          : '${_originalSpecialties.length} specialty(s)';
-      final newStr = _selectedSpecialties.isEmpty 
-          ? '(Not set)' 
-          : '${_selectedSpecialties.length} specialty(s)';
-      changes.add(_buildChangeItem(
-        'Specialties',
-        originalStr,
-        newStr,
-      ));
-    }
-    
-    if (changes.isEmpty) {
-      changes.add(
-        Text(
-          'No changes detected',
-          style: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.onSurface.withValues(alpha: 0.6),
-            fontStyle: FontStyle.italic,
-          ),
-        ),
-      );
-    }
-    
-    return changes;
-  }
-
-  Widget _buildChangeItem(String label, String before, String after) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: RichText(
-        text: TextSpan(
-          style: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.onSurface,
-          ),
-          children: [
-            TextSpan(
-              text: '$label: ',
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                color: Colors.black,
-              ),
-            ),
-            TextSpan(
-              text: before,
-              style: TextStyle(
-                color: AppColors.error,
-                decoration: TextDecoration.lineThrough,
-              ),
-            ),
-            const TextSpan(
-              text: ' → ',
-              style: TextStyle(
-                color: Colors.grey,
-              ),
-            ),
-            TextSpan(
-              text: after,
-              style: TextStyle(
-                color: AppColors.success,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showSuccessSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppColors.success,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-      ),
-    );
-  }
-
-  void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppColors.error,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-      ),
-    );
-  }
-
-  void _showInfoSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppColors.info,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return PopScope(
-      canPop: !_hasChanges(),
-      onPopInvokedWithResult: (didPop, result) async {
-        if (!didPop && _hasChanges()) {
-          // Show the discard changes dialog
-          await _showDiscardChangesDialog();
-        }
-      },
-      child: Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        toolbarHeight: 60,
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: AppColors.onSurface),
-          onPressed: () async {
-            if (_hasChanges()) {
-              await _showDiscardChangesDialog();
-            } else {
-              Navigator.of(context).pop();
-            }
-          },
-        ),
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: ink.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
-            Icon(Icons.edit_outlined, color: AppColors.primary, size: 24),
+            Icon(Icons.warning_amber_outlined, color: ink.amber),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'Edit Profile',
-                style: AppTextStyles.titleLarge.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+                'Discard changes?',
+                style: TextStyle(color: ink.text),
               ),
             ),
-            // Show unsaved changes indicator
-            if (_hasChanges() && _hasLoadedData)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.warning.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: AppColors.warning.withValues(alpha: 0.3),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.circle,
-                      color: AppColors.warning,
-                      size: 8,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Unsaved',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.warning,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
           ],
         ),
+        content: Text(
+          'You have unsaved changes. Leaving now throws them away.',
+          style: AppTextStyles.bodyMedium.copyWith(color: _muted, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text('Keep editing', style: TextStyle(color: _muted)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ink.amber,
+              foregroundColor: ink.onAmber,
+              elevation: 0,
+            ),
+            child: const Text('Discard'),
+          ),
+        ],
       ),
-      // Add persistent bottom navigation bar for Web only when changes are detected
-      bottomNavigationBar: kIsWeb && _hasChanges() && _hasLoadedData ? Container(
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.onSurface.withValues(alpha: 0.1),
-              blurRadius: 10,
-              offset: const Offset(0, -2),
-            ),
-          ],
-        ),
-        padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          top: 16,
-          bottom: MediaQuery.of(context).padding.bottom + 16,
-        ),
-        child: Row(
+    );
+
+    if (shouldDiscard == true && mounted) {
+      navigator.pop();
+    }
+  }
+
+  /// One dialog for both permissions — they only differed in a noun.
+  Future<void> _showPermissionDeniedDialog({
+    required IconData icon,
+    required String title,
+    required String what,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: ink.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
           children: [
-            // Discard Button
-            Expanded(
-              child: OutlinedButton(
-                onPressed: _isLoading ? null : _showDiscardChangesDialog,
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: AppColors.warning),
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: Text(
-                  'Discard',
-                  style: AppTextStyles.buttonLarge.copyWith(
-                    color: AppColors.warning,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 16),
-            // Save Button
-            Expanded(
-              child: ElevatedButton(
-                onPressed: _isLoading ? null : _saveProfile,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: AppColors.onPrimary,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  elevation: 0,
-                ),
-                child: _isLoading
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          color: AppColors.onPrimary,
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : Text(
-                        'Save Changes',
-                        style: AppTextStyles.buttonLarge.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-              ),
-            ),
+            Icon(icon, color: ink.amber),
+            const SizedBox(width: 8),
+            Expanded(child: Text(title, style: TextStyle(color: ink.text))),
           ],
         ),
-      ) : null,
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final content = _isLoading && !_hasLoadedData
-              ? const Center(child: CircularProgressIndicator())
-              : SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(
-                    16.0,
-                    16.0,
-                    16.0,
-                    // Add bottom padding when changes exist to account for bottom bar
-                    _hasChanges() && _hasLoadedData ? 16.0 : 32.0,
-                  ),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 8),
-                        
-                        // Profile Photo Section
-                        _buildProfilePhotoSection(),
-                        const SizedBox(height: 32),
-                        
-                        // Basic Information Section
-                        _buildSectionHeader('Basic Information'),
-                        const SizedBox(height: 16),
-                        Container(
-                          decoration: BoxDecoration(
-                            color: AppColors.surface,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.onSurface.withValues(alpha: 0.05),
-                                blurRadius: 10,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          padding: const EdgeInsets.all(20),
-                          child: Column(
-                            children: [
-                              _buildTextField(
-                                controller: _displayNameController,
-                                label: 'Display Name',
-                                icon: Icons.badge_outlined,
-                                validator: (value) {
-                                  if (value == null || value.trim().isEmpty) {
-                                    return 'Display name is required';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 16),
-                              
-                              _buildTextField(
-                                controller: _firstNameController,
-                                label: 'First Name',
-                                icon: Icons.person_outline,
-                                validator: (value) {
-                                  if (value == null || value.trim().isEmpty) {
-                                    return 'First name is required';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 16),
-                              
-                              _buildTextField(
-                                controller: _middleNameController,
-                                label: 'Middle Name (Optional)',
-                                icon: Icons.person_outline,
-                              ),
-                              const SizedBox(height: 16),
-                              
-                              _buildTextField(
-                                controller: _lastNameController,
-                                label: 'Last Name',
-                                icon: Icons.person_outline,
-                                validator: (value) {
-                                  if (value == null || value.trim().isEmpty) {
-                                    return 'Last name is required';
-                                  }
-                                  return null;
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                        
-                        const SizedBox(height: 32),
-                        
-                        // Personal Details Section
-                        _buildSectionHeader('Personal Details'),
-                        const SizedBox(height: 16),
-                        Container(
-                          decoration: BoxDecoration(
-                            color: AppColors.surface,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.onSurface.withValues(alpha: 0.05),
-                                blurRadius: 10,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          padding: const EdgeInsets.all(20),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Gender Selection
-                              Text(
-                                'Gender',
-                                style: AppTextStyles.bodyMedium.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.onSurface.withValues(alpha: 0.8),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              Container(
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: AppColors.onSurface.withValues(alpha: 0.2),
-                                  ),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: DropdownButtonFormField<String>(
-                                  initialValue: _selectedGender.isEmpty ? null : _selectedGender,
-                                  decoration: InputDecoration(
-                                    prefixIcon: Icon(
-                                      Icons.wc_outlined,
-                                      color: AppColors.primary,
-                                    ),
-                                    border: InputBorder.none,
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 16,
-                                    ),
-                                  ),
-                                  hint: Text(
-                                    'Select gender',
-                                    style: AppTextStyles.bodyMedium.copyWith(
-                                      color: AppColors.onSurface.withValues(alpha: 0.6),
-                                    ),
-                                  ),
-                                  items: const [
-                                    DropdownMenuItem(
-                                      value: 'male',
-                                      child: Text('Male'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'female',
-                                      child: Text('Female'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'rather not say',
-                                      child: Text('Rather not say'),
-                                    ),
-                                  ],
-                                  onChanged: (value) {
-                                    setState(() {
-                                      _selectedGender = value ?? '';
-                                    });
-                                  },
-                                  validator: (value) {
-                                    if (value == null || value.isEmpty) {
-                                      return 'Please select your gender';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                              ),
-                              
-                              const SizedBox(height: 20),
-                              
-                              // Birthdate Selection
-                              Text(
-                                'Birthdate',
-                                style: AppTextStyles.bodyMedium.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.onSurface.withValues(alpha: 0.8),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              InkWell(
-                                onTap: _selectBirthdate,
-                                borderRadius: BorderRadius.circular(12),
-                                child: Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 16,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(
-                                      color: AppColors.onSurface.withValues(alpha: 0.2),
-                                    ),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.calendar_today_outlined,
-                                        color: AppColors.primary,
-                                      ),
-                                      const SizedBox(width: 16),
-                                      Expanded(
-                                        child: Text(
-                                          _selectedBirthdate != null
-                                              ? DateFormat('MMMM d, yyyy').format(_selectedBirthdate!)
-                                              : 'Select birthdate',
-                                          style: AppTextStyles.bodyMedium.copyWith(
-                                            color: _selectedBirthdate != null
-                                                ? AppColors.onSurface
-                                                : AppColors.onSurface.withValues(alpha: 0.6),
-                                          ),
-                                        ),
-                                      ),
-                                      Icon(
-                                        Icons.arrow_drop_down,
-                                        color: AppColors.onSurface.withValues(alpha: 0.6),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        
-                        const SizedBox(height: 32),
-                        
-                        // Professional Information Section
-                        _buildSectionHeader('Professional Information'),
-                        const SizedBox(height: 16),
-                        Container(
-                          decoration: BoxDecoration(
-                            color: AppColors.surface,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.onSurface.withValues(alpha: 0.05),
-                                blurRadius: 10,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          padding: const EdgeInsets.all(20),
-                          child: SpecialtySelectionWidget(
-                            selectedSpecialties: _selectedSpecialties,
-                            onSelectionChanged: (specialties) {
-                              setState(() {
-                                _selectedSpecialties = specialties;
-                              });
-                            },
-                          ),
-                        ),
-                        
-                        const SizedBox(height: 32),
-                        
-                        // Action Buttons for Mobile - Always show
-                        if (!kIsWeb) 
-                          Row(
-                            children: [
-                              // Cancel Button
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed: _isLoading ? null : () async {
-                                    if (_hasChanges()) {
-                                      await _showDiscardChangesDialog();
-                                    } else {
-                                      Navigator.of(context).pop();
-                                    }
-                                  },
-                                  style: OutlinedButton.styleFrom(
-                                    side: BorderSide(
-                                      color: _hasChanges() 
-                                          ? AppColors.warning 
-                                          : AppColors.onSurface.withValues(alpha: 0.3),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(vertical: 16),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    'Cancel',
-                                    style: AppTextStyles.buttonLarge.copyWith(
-                                      color: _hasChanges() 
-                                          ? AppColors.warning 
-                                          : AppColors.onSurface.withValues(alpha: 0.8),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              // Save Button
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed: (_isLoading || !_hasChanges()) ? null : _saveProfile,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: _hasChanges() ? AppColors.primary : AppColors.grey300,
-                                    foregroundColor: AppColors.onPrimary,
-                                    padding: const EdgeInsets.symmetric(vertical: 16),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    elevation: 0,
-                                  ),
-                                  child: _isLoading
-                                      ? const SizedBox(
-                                          height: 20,
-                                          width: 20,
-                                          child: CircularProgressIndicator(
-                                            color: AppColors.onPrimary,
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : Text(
-                                          'Save Changes',
-                                          style: AppTextStyles.buttonLarge.copyWith(
-                                            fontWeight: FontWeight.w600,
-                                            color: _hasChanges() 
-                                                ? AppColors.onPrimary 
-                                                : AppColors.onSurface.withValues(alpha: 0.5),
-                                          ),
-                                        ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        
-                        // Add bottom padding
-                        const SizedBox(height: 32),
-                      ],
-                    ),
-                  ),
-                );
-
-          final isWideWeb = kIsWeb && constraints.maxWidth > 800; // BREAKPOINT
-          if (isWideWeb) {
-            return Align(
-              alignment: Alignment.topCenter, // top-centered vertically
-              child: Padding(
-                padding: const EdgeInsets.only(top: 16), // slight top spacing
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 640), // MAX_WIDTH
-                  child: Material(color: Colors.transparent, child: content),
-                ),
-              ),
-            );
-          }
-          return content; // mobile & narrow web full width
-        },
-      ), // end LayoutBuilder
-    ), // end Scaffold
-  );
-}
-
-  Widget _buildProfilePhotoSection() {
-    return Center(
-      child: Column(
-        children: [
-          // Profile Photo
-          GestureDetector(
-            onTap: _showPhotoSelectionDialog,
-            child: Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: AppColors.primary.withValues(alpha: 0.3),
-                  width: 2,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.1),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Stack(
-                children: [
-                  ClipOval(
-                    child: Container(
-                      width: 120,
-                      height: 120,
-                      color: AppColors.grey100,
-                      child: _buildPhotoContent(),
-                    ),
-                  ),
-                  // Upload overlay
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: AppColors.surface,
-                          width: 2,
-                        ),
-                      ),
-                      child: Icon(
-                        Icons.camera_alt,
-                        color: AppColors.onPrimary,
-                        size: 18,
-                      ),
-                    ),
-                  ),
-                  // Loading overlay
-                  if (_isUploadingPhoto)
-                    Container(
-                      width: 120,
-                      height: 120,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.onSurface.withValues(alpha: 0.7),
-                      ),
-                      child: const Center(
-                        child: CircularProgressIndicator(
-                          color: AppColors.onPrimary,
-                          strokeWidth: 3,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
+        content: Text(
+          'Access was permanently denied, so we can’t ask again from here. '
+          'Open Settings, find DentPal, and turn $what on.',
+          style: AppTextStyles.bodyMedium.copyWith(color: _muted, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text('Not now', style: TextStyle(color: _muted)),
           ),
-          const SizedBox(height: 12),
-          Text(
-            'Tap to change photo',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.onSurface.withValues(alpha: 0.6),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              openAppSettings();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ink.emerald,
+              foregroundColor: ink.onEmerald,
+              elevation: 0,
             ),
+            child: const Text('Open Settings'),
           ),
-          if (_selectedImageFile != null || _selectedImageBytes != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.success.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  'New photo selected',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.success,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );
   }
 
-  Widget _buildPhotoContent() {
-    // Show selected image first
-    if (_selectedImageBytes != null) {
-      return Image.memory(
-        _selectedImageBytes!,
-        fit: BoxFit.cover,
-        width: 120,
-        height: 120,
+  // ── The diff ─────────────────────────────────────────────────────────────
+
+  List<Widget> _buildChangesList() {
+    final changes = <Widget>[];
+
+    // Display Name changes
+    final currentDisplayName = _displayNameController.text.trim();
+    if (currentDisplayName != _originalDisplayName) {
+      changes.add(
+        _buildChangeItem(
+          'Display name',
+          _originalDisplayName.isEmpty ? '(empty)' : _originalDisplayName,
+          currentDisplayName.isEmpty ? '(empty)' : currentDisplayName,
+        ),
       );
     }
-    
-    if (_selectedImageFile != null) {
-      return Image.file(
-        _selectedImageFile!,
-        fit: BoxFit.cover,
-        width: 120,
-        height: 120,
+
+    // Full Name changes
+    final currentFullName = _buildFullName();
+    final originalFullName = _buildOriginalFullName();
+    if (currentFullName != originalFullName) {
+      changes.add(
+        _buildChangeItem(
+          'Full name',
+          originalFullName.isEmpty ? '(empty)' : originalFullName,
+          currentFullName.isEmpty ? '(empty)' : currentFullName,
+        ),
       );
     }
-    
-    // Show current photo
-    if (_currentPhotoURL != null && _currentPhotoURL!.isNotEmpty) {
-      return Image.network(
-        _currentPhotoURL!,
-        fit: BoxFit.cover,
-        width: 120,
-        height: 120,
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return Center(
-            child: CircularProgressIndicator(
-              value: loadingProgress.expectedTotalBytes != null
-                  ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                  : null,
-              strokeWidth: 2,
-            ),
-          );
-        },
-        errorBuilder: (context, error, stackTrace) {
-          return _buildDefaultAvatar();
-        },
+
+    // Gender changes
+    final originalGenderNormalized = _originalGender.toLowerCase();
+    final selectedGenderNormalized = _selectedGender.toLowerCase();
+    if (selectedGenderNormalized != originalGenderNormalized) {
+      changes.add(
+        _buildChangeItem(
+          'Gender',
+          _originalGender.isEmpty ? '(not set)' : _originalGender,
+          _selectedGender.isEmpty ? '(not set)' : _selectedGender,
+        ),
       );
     }
-    
-    // Show default avatar
-    return _buildDefaultAvatar();
+
+    // Birthdate changes
+    if (_selectedBirthdate != _originalBirthdate) {
+      changes.add(
+        _buildChangeItem(
+          'Birthdate',
+          _originalBirthdate != null
+              ? DateFormat('MMMM d, yyyy').format(_originalBirthdate!)
+              : '(not set)',
+          _selectedBirthdate != null
+              ? DateFormat('MMMM d, yyyy').format(_selectedBirthdate!)
+              : '(not set)',
+        ),
+      );
+    }
+
+    // Photo changes
+    if (_selectedImageFile != null ||
+        _selectedImageBytes != null ||
+        _hasNewPhoto) {
+      changes.add(
+        _buildChangeItem(
+          'Profile photo',
+          _originalPhotoURL.isEmpty ? '(no photo)' : 'Current photo',
+          _currentPhotoURL == null && _originalPhotoURL.isNotEmpty
+              ? '(removed)'
+              : 'New photo',
+        ),
+      );
+    }
+
+    // Specialty changes
+    if (!_areListsEqual(_selectedSpecialties, _originalSpecialties)) {
+      changes.add(
+        _buildChangeItem(
+          'Specialties',
+          _originalSpecialties.isEmpty
+              ? '(not set)'
+              : '${_originalSpecialties.length} selected',
+          _selectedSpecialties.isEmpty
+              ? '(not set)'
+              : '${_selectedSpecialties.length} selected',
+        ),
+      );
+    }
+
+    if (changes.isEmpty) {
+      changes.add(
+        Text(
+          'No changes detected',
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: _muted,
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      );
+    }
+
+    return changes;
   }
 
-  Widget _buildDefaultAvatar() {
-    return Container(
-      width: 120,
-      height: 120,
-      color: AppColors.primary.withValues(alpha: 0.1),
-      child: Icon(
-        Icons.person,
-        size: 60,
-        color: AppColors.primary.withValues(alpha: 0.6),
-      ),
-    );
-  }
-
-  Widget _buildSectionHeader(String title) {
+  /// One "was → is" line.
+  ///
+  /// The label used to be hardcoded `Colors.black` and the arrow `Colors.grey`,
+  /// both of which vanish on a dark surface.
+  Widget _buildChangeItem(String label, String before, String after) {
     return Padding(
-      padding: const EdgeInsets.only(left: 4),
-      child: Text(
-        title,
-        style: AppTextStyles.titleMedium.copyWith(
-          fontWeight: FontWeight.w700,
-          color: AppColors.onSurface.withValues(alpha: 0.8),
-        ),
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: ink.text.withValues(alpha: 0.5),
+              fontWeight: FontWeight.w700,
+              fontSize: 11.5,
+            ),
+          ),
+          const SizedBox(height: 3),
+          RichText(
+            text: TextSpan(
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: ink.text,
+                fontSize: 13.5,
+              ),
+              children: [
+                TextSpan(
+                  text: before,
+                  style: TextStyle(
+                    color: ink.text.withValues(alpha: 0.45),
+                    decoration: TextDecoration.lineThrough,
+                    decorationColor: ink.text.withValues(alpha: 0.45),
+                  ),
+                ),
+                TextSpan(
+                  text: '  →  ',
+                  style: TextStyle(color: ink.text.withValues(alpha: 0.3)),
+                ),
+                TextSpan(
+                  text: after,
+                  style: TextStyle(
+                    color: ink.emerald,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-    String? Function(String?)? validator,
-    TextInputType keyboardType = TextInputType.text,
-  }) {
-    return TextFormField(
-      controller: controller,
-      style: AppTextStyles.bodyMedium,
-      keyboardType: keyboardType,
-      validator: validator,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon, color: AppColors.primary),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(
-            color: AppColors.onSurface.withValues(alpha: 0.2),
-          ),
+  void _showSnack(String message, Color tone, {Color? onTone}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: TextStyle(color: onTone ?? Colors.white),
         ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(
-            color: AppColors.onSurface.withValues(alpha: 0.2),
-          ),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: AppColors.primary, width: 2),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: AppColors.error, width: 1),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: AppColors.error, width: 2),
-        ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 16,
-        ),
+        backgroundColor: tone,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
 }
-
