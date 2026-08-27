@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dentpal/product/products_module.dart';
+import 'package:dentpal/product/checkout_routes.dart';
 import 'package:dentpal/product/pages/edit_product_page.dart';
 import 'package:dentpal/product/pages/store_page.dart';
 import 'package:dentpal/profile/pages/seller_listings_page.dart';
@@ -11,6 +12,7 @@ import 'package:dentpal/profile/pages/settings/settings_page.dart';
 import 'package:dentpal/profile/pages/chats_page.dart';
 import 'package:dentpal/profile/pages/chat_detail_page.dart';
 import 'package:dentpal/profile/pages/shipping_addresses_page.dart';
+import 'package:dentpal/profile/pages/reward_points_page.dart';
 import 'package:dentpal/profile/pages/settings/manage_sub_accounts_page.dart';
 import 'package:dentpal/profile/pages/settings/change_mobile_page.dart';
 import 'package:dentpal/profile/pages/settings/change_password_page.dart';
@@ -97,6 +99,13 @@ void main() async {
   runApp(const MyApp());
 }
 
+/// Query parameters the app was launched with, captured before the address bar
+/// is rewritten. Empty off the web, and empty when the launch URL carried none.
+///
+/// Only the payment redirect needs these: it is the one entry point that hands
+/// the app data in a query string rather than in a route argument.
+Map<String, String> _launchQueryParameters = const {};
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -134,8 +143,8 @@ class MyApp extends StatelessWidget {
         '/login': (context) => const LoginPage(),
         '/auth': (context) => const AuthWrapper(),
         '/home': (context) => const HomePage(),
-        '/payment-success': (context) => const PaymentSuccessPage(),
-        '/payment-failed': (context) => const PaymentFailedPage(),
+        // The two endings of checkout are built in `onGenerateRoute` instead,
+        // so they can be handed the ids the payment redirect carries.
         '/products': (context) => const ProductListingPage(),
         '/cart': (context) => const CartPage(),
         '/add-product': (context) => const AddProductPage(),
@@ -154,6 +163,15 @@ class MyApp extends StatelessWidget {
         '/support-url': (context) => const PublicSupportPage(),
       },
       onGenerateRoute: (settings) {
+        // The two endings of checkout, plus the legacy spellings of them.
+        //
+        // `/payment-success` and `/payment-failed` stay reachable because they
+        // are the redirect targets already configured with PayMongo: a payment
+        // session created before this change still comes back to them, and so
+        // does one created by an older build still in someone's browser.
+        final outcomeRoute = _checkoutOutcomeRoute(settings);
+        if (outcomeRoute != null) return outcomeRoute;
+
         // Handle Firebase action links (email verification, password reset, email recovery)
         // These come with query parameters: mode, oobCode, apiKey, continueUrl
         if (settings.name == '/' && settings.arguments != null) {
@@ -214,6 +232,17 @@ class MyApp extends StatelessWidget {
           return MaterialPageRoute(
             settings: settings,
             builder: (context) => AddEditAddressPage(address: address),
+          );
+        }
+
+        // Reward points. A push from Profile hands the buyer's document over
+        // in `arguments` so the balance is right on the first frame; a pasted
+        // or reloaded link has none, and the page reads it itself.
+        if (settings.name == '/profile/rewards') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (context) => RewardPointsPage(userData: args),
           );
         }
 
@@ -361,6 +390,49 @@ class MyApp extends StatelessWidget {
     return app;
   }
 
+  /// Builds `/cart/checkout/success` and `/cart/checkout/fail` — and the legacy
+  /// `/payment-success` / `/payment-failed` — or null when [settings] names
+  /// something else.
+  ///
+  /// These are the one pair of routes that a *browser* navigates to rather than
+  /// the app: the payment provider redirects to them and hangs the order and
+  /// session ids off the query string. `getCurrentPath` reports only the
+  /// pathname, so on a cold load the ids are not in the route name at all and
+  /// have to come from [_launchQueryParameters], captured before the address
+  /// bar was rewritten.
+  Route<dynamic>? _checkoutOutcomeRoute(RouteSettings settings) {
+    final name = settings.name;
+    if (name == null) return null;
+    final uri = Uri.tryParse(name);
+    if (uri == null) return null;
+
+    final succeeded =
+        uri.path == kCheckoutSuccessPath || uri.path == '/payment-success';
+    final failed =
+        uri.path == kCheckoutFailedPath || uri.path == '/payment-failed';
+    if (!succeeded && !failed) return null;
+
+    // The route's own query wins where both carry a key: it was set by this
+    // app, whereas the launch parameters may be left over from the redirect
+    // that started the session.
+    final params = {..._launchQueryParameters, ...uri.queryParameters};
+
+    return MaterialPageRoute(
+      settings: settings,
+      builder: (context) => succeeded
+          ? PaymentSuccessPage(
+              orderId: params['order_id'],
+              sessionId:
+                  params['session_id'] ?? params['payment_intent_id'],
+            )
+          : PaymentFailedPage(
+              orderId: params['order_id'],
+              sessionId: params['session_id'],
+              errorMessage: params['error'] ?? params['message'],
+            ),
+    );
+  }
+
   // Helper method to get product for editing
   Future<Product?> _getProductForEdit(String productId) async {
     final productService = ProductService();
@@ -370,6 +442,11 @@ class MyApp extends StatelessWidget {
   String _getInitialRoute() {
     if (kIsWeb) {
       final currentPath = getCurrentPath();
+
+      // Read once, here, while the address bar still holds what the app was
+      // launched with. By the time a route is built the shell has already
+      // rewritten it, and a payment redirect's ids would be gone.
+      _launchQueryParameters = getUrlQueryParameters();
 
       // A shell destination is a tab, not a route of its own. Handing '/cart'
       // to `initialRoute` would make Navigator build the stack ['/', '/cart']
@@ -381,7 +458,25 @@ class MyApp extends StatelessWidget {
         return '/';
       }
 
-      // If we're on a payment route, return it directly
+      // Anything under /cart/checkout. These cannot be handed to
+      // `initialRoute`: Navigator would build the stack segment by segment and
+      // '/cart' is a shell destination, so it would stack a second copy of the
+      // app underneath. The shell opens on the Cart tab instead, and pushes
+      // the checkout page on top of it once it has mounted.
+      if (isCheckoutPath(currentPath)) {
+        pendingShellTab = ShellTab.cart;
+        // Only the two endings survive a cold load — the form and the payment
+        // session both need state the previous screen was holding. Everything
+        // else simply lands on the cart.
+        if (isCheckoutOutcomePath(currentPath)) {
+          pendingShellRoute = currentPath;
+        }
+        return '/';
+      }
+
+      // Legacy payment routes. Still the redirect targets configured with
+      // PayMongo, so they have to keep working; unlike the paths above they
+      // are top-level, so Navigator can build them directly.
       if (currentPath == '/payment-success' ||
           currentPath == '/payment-failed') {
         return currentPath;

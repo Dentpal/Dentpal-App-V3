@@ -63,6 +63,19 @@ ShellTab? shellTabForPath(String path) {
 /// by the first shell to mount.
 ShellTab? pendingShellTab;
 
+/// A route to push on top of [pendingShellTab] once the shell is up.
+///
+/// Some paths are neither a shell destination nor something `initialRoute` can
+/// build: `/cart/checkout/success` is one route deep under a *tab*, and handing
+/// it to Navigator would make it build '/cart' as an intermediate segment and
+/// stack a second copy of the app under the page. So the tab opens normally and
+/// the rest of the path is pushed on top of it — which also gives Back somewhere
+/// sensible to go, rather than nowhere.
+///
+/// Set from `main` alongside [pendingShellTab]; consumed once the session has
+/// been settled, for the same reason the tab is.
+String? pendingShellRoute;
+
 /// Reselecting Home bumps this. [ProductListingPage] listens and scrolls itself
 /// back to the top, the way tapping the active tab behaves in a native app.
 /// A counter rather than a flag so consecutive taps each register.
@@ -249,6 +262,9 @@ class AppShellState extends State<AppShell> {
     pendingShellTab = null;
 
     if (requested == null || requested == ShellTab.home) {
+      // Nothing to hang a pushed route off — drop it rather than letting it
+      // land on a later, unrelated tab change.
+      pendingShellRoute = null;
       _syncBrowserUrlAfterFirstFrame();
       return;
     }
@@ -285,12 +301,30 @@ class AppShellState extends State<AppShell> {
 
     if (_canOpen(tab)) {
       _showTab(tab);
+      _settlePendingRoute();
     } else {
       // Signed out after all. The address bar still reads /orders, so point it
       // at what is actually on screen.
+      pendingShellRoute = null;
       syncBrowserUrl();
     }
     return true;
+  }
+
+  /// Pushes [pendingShellRoute] over the tab that has just opened.
+  ///
+  /// After the frame, because `_showTab` has only just called `setState` and
+  /// the tab underneath should be built before something lands on top of it —
+  /// otherwise Back from the pushed page reveals a tab mid-build.
+  void _settlePendingRoute() {
+    final route = pendingShellRoute;
+    pendingShellRoute = null;
+    if (route == null) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context).pushNamed(route);
+    });
   }
 
   /// Points the address bar at the destination on screen, leaving the route

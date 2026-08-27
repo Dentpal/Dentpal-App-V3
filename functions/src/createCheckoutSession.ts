@@ -964,11 +964,25 @@ export const createCheckoutSession = onRequest(
         
         console.log(`Total shipping cost for all sellers: ₱${shippingCost} (${sellersWithFallback.length} using fallback)`);
         
-        // Validate final shipping cost - with fallback, this should always be valid
-        if (!shippingCost || shippingCost <= 0) {
-          // This should never happen now with fallback, but just in case
+        // Validate final shipping cost — but only for sellers that were meant to
+        // get a courier rate at all.
+        //
+        // A zero total is legitimate, not a failure: Pickup carries no freight,
+        // so its short-circuit above contributes ₱0 by design. This guard used
+        // to treat any zero as "the calculation broke" and stamp the default
+        // fallback over it, which on a pickup-only order recorded a shipping fee
+        // of DEFAULT_FALLBACK_SHIPPING_COST × sellerCount against an order that
+        // has no delivery. The buyer was never charged it — `totalChargedToBuyer`
+        // is summed from the per-seller breakdowns, which get pickup right — but
+        // it landed in `summary.shippingCost`, which is what the app's order
+        // details and the seller dashboard read.
+        const jrsSellers = sellerShippingData.filter(
+          (s) => s.chosenMode === 'standard' || s.chosenMode === 'express'
+        );
+        if (jrsSellers.length > 0 && shippingCost <= 0) {
+          // A seller that expected a JRS rate has none, even after the fallback.
           console.error('Invalid total shipping cost even with fallback, using default');
-          shippingCost = DEFAULT_FALLBACK_SHIPPING_COST * Object.keys(itemsBySeller).length;
+          shippingCost = DEFAULT_FALLBACK_SHIPPING_COST * jrsSellers.length;
         }
         
         // Calculate PER-SELLER fee breakdowns using the multi-seller function

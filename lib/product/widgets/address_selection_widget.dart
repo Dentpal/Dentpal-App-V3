@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../profile/models/shipping_address.dart';
 import '../../profile/services/address_service.dart';
-import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
+import '../../core/app_theme/ink_palette.dart';
 
 class AddressSelectionWidget extends StatefulWidget {
   final ShippingAddress? selectedAddress;
@@ -17,7 +17,7 @@ class AddressSelectionWidget extends StatefulWidget {
     required this.onAddressSelected,
     this.onAddNewAddress,
     this.showAddButton = true,
-    this.title = 'Shipping Address',
+    this.title = 'Shipping address',
   });
 
   @override
@@ -46,7 +46,7 @@ class _AddressSelectionWidgetState extends State<AddressSelectionWidget> {
       });
 
       final addresses = await AddressService.getAllAddresses();
-      
+
       setState(() {
         _addresses = addresses;
         _isLoading = false;
@@ -123,77 +123,64 @@ class _AddressSelectionWidgetState extends State<AddressSelectionWidget> {
     });
   }
 
+  InkPalette get ink => InkPalette.of(context);
+
+  Color get _danger =>
+      ink.isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626);
+
   @override
   Widget build(BuildContext context) {
+    // Same card as every other checkout section: one hairline border, one
+    // radius, a plain heading rather than a tinted brand-green band.
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.onSurface.withValues(alpha: 0.1),
-          width: 1,
-        ),
+        color: ink.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: ink.border),
       ),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.05),
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(16),
-                topRight: Radius.circular(16),
+          Row(
+            children: [
+              Icon(Icons.location_on_outlined, size: 18, color: ink.emerald),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  widget.title,
+                  style: AppTextStyles.titleMedium.copyWith(
+                    color: ink.text,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                  ),
+                ),
               ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.location_on,
-                  color: AppColors.primary,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    widget.title,
-                    style: AppTextStyles.titleMedium.copyWith(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w600,
+              if (widget.showAddButton)
+                TextButton.icon(
+                  onPressed: widget.onAddNewAddress ?? _showAddAddressDialog,
+                  icon: const Icon(Icons.add, size: 16),
+                  label: Text(
+                    'Add',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12.5,
                     ),
                   ),
-                ),
-                if (widget.showAddButton)
-                  TextButton.icon(
-                    onPressed: widget.onAddNewAddress ?? _showAddAddressDialog,
-                    icon: Icon(
-                      Icons.add,
-                      size: 16,
-                      color: AppColors.primary,
+                  style: TextButton.styleFrom(
+                    foregroundColor: ink.emerald,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
                     ),
-                    label: Text(
-                      'Add',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
-
-          // Content
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: _buildContent(),
-          ),
+          const SizedBox(height: 14),
+          _buildContent(),
         ],
       ),
     );
@@ -201,11 +188,16 @@ class _AddressSelectionWidgetState extends State<AddressSelectionWidget> {
 
   Widget _buildContent() {
     if (_isLoading) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(20),
-          child: CircularProgressIndicator(
-            color: AppColors.primary,
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Center(
+          child: SizedBox(
+            width: 26,
+            height: 26,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              color: ink.emerald,
+            ),
           ),
         ),
       );
@@ -234,36 +226,36 @@ class _AddressSelectionWidgetState extends State<AddressSelectionWidget> {
     return Column(
       children: [
         _buildAddressCard(_selectedAddress!, isSelected: true),
-        
+
         if (_addresses.length > 1) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           InkWell(
             onTap: _toggleShowAllAddresses,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(12),
             child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
               decoration: BoxDecoration(
-                color: AppColors.grey50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: AppColors.onSurface.withValues(alpha: 0.1),
-                ),
+                color: ink.surfaceHigh,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: ink.border),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    'Choose different address (${_addresses.length - 1} more)',
+                    'Choose a different address '
+                    '(${_addresses.length - 1} more)',
                     style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w500,
+                      color: ink.emerald,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12.5,
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   Icon(
                     Icons.keyboard_arrow_down,
-                    color: AppColors.primary,
-                    size: 16,
+                    color: ink.emerald,
+                    size: 17,
                   ),
                 ],
               ),
@@ -281,32 +273,43 @@ class _AddressSelectionWidgetState extends State<AddressSelectionWidget> {
         Row(
           children: [
             Text(
-              'Select Address',
+              'Select an address',
               style: AppTextStyles.titleSmall.copyWith(
-                fontWeight: FontWeight.w600,
+                color: ink.text.withValues(alpha: 0.7),
+                fontWeight: FontWeight.w700,
+                fontSize: 12.5,
               ),
             ),
             const Spacer(),
             TextButton(
               onPressed: _toggleShowAllAddresses,
+              style: TextButton.styleFrom(
+                foregroundColor: ink.emerald,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
               child: Text(
                 'Close',
                 style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.primary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12.5,
                 ),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 12),
-        
+        const SizedBox(height: 10),
+
         // Addresses list
         ...List.generate(_addresses.length, (index) {
           final address = _addresses[index];
           final isSelected = _selectedAddress?.id == address.id;
-          
+
           return Padding(
-            padding: EdgeInsets.only(bottom: index < _addresses.length - 1 ? 12 : 0),
+            padding: EdgeInsets.only(
+              bottom: index < _addresses.length - 1 ? 8 : 0,
+            ),
             child: _buildAddressCard(
               address,
               isSelected: isSelected,
@@ -325,120 +328,103 @@ class _AddressSelectionWidgetState extends State<AddressSelectionWidget> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(14),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: isSelected 
-              ? AppColors.primary.withValues(alpha: 0.05)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
+          color: isSelected
+              ? ink.emerald.withValues(alpha: ink.isDark ? 0.14 : 0.08)
+              : ink.surfaceHigh,
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: isSelected 
-                ? AppColors.primary
-                : AppColors.onSurface.withValues(alpha: 0.1),
-            width: isSelected ? 2 : 1,
+            color: isSelected ? ink.emerald : ink.border,
+            width: isSelected ? 1.5 : 1,
           ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Name and default badge
+            // Name and badges
             Row(
               children: [
                 Expanded(
                   child: Text(
                     address.fullName,
                     style: AppTextStyles.titleSmall.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: isSelected ? AppColors.primary : AppColors.onSurface,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13.5,
+                      color: isSelected ? ink.emerald : ink.text,
                     ),
                   ),
                 ),
-                if (address.isDefault)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: AppColors.success.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      'Default',
-                      style: AppTextStyles.labelSmall.copyWith(
-                        color: AppColors.success,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                if (isSelected && !_showAllAddresses)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      'Selected',
-                      style: AppTextStyles.labelSmall.copyWith(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
+                if (address.isDefault) _badge('Default'),
+                if (isSelected && !_showAllAddresses) ...[
+                  if (address.isDefault) const SizedBox(width: 6),
+                  _badge('Selected'),
+                ],
               ],
             ),
-            const SizedBox(height: 8),
-            
+            const SizedBox(height: 7),
+
             // Address
             Text(
               address.formattedAddress,
               style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.onSurface.withValues(alpha: 0.8),
+                color: ink.text.withValues(alpha: 0.75),
+                fontSize: 13,
                 height: 1.4,
               ),
             ),
-            const SizedBox(height: 8),
-            
+            const SizedBox(height: 7),
+
             // Phone number
             Row(
               children: [
                 Icon(
-                  Icons.phone,
+                  Icons.phone_outlined,
                   size: 14,
-                  color: AppColors.onSurface.withValues(alpha: 0.6),
+                  color: ink.text.withValues(alpha: 0.5),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: 5),
                 Text(
                   address.phoneNumber,
                   style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.onSurface.withValues(alpha: 0.6),
+                    color: ink.text.withValues(alpha: 0.55),
+                    fontSize: 12,
                   ),
                 ),
               ],
             ),
-            
+
             // Delivery notes (if any)
             if (address.notes?.isNotEmpty == true) ...[
               const SizedBox(height: 8),
               Container(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 9,
+                  vertical: 7,
+                ),
                 decoration: BoxDecoration(
-                  color: AppColors.info.withValues(alpha: 0.05),
-                  borderRadius: BorderRadius.circular(8),
+                  color: ink.surface,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: ink.border),
                 ),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Icon(
-                      Icons.note_outlined,
+                      Icons.sticky_note_2_outlined,
                       size: 14,
-                      color: AppColors.info,
+                      color: ink.text.withValues(alpha: 0.45),
                     ),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
                         address.notes!,
                         style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.info,
+                          color: ink.text.withValues(alpha: 0.65),
+                          fontSize: 12,
+                          height: 1.35,
                         ),
                       ),
                     ),
@@ -452,39 +438,66 @@ class _AddressSelectionWidgetState extends State<AddressSelectionWidget> {
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _badge(String label) {
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: ink.emerald.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: AppTextStyles.labelSmall.copyWith(
+          color: ink.emerald,
+          fontWeight: FontWeight.w700,
+          fontSize: 10.5,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Column(
         children: [
-          Icon(
-            Icons.location_off_outlined,
-            size: 48,
-            color: AppColors.onSurface.withValues(alpha: 0.4),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'No addresses available',
-            style: AppTextStyles.titleSmall.copyWith(
-              color: AppColors.onSurface.withValues(alpha: 0.8),
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: ink.surfaceHigh,
+              shape: BoxShape.circle,
+              border: Border.all(color: ink.border),
+            ),
+            child: Icon(
+              Icons.location_off_outlined,
+              size: 26,
+              color: ink.text.withValues(alpha: 0.35),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 14),
           Text(
-            'Add a shipping address to continue',
+            'No addresses yet',
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: ink.text.withValues(alpha: 0.8),
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Add a shipping address to continue.',
             style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.onSurface.withValues(alpha: 0.6),
+              color: ink.text.withValues(alpha: 0.5),
+              fontSize: 12.5,
             ),
+            textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 16),
-          ElevatedButton.icon(
+          const SizedBox(height: 14),
+          _primaryButton(
+            icon: Icons.add,
+            label: 'Add address',
             onPressed: widget.onAddNewAddress ?? _showAddAddressDialog,
-            icon: const Icon(Icons.add),
-            label: const Text('Add Address'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: AppColors.onPrimary,
-            ),
           ),
         ],
       ),
@@ -492,41 +505,61 @@ class _AddressSelectionWidgetState extends State<AddressSelectionWidget> {
   }
 
   Widget _buildErrorState() {
-    return Container(
-      padding: const EdgeInsets.all(24),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Column(
         children: [
-          Icon(
-            Icons.error_outline,
-            size: 48,
-            color: AppColors.error,
-          ),
-          const SizedBox(height: 16),
+          Icon(Icons.error_outline, size: 34, color: _danger),
+          const SizedBox(height: 12),
           Text(
-            'Error loading addresses',
-            style: AppTextStyles.titleSmall.copyWith(
-              color: AppColors.error,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _error ?? 'Unknown error occurred',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.onSurface.withValues(alpha: 0.6),
+            'Couldn\'t load your addresses',
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: _danger,
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 16),
-          ElevatedButton.icon(
-            onPressed: _loadAddresses,
-            icon: const Icon(Icons.refresh),
-            label: const Text('Retry'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: AppColors.onPrimary,
+          const SizedBox(height: 4),
+          Text(
+            _error ?? 'Unknown error occurred',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: ink.text.withValues(alpha: 0.5),
+              fontSize: 12.5,
             ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 14),
+          _primaryButton(
+            icon: Icons.refresh,
+            label: 'Retry',
+            onPressed: _loadAddresses,
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _primaryButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return ElevatedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 17),
+      label: Text(
+        label,
+        style: AppTextStyles.buttonMedium.copyWith(fontWeight: FontWeight.w700),
+      ),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: ink.emerald,
+        foregroundColor: ink.onEmerald,
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
       ),
     );
   }
@@ -540,7 +573,7 @@ class _AddressSelectionWidgetState extends State<AddressSelectionWidget> {
   }
 }
 
-// Compact version of address selection for smaller spaces
+/// Compact version of address selection for smaller spaces.
 class CompactAddressSelector extends StatelessWidget {
   final ShippingAddress? selectedAddress;
   final Function(ShippingAddress) onAddressSelected;
@@ -555,25 +588,21 @@ class CompactAddressSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: AppColors.onSurface.withValues(alpha: 0.1),
+    final ink = InkPalette.of(context);
+
+    return InkWell(
+      onTap: () => _showAddressSelectionModal(context),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: ink.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: ink.border),
         ),
-      ),
-      child: InkWell(
-        onTap: () => _showAddressSelectionModal(context),
-        borderRadius: BorderRadius.circular(8),
         child: Row(
           children: [
-            Icon(
-              Icons.location_on,
-              color: AppColors.primary,
-              size: 20,
-            ),
+            Icon(Icons.location_on_outlined, color: ink.emerald, size: 18),
             const SizedBox(width: 12),
             Expanded(
               child: selectedAddress != null
@@ -583,14 +612,17 @@ class CompactAddressSelector extends StatelessWidget {
                         Text(
                           selectedAddress!.fullName,
                           style: AppTextStyles.titleSmall.copyWith(
-                            fontWeight: FontWeight.w600,
+                            color: ink.text,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13.5,
                           ),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           selectedAddress!.formattedAddress,
                           style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.onSurface.withValues(alpha: 0.7),
+                            color: ink.text.withValues(alpha: 0.6),
+                            fontSize: 12,
                           ),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
@@ -598,15 +630,17 @@ class CompactAddressSelector extends StatelessWidget {
                       ],
                     )
                   : Text(
-                      'Select shipping address',
+                      'Select a shipping address',
                       style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.onSurface.withValues(alpha: 0.6),
+                        color: ink.text.withValues(alpha: 0.55),
+                        fontSize: 13.5,
                       ),
                     ),
             ),
             Icon(
-              Icons.keyboard_arrow_right,
-              color: AppColors.onSurface.withValues(alpha: 0.6),
+              Icons.chevron_right,
+              color: ink.text.withValues(alpha: 0.4),
+              size: 20,
             ),
           ],
         ),
@@ -615,20 +649,22 @@ class CompactAddressSelector extends StatelessWidget {
   }
 
   void _showAddressSelectionModal(BuildContext context) {
+    final ink = InkPalette.of(context);
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         height: MediaQuery.of(context).size.height * 0.7,
-        decoration: const BoxDecoration(
-          color: AppColors.background,
-          borderRadius: BorderRadius.only(
+        decoration: BoxDecoration(
+          color: ink.bg,
+          borderRadius: const BorderRadius.only(
             topLeft: Radius.circular(24),
             topRight: Radius.circular(24),
           ),
         ),
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: AddressSelectionWidget(
             selectedAddress: selectedAddress,
@@ -637,7 +673,7 @@ class CompactAddressSelector extends StatelessWidget {
               Navigator.pop(context);
             },
             onAddNewAddress: onAddNewAddress,
-            title: 'Select Shipping Address',
+            title: 'Select a shipping address',
           ),
         ),
       ),

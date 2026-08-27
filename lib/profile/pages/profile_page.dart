@@ -16,7 +16,6 @@ import '../../product/models/order_model.dart' as order_model;
 import '../../product/widgets/loading_skeletons.dart';
 import '../../utils/currency_formatter.dart';
 import '../services/order_service.dart';
-import 'reward_points_page.dart';
 import 'package:dentpal/utils/app_logger.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -583,11 +582,9 @@ class _ProfilePageState extends State<ProfilePage>
         icon: Icons.star_outline,
         label: 'Reward points',
         detail: 'What you have earned so far',
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => RewardPointsPage(userData: userData),
-          ),
-        ),
+        onTap: () => Navigator.of(
+          context,
+        ).pushNamed('/profile/rewards', arguments: userData),
       ),
     ];
 
@@ -888,10 +885,7 @@ class _NotificationBell extends StatelessWidget {
               top: -4,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
-                constraints: const BoxConstraints(
-                  minWidth: 17,
-                  minHeight: 17,
-                ),
+                constraints: const BoxConstraints(minWidth: 17, minHeight: 17),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: ink.amber,

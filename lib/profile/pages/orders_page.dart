@@ -9,6 +9,7 @@ import '../../core/app_theme/theme_utils.dart';
 import '../../core/widgets/app_page_header.dart';
 import '../../core/widgets/app_network_image.dart';
 import '../../product/models/order_model.dart' as order_model;
+import '../../product/checkout_routes.dart';
 import '../../product/pages/paymongo_webview_page.dart';
 import '../../product/pages/cart_page.dart';
 import '../../product/services/cart_service.dart';
@@ -1542,6 +1543,13 @@ class _OrdersPageState extends State<OrdersPage> {
           Navigator.push(
             context,
             MaterialPageRoute(
+              // Resuming a payment opens the same page as paying the first
+              // time, so it answers to the same URL.
+              settings: RouteSettings(
+                name: checkoutSessionPath(
+                  order.paymongo.checkoutSessionId ?? order.orderId,
+                ),
+              ),
               builder: (context) => PaymongoWebViewPage(
                 checkoutUrl: checkoutUrl,
                 successUrl: 'https://dentpal-store.web.app/payment-success',

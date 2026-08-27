@@ -1,10 +1,21 @@
-import 'package:flutter/material.dart';
-import 'package:dentpal/utils/app_logger.dart';
-import '../../core/app_theme/app_colors.dart';
-import '../../core/app_theme/app_text_styles.dart';
-import 'cart_page.dart';
 import 'dart:async';
 
+import 'package:flutter/material.dart';
+import 'package:dentpal/utils/app_logger.dart';
+import '../../core/app_theme/app_text_styles.dart';
+import '../../core/app_theme/ink_palette.dart';
+import '../../core/app_theme/theme_utils.dart';
+import '../../core/widgets/app_page_header.dart';
+import '../../core/widgets/app_shell.dart';
+import 'cart_page.dart';
+
+/// The other ending: a payment that was cancelled, declined or timed out.
+///
+/// Reached at `/cart/checkout/fail`. Deliberately the calm twin of the success
+/// page rather than an alarm — nothing has gone wrong with the buyer's account,
+/// the order simply was not paid for, and the useful thing to do is try again.
+/// The previous version shook a red circle on an endless repeating animation,
+/// which read as a fault report for what is usually just a cancelled payment.
 class PaymentFailedPage extends StatefulWidget {
   final String? sessionId;
   final String? orderId;
@@ -22,299 +33,136 @@ class PaymentFailedPage extends StatefulWidget {
 }
 
 class _PaymentFailedPageState extends State<PaymentFailedPage>
-    with TickerProviderStateMixin {
-  late AnimationController _shakeController;
-  late AnimationController _scaleController;
-  late Animation<double> _shakeAnimation;
-  late Animation<double> _scaleAnimation;
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _markScale;
+  late final Animation<double> _fade;
+  late final Animation<Offset> _rise;
+
   Timer? _redirectTimer;
-  int _countdown = 5;
+  int _countdown = 10;
+  bool _isRedirecting = false;
 
   @override
   void initState() {
     super.initState();
-    
-    _shakeController = AnimationController(
-      duration: const Duration(milliseconds: 600),
+
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 700),
       vsync: this,
     );
-    
-    _scaleController = AnimationController(
-      duration: const Duration(milliseconds: 800),
-      vsync: this,
+
+    _markScale = Tween<double>(begin: 0.6, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0, 0.6, curve: Curves.easeOutBack),
+      ),
     );
-    
-    _shakeAnimation = Tween<double>(
-      begin: -10.0,
-      end: 10.0,
-    ).animate(CurvedAnimation(
-      parent: _shakeController,
-      curve: Curves.elasticIn,
-    ));
-    
-    _scaleAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _scaleController,
-      curve: Curves.elasticOut,
-    ));
 
-    // Start animations
-    _scaleController.forward();
-    _shakeController.repeat(reverse: true);
+    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
 
-    // Start countdown timer
+    _rise = Tween<Offset>(
+      begin: const Offset(0, 0.06),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.2, 1, curve: Curves.easeOutCubic),
+      ),
+    );
+
+    _controller.forward();
     _startCountdown();
 
-    AppLogger.d('Payment Failed Page loaded with sessionId: ${widget.sessionId}, orderId: ${widget.orderId}');
+    AppLogger.d(
+      'Payment Failed Page loaded with sessionId: ${widget.sessionId}, '
+      'orderId: ${widget.orderId}',
+    );
   }
 
+  /// Longer than the success page's: there is a decision to make here, and
+  /// being bounced away mid-read is worse than waiting a moment more.
   void _startCountdown() {
     _redirectTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      setState(() {
-        _countdown--;
-      });
-      
-      if (_countdown <= 0) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_countdown <= 1) {
         timer.cancel();
         _redirectToCart();
+        return;
       }
+      setState(() => _countdown--);
     });
   }
 
   void _redirectToCart() {
-    AppLogger.d('Redirecting to cart page...');
-    // Navigate to cart page using MaterialPageRoute to avoid URL changes
+    if (_isRedirecting) return;
+    setState(() => _isRedirecting = true);
+    _redirectTimer?.cancel();
+
+    AppLogger.d('Returning to cart after a failed payment');
+
+    // Back into the shell on the Cart tab — this page is pushed on top of it,
+    // so the way back is to pop, not to build a second cart outside the
+    // navigation bar.
+    final shell = AppShell.instance;
+    if (shell != null) {
+      shell.openTab(ShellTab.cart);
+      return;
+    }
+
+    // No shell — a cold load of the legacy /payment-failed route. A standalone
+    // cart is the only thing left to offer.
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (context) => const CartPage()),
       (route) => false,
     );
   }
 
+  /// "Try again" means the cart, not a bare checkout route: checkout needs the
+  /// selected items and vouchers handed to it, and only the cart has those.
+  /// The old version pushed a named '/checkout' route that does not exist, so
+  /// the app fell through to its unknown-route handler and landed the buyer on
+  /// the auth wrapper.
   void _retryPayment() {
-    AppLogger.d('Retrying payment...');
-    // Navigate back to checkout
-    Navigator.of(context).pushNamedAndRemoveUntil('/checkout', (route) => false);
+    AppLogger.d('Retrying payment — returning to cart to re-enter checkout');
+    _redirectToCart();
   }
 
   @override
   void dispose() {
-    _shakeController.dispose();
-    _scaleController.dispose();
+    _controller.dispose();
     _redirectTimer?.cancel();
     super.dispose();
   }
 
+  InkPalette get ink => InkPalette.of(context);
+
+  /// [InkPalette] reserves amber for urgency, so danger carries its own tone.
+  Color get _danger =>
+      ink.isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626);
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.surface,
+      backgroundColor: ink.bg,
       body: SafeArea(
+        bottom: false,
         child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: AppLayout.maxContentWidth,
+            ),
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Failed Icon with Animation
-                ScaleTransition(
-                  scale: _scaleAnimation,
-                  child: AnimatedBuilder(
-                    animation: _shakeAnimation,
-                    builder: (context, child) {
-                      return Transform.translate(
-                        offset: Offset(_shakeAnimation.value, 0),
-                        child: Container(
-                          width: 120,
-                          height: 120,
-                          decoration: BoxDecoration(
-                            color: AppColors.error,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.error.withValues(alpha: 0.3),
-                                spreadRadius: 20,
-                                blurRadius: 40,
-                              ),
-                            ],
-                          ),
-                          child: const Icon(
-                            Icons.close,
-                            color: Colors.white,
-                            size: 60,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+                AppPageHeader(
+                  title: 'Payment not completed',
+                  subtitle: 'Nothing has been charged',
+                  showBack: false,
                 ),
-                
-                const SizedBox(height: 40),
-                
-                // Failed Title
-                Text(
-                  'Payment Failed',
-                  style: AppTextStyles.headlineMedium.copyWith(
-                    color: AppColors.error,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                
-                const SizedBox(height: 16),
-                
-                // Failed Message
-                Text(
-                  widget.errorMessage ?? 'Sorry, we couldn\'t process your payment.\nPlease try again or use a different payment method.',
-                  style: AppTextStyles.bodyLarge.copyWith(
-                    color: AppColors.onSurface.withValues(alpha:0.8),
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                
-                const SizedBox(height: 24),
-                
-                // Error Details Card
-                if (widget.sessionId != null || widget.orderId != null)
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: AppColors.error.withValues(alpha:0.1),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: AppColors.error.withValues(alpha:0.2),
-                      ),
-                    ),
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.error_outline,
-                              color: AppColors.error,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Transaction Details',
-                              style: AppTextStyles.bodyMedium.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.error,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        if (widget.sessionId != null) ...[
-                          _buildDetailRow('Session ID', widget.sessionId!),
-                          const SizedBox(height: 8),
-                        ],
-                        if (widget.orderId != null) ...[
-                          _buildDetailRow('Order ID', widget.orderId!),
-                        ],
-                      ],
-                    ),
-                  ),
-                
-                const SizedBox(height: 40),
-                
-                // Action Buttons
-                Row(
-                  children: [
-                    // Retry Payment Button
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: _retryPayment,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: AppColors.onPrimary,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          elevation: 0,
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.refresh),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Retry Payment',
-                              style: AppTextStyles.buttonMedium,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    
-                    const SizedBox(width: 16),
-                    
-                    // Return to Cart Button
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _redirectToCart,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.primary,
-                          side: BorderSide(color: AppColors.primary),
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.shopping_cart),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Back to Cart',
-                              style: AppTextStyles.buttonMedium.copyWith(
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                
-                const SizedBox(height: 24),
-                
-                // Countdown Info
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.grey50,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    children: [
-                      Text(
-                        'Returning to cart in',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.onSurface.withValues(alpha:0.7),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '$_countdown',
-                        style: AppTextStyles.headlineLarge.copyWith(
-                          color: AppColors.error,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        'seconds',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.onSurface.withValues(alpha:0.7),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                Expanded(child: _buildBody()),
               ],
             ),
           ),
@@ -323,27 +171,233 @@ class _PaymentFailedPageState extends State<PaymentFailedPage>
     );
   }
 
-  Widget _buildDetailRow(String label, String value) {
+  Widget _buildBody() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(
+        AppLayout.gutter,
+        8,
+        AppLayout.gutter,
+        28,
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: FadeTransition(
+            opacity: _fade,
+            child: SlideTransition(
+              position: _rise,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 12),
+                  _buildMark(),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Payment wasn\'t completed',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.headlineSmall.copyWith(
+                      color: ink.text,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 24,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    widget.errorMessage ??
+                        'The payment was cancelled or couldn\'t be processed. '
+                            'Your items are still in your cart — you can try '
+                            'again with the same or a different payment method.',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: ink.text.withValues(alpha: 0.65),
+                      fontSize: 13.5,
+                      height: 1.5,
+                    ),
+                  ),
+                  if (widget.sessionId != null || widget.orderId != null) ...[
+                    const SizedBox(height: 24),
+                    _buildDetailsCard(),
+                  ],
+                  const SizedBox(height: 24),
+                  _buildActions(),
+                  const SizedBox(height: 12),
+                  _buildCountdownNote(),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMark() {
+    return ScaleTransition(
+      scale: _markScale,
+      child: Center(
+        child: Container(
+          width: 96,
+          height: 96,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: _danger.withValues(alpha: ink.isDark ? 0.16 : 0.1),
+            border: Border.all(
+              color: _danger.withValues(alpha: 0.3),
+              width: 1.5,
+            ),
+          ),
+          child: Icon(Icons.close_rounded, size: 44, color: _danger),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailsCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: ink.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: ink.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.info_outline,
+                size: 18,
+                color: ink.text.withValues(alpha: 0.5),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Transaction details',
+                style: AppTextStyles.titleMedium.copyWith(
+                  color: ink.text,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (widget.orderId != null) _detailRow('Order ID', widget.orderId!),
+          if (widget.sessionId != null) ...[
+            if (widget.orderId != null) const SizedBox(height: 10),
+            _detailRow('Reference', widget.sessionId!),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: AppTextStyles.bodySmall.copyWith(
-            color: AppColors.onSurface.withValues(alpha:0.6),
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: ink.text.withValues(alpha: 0.6),
+            fontSize: 13,
           ),
         ),
-        Flexible(
+        const SizedBox(width: 16),
+        Expanded(
           child: Text(
             value,
+            textAlign: TextAlign.right,
             style: AppTextStyles.bodySmall.copyWith(
+              color: ink.text,
+              fontWeight: FontWeight.w600,
               fontFamily: 'monospace',
-              color: AppColors.onSurface,
+              fontSize: 12.5,
             ),
-            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],
+    );
+  }
+
+  /// Stacked rather than side by side: at 480px two buttons sharing a row put
+  /// "Back to cart" and "Try again" a thumb's width apart, and one of them
+  /// re-opens a payment.
+  Widget _buildActions() {
+    return Column(
+      children: [
+        SizedBox(
+          height: 52,
+          child: ElevatedButton(
+            onPressed: _isRedirecting ? null : _retryPayment,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ink.emerald,
+              foregroundColor: ink.onEmerald,
+              disabledBackgroundColor: ink.surfaceHigh,
+              disabledForegroundColor: ink.text.withValues(alpha: 0.38),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.refresh, size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  'Try again',
+                  style: AppTextStyles.buttonLarge.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 48,
+          child: OutlinedButton(
+            onPressed: _isRedirecting ? null : _redirectToCart,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: ink.text.withValues(alpha: 0.8),
+              side: BorderSide(color: ink.border),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.shopping_cart_outlined, size: 17),
+                const SizedBox(width: 8),
+                Text(
+                  'Back to cart',
+                  style: AppTextStyles.buttonMedium.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCountdownNote() {
+    return Text(
+      _isRedirecting
+          ? 'Taking you back…'
+          : 'Returning to your cart in $_countdown second'
+              '${_countdown == 1 ? '' : 's'}',
+      textAlign: TextAlign.center,
+      style: AppTextStyles.bodySmall.copyWith(
+        color: ink.text.withValues(alpha: 0.45),
+        fontSize: 12,
+      ),
     );
   }
 }

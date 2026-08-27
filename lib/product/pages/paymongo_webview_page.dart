@@ -2,9 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:dentpal/utils/app_logger.dart';
-import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
+import '../../core/app_theme/ink_palette.dart';
 
+/// The hosted PayMongo payment page, wrapped in our chrome.
+///
+/// Only the frame around it belongs to us — the page inside is served by
+/// PayMongo and is deliberately not ours to restyle, because it is what makes
+/// the payment PCI-compliant. So the chrome does the one job it can: say
+/// plainly whose page this is and that the connection is secure, since a
+/// payment form inside another app's shell is exactly where a buyer should be
+/// checking. Hence the lock and the live host, rather than decoration.
 class PaymongoWebViewPage extends StatefulWidget {
   final String checkoutUrl;
   final String? successUrl;
@@ -29,9 +37,15 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
   String _currentUrl = '';
   bool _hasCalledCallback = false;
 
+  /// Drives the thin progress line under the header. The page inside can take
+  /// several seconds on a slow connection, and a bare spinner over a blank
+  /// screen gives no sense of whether anything is happening.
+  int _loadProgress = 0;
+
   @override
   void initState() {
     super.initState();
+    _currentUrl = widget.checkoutUrl;
     _initializeWebView();
   }
 
@@ -40,6 +54,10 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
         NavigationDelegate(
+          onProgress: (int progress) {
+            if (!mounted) return;
+            setState(() => _loadProgress = progress);
+          },
           onPageStarted: (String url) {
             AppLogger.d('WebView page started loading: $url');
             setState(() {
@@ -135,14 +153,14 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
     String? orderId;
     String? sessionId;
     final uri = Uri.parse(url);
-    
+
     // Try to extract session_id or order_id from query parameters
     orderId = uri.queryParameters['order_id'];
-    sessionId = uri.queryParameters['session_id'] ?? 
+    sessionId = uri.queryParameters['session_id'] ??
                 uri.queryParameters['payment_intent_id'];
 
     AppLogger.d('Payment completed successfully. Order ID: $orderId, Session ID: $sessionId');
-    
+
     // Close WebView and notify parent directly - no popup
     if (mounted) {
       Navigator.of(context).pop(); // Close WebView
@@ -159,15 +177,15 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
     String? sessionId;
     String? errorMessage;
     final uri = Uri.parse(url);
-    
+
     orderId = uri.queryParameters['order_id'];
     sessionId = uri.queryParameters['session_id'];
-    errorMessage = uri.queryParameters['error'] ?? 
-                   uri.queryParameters['message'] ?? 
+    errorMessage = uri.queryParameters['error'] ??
+                   uri.queryParameters['message'] ??
                    'Payment was cancelled or failed';
 
     AppLogger.d('Payment failed. Order ID: $orderId, Session ID: $sessionId, Error: $errorMessage');
-    
+
     // Close WebView and notify parent directly - no popup
     if (mounted) {
       Navigator.of(context).pop(); // Close WebView
@@ -184,28 +202,55 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
     }
   }
 
+  InkPalette get ink => InkPalette.of(context);
+
+  Color get _danger =>
+      ink.isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626);
+
   void _handleBackPress() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(
-          'Cancel Payment',
-          style: AppTextStyles.titleMedium.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+        backgroundColor: ink.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _danger.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(Icons.warning_amber_rounded, color: _danger, size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Cancel payment?',
+                style: AppTextStyles.titleMedium.copyWith(
+                  color: ink.text,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
         ),
         content: Text(
-          'Are you sure you want to cancel this payment? Your order will not be processed.',
+          'Your order won\'t be paid for, and your items stay in your cart. '
+          'You can start the payment again from checkout.',
           style: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.onSurface.withValues(alpha:0.8),
+            color: ink.text.withValues(alpha: 0.75),
+            height: 1.45,
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: Text('Continue Payment', style: AppTextStyles.buttonMedium),
+            style: TextButton.styleFrom(
+              foregroundColor: ink.text.withValues(alpha: 0.7),
+            ),
+            child: Text('Keep paying', style: AppTextStyles.buttonMedium),
           ),
           ElevatedButton(
             onPressed: () {
@@ -214,15 +259,26 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
               widget.onPaymentComplete(false, null);
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
+              backgroundColor: _danger,
               foregroundColor: Colors.white,
               elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
-            child: Text('Cancel Payment', style: AppTextStyles.buttonMedium),
+            child: Text('Cancel payment', style: AppTextStyles.buttonMedium),
           ),
         ],
       ),
     );
+  }
+
+  /// Host of whatever is currently loaded, and whether it arrived over TLS.
+  (String host, bool secure) get _origin {
+    final uri = Uri.tryParse(_currentUrl);
+    if (uri == null || uri.host.isEmpty) return ('', false);
+    return (uri.host, uri.scheme == 'https');
   }
 
   @override
@@ -234,73 +290,136 @@ class _PaymongoWebViewPageState extends State<PaymongoWebViewPage> {
         _handleBackPress();
       },
       child: Scaffold(
-        backgroundColor: AppColors.surface,
-        appBar: AppBar(
-          backgroundColor: AppColors.surface,
-          elevation: 0,
-          leading: IconButton(
-            onPressed: _handleBackPress,
-            icon: const Icon(Icons.close, color: AppColors.onSurface),
-          ),
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        backgroundColor: ink.bg,
+        body: SafeArea(
+          bottom: false,
+          child: Column(
             children: [
-              Text(
-                'PayMongo Checkout',
-                style: AppTextStyles.titleMedium.copyWith(
-                  fontWeight: FontWeight.w600,
+              _buildHeader(),
+              Expanded(
+                child: Stack(
+                  children: [
+                    WebViewWidget(controller: _controller),
+                    if (_isLoading) _buildLoadingCover(),
+                  ],
                 ),
               ),
-              if (_currentUrl.isNotEmpty)
-                Text(
-                  Uri.parse(_currentUrl).host,
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.onSurface.withValues(alpha:0.6),
-                  ),
-                ),
             ],
           ),
-          actions: [
-            if (_isLoading)
-              Container(
-                margin: const EdgeInsets.only(right: 16),
-                child: const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.primary,
-                  ),
-                ),
-              ),
-          ],
         ),
-        body: Stack(
-          children: [
-            WebViewWidget(controller: _controller),
-            if (_isLoading)
-              Container(
-                color: AppColors.surface,
-                child: const Center(
+      ),
+    );
+  }
+
+  /// The chrome. Not [AppPageHeader]: this is the one screen in the flow whose
+  /// body is someone else's, so it wears a compact browser bar — close, origin,
+  /// progress — rather than the app's page title.
+  Widget _buildHeader() {
+    final (host, secure) = _origin;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: ink.surface,
+        border: Border(bottom: BorderSide(color: ink.border)),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 6, 12, 6),
+            child: Row(
+              children: [
+                IconButton(
+                  onPressed: _handleBackPress,
+                  icon: Icon(Icons.close, color: ink.text),
+                  tooltip: 'Cancel payment',
+                ),
+                Expanded(
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      CircularProgressIndicator(
-                        color: AppColors.primary,
-                        strokeWidth: 3,
-                      ),
-                      SizedBox(height: 16),
                       Text(
-                        'Loading payment page...',
-                        style: TextStyle(
-                          color: AppColors.onSurface,
-                          fontSize: 16,
+                        'PayMongo checkout',
+                        style: AppTextStyles.titleMedium.copyWith(
+                          color: ink.text,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
+                      if (host.isNotEmpty)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              secure ? Icons.lock : Icons.lock_open,
+                              size: 11,
+                              color: secure
+                                  ? ink.emerald
+                                  : ink.text.withValues(alpha: 0.5),
+                            ),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                host,
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: ink.text.withValues(alpha: 0.55),
+                                  fontSize: 11.5,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
                     ],
                   ),
                 ),
+              ],
+            ),
+          ),
+          // A 2px determinate line rather than a spinner in the actions slot:
+          // it says how far along the load is without taking a tap target.
+          SizedBox(
+            height: 2,
+            child: _isLoading
+                ? LinearProgressIndicator(
+                    value: _loadProgress <= 0 ? null : _loadProgress / 100,
+                    minHeight: 2,
+                    backgroundColor: ink.border,
+                    valueColor: AlwaysStoppedAnimation(ink.emerald),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingCover() {
+    return Container(
+      color: ink.bg,
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 30,
+              height: 30,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: ink.emerald,
               ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Opening secure payment page…',
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: ink.text.withValues(alpha: 0.7),
+                fontSize: 13.5,
+              ),
+            ),
           ],
         ),
       ),

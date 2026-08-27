@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/utils/navigation_utils.dart';
 import 'package:dentpal/core/services/sub_account_service.dart';
+import '../checkout_routes.dart';
 import '../models/cart_model.dart';
 import '../services/cart_service.dart';
 import '../widgets/seller_group_widget.dart';
@@ -1475,10 +1476,12 @@ class _CartPageState extends State<CartPage>
           ),
         );
 
-    // Navigate to checkout page
+    // Navigate to checkout page. Named so the address bar reads
+    // /cart/checkout — checkout is a branch of the cart, not a sibling of it.
     Navigator.push(
       context,
       MaterialPageRoute(
+        settings: const RouteSettings(name: kCheckoutPath),
         builder: (context) => CheckoutPage(
           cartItems: selectedItems,
           cartSummary: _cartSummary!,

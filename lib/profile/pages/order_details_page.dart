@@ -8,6 +8,7 @@ import '../../core/app_theme/ink_palette.dart';
 import '../../core/app_theme/theme_utils.dart';
 import '../../core/widgets/app_network_image.dart';
 import '../../product/models/order_model.dart' as order_model;
+import '../../product/checkout_routes.dart';
 import '../../product/pages/paymongo_webview_page.dart';
 import '../../product/pages/cart_page.dart';
 import '../../product/services/cart_service.dart';
@@ -1333,6 +1334,39 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     );
   }
 
+  /// What the buyer actually paid for delivery.
+  ///
+  /// `buyerShippingCharge` is the buyer's share; `shippingCost` is the courier's
+  /// full fee, which the seller may absorb in whole or in part. This row used to
+  /// fall back to the latter whenever the former was zero, which meant a pickup
+  /// order (nothing to deliver, ₱0 to the buyer) and a voucher-covered one both
+  /// displayed a fee the buyer never paid — and one that did not reconcile with
+  /// the Total directly underneath it.
+  ///
+  /// The fallback is kept for orders predating `buyerShippingCharge`, which
+  /// recorded only `shippingCost`. Those are identifiable by having no
+  /// per-seller breakdowns: every order written since the field was introduced
+  /// carries them.
+  String _buyerShippingLabel() {
+    final summary = widget.order.summary;
+    if (summary.buyerShippingCharge > 0) {
+      return CurrencyFormatter.formatWithPeso(summary.buyerShippingCharge);
+    }
+
+    final isLegacyOrder = widget.order.sellerFeeBreakdowns.isEmpty;
+    if (isLegacyOrder && summary.shippingCost > 0) {
+      return CurrencyFormatter.formatWithPeso(summary.shippingCost);
+    }
+
+    // Naming the reason beats a bare "Free": on a pickup order the buyer should
+    // see that there is no delivery fee because there is no delivery.
+    if (widget.order.hasPickupShipping && !widget.order.hasSameDayShipping &&
+        !widget.order.hasStandardShipping && !widget.order.hasExpressShipping) {
+      return 'Free (pickup)';
+    }
+    return 'Free';
+  }
+
   Widget _buildOrderSummarySection() {
     final summary = widget.order.summary;
 
@@ -1346,15 +1380,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
             'Subtotal',
             CurrencyFormatter.formatWithPeso(summary.subtotal),
           ),
-          // Display only the buyer's shipping charge (what they actually paid)
-          _summaryRow(
-            'Shipping',
-            summary.buyerShippingCharge > 0
-                ? CurrencyFormatter.formatWithPeso(summary.buyerShippingCharge)
-                : (summary.shippingCost > 0
-                      ? CurrencyFormatter.formatWithPeso(summary.shippingCost)
-                      : 'Free'),
-          ),
+          _summaryRow('Shipping', _buyerShippingLabel()),
           if (summary.taxAmount > 0)
             _summaryRow(
               'Tax',
@@ -1908,6 +1934,13 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         Navigator.push(
           context,
           MaterialPageRoute(
+            // Resuming a payment opens the same page as paying the first time,
+            // so it answers to the same URL.
+            settings: RouteSettings(
+              name: checkoutSessionPath(
+                widget.order.paymongo.checkoutSessionId ?? widget.order.orderId,
+              ),
+            ),
             builder: (context) => PaymongoWebViewPage(
               checkoutUrl: checkoutUrl,
               successUrl: 'https://dentpal-store.web.app/payment-success',

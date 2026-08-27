@@ -1,90 +1,97 @@
-import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import '../../core/app_theme/app_colors.dart';
+
 import '../../core/app_theme/app_text_styles.dart';
+import '../../core/app_theme/ink_palette.dart';
+import '../../core/app_theme/theme_utils.dart';
+import '../../core/services/sub_account_service.dart';
+import '../../core/widgets/app_page_header.dart';
+import '../../utils/app_logger.dart';
 
+/// One rung of the loyalty ladder.
 class _TierData {
-  final String name;
-  final int points;
-  final double position;
-  final IconData icon;
-  final String requirement;
-  final String description;
-  final List<String> perks;
-
   const _TierData({
     required this.name,
     required this.points,
-    required this.position,
     required this.icon,
-    required this.requirement,
-    required this.description,
+    required this.tagline,
     required this.perks,
   });
+
+  final String name;
+
+  /// Lifetime points that unlock the tier.
+  final int points;
+  final IconData icon;
+
+  /// One line on what the tier is for.
+  final String tagline;
+  final List<String> perks;
 }
 
 const _tiers = [
   _TierData(
     name: 'Member',
     points: 0,
-    position: 0.0,
-    icon: Icons.person_outline,
-    requirement: 'Earn and redeem points for unique experiences, stays at over 1,300 locations worldwide and more.',
-    description: '',
+    icon: Icons.card_membership_outlined,
+    tagline: 'Where every DentPal account starts.',
     perks: [
-      'Special member rates',
-      'Points for free nights, dining, airline miles, and more',
+      'Member pricing on selected supplies',
+      'Earn points on every completed order',
+      'Redeem points against future orders',
     ],
   ),
   _TierData(
-    name: 'Discoverist',
+    name: 'Silver',
     points: 25000,
-    position: 0.25,
-    icon: Icons.explore_outlined,
-    requirement: '10 qualifying nights or 25,000 Base Points per calendar year',
-    description: 'Enjoy a higher level of service and comfort around the world.',
+    icon: Icons.workspace_premium_outlined,
+    tagline: 'For clinics that restock with us regularly.',
     perks: [
-      '10% points bonus on qualifying spend',
-      'Preferred rooms within booked type (availability-based)',
-      'Complimentary premium internet',
-      'Late checkout (availability-based)',
+      '10% bonus points on every order',
+      'Early access to seasonal deals',
+      'Priority replies from seller support',
     ],
   ),
   _TierData(
-    name: 'Explorist',
+    name: 'Gold',
     points: 50000,
-    position: 0.50,
-    icon: Icons.public_outlined,
-    requirement: '30 qualifying nights or 50,000 Base Points per calendar year',
-    description: 'Access more comforts, rewards, and upgrades worldwide.',
+    icon: Icons.military_tech_outlined,
+    tagline: 'More value back on the orders you already place.',
     perks: [
-      '20% points bonus on qualifying spend',
-      'Room upgrades (excluding suites/club rooms)',
-      'Complimentary premium internet',
-      'Late checkout (availability-based)',
+      '20% bonus points on every order',
+      'Free standard shipping on qualifying orders',
+      'Priority replies from seller support',
     ],
   ),
   _TierData(
-    name: 'Globalist',
+    name: 'Platinum',
     points: 100000,
-    position: 1.0,
-    icon: Icons.language,
-    requirement: '60 qualifying nights or 100,000 Base Points per calendar year',
-    description: 'Enjoy the highest level of luxury and rewards.',
+    icon: Icons.diamond_outlined,
+    tagline: 'The top of the programme.',
     perks: [
-      '30% points bonus on qualifying spend',
-      'Club lounge access + free breakfast',
-      'Complimentary premium internet',
-      'Late checkout (availability-based)',
+      '30% bonus points on every order',
+      'Free express shipping on qualifying orders',
+      'A dedicated account manager',
+      'Invitations to DentPal partner events',
     ],
   ),
 ];
 
+/// Points balance, tier progress, and what each tier is worth.
+///
+/// Was an `AppBar` + Material `TabBar` on hardcoded light surfaces, with the
+/// tiers laid out around a half-circle gauge whose labels were positioned by
+/// trigonometry and collided on narrow phones. It now wears the marketplace
+/// frame — [AppPageHeader], the gutter, filter pills, [InkPalette] — so it
+/// matches Profile, Orders and Settings in both themes, and the gauge is the
+/// same left-to-right rail the order tracker uses.
 class RewardPointsPage extends StatefulWidget {
   const RewardPointsPage({super.key, this.userData});
 
+  /// The buyer's User document. Profile already has it and hands it over, so
+  /// the balance is right on the first frame; a cold load of
+  /// '/profile/rewards' has none and the page reads it itself.
   final Map<String, dynamic>? userData;
 
   @override
@@ -93,724 +100,1076 @@ class RewardPointsPage extends StatefulWidget {
 
 class _RewardPointsPageState extends State<RewardPointsPage>
     with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+  late final TabController _tabController;
+
+  static const _tabLabels = ['Overview', 'Activity', 'Rewards'];
+
+  Map<String, dynamic>? _userData;
+  bool _loading = false;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: _tabLabels.length, vsync: this)
+      // Swiping the view has to move the pills too, so they stay the one
+      // indicator of which tab you are on.
+      ..addListener(_onTabChanged);
+
+    _userData = widget.userData;
+    if (_userData == null) _loadUserData();
+  }
+
+  /// The cold-load path: opened at '/profile/rewards' rather than pushed from
+  /// Profile, so there is no document in hand. Sub accounts read the clinic's,
+  /// the same one every other profile surface shows them.
+  Future<void> _loadUserData() async {
+    setState(() => _loading = true);
+    try {
+      if (FirebaseAuth.instance.currentUser != null) {
+        final doc = await FirebaseFirestore.instance
+            .collection('User')
+            .doc(SubAccountSessionManager.getEffectiveUserId())
+            .get();
+        if (doc.exists) _userData = doc.data();
+      }
+    } catch (e) {
+      AppLogger.d('Error loading reward points: $e');
+    }
+    if (mounted) setState(() => _loading = false);
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _tabController
+      ..removeListener(_onTabChanged)
+      ..dispose();
     super.dispose();
   }
 
+  void _onTabChanged() {
+    if (mounted) setState(() {});
+  }
+
+  // ── Palette ──────────────────────────────────────────────────────────────
+
+  InkPalette get ink => InkPalette.of(context);
+
+  Color get _muted => ink.text.withValues(alpha: 0.6);
+
+  // ── Data ─────────────────────────────────────────────────────────────────
+
+  int get _points {
+    final raw = _userData?['rewardPoints'];
+    if (raw is int) return raw;
+    if (raw is num) return raw.round();
+    return int.tryParse(raw?.toString() ?? '') ?? 0;
+  }
+
+  /// Highest tier the balance has reached.
+  _TierData get _currentTier =>
+      _tiers.lastWhere((t) => _points >= t.points, orElse: () => _tiers.first);
+
+  /// The rung above [_currentTier], or null at the top of the ladder.
+  _TierData? get _nextTier {
+    final index = _tiers.indexOf(_currentTier);
+    return index >= _tiers.length - 1 ? null : _tiers[index + 1];
+  }
+
   String _formatDate(dynamic timestamp) {
-    if (timestamp == null) return 'N/A';
-    DateTime date;
-    if (timestamp is Timestamp) {
-      date = timestamp.toDate();
-    } else {
-      return 'N/A';
-    }
+    if (timestamp is! Timestamp) return 'N/A';
+    final date = timestamp.toDate();
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 
-  String _formatNumber(dynamic number) {
-    final n = number is int ? number : int.tryParse(number.toString()) ?? 0;
-    if (n >= 1000) {
-      final str = n.toString();
-      final buffer = StringBuffer();
-      for (var i = 0; i < str.length; i++) {
-        if (i > 0 && (str.length - i) % 3 == 0) buffer.write(',');
-        buffer.write(str[i]);
-      }
-      return buffer.toString();
+  String _formatNumber(int n) {
+    final str = n.toString();
+    final buffer = StringBuffer();
+    for (var i = 0; i < str.length; i++) {
+      if (i > 0 && (str.length - i) % 3 == 0) buffer.write(',');
+      buffer.write(str[i]);
     }
-    return n.toString();
-  }
-
-  void _showTierDialog(_TierData tier, bool isAchieved) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: isAchieved
-                    ? AppColors.primary.withValues(alpha: 0.1)
-                    : AppColors.grey200,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                tier.icon,
-                color: isAchieved ? AppColors.primary : AppColors.grey400,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                tier.name,
-                style: AppTextStyles.titleLarge.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                tier.requirement,
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.onSurface.withValues(alpha: 0.7),
-                ),
-              ),
-              if (tier.description.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text(
-                  tier.description,
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 16),
-              Divider(color: AppColors.onSurface.withValues(alpha: 0.1)),
-              const SizedBox(height: 12),
-              ...tier.perks.map((perk) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.check_circle, size: 16, color: AppColors.primary),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        perk,
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.onSurface.withValues(alpha: 0.8),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              )),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(
-              'Close',
-              style: AppTextStyles.buttonMedium.copyWith(
-                color: AppColors.primary,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    return buffer.toString();
   }
 
   @override
   Widget build(BuildContext context) {
-    final userData = widget.userData;
-    final rewardPoints = userData?['rewardPoints'] ?? 0;
-    final memberSince = _formatDate(userData?['createdAt']);
-    final registrationNo = userData?['RegistrationNo']?.toString() ?? 'N/A';
-
     return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        toolbarHeight: 60,
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: AppColors.onSurface),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: Text(
-          'Reward Points',
-          style: AppTextStyles.titleLarge.copyWith(
-            fontWeight: FontWeight.w700,
+      backgroundColor: ink.bg,
+      body: SafeArea(
+        bottom: false,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: AppLayout.maxContentWidth,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHeader(),
+                Expanded(
+                  child: _loading
+                      ? Center(
+                          child: CircularProgressIndicator(color: ink.emerald),
+                        )
+                      : TabBarView(
+                          controller: _tabController,
+                          children: [
+                            _buildOverviewTab(),
+                            _buildActivityTab(),
+                            _buildRewardsTab(),
+                          ],
+                        ),
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final isWideWeb = kIsWeb && constraints.maxWidth > 800;
-          final content = Column(
-            children: [
-              Container(
-                color: AppColors.surface,
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: CustomPaint(
-                        painter: _CardDotsPainter(
-                          dotColor: AppColors.primary.withValues(alpha: 0.28),
-                        ),
-                      ),
-                    ),
-                    _buildInfoCard(rewardPoints, memberSince, registrationNo),
-                  ],
-                ),
-              ),
-              Container(
-                color: AppColors.surface,
-                child: TabBar(
-                  controller: _tabController,
-                  labelColor: AppColors.primary,
-                  unselectedLabelColor:
-                      AppColors.onSurface.withValues(alpha: 0.6),
-                  indicatorColor: AppColors.primary,
-                  labelStyle: AppTextStyles.labelLarge.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                  unselectedLabelStyle: AppTextStyles.labelLarge,
-                  tabs: const [
-                    Tab(text: 'Overview'),
-                    Tab(text: 'Past Activity'),
-                    Tab(text: 'Awards'),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [
-                    _buildOverviewTab(rewardPoints),
-                    _buildPastActivityTab(),
-                    _buildAwardsTab(),
-                  ],
-                ),
-              ),
-            ],
-          );
-
-          if (isWideWeb) {
-            return Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 640),
-                child: Material(
-                  color: AppColors.background,
-                  child: content,
-                ),
-              ),
-            );
-          }
-          return content;
-        },
       ),
     );
   }
 
-  Widget _buildInfoCard(
-    dynamic rewardPoints,
-    String memberSince,
-    String registrationNo,
-  ) {
-    return Container(
-      margin: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withValues(alpha: 0.2),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-          BoxShadow(
-            color: AppColors.primaryDark.withValues(alpha: 0.45),
-            blurRadius: 30,
-            offset: const Offset(0, 16),
-          ),
+  // ── Header ───────────────────────────────────────────────────────────────
+
+  Widget _buildHeader() {
+    return AppPageHeader(
+      title: 'Reward points',
+      // Same shape as every other page: the screen's name, then one line of
+      // state under it. Held back until the balance is known, so it never
+      // flashes "0 points · Member" at a buyer who has plenty.
+      subtitle: _loading
+          ? null
+          : '${_formatNumber(_points)} points · ${_currentTier.name}',
+      bottom: _buildTabPills(),
+    );
+  }
+
+  Widget _buildTabPills() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (var i = 0; i < _tabLabels.length; i++) ...[
+            _buildPill(
+              label: _tabLabels[i],
+              selected: _tabController.index == i,
+              onTap: () => _tabController.animateTo(i),
+            ),
+            const SizedBox(width: 8),
+          ],
         ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [AppColors.primary, AppColors.primaryDark],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+    );
+  }
+
+  Widget _buildPill({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+        decoration: BoxDecoration(
+          color: selected ? ink.emerald : ink.surface,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: selected ? ink.emerald : ink.border),
+        ),
+        child: Text(
+          label,
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: selected ? ink.onEmerald : ink.text.withValues(alpha: 0.8),
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            fontSize: 13.5,
           ),
-          padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: AppColors.primaryDark,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(
-                          Icons.credit_card,
-                          size: 16,
-                          color: AppColors.onPrimary,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        'MEMBER',
-                        style: AppTextStyles.labelSmall.copyWith(
-                          color: AppColors.onPrimary,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 2,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Text(
-                    'DentPal',
-                    style: AppTextStyles.titleMedium.copyWith(
-                      color: AppColors.onPrimary,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Text(
-                'Current Point Balance',
-                style: AppTextStyles.labelSmall.copyWith(
-                  color: AppColors.onPrimary,
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: 0.8,
+        ),
+      ),
+    );
+  }
+
+  // ── Overview ─────────────────────────────────────────────────────────────
+
+  static const EdgeInsets _listPadding = EdgeInsets.fromLTRB(
+    AppLayout.gutter,
+    4,
+    AppLayout.gutter,
+    28,
+  );
+
+  Widget _buildOverviewTab() {
+    return ListView(
+      padding: _listPadding,
+      children: [
+        _buildMembershipCard(),
+        const SizedBox(height: 24),
+        _buildSectionHeader('Your progress'),
+        const SizedBox(height: 12),
+        _buildProgressCard(),
+        const SizedBox(height: 24),
+        _buildSectionHeader('Tiers'),
+        const SizedBox(height: 12),
+        _buildTiersCard(),
+        const SizedBox(height: 24),
+        _buildSectionHeader('How points work'),
+        const SizedBox(height: 12),
+        _buildHowItWorksCard(),
+      ],
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Text(
+        title,
+        style: AppTextStyles.titleMedium.copyWith(
+          fontWeight: FontWeight.w700,
+          color: ink.text.withValues(alpha: 0.8),
+        ),
+      ),
+    );
+  }
+
+  /// The balance, as a membership card in the hero's emerald.
+  Widget _buildMembershipCard() {
+    final memberSince = _formatDate(_userData?['createdAt']);
+    final registrationNo = _userData?['RegistrationNo']?.toString() ?? 'N/A';
+
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        gradient: InkPalette.heroGradient,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Stack(
+        children: [
+          // Faint dot field, so the card reads as a printed membership card
+          // rather than a flat block of green.
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: _CardDotsPainter(
+                  dotColor: Colors.white.withValues(alpha: 0.09),
                 ),
               ),
-              const SizedBox(height: 4),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    _formatNumber(rewardPoints),
-                    style: AppTextStyles.headlineLarge.copyWith(
-                      color: AppColors.onPrimary,
-                      fontWeight: FontWeight.w900,
-                      height: 1.1,
-                      letterSpacing: 0.5,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'DENTPAL',
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: Colors.white.withValues(alpha: 0.8),
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 2,
+                      ),
                     ),
+                    const Spacer(),
+                    _buildTierBadge(),
+                  ],
+                ),
+                const SizedBox(height: 22),
+                Text(
+                  'Points balance',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: Colors.white.withValues(alpha: 0.7),
+                    fontSize: 12,
                   ),
-                  const SizedBox(width: 6),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Text(
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text(
+                      _formatNumber(_points),
+                      style: AppTextStyles.headlineLarge.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 34,
+                        height: 1.15,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
                       'pts',
-                      style: AppTextStyles.labelLarge.copyWith(
-                        color: AppColors.onPrimary,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: Colors.white.withValues(alpha: 0.7),
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              Container(
-                height: 1,
-                color: AppColors.onPrimary.withValues(alpha: 0.35),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildCardDetail(
-                      label: 'MEMBER SINCE',
-                      value: memberSince,
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildCardDetail('Member since', memberSince),
                     ),
-                  ),
-                  Expanded(
-                    child: _buildCardDetail(
-                      label: 'REGISTRATION NO',
-                      value: registrationNo,
+                    Expanded(
+                      child: _buildCardDetail('Member ID', registrationNo),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
 
-  Widget _buildCardDetail({required String label, required String value}) {
+  Widget _buildTierBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(_currentTier.icon, size: 13, color: Colors.white),
+          const SizedBox(width: 5),
+          Text(
+            _currentTier.name,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: 11.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCardDetail(String label, String value) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          label,
+          label.toUpperCase(),
           style: AppTextStyles.labelSmall.copyWith(
-            color: AppColors.onPrimary,
-            fontWeight: FontWeight.w600,
+            color: Colors.white.withValues(alpha: 0.6),
+            fontWeight: FontWeight.w700,
+            fontSize: 10,
             letterSpacing: 1,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 3),
         Text(
           value,
           style: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.onPrimary,
+            color: Colors.white,
             fontWeight: FontWeight.w600,
+            fontSize: 13.5,
           ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
       ],
     );
   }
 
-  Widget _buildOverviewTab(dynamic rewardPoints) {
-    final points = rewardPoints is int
-        ? rewardPoints
-        : int.tryParse(rewardPoints.toString()) ?? 0;
-    final qualifyingNights = widget.userData?['qualifyingNights'] ?? 0;
+  /// Where the balance sits on the ladder, and what is left to the next rung.
+  Widget _buildProgressCard() {
+    final next = _nextTier;
+    final remaining = next == null ? 0 : next.points - _points;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
+      decoration: BoxDecoration(
+        color: ink.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: ink.border),
+      ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  next == null
+                      ? 'Top tier reached'
+                      : '${_formatNumber(remaining)} points to ${next.name}',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: ink.text,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14.5,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: ink.emerald.withValues(
+                    alpha: ink.isDark ? 0.16 : 0.11,
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  _currentTier.name,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: ink.emerald,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
           Text(
-            'Your YTD Progress',
-            style: AppTextStyles.titleMedium.copyWith(
-              fontWeight: FontWeight.w700,
+            next == null
+                ? 'You are getting the most the programme offers.'
+                : 'Keep ordering to unlock ${next.name} benefits.',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: _muted,
+              fontSize: 12.5,
+              height: 1.4,
             ),
           ),
-          const SizedBox(height: 16),
-          _buildMetricsRow(qualifyingNights, points),
-          const SizedBox(height: 24),
-          _buildProgressArc(points),
+          const SizedBox(height: 20),
+          _buildTierRail(),
         ],
       ),
     );
   }
 
-  Widget _buildMetricsRow(dynamic nights, int points) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: IntrinsicHeight(
-        child: Row(
+  /// The four tiers as stops on one track, in the same shape as the order
+  /// tracker's rail. Replaces the half-circle gauge, whose labels were placed
+  /// by angle and overlapped on narrow screens.
+  Widget _buildTierRail() {
+    const nodeSize = 34.0;
+    const trackHeight = 4.0;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final span = width - nodeSize;
+        final step = span / (_tiers.length - 1);
+        // Filled length: whole segments already cleared, plus the fraction of
+        // the segment the balance is part-way through.
+        final index = _tiers.indexOf(_currentTier);
+        final next = _nextTier;
+        final fraction = next == null
+            ? 0.0
+            : ((_points - _currentTier.points) /
+                      (next.points - _currentTier.points))
+                  .clamp(0.0, 1.0);
+        final filled = (index + fraction) * step;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Column(
+            SizedBox(
+              height: nodeSize,
+              child: Stack(
                 children: [
-                  Text(
-                    'Qualifying Nights',
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.onSurface.withValues(alpha: 0.6),
+                  Positioned(
+                    left: nodeSize / 2,
+                    right: nodeSize / 2,
+                    top: (nodeSize - trackHeight) / 2,
+                    child: Container(
+                      height: trackHeight,
+                      decoration: BoxDecoration(
+                        color: ink.surfaceHigh,
+                        borderRadius: BorderRadius.circular(trackHeight),
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '$nights',
-                    style: AppTextStyles.headlineSmall.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.onSurface,
+                  Positioned(
+                    left: nodeSize / 2,
+                    top: (nodeSize - trackHeight) / 2,
+                    child: Container(
+                      width: filled.clamp(0.0, span),
+                      height: trackHeight,
+                      decoration: BoxDecoration(
+                        color: ink.emerald,
+                        borderRadius: BorderRadius.circular(trackHeight),
+                      ),
                     ),
                   ),
+                  for (var i = 0; i < _tiers.length; i++)
+                    Positioned(
+                      left: i * step,
+                      top: 0,
+                      child: _buildRailNode(
+                        _tiers[i],
+                        reached: _points >= _tiers[i].points,
+                        current: i == index,
+                        size: nodeSize,
+                      ),
+                    ),
                 ],
               ),
             ),
-            VerticalDivider(
-              color: AppColors.onSurface.withValues(alpha: 0.15),
-              thickness: 1,
-              width: 32,
-            ),
-            Expanded(
-              child: Column(
+            const SizedBox(height: 8),
+            SizedBox(
+              width: width,
+              child: Stack(
                 children: [
-                  Text(
-                    'Qualifying Points',
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.onSurface.withValues(alpha: 0.6),
+                  // Labels are centred under their node, then clamped to the
+                  // card so the first and last never hang off the edge.
+                  for (var i = 0; i < _tiers.length; i++)
+                    Positioned(
+                      left: (i * step + nodeSize / 2 - 40).clamp(
+                        0.0,
+                        // Never negative: a card narrower than one label would
+                        // otherwise make the upper bound the smaller of the two.
+                        width > 80 ? width - 80 : 0.0,
+                      ),
+                      width: 80,
+                      child: Text(
+                        _tiers[i].name,
+                        textAlign: i == 0
+                            ? TextAlign.left
+                            : i == _tiers.length - 1
+                            ? TextAlign.right
+                            : TextAlign.center,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: _points >= _tiers[i].points
+                              ? ink.emerald
+                              : ink.text.withValues(alpha: 0.45),
+                          fontWeight: _points >= _tiers[i].points
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          fontSize: 11.5,
+                        ),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    _formatNumber(points),
-                    style: AppTextStyles.headlineSmall.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.onSurface,
+                  // Reserves the row's height; the labels above are positioned.
+                  Opacity(
+                    opacity: 0,
+                    child: Text(
+                      _tiers.first.name,
+                      style: AppTextStyles.bodySmall.copyWith(fontSize: 11.5),
                     ),
                   ),
                 ],
               ),
             ),
           ],
+        );
+      },
+    );
+  }
+
+  Widget _buildRailNode(
+    _TierData tier, {
+    required bool reached,
+    required bool current,
+    required double size,
+  }) {
+    return GestureDetector(
+      onTap: () => _showTierSheet(tier),
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: reached ? ink.emerald : ink.surface,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: reached ? ink.emerald : ink.border,
+            width: 2,
+          ),
+          // Only the tier you are standing on gets a halo.
+          boxShadow: current
+              ? [
+                  BoxShadow(
+                    color: ink.emerald.withValues(alpha: 0.28),
+                    blurRadius: 10,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : null,
+        ),
+        child: Icon(
+          tier.icon,
+          size: 16,
+          color: reached ? ink.onEmerald : ink.text.withValues(alpha: 0.35),
         ),
       ),
     );
   }
 
-  Widget _buildProgressArc(int userPoints) {
-    final progress = (userPoints / 100000).clamp(0.0, 1.0);
-
+  /// The ladder as a menu card, in the row shape Profile and Settings use.
+  Widget _buildTiersCard() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+        color: ink.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: ink.border),
+      ),
+      child: Column(
+        children: [
+          for (var i = 0; i < _tiers.length; i++) ...[
+            if (i > 0)
+              Padding(
+                padding: const EdgeInsets.only(left: 68),
+                child: Divider(height: 1, color: ink.border),
+              ),
+            _buildTierRow(_tiers[i]),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTierRow(_TierData tier) {
+    final reached = _points >= tier.points;
+    final isCurrent = tier == _currentTier;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _showTierSheet(tier),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: reached
+                      ? ink.emerald.withValues(alpha: ink.isDark ? 0.16 : 0.11)
+                      : ink.surfaceHigh,
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(
+                  tier.icon,
+                  size: 19,
+                  color: reached
+                      ? ink.emerald
+                      : ink.text.withValues(alpha: 0.35),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            tier.name,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: ink.text,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (isCurrent) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: ink.emerald.withValues(
+                                alpha: ink.isDark ? 0.16 : 0.11,
+                              ),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              'You',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: ink.emerald,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 10.5,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      tier.points == 0
+                          ? 'Included with every account'
+                          : '${_formatNumber(tier.points)} points'
+                                '${reached ? ' · unlocked' : ''}',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: ink.text.withValues(alpha: 0.5),
+                        fontSize: 12,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right,
+                color: ink.text.withValues(alpha: 0.3),
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHowItWorksCard() {
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: ink.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: ink.border),
+      ),
+      child: Column(
+        children: [
+          _buildInfoRow(
+            icon: Icons.shopping_bag_outlined,
+            label: 'Earn as you order',
+            detail: 'Completed orders add points to your balance.',
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 68),
+            child: Divider(height: 1, color: ink.border),
+          ),
+          _buildInfoRow(
+            icon: Icons.redeem_outlined,
+            label: 'Spend them at checkout',
+            detail: 'Put your balance towards a future order.',
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 68),
+            child: Divider(height: 1, color: ink.border),
+          ),
+          _buildInfoRow(
+            icon: Icons.trending_up,
+            label: 'Climb the tiers',
+            detail: 'Higher tiers earn points faster and unlock more perks.',
           ),
         ],
       ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          const iconSize = 44.0;
-          const strokeWidth = 18.0;
-          const labelWidth = 90.0;
-          const labelHeight = 16.0;
-          const bottomLabelGap = 8.0;
-          const radialLabelGap = 10.0;
-          const topPadding = labelHeight + 6.0;
+    );
+  }
 
-          final width = constraints.maxWidth;
-          final radius = (width - iconSize) / 2;
-          final centerX = width / 2;
-          final centerY = radius + iconSize / 2 + topPadding;
-          final stackHeight =
-              centerY + iconSize / 2 + bottomLabelGap + labelHeight + 4;
-
-          return SizedBox(
-            width: width,
-            height: stackHeight,
-            child: Stack(
-              clipBehavior: Clip.none,
+  Widget _buildInfoRow({
+    required IconData icon,
+    required String label,
+    required String detail,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: ink.emerald.withValues(alpha: ink.isDark ? 0.16 : 0.11),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Icon(icon, color: ink.emerald, size: 19),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  width: width,
-                  height: centerY + strokeWidth / 2,
-                  child: CustomPaint(
-                    painter: _HalfCircleProgressPainter(
-                      progress: progress,
-                      trackColor: AppColors.grey200,
-                      activeColor: AppColors.primary,
-                      strokeWidth: strokeWidth,
-                      radius: radius,
-                      center: Offset(centerX, centerY),
-                    ),
+                Text(
+                  label,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: ink.text,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
                   ),
                 ),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: centerY - 56,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        _formatNumber(userPoints),
-                        style: TextStyle(
-                          fontFamily: AppTextStyles.primaryFont,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.primary,
-                        ),
-                        textAlign: TextAlign.center,
+                const SizedBox(height: 2),
+                Text(
+                  detail,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: ink.text.withValues(alpha: 0.5),
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Tier detail ──────────────────────────────────────────────────────────
+
+  /// What a tier is worth, in the marketplace sheet shape. Was an `AlertDialog`
+  /// on a hardcoded light surface.
+  void _showTierSheet(_TierData tier) {
+    final reached = _points >= tier.points;
+    final isCurrent = tier == _currentTier;
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => Container(
+        decoration: BoxDecoration(
+          color: ink.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border.all(color: ink.border),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 10, bottom: 16),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: ink.text.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppLayout.gutter,
+                  0,
+                  AppLayout.gutter,
+                  8,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: reached
+                            ? ink.emerald.withValues(
+                                alpha: ink.isDark ? 0.16 : 0.11,
+                              )
+                            : ink.surfaceHigh,
+                        borderRadius: BorderRadius.circular(13),
                       ),
-                      Text(
-                        'of 100,000',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.onSurface.withValues(alpha: 0.5),
+                      child: Icon(
+                        tier.icon,
+                        size: 22,
+                        color: reached
+                            ? ink.emerald
+                            : ink.text.withValues(alpha: 0.35),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            tier.name,
+                            style: AppTextStyles.titleMedium.copyWith(
+                              color: ink.text,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            isCurrent
+                                ? 'Your current tier'
+                                : reached
+                                ? 'Unlocked'
+                                : '${_formatNumber(tier.points - _points)} '
+                                      'points away',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: reached ? ink.emerald : _muted,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppLayout.gutter,
+                ),
+                child: Text(
+                  tier.tagline,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: _muted,
+                    fontSize: 13.5,
+                    height: 1.45,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppLayout.gutter,
+                ),
+                child: Divider(height: 1, color: ink.border),
+              ),
+              const SizedBox(height: 14),
+              for (final perk in tier.perks)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppLayout.gutter,
+                    0,
+                    AppLayout.gutter,
+                    12,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.check_circle,
+                        size: 17,
+                        color: reached
+                            ? ink.emerald
+                            : ink.text.withValues(alpha: 0.3),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          perk,
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: ink.text.withValues(alpha: 0.85),
+                            fontSize: 13.5,
+                            height: 1.4,
+                          ),
                         ),
-                        textAlign: TextAlign.center,
                       ),
                     ],
                   ),
                 ),
-                ..._tiers.expand((tier) {
-                  final angle = math.pi + tier.position * math.pi;
-                  final iconX = centerX + radius * math.cos(angle);
-                  final iconY = centerY + radius * math.sin(angle);
-                  final isAchieved = userPoints >= tier.points;
-                  final isEndpoint =
-                      tier.position == 0.0 || tier.position == 1.0;
-
-                  double labelCenterX;
-                  double labelCenterY;
-                  if (isEndpoint) {
-                    labelCenterX = iconX;
-                    labelCenterY =
-                        iconY + iconSize / 2 + bottomLabelGap + labelHeight / 2;
-                  } else {
-                    final labelDistance =
-                        radius + iconSize / 2 + radialLabelGap;
-                    labelCenterX = centerX + labelDistance * math.cos(angle);
-                    labelCenterY = centerY + labelDistance * math.sin(angle);
-                  }
-
-                  return <Widget>[
-                    Positioned(
-                      left: iconX - iconSize / 2,
-                      top: iconY - iconSize / 2,
-                      child: GestureDetector(
-                        onTap: () => _showTierDialog(tier, isAchieved),
-                        child: _buildTierCircle(tier, isAchieved, iconSize),
-                      ),
-                    ),
-                    Positioned(
-                      left: labelCenterX - labelWidth / 2,
-                      top: labelCenterY - labelHeight / 2,
-                      width: labelWidth,
-                      child: IgnorePointer(
-                        child: Text(
-                          tier.name,
-                          style: TextStyle(
-                            fontFamily: AppTextStyles.primaryFont,
-                            fontSize: 11,
-                            fontWeight:
-                                isAchieved ? FontWeight.w600 : FontWeight.w500,
-                            color: isAchieved
-                                ? AppColors.primary
-                                : AppColors.onSurface.withValues(alpha: 0.6),
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ),
-                  ];
-                }),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildTierCircle(_TierData tier, bool isAchieved, double iconSize) {
-    return Container(
-      width: iconSize,
-      height: iconSize,
-      decoration: BoxDecoration(
-        color: isAchieved ? AppColors.primary : AppColors.surface,
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: isAchieved ? AppColors.primary : AppColors.grey300,
-          width: 2,
+              const SizedBox(height: 10),
+            ],
+          ),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withValues(alpha: 0.15),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Icon(
-        tier.icon,
-        size: 20,
-        color: isAchieved ? AppColors.onPrimary : AppColors.grey500,
       ),
     );
   }
 
-  Widget _buildPastActivityTab() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.history,
-            size: 64,
-            color: AppColors.onSurface.withValues(alpha: 0.2),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'No activity yet',
-            style: AppTextStyles.titleMedium.copyWith(
-              color: AppColors.onSurface.withValues(alpha: 0.5),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Your reward points activity will appear here',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.onSurface.withValues(alpha: 0.4),
-            ),
-          ),
-        ],
-      ),
+  // ── Activity & rewards ───────────────────────────────────────────────────
+
+  Widget _buildActivityTab() {
+    return _buildStateMessage(
+      icon: Icons.history,
+      title: 'No activity yet',
+      detail: 'Points you earn and spend will show up here, newest first.',
     );
   }
 
-  Widget _buildAwardsTab() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.emoji_events_outlined,
-            size: 64,
-            color: AppColors.onSurface.withValues(alpha: 0.2),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'No awards yet',
-            style: AppTextStyles.titleMedium.copyWith(
-              color: AppColors.onSurface.withValues(alpha: 0.5),
+  Widget _buildRewardsTab() {
+    return _buildStateMessage(
+      icon: Icons.card_giftcard_outlined,
+      title: 'No rewards yet',
+      detail: 'Rewards you can claim with your points will appear here.',
+    );
+  }
+
+  /// The empty state every buyer surface wears.
+  Widget _buildStateMessage({
+    required IconData icon,
+    required String title,
+    required String detail,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(32, 40, 32, 40),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 68,
+                      height: 68,
+                      decoration: BoxDecoration(
+                        color: ink.emerald.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(icon, size: 30, color: ink.emerald),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.titleMedium.copyWith(
+                        color: ink.text,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 18,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      detail,
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: _muted,
+                        fontSize: 13.5,
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Earn points to unlock exciting awards',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.onSurface.withValues(alpha: 0.4),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
 
+/// Dot field behind the membership card.
 class _CardDotsPainter extends CustomPainter {
+  _CardDotsPainter({required this.dotColor});
+
   final Color dotColor;
+
   static const double _spacing = 14.0;
   static const double _dotRadius = 1.2;
-
-  _CardDotsPainter({required this.dotColor});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -826,55 +1185,6 @@ class _CardDotsPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _CardDotsPainter oldDelegate) {
-    return oldDelegate.dotColor != dotColor;
-  }
-}
-
-class _HalfCircleProgressPainter extends CustomPainter {
-  final double progress;
-  final Color trackColor;
-  final Color activeColor;
-  final double strokeWidth;
-  final double radius;
-  final Offset center;
-
-  _HalfCircleProgressPainter({
-    required this.progress,
-    required this.trackColor,
-    required this.activeColor,
-    required this.strokeWidth,
-    required this.radius,
-    required this.center,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final trackPaint = Paint()
-      ..color = trackColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round;
-
-    final activePaint = Paint()
-      ..color = activeColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round;
-
-    final rect = Rect.fromCircle(center: center, radius: radius);
-
-    canvas.drawArc(rect, math.pi, math.pi, false, trackPaint);
-
-    if (progress > 0) {
-      canvas.drawArc(rect, math.pi, math.pi * progress, false, activePaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _HalfCircleProgressPainter oldDelegate) {
-    return oldDelegate.progress != progress ||
-        oldDelegate.radius != radius ||
-        oldDelegate.center != center;
-  }
+  bool shouldRepaint(covariant _CardDotsPainter oldDelegate) =>
+      oldDelegate.dotColor != dotColor;
 }

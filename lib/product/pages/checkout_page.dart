@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:dentpal/utils/app_logger.dart';
+import 'package:dentpal/utils/currency_formatter.dart';
+import '../checkout_routes.dart';
 import '../models/cart_model.dart';
 import '../models/order_model.dart';
 import '../models/paymongo_model.dart';
@@ -11,11 +14,15 @@ import '../services/cart_service.dart';
 import '../widgets/address_selection_widget.dart';
 import '../widgets/voucher_picker_sheet.dart';
 import 'paymongo_webview_page.dart';
+import 'payment_success_page.dart';
+import 'payment_failed_page.dart';
 import '../../profile/models/shipping_address.dart';
 import '../../profile/services/platform_policies_service.dart';
-import '../../core/app_theme/app_colors.dart';
 import '../../core/app_theme/app_text_styles.dart';
+import '../../core/app_theme/ink_palette.dart';
+import '../../core/app_theme/theme_utils.dart';
 import '../../core/widgets/app_network_image.dart';
+import '../../core/widgets/app_page_header.dart';
 import '../widgets/loading_skeletons.dart';
 
 typedef VouchersChangedCallback = void Function(
@@ -90,28 +97,28 @@ class _CheckoutPageState extends State<CheckoutPage> {
   final Set<String> _jrsFailedSellers = {};
   int _shippingCalcGeneration = 0;
 
-  Map<String, double> _expressSellerShippingCosts = {};
-  Map<String, double> _expressSellerTotalShippingCosts = {};
-  Map<String, double> _standardSellerShippingCosts = {};
-  Map<String, double> _standardSellerTotalShippingCosts = {};
+  final Map<String, double> _expressSellerShippingCosts = {};
+  final Map<String, double> _expressSellerTotalShippingCosts = {};
+  final Map<String, double> _standardSellerShippingCosts = {};
+  final Map<String, double> _standardSellerTotalShippingCosts = {};
 
   // Per-seller insurance & evaluation costs (from JRS response)
   final Map<String, double> _sellerInsuranceCosts = {};
   final Map<String, double> _sellerEvaluationCosts = {};
-  Map<String, double> _expressSellerInsuranceCosts = {};
-  Map<String, double> _expressSellerEvaluationCosts = {};
-  Map<String, double> _standardSellerInsuranceCosts = {};
-  Map<String, double> _standardSellerEvaluationCosts = {};
+  final Map<String, double> _expressSellerInsuranceCosts = {};
+  final Map<String, double> _expressSellerEvaluationCosts = {};
+  final Map<String, double> _standardSellerInsuranceCosts = {};
+  final Map<String, double> _standardSellerEvaluationCosts = {};
 
   // Per-seller packaging size (locally-resolved productName from JRS calculator)
   final Map<String, String> _sellerPackagingSizes = {};
-  Map<String, String> _expressSellerPackagingSizes = {};
-  Map<String, String> _standardSellerPackagingSizes = {};
+  final Map<String, String> _expressSellerPackagingSizes = {};
+  final Map<String, String> _standardSellerPackagingSizes = {};
 
   final TextEditingController _notesController = TextEditingController();
 
   // Per-seller voucher discounts
-  Map<String, double> _sellerDiscountAmounts = {};
+  final Map<String, double> _sellerDiscountAmounts = {};
 
   @override
   void initState() {
@@ -715,10 +722,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   Future<void> _validateCartItemsExist() async {
     AppLogger.d('Validating ${widget.cartItems.length} cart items exist in database...');
-    
+
     final cartService = CartService();
     final missingItems = <String>[];
-    
+
     for (final cartItem in widget.cartItems) {
       try {
         final existingItem = await cartService.getCartItem(cartItem.cartItemId);
@@ -733,14 +740,14 @@ class _CheckoutPageState extends State<CheckoutPage> {
         missingItems.add(cartItem.cartItemId);
       }
     }
-    
+
     if (missingItems.isNotEmpty) {
       throw Exception(
         'Some cart items are no longer available: ${missingItems.join(', ')}. '
         'Please refresh your cart and try again.'
       );
     }
-    
+
     AppLogger.d('All cart items validated successfully');
   }
 
@@ -1014,143 +1021,209 @@ class _CheckoutPageState extends State<CheckoutPage> {
     return subtotal - totalDiscount + buyerShippingPortion;
   }
 
+  // ── Palette ──────────────────────────────────────────────────────────────
+
+  InkPalette get ink => InkPalette.of(context);
+
+  /// Destructive red. [InkPalette] reserves amber for urgency, so danger needs
+  /// its own tone that still reads in both themes. Same value the cart uses, so
+  /// an error looks identical on both sides of "Proceed to checkout".
+  Color get _danger =>
+      ink.isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626);
+
+  /// Every message this page raises, in one shape — matching the cart's, so the
+  /// two screens of a single purchase don't speak in two voices.
+  void _showSnack(String message, {Color? tone, int seconds = 3}) {
+    final background = tone ?? ink.emerald;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: TextStyle(
+            color: background == ink.amber ? ink.onAmber : Colors.white,
+          ),
+        ),
+        backgroundColor: background,
+        duration: Duration(seconds: seconds),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  // ── Dialogs ──────────────────────────────────────────────────────────────
+
+  /// One shape for every dialog this page raises.
+  ///
+  /// There were seven, in four different styles — some with a tinted icon tile,
+  /// some without, three different corner radii — and all of them hardcoded
+  /// light, so in dark mode a checkout error arrived as a white slab. One
+  /// builder now.
+  Widget _dialog({
+    required IconData icon,
+    required Color tone,
+    required String title,
+    required Widget content,
+    required List<Widget> actions,
+  }) {
+    return AlertDialog(
+      backgroundColor: ink.surface,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: tone.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: tone, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              title,
+              style: AppTextStyles.titleMedium.copyWith(
+                color: ink.text,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+      content: content,
+      actions: actions,
+    );
+  }
+
+  Widget _dialogBody(String text) => Text(
+    text,
+    style: AppTextStyles.bodyMedium.copyWith(
+      color: ink.text.withValues(alpha: 0.75),
+      height: 1.45,
+    ),
+  );
+
+  /// Labelled facts inside a dialog — an order id, an amount — on one tile.
+  /// The last flag emphasises a row as money rather than a reference.
+  Widget _dialogFacts(List<(String, String, bool)> rows) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: ink.surfaceHigh,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: ink.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (int i = 0; i < rows.length; i++) ...[
+            if (i > 0) const SizedBox(height: 12),
+            Text(
+              rows[i].$1,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: ink.text.withValues(alpha: 0.55),
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              rows[i].$2,
+              style: rows[i].$3
+                  ? AppTextStyles.titleMedium.copyWith(
+                      color: ink.emerald,
+                      fontWeight: FontWeight.w800,
+                    )
+                  : AppTextStyles.bodySmall.copyWith(
+                      color: ink.text,
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.w600,
+                    ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  TextButton _dialogTextAction(String label, VoidCallback onPressed) =>
+      TextButton(
+        onPressed: onPressed,
+        style: TextButton.styleFrom(
+          foregroundColor: ink.text.withValues(alpha: 0.7),
+        ),
+        child: Text(label, style: AppTextStyles.buttonMedium),
+      );
+
+  ElevatedButton _dialogPrimaryAction(String label, VoidCallback onPressed) =>
+      ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: ink.emerald,
+          foregroundColor: ink.onEmerald,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        child: Text(label, style: AppTextStyles.buttonMedium),
+      );
+
   Future<void> _navigateToPaymongoCheckout(CreateOrderResponse orderResponse) async {
     if (orderResponse.checkoutSession != null) {
-      // Navigate to external Paymongo checkout URL
-      final checkoutUrl = orderResponse.checkoutSession!.attributes.checkoutUrl;
-      
-      // In a real implementation, you would:
-      // 1. Open the checkout URL in a browser or WebView
-      // 2. Handle the success/cancel redirects
-      // 3. Update the order status based on the payment result
-      
-      // For now, show the checkout URL in a dialog
+      final session = orderResponse.checkoutSession!;
+      final checkoutUrl = session.attributes.checkoutUrl;
+
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  Icons.payment,
-                  color: AppColors.primary,
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Paymongo Checkout',
-                style: AppTextStyles.titleMedium.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
+        builder: (context) => _dialog(
+          icon: Icons.lock_outline,
+          tone: ink.emerald,
+          title: 'Ready to pay',
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Your order has been created successfully! You will be redirected to Paymongo to complete your payment.',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.onSurface.withValues(alpha: 0.8),
-                ),
+              _dialogBody(
+                'Your order is reserved. The next step opens PayMongo\'s secure '
+                'payment page to complete it.',
               ),
               const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.grey50,
-                  borderRadius: BorderRadius.circular(8),
+              _dialogFacts([
+                ('Order ID', orderResponse.orderId, false),
+                (
+                  'Total amount',
+                  CurrencyFormatter.formatWithPeso(orderResponse.totalAmount),
+                  true,
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Order ID:',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.onSurface.withValues(alpha: 0.6),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      orderResponse.orderId,
-                      style: AppTextStyles.bodySmall.copyWith(
-                        fontFamily: 'monospace',
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Total Amount:',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.onSurface.withValues(alpha: 0.6),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '₱${orderResponse.totalAmount.toStringAsFixed(2)}',
-                      style: AppTextStyles.titleMedium.copyWith(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w700,
-                        fontFamily: 'Roboto',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Checkout URL: ${checkoutUrl.length > 50 ? '${checkoutUrl.substring(0, 50)}...' : checkoutUrl}',
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.info,
-                  fontFamily: 'monospace',
-                ),
-              ),
+              ]),
             ],
           ),
           actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(); // Close dialog
-                Navigator.of(context).pop(); // Go back to cart/previous page
-                widget.onOrderComplete?.call();
-              },
-              child: Text('Close', style: AppTextStyles.buttonMedium),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                AppLogger.d('Opening Paymongo checkout URL: $checkoutUrl');
-                
-                // Close the dialog first
-                Navigator.of(context).pop();
-                
-                try {
-                  // Import url_launcher package to open URLs
-                  // For now, we'll use a simple browser opening approach
-                  await _openCheckoutUrl(checkoutUrl);
-                } catch (e) {
-                  AppLogger.d('Error opening checkout URL: $e');
-                  if (mounted) {
-                    _showErrorDialog('Failed to open payment page. Please try again.');
-                  }
+            _dialogTextAction('Not now', () {
+              Navigator.of(context).pop(); // Close dialog
+              Navigator.of(context).pop(); // Go back to cart/previous page
+              widget.onOrderComplete?.call();
+            }),
+            _dialogPrimaryAction('Continue to payment', () async {
+              AppLogger.d('Opening Paymongo checkout URL: $checkoutUrl');
+
+              // Close the dialog first
+              Navigator.of(context).pop();
+
+              try {
+                await _openCheckoutUrl(checkoutUrl, sessionId: session.id);
+              } catch (e) {
+                AppLogger.d('Error opening checkout URL: $e');
+                if (mounted) {
+                  _showErrorDialog('Failed to open payment page. Please try again.');
                 }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.onPrimary,
-                elevation: 0,
-              ),
-              child: Text('Proceed to Payment', style: AppTextStyles.buttonMedium),
-            ),
+              }
+            }),
           ],
         ),
       );
@@ -1165,239 +1238,46 @@ class _CheckoutPageState extends State<CheckoutPage> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.success.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                Icons.check_circle_outlined,
-                color: AppColors.success,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              'Order Created',
-              style: AppTextStyles.titleMedium.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
+      builder: (context) => _dialog(
+        icon: Icons.check_circle_outline,
+        tone: ink.emerald,
+        title: 'Order created',
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Your order has been created successfully!',
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.onSurface.withValues(alpha: 0.8),
-              ),
-            ),
+            _dialogBody('Your order has been created successfully.'),
             const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.grey50,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Payment Intent ID:',
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.onSurface.withValues(alpha: 0.6),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    orderResponse.paymentIntent?.id ?? 'N/A',
-                    style: AppTextStyles.bodySmall.copyWith(
-                      fontFamily: 'monospace',
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'In a real implementation, you would be redirected to Paymongo\'s payment interface to complete the payment.',
-              style: AppTextStyles.bodySmall.copyWith(
-                color: AppColors.info,
-                fontStyle: FontStyle.italic,
-              ),
-            ),
+            _dialogFacts([
+              ('Payment Intent ID', orderResponse.paymentIntent?.id ?? 'N/A', false),
+            ]),
           ],
         ),
         actions: [
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop(); // Close dialog
-              Navigator.of(context).pop(); // Go back to cart/previous page
-              widget.onOrderComplete?.call();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: AppColors.onPrimary,
-              elevation: 0,
-            ),
-            child: Text('Continue', style: AppTextStyles.buttonMedium),
-          ),
+          _dialogPrimaryAction('Continue', () {
+            Navigator.of(context).pop(); // Close dialog
+            Navigator.of(context).pop(); // Go back to cart/previous page
+            widget.onOrderComplete?.call();
+          }),
         ],
       ),
     );
   }
 
+  /// A Cash on Delivery order is placed the moment it is created — there is no
+  /// payment page to visit — so it lands on the same receipt screen an online
+  /// payment does, rather than on a dialog of its own. One ending for the flow,
+  /// one URL for it.
   Future<void> _navigateToCodOrderSuccess(CreateOrderResponse orderResponse) async {
-    // Show success dialog for Cash on Delivery orders
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.success.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                Icons.check_circle_outlined,
-                color: AppColors.success,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              'Order Placed',
-              style: AppTextStyles.titleMedium.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
+    widget.onOrderComplete?.call();
+    await Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        settings: const RouteSettings(name: kCheckoutSuccessPath),
+        builder: (context) => PaymentSuccessPage(
+          orderId: orderResponse.orderId,
+          totalAmount: orderResponse.totalAmount,
+          isCashOnDelivery: true,
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Your Cash on Delivery order has been placed successfully!',
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.onSurface.withValues(alpha: 0.8),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.grey50,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.receipt_long, size: 16, color: AppColors.primary),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Order ID:',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.onSurface.withValues(alpha: 0.6),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    orderResponse.orderId,
-                    style: AppTextStyles.bodySmall.copyWith(
-                      fontFamily: 'monospace',
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Icon(Icons.money, size: 16, color: AppColors.primary),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Total Amount:',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.onSurface.withValues(alpha: 0.6),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '₱${orderResponse.totalAmount.toStringAsFixed(2)}',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
-                      fontFamily: 'Roboto',
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.info.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: AppColors.info.withValues(alpha: 0.3),
-                  width: 1,
-                ),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.info_outline, size: 18, color: AppColors.info),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Please prepare the exact amount for payment upon delivery. Our rider will contact you when your order is on the way.',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.info,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop(); // Close dialog
-              Navigator.of(context).pop(); // Go back to cart/previous page
-              widget.onOrderComplete?.call();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: AppColors.onPrimary,
-              elevation: 0,
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-            ),
-            child: Text('Continue Shopping', style: AppTextStyles.buttonMedium),
-          ),
-        ],
       ),
     );
   }
@@ -1429,309 +1309,296 @@ class _CheckoutPageState extends State<CheckoutPage> {
   void _showErrorDialog(String message) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.error.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                Icons.error_outline,
-                color: AppColors.error,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              'Checkout Error',
-              style: AppTextStyles.titleMedium.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-        content: Text(
-          message,
-          style: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.onSurface.withValues(alpha: 0.8),
-          ),
-        ),
+      builder: (context) => _dialog(
+        icon: Icons.error_outline,
+        tone: _danger,
+        title: 'Checkout error',
+        content: _dialogBody(message),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('OK', style: AppTextStyles.buttonMedium),
-          ),
+          _dialogTextAction('OK', () => Navigator.pop(context)),
         ],
       ),
     );
   }
 
+  // ── Layout ───────────────────────────────────────────────────────────────
+
+  /// The money column, matching the cart's so the two screens of one purchase
+  /// share a spine: the same content width, the same gutter, the same summary
+  /// column on the right.
+  static const double _kSummaryWidth = 360;
+
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isWebView = screenWidth > 1024;
+    final isWide = context.isWideLayout;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        title: Row(
-          children: [
-            Icon(Icons.shopping_bag, color: AppColors.primary, size: 24),
-            const SizedBox(width: 8),
-            Text(
-              'Checkout',
-              style: AppTextStyles.titleLarge.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
+      backgroundColor: ink.bg,
+      body: SafeArea(
+        bottom: false,
+        // Header inside the centred column, not above it — otherwise on a wide
+        // window the title hugs the window edge while the cards start an inch
+        // further in. Same frame the cart uses.
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: AppLayout.maxContentWidth,
             ),
-          ],
-        ),
-        leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
-        ),
-      ),
-      body: isWebView ? _buildWebLayout() : _buildMobileLayout(),
-      bottomNavigationBar: !isWebView ? _buildBottomCheckoutBar() : null,
-    );
-  }
-
-  Widget _buildWebLayout() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Main content area
-        Expanded(
-          flex: 2,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(32),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildShippingSection(),
-                const SizedBox(height: 24),
-                _buildPaymentSection(),
-                const SizedBox(height: 24),
-                _buildOrderNotesSection(),
-                const SizedBox(height: 24),
-                _buildTermsSection(),
+                _buildHeader(),
+                Expanded(child: _buildBody(isWide)),
               ],
             ),
           ),
         ),
+      ),
+      // On a phone the total and the action that commits to it ride at the
+      // bottom edge. On desktop they live inside the summary column instead, so
+      // the number and the button never separate.
+      bottomNavigationBar: isWide ? null : _buildMobileCheckoutBar(),
+    );
+  }
 
-        // Sidebar with order summary
-        Container(
-          width: 400,
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            border: Border(
-              left: BorderSide(
-                color: AppColors.onSurface.withValues(alpha: 0.1),
-                width: 1,
-              ),
-            ),
-          ),
-          child: Column(
-            children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: _buildOrderSummary(),
-                ),
-              ),
-              _buildWebCheckoutButton(),
-            ],
+  Widget _buildHeader() {
+    final itemCount = widget.cartItems.fold<int>(
+      0,
+      (sum, item) => sum + item.quantity,
+    );
+    final sellerCount = _cartSellerIds().length;
+
+    return AppPageHeader(
+      title: 'Checkout',
+      subtitle: '$itemCount item${itemCount == 1 ? '' : 's'} · '
+          '$sellerCount seller${sellerCount == 1 ? '' : 's'}',
+    );
+  }
+
+  /// Two columns on desktop — what you are agreeing to on the left, what it
+  /// costs on the right, so the running total stays put while the form scrolls.
+  /// One column on a phone, with the summary at the end of it.
+  Widget _buildBody(bool isWide) {
+    final form = ListView(
+      padding: EdgeInsets.fromLTRB(
+        AppLayout.gutter,
+        14,
+        isWide ? 8 : AppLayout.gutter,
+        24,
+      ),
+      children: [
+        _buildAddressSection(),
+        const SizedBox(height: 14),
+        ..._buildGroupedSellerItems(),
+        _buildPaymentSection(),
+        const SizedBox(height: 14),
+        _buildOrderNotesSection(),
+        const SizedBox(height: 14),
+        _buildTermsSection(),
+        if (!isWide) ...[
+          const SizedBox(height: 14),
+          _buildSummaryCard(includeButton: false),
+        ],
+      ],
+    );
+
+    if (!isWide) return form;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: form),
+        SizedBox(
+          width: _kSummaryWidth,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(8, 14, AppLayout.gutter, 24),
+            child: _buildSummaryCard(includeButton: true),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildMobileLayout() {
-    return SingleChildScrollView(
+  // ── Card primitives ──────────────────────────────────────────────────────
+
+  /// The one card shape on this page.
+  ///
+  /// Every section used to carry a tinted header band in brand green, which on
+  /// a five-section page meant five green bars competing with the one control
+  /// that matters — the Place Order button. A heading is now just a heading.
+  Widget _card({
+    required IconData icon,
+    required String title,
+    String? trailingNote,
+    required Widget child,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: ink.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: ink.border),
+      ),
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildOrderSummary(),
-          const SizedBox(height: 24),
-          _buildShippingSection(),
-          const SizedBox(height: 24),
-          _buildPaymentSection(),
-          const SizedBox(height: 24),
-          _buildOrderNotesSection(),
-          const SizedBox(height: 24),
-          _buildTermsSection(),
-          const SizedBox(height: 100), // Space for bottom bar
-        ],
-      ),
-    );
-  }
-
-  Widget _buildOrderSummary() {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.onSurface.withValues(alpha: 0.1),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.05),
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(16),
-                topRight: Radius.circular(16),
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.receipt_long, color: AppColors.primary, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'Order Summary',
-                  style: AppTextStyles.titleMedium.copyWith(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Items
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ..._buildGroupedSellerItems(),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildOrderItem(CartItem item) {
-    return Row(
-      children: [
-        // Product image
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: SizedBox(
-            width: 50,
-            height: 50,
-            child: AppNetworkImage(
-              url: item.productImage,
-              width: 50,
-              height: 50,
-              fit: BoxFit.cover,
-              maxDecodeDimension: 140,
-              backgroundColor: AppColors.grey100,
-              errorWidget: (context) => Container(
-                color: AppColors.grey100,
-                child: Icon(
-                  Icons.image,
-                  color: AppColors.onSurface.withValues(alpha: 0.4),
-                  size: 20,
-                ),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        
-        // Product details
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Row(
             children: [
-              Text(
-                item.productName ?? 'Unknown Product',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  fontWeight: FontWeight.w500,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              if (item.variationName != null && item.variationName!.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Text(
-                  item.variationName!,
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.onSurface.withValues(alpha: 0.6),
+              Icon(icon, size: 18, color: ink.emerald),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: AppTextStyles.titleMedium.copyWith(
+                    color: ink.text,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-              const SizedBox(height: 4),
-              Text(
-                'Qty: ${item.quantity}',
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.onSurface.withValues(alpha: 0.6),
                 ),
               ),
+              if (trailingNote != null)
+                Text(
+                  trailingNote,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: ink.text.withValues(alpha: 0.5),
+                    fontSize: 12,
+                  ),
+                ),
             ],
           ),
-        ),
-        
-        // Price
+          const SizedBox(height: 14),
+          child,
+        ],
+      ),
+    );
+  }
+
+  /// A tinted strip carrying one sentence — an error, a caution, a note.
+  Widget _notice({
+    required IconData icon,
+    required Color tone,
+    required String text,
+    Widget? action,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: tone.withValues(alpha: ink.isDark ? 0.14 : 0.09),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: tone.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 17, color: tone),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              text,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: tone,
+                fontSize: 12.5,
+                height: 1.35,
+              ),
+            ),
+          ),
+          if (action != null) ...[const SizedBox(width: 6), action],
+        ],
+      ),
+    );
+  }
+
+  Widget _retryButton(Color tone) {
+    return TextButton.icon(
+      onPressed: _isCalculatingShipping ? null : _calculateShippingCost,
+      icon: const Icon(Icons.refresh, size: 15),
+      label: Text(
+        'Retry',
+        style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.w700),
+      ),
+      style: TextButton.styleFrom(
+        foregroundColor: tone,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+    );
+  }
+
+  /// Label on the left, value on the right, sitting on a shared baseline.
+  Widget _moneyRow(
+    String label,
+    String value, {
+    bool good = false,
+    bool muted = false,
+    Widget? valueWidget,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
         Text(
-          '₱${((item.productPrice ?? 0) * item.quantity).toStringAsFixed(2)}',
+          label,
           style: AppTextStyles.bodyMedium.copyWith(
-            fontWeight: FontWeight.w600,
-            fontFamily: 'Roboto',
+            color: ink.text.withValues(alpha: 0.65),
+            fontSize: 13.5,
           ),
         ),
+        const Spacer(),
+        valueWidget ??
+            Text(
+              value,
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: good
+                    ? ink.emerald
+                    : ink.text.withValues(alpha: muted ? 0.55 : 1),
+                fontWeight: muted ? FontWeight.w500 : FontWeight.w700,
+                fontSize: 13.5,
+              ),
+            ),
       ],
     );
   }
 
-  /// Group cart items by seller and build seller sections
+  // ── Address ──────────────────────────────────────────────────────────────
+
+  Widget _buildAddressSection() {
+    return AddressSelectionWidget(
+      selectedAddress: _selectedAddress,
+      onAddressSelected: (address) {
+        setState(() {
+          _selectedAddress = address;
+        });
+        // Calculate shipping cost when address is selected
+        _calculateShippingCost();
+      },
+      title: 'Shipping address',
+    );
+  }
+
+  // ── Order (grouped by seller) ────────────────────────────────────────────
+
+  /// Group cart items by seller and build a card per seller.
   List<Widget> _buildGroupedSellerItems() {
-    // Group items by seller
     final Map<String, List<CartItem>> sellerGroups = {};
-    
+
     for (final item in widget.cartItems) {
       final sellerId = item.sellerId ?? 'unknown';
-      if (!sellerGroups.containsKey(sellerId)) {
-        sellerGroups[sellerId] = [];
-      }
-      sellerGroups[sellerId]!.add(item);
+      sellerGroups.putIfAbsent(sellerId, () => []).add(item);
     }
 
-    // Build widgets for each seller group
     final List<Widget> widgets = [];
-    
     sellerGroups.forEach((sellerId, items) {
-      // Get seller name from first item
       final sellerName = items.first.sellerName ?? 'Unknown Seller';
-      
       widgets.add(_buildSellerGroup(sellerId, sellerName, items));
-      widgets.add(const SizedBox(height: 16));
+      widgets.add(const SizedBox(height: 14));
     });
 
     return widgets;
   }
 
-  /// Build a seller group with clickable seller name and their products
+  /// One seller's slice of the order: what they are shipping, how, and for how
+  /// much. Each seller is its own consignment with its own rate and its own
+  /// vouchers, so each gets a card rather than a row in a shared list.
   Widget _buildSellerGroup(String sellerId, String sellerName, List<CartItem> items) {
     // Calculate seller's subtotal
     final sellerSubtotal = items.fold<double>(
@@ -1750,202 +1617,235 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
     // Whether the buyer pays anything for shipping
     final buyerPaysShipping = buyerShippingCost > 0.0;
-    final shippingDiscounted = totalShippingCost > 0.0 && buyerShippingCost < totalShippingCost;
+    final shippingDiscounted =
+        totalShippingCost > 0.0 && buyerShippingCost < totalShippingCost;
 
     AppLogger.d('Seller: $sellerName, Subtotal: $sellerSubtotal, Discount: $sellerDiscount, Total Shipping: $totalShippingCost, Buyer Pays: $buyerShippingCost');
 
     return Container(
-      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppColors.grey50,
-        borderRadius: BorderRadius.circular(12),
+        color: ink.surface,
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: AppColors.onSurface.withValues(alpha: 0.1),
+          // A seller with no usable delivery option is the reason the order
+          // can't proceed, so its card is what carries the alarm.
+          color: _sellerShippingBlocked(sellerId)
+              ? _danger.withValues(alpha: 0.5)
+              : ink.border,
         ),
       ),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Seller header with inline name
+          // Seller header
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                width: 30,
+                height: 30,
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(6),
+                  color: ink.emerald.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(9),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+                child: Icon(Icons.storefront_outlined, size: 16, color: ink.emerald),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.store, size: 12, color: AppColors.primary),
-                    const SizedBox(width: 4),
                     Text(
-                      'Seller',
-                      style: AppTextStyles.labelSmall.copyWith(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 10,
+                      sellerName,
+                      style: AppTextStyles.titleMedium.copyWith(
+                        color: ink.text,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14.5,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      '${items.length} item${items.length != 1 ? 's' : ''}',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: ink.text.withValues(alpha: 0.5),
+                        fontSize: 12,
                       ),
                     ),
                   ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  sellerName,
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.onSurface,
-                  ),
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
-          
-          const SizedBox(height: 4),
-          Text(
-            '${items.length} item${items.length != 1 ? 's' : ''}',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.onSurface.withValues(alpha: 0.6),
-            ),
-          ),
-          
-          const SizedBox(height: 12),
-          const Divider(height: 1),
-          const SizedBox(height: 12),
-          
+
+          const SizedBox(height: 14),
+          Divider(height: 1, thickness: 1, color: ink.border),
+          const SizedBox(height: 14),
+
           // Products for this seller
-          ...items.map((item) => Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: _buildOrderItem(item),
-          )),
-          
+          for (int i = 0; i < items.length; i++) ...[
+            if (i > 0) const SizedBox(height: 12),
+            _buildOrderItem(items[i]),
+          ],
+
+          const SizedBox(height: 14),
+          _buildSellerShippingModeToggle(sellerId),
+          const SizedBox(height: 10),
+          _buildSellerVoucherChips(sellerId),
+
+          const SizedBox(height: 14),
+          Divider(height: 1, thickness: 1, color: ink.border),
+          const SizedBox(height: 12),
+
           // Seller subtotal and shipping
+          _moneyRow('Subtotal', CurrencyFormatter.formatWithPeso(sellerSubtotal)),
+          if (sellerDiscount > 0) ...[
+            const SizedBox(height: 8),
+            _moneyRow(
+              'Voucher discount',
+              '-${CurrencyFormatter.formatWithPeso(sellerDiscount)}',
+              good: true,
+            ),
+          ],
           const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: AppColors.onSurface.withValues(alpha: 0.1),
-              ),
-            ),
-            child: Column(
-              children: [
-                // Subtotal row
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Subtotal',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.onSurface.withValues(alpha: 0.7),
-                      ),
-                    ),
-                    Text(
-                      '₱${sellerSubtotal.toStringAsFixed(2)}',
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        fontWeight: FontWeight.w600,
-                        fontFamily: 'Roboto',
-                      ),
-                    ),
-                  ],
-                ),
-
-                // Voucher discount row (per seller)
-                if (sellerDiscount > 0) ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Voucher Discount',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.onSurface.withValues(alpha: 0.7),
-                        ),
-                      ),
-                      Text(
-                        '-₱${sellerDiscount.toStringAsFixed(2)}',
+          _moneyRow(
+            'Shipping',
+            '',
+            valueWidget: _isCalculatingShipping
+                ? const AmountSkeleton(width: 64, height: 13)
+                : _sellerShippingBlocked(sellerId)
+                    ? Text(
+                        'Unavailable',
                         style: AppTextStyles.bodyMedium.copyWith(
-                          fontWeight: FontWeight.w600,
-                          fontFamily: 'Roboto',
-                          color: AppColors.success,
+                          color: _danger,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13.5,
                         ),
-                      ),
-                    ],
-                  ),
-                ],
-                const SizedBox(height: 8),
-
-                // Shipping row
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Shipping',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.onSurface.withValues(alpha: 0.7),
-                      ),
-                    ),
-                    _isCalculatingShipping
-                        ? const AmountSkeleton(width: 64, height: 13)
-                        : _sellerShippingBlocked(sellerId)
-                        ? Text(
-                            'Unavailable',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.error,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          )
-                        : Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (shippingDiscounted) ...[
-                                Text(
-                                  '₱${totalShippingCost.toStringAsFixed(2)}',
-                                  style: AppTextStyles.bodySmall.copyWith(
-                                    fontFamily: 'Roboto',
-                                    decoration: TextDecoration.lineThrough,
-                                    decorationColor: AppColors.error,
-                                    decorationThickness: 2,
-                                    color: AppColors.onSurface.withValues(alpha: 0.5),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                              ],
-                              Text(
-                                buyerPaysShipping
-                                    ? '₱${buyerShippingCost.toStringAsFixed(2)}'
-                                    : 'FREE',
-                                style: AppTextStyles.bodyMedium.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  fontFamily: buyerPaysShipping ? 'Roboto' : null,
-                                  color: buyerPaysShipping ? null : AppColors.success,
-                                ),
+                      )
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          if (shippingDiscounted) ...[
+                            Text(
+                              CurrencyFormatter.formatWithPeso(totalShippingCost),
+                              style: AppTextStyles.bodySmall.copyWith(
+                                decoration: TextDecoration.lineThrough,
+                                decorationColor: ink.text.withValues(alpha: 0.45),
+                                color: ink.text.withValues(alpha: 0.45),
+                                fontSize: 12.5,
                               ),
-                            ],
+                            ),
+                            const SizedBox(width: 6),
+                          ],
+                          Text(
+                            buyerPaysShipping
+                                ? CurrencyFormatter.formatWithPeso(buyerShippingCost)
+                                : 'FREE',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13.5,
+                              color: buyerPaysShipping ? ink.text : ink.emerald,
+                            ),
                           ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                _buildSellerShippingModeToggle(sellerId),
-                const SizedBox(height: 12),
-                _buildSellerVoucherChips(sellerId),
-              ],
-            ),
+                        ],
+                      ),
           ),
         ],
       ),
     );
   }
 
-  /// Per-seller delivery mode toggle. Shows only the modes the seller allows
-  /// (standard, express, pickup). Locks to express when the seller's shipping
-  /// voucher only covers express.
+  Widget _buildOrderItem(CartItem item) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Product image
+        ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(gradient: ink.productBackdrop),
+            child: AppNetworkImage(
+              url: item.productImage,
+              width: 52,
+              height: 52,
+              fit: BoxFit.cover,
+              maxDecodeDimension: 140,
+              backgroundColor: Colors.transparent,
+              errorWidget: (context) => Icon(
+                Icons.image_outlined,
+                color: ink.text.withValues(alpha: 0.3),
+                size: 20,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+
+        // Product details
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                item.productName ?? 'Unknown Product',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: ink.text,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13.5,
+                  height: 1.3,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (item.variationName != null && item.variationName!.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  item.variationName!,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: ink.text.withValues(alpha: 0.5),
+                    fontSize: 12,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+              const SizedBox(height: 3),
+              Text(
+                'Qty ${item.quantity}',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: ink.text.withValues(alpha: 0.5),
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+
+        // Price
+        Text(
+          CurrencyFormatter.formatWithPeso(
+            (item.productPrice ?? 0) * item.quantity,
+          ),
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: ink.text,
+            fontWeight: FontWeight.w700,
+            fontSize: 13.5,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── Delivery method ──────────────────────────────────────────────────────
+
+  /// Per-seller delivery mode picker. Shows only the modes the seller allows
+  /// (standard, express, same day, pickup). Locks to express when the seller's
+  /// shipping voucher only covers express.
   Widget _buildSellerShippingModeToggle(String sellerId) {
     final allowsStandard = _sellerAllowsDelivery(sellerId, 'standard');
     final allowsExpress  = _sellerAllowsDelivery(sellerId, 'express');
@@ -1981,37 +1881,201 @@ class _CheckoutPageState extends State<CheckoutPage> {
     final expressTotal  = _expressSellerTotalShippingCosts[sellerId] ?? 0.0;
     final standardTotal = _standardSellerTotalShippingCosts[sellerId] ?? 0.0;
 
-    Widget radioRow({
-      required bool selected,
-      required bool disabled,
-      required VoidCallback onTap,
-      required IconData icon,
-      required String label,
-      String? sublabel,
-      String? tooltip,
-      required Widget trailing,
-    }) {
-      return InkWell(
+    final rows = <Widget>[];
+
+    if (allowsStandard && hasStandardCost) {
+      rows.add(_deliveryOption(
+        selected: isStandard,
+        disabled: _isCalculatingShipping || lockedExpress,
+        onTap: () {
+          _onSellerSameDayToggled(sellerId, false);
+          _onSellerPickupToggled(sellerId, false);
+          _onSellerShippingModeToggled(sellerId, false);
+        },
+        icon: Icons.local_shipping_outlined,
+        label: 'Standard',
+        sublabel: lockedExpress ? 'Locked by voucher' : null,
+        trailing: _costLabel(standardTotal, isStandard),
+      ));
+    }
+    if (allowsExpress && hasExpressCost) {
+      rows.add(_deliveryOption(
+        selected: isExpress,
+        disabled: _isCalculatingShipping,
+        onTap: () {
+          _onSellerSameDayToggled(sellerId, false);
+          _onSellerPickupToggled(sellerId, false);
+          _onSellerShippingModeToggled(sellerId, true);
+        },
+        icon: Icons.bolt_outlined,
+        label: 'Express',
+        trailing: _costLabel(expressTotal, isExpress),
+      ));
+    }
+    // Same Day Delivery (Lalamove) — shown when the seller enabled it and an
+    // online payment method is available (COD isn't supported for Same Day).
+    // Outside the seller's ordering window it renders disabled with the hours;
+    // otherwise it needs a live quote (Metro Manila only) and the buyer pays
+    // the full fee.
+    if (allowsSameDay && _hasOnlinePaymentAvailable &&
+        (sameDayAvailable || _isCalculatingSameDay || !sameDayWithinWindow)) {
+      rows.add(_deliveryOption(
+        selected: isSameDay && sameDayWithinWindow,
+        disabled: _isCalculatingShipping || _isCalculatingSameDay ||
+            !sameDayAvailable || !sameDayWithinWindow,
+        onTap: () => _onSellerSameDayToggled(sellerId, true),
+        icon: Icons.motorcycle_outlined,
+        label: 'Same Day',
+        sublabel: sameDayWithinWindow && _isCalculatingSameDay && !sameDayAvailable
+            ? 'Checking availability…'
+            : null,
+        // Off-hours: hide the long day/time list behind an info tooltip.
+        tooltip: !sameDayWithinWindow ? _sameDayWindowLabel(sellerId) : null,
+        trailing: !sameDayWithinWindow
+            ? Text(
+                'Closed',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: ink.text.withValues(alpha: 0.45),
+                  fontWeight: FontWeight.w600,
+                ),
+              )
+            : (_isCalculatingSameDay && !sameDayAvailable
+                ? const AmountSkeleton(width: 64, height: 14)
+                : _costLabel(sameDayCost, isSameDay)),
+      ));
+    }
+    if (allowsPickup) {
+      rows.add(_deliveryOption(
+        selected: isPickup,
+        disabled: false,
+        onTap: () {
+          _onSellerSameDayToggled(sellerId, false);
+          _onSellerPickupToggled(sellerId, true);
+        },
+        icon: Icons.store_outlined,
+        label: 'Pickup',
+        sublabel: 'Collect from the seller',
+        trailing: Text(
+          'FREE',
+          style: AppTextStyles.bodyMedium.copyWith(
+            fontWeight: FontWeight.w700,
+            fontSize: 13.5,
+            color: isPickup ? ink.emerald : ink.text.withValues(alpha: 0.5),
+          ),
+        ),
+      ));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Delivery method',
+              style: AppTextStyles.titleSmall.copyWith(
+                color: ink.text.withValues(alpha: 0.7),
+                fontWeight: FontWeight.w700,
+                fontSize: 12.5,
+              ),
+            ),
+            const SizedBox(width: 6),
+            // The buyer must pick one — say so, rather than letting them meet a
+            // disabled Place Order button with no explanation.
+            if (!chosen && rows.isNotEmpty)
+              Text(
+                'Required',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: ink.amber,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 11.5,
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        // JRS rate unavailable for this seller — explain and offer a retry.
+        // Pickup / Same Day rows below (if the seller enabled them) remain
+        // selectable so the order can still proceed.
+        if (jrsFailed) ...[
+          _notice(
+            icon: Icons.error_outline,
+            tone: _danger,
+            text: (allowsPickup || sameDayAvailable)
+                ? 'Standard and Express are unavailable right now. Choose another option below, or retry.'
+                : 'Standard and Express are unavailable right now. Please retry.',
+            action: _retryButton(_danger),
+          ),
+          if (rows.isNotEmpty) const SizedBox(height: 8),
+        ],
+        for (int i = 0; i < rows.length; i++) ...[
+          if (i > 0) const SizedBox(height: 6),
+          rows[i],
+        ],
+      ],
+    );
+  }
+
+  /// One selectable delivery option.
+  ///
+  /// Selection is carried by the whole tile — border, tint and a filled check —
+  /// rather than by a Material radio dot alone, which at this size was the only
+  /// thing distinguishing a chosen delivery method from an unchosen one.
+  Widget _deliveryOption({
+    required bool selected,
+    required bool disabled,
+    required VoidCallback onTap,
+    required IconData icon,
+    required String label,
+    String? sublabel,
+    String? tooltip,
+    required Widget trailing,
+  }) {
+    return Opacity(
+      opacity: disabled && !selected ? 0.5 : 1,
+      child: InkWell(
         onTap: disabled ? null : onTap,
-        borderRadius: BorderRadius.circular(6),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected
+                ? ink.emerald.withValues(alpha: ink.isDark ? 0.14 : 0.08)
+                : ink.surfaceHigh,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? ink.emerald : ink.border,
+              width: selected ? 1.5 : 1,
+            ),
+          ),
           child: Row(
             children: [
-              Radio<bool>(
-                value: true,
-                groupValue: selected,
-                onChanged: disabled ? null : (_) => onTap(),
-                activeColor: AppColors.primary,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
+              // The selection mark: a filled tick when chosen, an empty ring
+              // when not.
+              Container(
+                width: 18,
+                height: 18,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: selected ? ink.emerald : Colors.transparent,
+                  border: Border.all(
+                    color: selected
+                        ? ink.emerald
+                        : ink.text.withValues(alpha: 0.3),
+                    width: 1.5,
+                  ),
+                ),
+                child: selected
+                    ? Icon(Icons.check, size: 12, color: ink.onEmerald)
+                    : null,
               ),
-              const SizedBox(width: 4),
-              Icon(icon, size: 16,
-                color: selected
-                    ? AppColors.primary
-                    : AppColors.onSurface.withValues(alpha: 0.4)),
-              const SizedBox(width: 4),
+              const SizedBox(width: 10),
+              Icon(
+                icon,
+                size: 17,
+                color: selected ? ink.emerald : ink.text.withValues(alpha: 0.5),
+              ),
+              const SizedBox(width: 8),
               Expanded(
                 // Label on top with the (optional) sublabel wrapping beneath, so
                 // long sublabels never overflow the row horizontally. A tooltip
@@ -2024,34 +2088,41 @@ class _CheckoutPageState extends State<CheckoutPage> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Flexible(
-                          child: Text(label,
+                          child: Text(
+                            label,
                             style: AppTextStyles.bodyMedium.copyWith(
-                              fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13.5,
                               color: selected
-                                  ? AppColors.primary
-                                  : AppColors.onSurface.withValues(alpha: 0.5),
-                            )),
+                                  ? ink.emerald
+                                  : ink.text.withValues(alpha: 0.85),
+                            ),
+                          ),
                         ),
                         if (tooltip != null) ...[
-                          const SizedBox(width: 4),
+                          const SizedBox(width: 5),
                           Tooltip(
                             message: tooltip,
                             triggerMode: TooltipTriggerMode.tap,
-                            child: Icon(Icons.info_outline,
-                                size: 14,
-                                color: AppColors.onSurface.withValues(alpha: 0.45)),
+                            child: Icon(
+                              Icons.info_outline,
+                              size: 14,
+                              color: ink.text.withValues(alpha: 0.45),
+                            ),
                           ),
                         ],
                       ],
                     ),
                     if (sublabel != null)
                       Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(sublabel,
+                        padding: const EdgeInsets.only(top: 1),
+                        child: Text(
+                          sublabel,
                           style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.onSurface.withValues(alpha: 0.5),
-                            fontStyle: FontStyle.italic,
-                          )),
+                            color: ink.text.withValues(alpha: 0.5),
+                            fontSize: 11.5,
+                          ),
+                        ),
                       ),
                   ],
                 ),
@@ -2061,141 +2132,22 @@ class _CheckoutPageState extends State<CheckoutPage> {
             ],
           ),
         ),
-      );
-    }
-
-    Widget costLabel(double cost, bool selected) => Text(
-      cost > 0 ? '₱${cost.toStringAsFixed(2)}' : 'FREE',
-      style: AppTextStyles.bodyMedium.copyWith(
-        fontFamily: 'Roboto',
-        fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-        color: selected
-            ? AppColors.primary
-            : AppColors.onSurface.withValues(alpha: 0.5),
-      ),
-    );
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.1)),
-      ),
-      child: Column(
-        children: [
-          // JRS rate unavailable for this seller — explain and offer a retry.
-          // Pickup / Same Day rows below (if the seller enabled them) remain
-          // selectable so the order can still proceed.
-          if (jrsFailed) ...[
-            Row(
-              children: [
-                Icon(Icons.error_outline, size: 16, color: AppColors.error),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    (allowsPickup || sameDayAvailable)
-                        ? 'Standard/Express delivery is unavailable right now. Choose another option below, or retry.'
-                        : 'Standard/Express delivery is unavailable right now. Please retry.',
-                    style: AppTextStyles.bodySmall.copyWith(color: AppColors.error),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                TextButton.icon(
-                  onPressed: _isCalculatingShipping ? null : _calculateShippingCost,
-                  icon: const Icon(Icons.refresh, size: 14),
-                  label: Text('Retry', style: AppTextStyles.bodySmall),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.error,
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
-              ],
-            ),
-            if (allowsPickup || allowsSameDay)
-              const Divider(height: 16),
-          ],
-          if (allowsStandard && hasStandardCost)
-            radioRow(
-              selected: isStandard,
-              disabled: _isCalculatingShipping || lockedExpress,
-              onTap: () {
-                _onSellerSameDayToggled(sellerId, false);
-                _onSellerPickupToggled(sellerId, false);
-                _onSellerShippingModeToggled(sellerId, false);
-              },
-              icon: Icons.local_shipping_outlined,
-              label: 'Standard',
-              sublabel: lockedExpress ? '(locked by voucher)' : null,
-              trailing: costLabel(standardTotal, isStandard),
-            ),
-          if (allowsExpress && hasExpressCost)
-            radioRow(
-              selected: isExpress,
-              disabled: _isCalculatingShipping,
-              onTap: () {
-                _onSellerSameDayToggled(sellerId, false);
-                _onSellerPickupToggled(sellerId, false);
-                _onSellerShippingModeToggled(sellerId, true);
-              },
-              icon: Icons.flash_on,
-              label: 'Express',
-              trailing: costLabel(expressTotal, isExpress),
-            ),
-          // Same Day Delivery (Lalamove) — shown when the seller enabled it and
-          // an online payment method is available (COD isn't supported for Same
-          // Day). Outside the seller's ordering window it renders disabled with
-          // the hours; otherwise it needs a live quote (Metro Manila only) and
-          // the buyer pays the full fee.
-          if (allowsSameDay && _hasOnlinePaymentAvailable &&
-              (sameDayAvailable || _isCalculatingSameDay || !sameDayWithinWindow))
-            radioRow(
-              selected: isSameDay && sameDayWithinWindow,
-              disabled: _isCalculatingShipping || _isCalculatingSameDay ||
-                  !sameDayAvailable || !sameDayWithinWindow,
-              onTap: () => _onSellerSameDayToggled(sellerId, true),
-              icon: Icons.motorcycle_outlined,
-              label: 'Same Day',
-              sublabel: sameDayWithinWindow && _isCalculatingSameDay && !sameDayAvailable
-                  ? '(checking…)'
-                  : null,
-              // Off-hours: hide the long day/time list behind an info tooltip.
-              tooltip: !sameDayWithinWindow ? _sameDayWindowLabel(sellerId) : null,
-              trailing: !sameDayWithinWindow
-                  ? Text(
-                      'Closed',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.onSurface.withValues(alpha: 0.5),
-                      ),
-                    )
-                  : (_isCalculatingSameDay && !sameDayAvailable
-                      ? const AmountSkeleton(width: 64, height: 14)
-                      : costLabel(sameDayCost, isSameDay)),
-            ),
-          if (allowsPickup)
-            radioRow(
-              selected: isPickup,
-              disabled: false,
-              onTap: () {
-                _onSellerSameDayToggled(sellerId, false);
-                _onSellerPickupToggled(sellerId, true);
-              },
-              icon: Icons.store_outlined,
-              label: 'Pickup',
-              trailing: Text(
-                'FREE',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  fontWeight: isPickup ? FontWeight.w600 : FontWeight.normal,
-                  color: isPickup ? AppColors.success : AppColors.onSurface.withValues(alpha: 0.5),
-                ),
-              ),
-            ),
-        ],
       ),
     );
   }
+
+  Widget _costLabel(double cost, bool selected) => Text(
+    cost > 0 ? CurrencyFormatter.formatWithPeso(cost) : 'FREE',
+    style: AppTextStyles.bodyMedium.copyWith(
+      fontWeight: FontWeight.w700,
+      fontSize: 13.5,
+      color: selected
+          ? (cost > 0 ? ink.text : ink.emerald)
+          : ink.text.withValues(alpha: 0.55),
+    ),
+  );
+
+  // ── Vouchers ─────────────────────────────────────────────────────────────
 
   /// Two voucher chips per seller — discount and shipping. Each is editable.
   Widget _buildSellerVoucherChips(String sellerId) {
@@ -2210,7 +2162,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
       children: [
         _buildVoucherChip(
           icon: Icons.local_offer_outlined,
-          label: 'Discount Voucher',
+          label: 'Discount voucher',
           mode: VoucherPickerMode.discount,
           sellerId: sellerId,
           sellerName: sellerName,
@@ -2220,7 +2172,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         const SizedBox(height: 6),
         _buildVoucherChip(
           icon: Icons.local_shipping_outlined,
-          label: 'Shipping Voucher',
+          label: 'Shipping voucher',
           mode: VoucherPickerMode.shipping,
           sellerId: sellerId,
           sellerName: sellerName,
@@ -2257,8 +2209,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
       final value = voucher['discountValue'] as num? ?? 0;
       trailingLabel = type == 'percentage'
           ? '-${value.toStringAsFixed(0)}%'
-          : '-₱${value.toStringAsFixed(2)}';
+          : '-${CurrencyFormatter.formatWithPeso(value.toDouble())}';
     }
+
+    final applied = voucher != null;
 
     return InkWell(
       onTap: () => _openCheckoutVoucherPicker(
@@ -2267,39 +2221,49 @@ class _CheckoutPageState extends State<CheckoutPage> {
         sellerName: sellerName,
         sellerSubtotal: sellerSubtotal,
       ),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(12),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
         decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(8),
+          color: applied
+              ? ink.emerald.withValues(alpha: ink.isDark ? 0.12 : 0.07)
+              : ink.surfaceHigh,
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: voucher != null
-                ? AppColors.primary.withValues(alpha: 0.4)
-                : AppColors.onSurface.withValues(alpha: 0.1),
+            color: applied ? ink.emerald.withValues(alpha: 0.45) : ink.border,
           ),
         ),
         child: Row(
           children: [
-            Icon(icon, size: 16, color: AppColors.primary),
-            const SizedBox(width: 8),
+            Icon(
+              icon,
+              size: 16,
+              color: applied ? ink.emerald : ink.text.withValues(alpha: 0.5),
+            ),
+            const SizedBox(width: 9),
             Text(
               label,
               style: AppTextStyles.bodySmall.copyWith(
-                fontWeight: FontWeight.w500,
+                color: ink.text.withValues(alpha: 0.8),
+                fontWeight: FontWeight.w600,
+                fontSize: 12.5,
               ),
             ),
             const Spacer(),
             Text(
               trailingLabel,
               style: AppTextStyles.bodySmall.copyWith(
-                color: voucher != null ? AppColors.primary : AppColors.onSurface.withValues(alpha: 0.6),
-                fontWeight: FontWeight.w600,
-                fontFamily: 'Roboto',
+                color: applied ? ink.emerald : ink.text.withValues(alpha: 0.55),
+                fontWeight: FontWeight.w700,
+                fontSize: 12.5,
               ),
             ),
             const SizedBox(width: 4),
-            Icon(Icons.edit, size: 14, color: AppColors.onSurface.withValues(alpha: 0.5)),
+            Icon(
+              Icons.chevron_right,
+              size: 16,
+              color: ink.text.withValues(alpha: 0.4),
+            ),
           ],
         ),
       ),
@@ -2352,136 +2316,120 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
-  Widget _buildShippingSection() {
-    return AddressSelectionWidget(
-      selectedAddress: _selectedAddress,
-      onAddressSelected: (address) {
-        setState(() {
-          _selectedAddress = address;
-        });
-        // Calculate shipping cost when address is selected
-        _calculateShippingCost();
-      },
-      title: 'Shipping Address',
+  // ── Payment ──────────────────────────────────────────────────────────────
+
+  Widget _buildPaymentSection() {
+    final methods = PaymentMethod.values
+        .where((method) =>
+            method != PaymentMethod.billEase &&
+            _isPaymentMethodAllowed(method) &&
+            // Same Day Delivery (Lalamove) is online-payment only —
+            // hide Cash on Delivery while any seller uses Same Day.
+            !(method == PaymentMethod.cashOnDelivery && _anySameDaySelected()))
+        .toList();
+
+    return _card(
+      icon: Icons.credit_card_outlined,
+      title: 'Payment method',
+      trailingNote: _selectedPaymentMethod == null ? 'Required' : null,
+      child: Column(
+        children: [
+          if (methods.isEmpty)
+            _notice(
+              icon: Icons.info_outline,
+              tone: ink.amber,
+              text: 'No payment method is available for this combination of '
+                  'sellers and delivery options.',
+            ),
+          for (int i = 0; i < methods.length; i++) ...[
+            if (i > 0) const SizedBox(height: 8),
+            _buildPaymentOption(methods[i]),
+          ],
+          // Same Day removed COD from the list — say why, rather than leaving
+          // the buyer to notice an option they had a moment ago is now gone.
+          if (_anySameDaySelected() && _allowedPaymentKeys.contains('cod')) ...[
+            const SizedBox(height: 10),
+            _notice(
+              icon: Icons.info_outline,
+              tone: ink.text.withValues(alpha: 0.6),
+              text: 'Cash on Delivery isn\'t available with Same Day Delivery.',
+            ),
+          ],
+        ],
+      ),
     );
   }
 
-  Widget _buildPaymentSection() {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.onSurface.withValues(alpha: 0.1),
+  Widget _buildPaymentOption(PaymentMethod method) {
+    final isSelected = _selectedPaymentMethod == method;
+
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _selectedPaymentMethod = method;
+        });
+      },
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? ink.emerald.withValues(alpha: ink.isDark ? 0.14 : 0.08)
+              : ink.surfaceHigh,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isSelected ? ink.emerald : ink.border,
+            width: isSelected ? 1.5 : 1,
+          ),
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.05),
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(16),
-                topRight: Radius.circular(16),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? ink.emerald.withValues(alpha: 0.16)
+                    : ink.surface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: ink.border),
+              ),
+              child: Icon(
+                _getPaymentMethodIcon(method),
+                color: isSelected ? ink.emerald : ink.text.withValues(alpha: 0.55),
+                size: 18,
               ),
             ),
-            child: Row(
-              children: [
-                Icon(Icons.payment, color: AppColors.primary, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'Payment Method',
-                  style: AppTextStyles.titleMedium.copyWith(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                method.displayName,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13.5,
+                  color: isSelected ? ink.emerald : ink.text,
                 ),
-              ],
+              ),
             ),
-          ),
-
-          // Payment methods — filtered to the intersection of all sellers' allowed options
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: PaymentMethod.values
-                  .where((method) =>
-                      method != PaymentMethod.billEase &&
-                      _isPaymentMethodAllowed(method) &&
-                      // Same Day Delivery (Lalamove) is online-payment only —
-                      // hide Cash on Delivery while any seller uses Same Day.
-                      !(method == PaymentMethod.cashOnDelivery && _anySameDaySelected()))
-                  .map((method) {
-                final isSelected = _selectedPaymentMethod == method;
-                
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: InkWell(
-                    onTap: () {
-                      setState(() {
-                        _selectedPaymentMethod = method;
-                      });
-                    },
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: isSelected 
-                            ? AppColors.primary.withValues(alpha: 0.05)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: isSelected 
-                              ? AppColors.primary
-                              : AppColors.onSurface.withValues(alpha: 0.1),
-                          width: isSelected ? 2 : 1,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: AppColors.grey100,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(
-                              _getPaymentMethodIcon(method),
-                              color: AppColors.primary,
-                              size: 20,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              method.displayName,
-                              style: AppTextStyles.bodyMedium.copyWith(
-                                fontWeight: FontWeight.w500,
-                                color: isSelected 
-                                    ? AppColors.primary 
-                                    : AppColors.onSurface,
-                              ),
-                            ),
-                          ),
-                          if (isSelected)
-                            Icon(
-                              Icons.check_circle,
-                              color: AppColors.primary,
-                              size: 20,
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
+            Container(
+              width: 18,
+              height: 18,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isSelected ? ink.emerald : Colors.transparent,
+                border: Border.all(
+                  color: isSelected
+                      ? ink.emerald
+                      : ink.text.withValues(alpha: 0.3),
+                  width: 1.5,
+                ),
+              ),
+              child: isSelected
+                  ? Icon(Icons.check, size: 12, color: ink.onEmerald)
+                  : null,
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -2501,191 +2449,113 @@ class _CheckoutPageState extends State<CheckoutPage> {
       case PaymentMethod.billEase:
         return Icons.account_balance;
       case PaymentMethod.cashOnDelivery:
-        return Icons.money;
+        return Icons.payments_outlined;
     }
   }
 
-  Widget _buildOrderNotesSection() {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.onSurface.withValues(alpha: 0.1),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.05),
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(16),
-                topRight: Radius.circular(16),
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.note_outlined, color: AppColors.primary, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'Order Notes (Optional)',
-                  style: AppTextStyles.titleMedium.copyWith(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
+  // ── Notes & terms ────────────────────────────────────────────────────────
 
-          // Notes field
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              controller: _notesController,
-              onChanged: (value) {
-                setState(() {
-                  _orderNotes = value.isEmpty ? null : value;
-                });
-              },
-              maxLines: 3,
-              decoration: InputDecoration(
-                hintText: 'Add any special instructions for your order...',
-                hintStyle: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.onSurface.withValues(alpha: 0.5),
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                    color: AppColors.onSurface.withValues(alpha: 0.2),
-                  ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                    color: AppColors.primary,
-                    width: 2,
-                  ),
-                ),
-                filled: true,
-                fillColor: AppColors.background,
-              ),
-            ),
+  Widget _buildOrderNotesSection() {
+    return _card(
+      icon: Icons.sticky_note_2_outlined,
+      title: 'Order notes',
+      trailingNote: 'Optional',
+      child: TextField(
+        controller: _notesController,
+        onChanged: (value) {
+          setState(() {
+            _orderNotes = value.isEmpty ? null : value;
+          });
+        },
+        maxLines: 3,
+        style: AppTextStyles.bodyMedium.copyWith(
+          color: ink.text,
+          fontSize: 13.5,
+        ),
+        cursorColor: ink.emerald,
+        decoration: InputDecoration(
+          hintText: 'Any special instructions for your order…',
+          hintStyle: AppTextStyles.bodyMedium.copyWith(
+            color: ink.text.withValues(alpha: 0.4),
+            fontSize: 13.5,
           ),
-        ],
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 12,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: ink.border),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: ink.border),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: ink.emerald, width: 1.5),
+          ),
+          filled: true,
+          fillColor: ink.surfaceHigh,
+        ),
       ),
     );
   }
 
   Widget _buildTermsSection() {
+    final bodyStyle = AppTextStyles.bodySmall.copyWith(
+      color: ink.text.withValues(alpha: 0.65),
+      fontSize: 12.5,
+      height: 1.5,
+    );
+    final linkStyle = AppTextStyles.bodySmall.copyWith(
+      color: ink.emerald,
+      fontSize: 12.5,
+      height: 1.5,
+      fontWeight: FontWeight.w700,
+      decoration: TextDecoration.underline,
+      decorationColor: ink.emerald.withValues(alpha: 0.5),
+    );
+
     return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.onSurface.withValues(alpha: 0.1),
-        ),
+        color: ink.surfaceHigh,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: ink.border),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.info_outline, color: AppColors.primary, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'Terms and Conditions',
-                  style: AppTextStyles.titleSmall.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text.rich(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.gavel_outlined,
+            size: 16,
+            color: ink.text.withValues(alpha: 0.45),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text.rich(
               TextSpan(
-                text: 'By placing this order, I agree to the ',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.onSurface.withValues(alpha: 0.8),
-                ),
+                text: 'By placing this order you agree to the ',
+                style: bodyStyle,
                 children: [
                   TextSpan(
                     text: 'Terms and Conditions',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.primary,
-                      decoration: TextDecoration.underline,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: linkStyle,
                     recognizer: TapGestureRecognizer()
                       ..onTap = () => _showTermsAndConditions(context),
                   ),
-                  TextSpan(
-                    text: ' and ',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.onSurface.withValues(alpha: 0.8),
-                    ),
-                  ),
+                  TextSpan(text: ' and ', style: bodyStyle),
                   TextSpan(
                     text: 'Privacy Policy',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.primary,
-                      decoration: TextDecoration.underline,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: linkStyle,
                     recognizer: TapGestureRecognizer()
                       ..onTap = () => _showPrivacyPolicy(context),
                   ),
-                  TextSpan(
-                    text: '.',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.onSurface.withValues(alpha: 0.8),
-                    ),
-                  ),
+                  TextSpan(text: '.', style: bodyStyle),
                 ],
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Shown when at least one seller has no usable shipping option (its JRS rate
-  /// failed and no Pickup / Same Day alternative is selected). Lets the buyer
-  /// re-trigger the calculation; those sellers stay blocked until resolved.
-  Widget _buildShippingRetryBanner() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.error.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.error_outline, color: AppColors.error, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Some delivery rates couldn\'t be calculated. Choose another option below, or retry.',
-              style: AppTextStyles.bodySmall.copyWith(color: AppColors.error),
-            ),
-          ),
-          const SizedBox(width: 8),
-          OutlinedButton.icon(
-            onPressed: _isCalculatingShipping ? null : _calculateShippingCost,
-            icon: const Icon(Icons.refresh, size: 16),
-            label: Text('Retry', style: AppTextStyles.buttonMedium),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.error,
-              side: BorderSide(color: AppColors.error.withValues(alpha: 0.5)),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             ),
           ),
         ],
@@ -2693,384 +2563,324 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
-  Widget _buildBottomCheckoutBar() {
+  // ── Summary & commit ─────────────────────────────────────────────────────
+
+  /// Everything the buyer is about to be charged, in one card.
+  ///
+  /// On desktop it carries the Place Order button; on a phone the button rides
+  /// in the bottom bar instead, so the total and the commitment stay together
+  /// in both layouts.
+  Widget _buildSummaryCard({required bool includeButton}) {
+    final totalDiscount = _calculateTotalDiscount();
+    final totalShipping = _calculateTotalShippingCost();
+    final buyerShipping = _calculateBuyerShippingPortion();
+    final shippingDiscounted = !_anyShippingModeUnchosen &&
+        totalShipping > 0 &&
+        buyerShipping < totalShipping;
+
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(24),
-          topRight: Radius.circular(24),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 20,
-            offset: const Offset(0, -5),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_anyShippingBlocked) ...[
-              _buildShippingRetryBanner(),
-              const SizedBox(height: 12),
-            ],
-            // Subtotal row
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Subtotal',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.onSurface.withValues(alpha: 0.7),
-                  ),
-                ),
-                Text(
-                  '₱${widget.cartSummary.selectedItemsTotal.toStringAsFixed(2)}',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    fontWeight: FontWeight.w600,
-                    fontFamily: 'Roboto',
-                  ),
-                ),
-              ],
-            ),
-
-            // Voucher discount row (grand total)
-            if (_calculateTotalDiscount() > 0) ...[
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Voucher Discount',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.onSurface.withValues(alpha: 0.7),
-                    ),
-                  ),
-                  Text(
-                    '-₱${_calculateTotalDiscount().toStringAsFixed(2)}',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      fontWeight: FontWeight.w600,
-                      fontFamily: 'Roboto',
-                      color: AppColors.success,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-            const SizedBox(height: 8),
-
-            // Shipping row — reflects active selection (express or standard)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Shipping',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.onSurface.withValues(alpha: 0.7),
-                  ),
-                ),
-                _isCalculatingShipping
-                    ? const AmountSkeleton(width: 72, height: 14)
-                    : Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (!_anyShippingModeUnchosen &&
-                              _calculateTotalShippingCost() > 0 &&
-                              _calculateBuyerShippingPortion() < _calculateTotalShippingCost()) ...[
-                            Text(
-                              '₱${_calculateTotalShippingCost().toStringAsFixed(2)}',
-                              style: AppTextStyles.bodySmall.copyWith(
-                                fontFamily: 'Roboto',
-                                decoration: TextDecoration.lineThrough,
-                                decorationColor: AppColors.error,
-                                decorationThickness: 2,
-                                color: AppColors.onSurface.withValues(alpha: 0.5),
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                          ],
-                          Text(
-                            _anyShippingModeUnchosen
-                                ? '—'
-                                : _calculateBuyerShippingPortion() > 0
-                                    ? '₱${_calculateBuyerShippingPortion().toStringAsFixed(2)}'
-                                    : 'FREE',
-                            style: AppTextStyles.bodyMedium.copyWith(
-                              fontWeight: FontWeight.w600,
-                              fontFamily: !_anyShippingModeUnchosen &&
-                                      _calculateBuyerShippingPortion() > 0
-                                  ? 'Roboto'
-                                  : null,
-                              color: _anyShippingModeUnchosen
-                                  ? AppColors.onSurface.withValues(alpha: 0.5)
-                                  : _calculateBuyerShippingPortion() > 0
-                                      ? null
-                                      : AppColors.success,
-                            ),
-                          ),
-                        ],
-                      ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const Divider(height: 1),
-            const SizedBox(height: 12),
-            
-            // Total row
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Total',
-                  style: AppTextStyles.titleMedium.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                Text(
-                  '₱${_calculateTotalWithShipping().toStringAsFixed(2)}',
-                  style: AppTextStyles.titleLarge.copyWith(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w700,
-                    fontFamily: 'Roboto',
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: ElevatedButton(
-                onPressed: _isProcessing ? null : _processCheckout,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: AppColors.onPrimary,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-                child: _isProcessing
-                    ? Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              color: AppColors.onPrimary,
-                              strokeWidth: 2,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Text(
-                            'Processing...',
-                            style: AppTextStyles.buttonLarge,
-                          ),
-                        ],
-                      )
-                    : Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.lock),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Place Order',
-                            style: AppTextStyles.buttonLarge.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildWebCheckoutButton() {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(
-            color: AppColors.onSurface.withValues(alpha: 0.1),
-            width: 1,
-          ),
-        ),
+        color: ink.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: ink.border),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (_anyShippingBlocked) ...[
-            _buildShippingRetryBanner(),
-            const SizedBox(height: 12),
-          ],
-          // Subtotal row
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Subtotal',
-                style: AppTextStyles.bodyLarge.copyWith(
-                  color: AppColors.onSurface.withValues(alpha: 0.7),
-                ),
-              ),
-              Text(
-                '₱${widget.cartSummary.selectedItemsTotal.toStringAsFixed(2)}',
-                style: AppTextStyles.bodyLarge.copyWith(
-                  fontWeight: FontWeight.w600,
-                  fontFamily: 'Roboto',
-                ),
-              ),
-            ],
+          Text(
+            'Order summary',
+            style: AppTextStyles.titleMedium.copyWith(
+              color: ink.text,
+              fontWeight: FontWeight.w800,
+              fontSize: 15,
+            ),
           ),
-          const SizedBox(height: 12),
-          
-          // Shipping row
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Shipping',
-                style: AppTextStyles.bodyLarge.copyWith(
-                  color: AppColors.onSurface.withValues(alpha: 0.7),
-                ),
-              ),
-              _isCalculatingShipping
-                  ? const AmountSkeleton(width: 80, height: 16)
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (!_anyShippingModeUnchosen && _calculateTotalShippingCost() > 0 && _calculateBuyerShippingPortion() < _calculateTotalShippingCost()) ...[
-                          // Show crossed out total shipping when some/all is free
-                          Text(
-                            '₱${_calculateTotalShippingCost().toStringAsFixed(2)}',
-                            style: AppTextStyles.bodyMedium.copyWith(
-                              fontFamily: 'Roboto',
-                              decoration: TextDecoration.lineThrough,
-                              decorationColor: AppColors.error,
-                              decorationThickness: 2,
-                              color: AppColors.onSurface.withValues(alpha: 0.5),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                        ],
+          const SizedBox(height: 14),
+
+          _moneyRow(
+            'Subtotal (${widget.cartSummary.selectedItemsCount} item'
+            '${widget.cartSummary.selectedItemsCount != 1 ? 's' : ''})',
+            CurrencyFormatter.formatWithPeso(
+              widget.cartSummary.selectedItemsTotal,
+            ),
+          ),
+          if (totalDiscount > 0) ...[
+            const SizedBox(height: 10),
+            _moneyRow(
+              'Shop vouchers',
+              '-${CurrencyFormatter.formatWithPeso(totalDiscount)}',
+              good: true,
+            ),
+          ],
+          const SizedBox(height: 10),
+          _moneyRow(
+            'Shipping',
+            '',
+            valueWidget: _isCalculatingShipping
+                ? const AmountSkeleton(width: 72, height: 14)
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      if (shippingDiscounted) ...[
                         Text(
-                          _anyShippingModeUnchosen
-                              ? '—'
-                              : _calculateBuyerShippingPortion() > 0
-                                  ? '₱${_calculateBuyerShippingPortion().toStringAsFixed(2)}'
-                                  : 'FREE',
-                          style: AppTextStyles.bodyLarge.copyWith(
-                            fontWeight: FontWeight.w600,
-                            fontFamily: !_anyShippingModeUnchosen &&
-                                    _calculateBuyerShippingPortion() > 0
-                                ? 'Roboto'
-                                : null,
-                            color: _anyShippingModeUnchosen
-                                ? AppColors.onSurface.withValues(alpha: 0.5)
-                                : _calculateBuyerShippingPortion() > 0
-                                    ? null
-                                    : AppColors.success,
+                          CurrencyFormatter.formatWithPeso(totalShipping),
+                          style: AppTextStyles.bodySmall.copyWith(
+                            decoration: TextDecoration.lineThrough,
+                            decorationColor: ink.text.withValues(alpha: 0.45),
+                            color: ink.text.withValues(alpha: 0.45),
+                            fontSize: 12.5,
                           ),
                         ),
+                        const SizedBox(width: 6),
                       ],
-                    ),
-            ],
+                      Text(
+                        _anyShippingModeUnchosen
+                            ? '—'
+                            : buyerShipping > 0
+                                ? CurrencyFormatter.formatWithPeso(buyerShipping)
+                                : 'FREE',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13.5,
+                          color: _anyShippingModeUnchosen
+                              ? ink.text.withValues(alpha: 0.5)
+                              : buyerShipping > 0
+                                  ? ink.text
+                                  : ink.emerald,
+                        ),
+                      ),
+                    ],
+                  ),
           ),
-          const SizedBox(height: 16),
-          const Divider(height: 1),
-          const SizedBox(height: 16),
-          
-          // Total row
+
+          const SizedBox(height: 14),
+          Divider(height: 1, thickness: 1, color: ink.border),
+          const SizedBox(height: 14),
+
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
             children: [
               Text(
                 'Total',
-                style: AppTextStyles.titleLarge.copyWith(
-                  fontWeight: FontWeight.w700,
+                style: AppTextStyles.titleMedium.copyWith(
+                  color: ink.text,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
                 ),
               ),
+              const Spacer(),
               Text(
-                '₱${_calculateTotalWithShipping().toStringAsFixed(2)}',
-                style: AppTextStyles.titleLarge.copyWith(
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.w700,
-                  fontFamily: 'Roboto',
+                CurrencyFormatter.formatWithPeso(_calculateTotalWithShipping()),
+                style: AppTextStyles.headlineSmall.copyWith(
+                  color: ink.text,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 25,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            height: 56,
-            child: ElevatedButton(
-              onPressed: _isProcessing ? null : _processCheckout,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.onPrimary,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-              child: _isProcessing
-                  ? Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            color: AppColors.onPrimary,
-                            strokeWidth: 2,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          'Processing...',
-                          style: AppTextStyles.buttonLarge,
-                        ),
-                      ],
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.lock),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Place Order',
-                          style: AppTextStyles.buttonLarge.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+
+          // Savings sit BELOW the total, not in the deduction column: the
+          // subtotal above is the list price and the discount is already taken
+          // off the figure shown, so repeating it as a deduction line would
+          // imply a second reduction that never happens. Same reasoning, and
+          // same wording, as the cart.
+          if (totalDiscount > 0) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.sell_outlined, size: 14, color: ink.emerald),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'You saved '
+                    '${CurrencyFormatter.formatWithPeso(totalDiscount)} '
+                    'with shop vouchers',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: ink.emerald,
+                      fontSize: 12.5,
                     ),
+                  ),
+                ),
+              ],
             ),
-          ),
+          ],
+
+          ..._buildBlockingNotices(),
+
+          if (includeButton) ...[
+            const SizedBox(height: 16),
+            _buildPlaceOrderButton(),
+          ],
         ],
       ),
     );
   }
 
-  Future<void> _openCheckoutUrl(String checkoutUrl) async {
+  /// Everything currently standing between the buyer and a placed order.
+  ///
+  /// Shown in both layouts, so a buyer never meets a disabled button without
+  /// being told why.
+  List<Widget> _buildBlockingNotices() {
+    final notices = <Widget>[];
+
+    if (_anyShippingBlocked) {
+      notices.add(_notice(
+        icon: Icons.error_outline,
+        tone: _danger,
+        text: 'Some delivery rates couldn\'t be calculated. Choose another '
+            'option for the highlighted sellers, or retry.',
+        action: _retryButton(_danger),
+      ));
+    } else if (_anyShippingModeUnchosen) {
+      notices.add(_notice(
+        icon: Icons.local_shipping_outlined,
+        tone: ink.amber,
+        text: 'Choose a delivery method for every seller.',
+      ));
+    }
+
+    if (_selectedAddress == null) {
+      notices.add(_notice(
+        icon: Icons.location_on_outlined,
+        tone: ink.amber,
+        text: 'Select a shipping address.',
+      ));
+    }
+
+    if (_selectedPaymentMethod == null) {
+      notices.add(_notice(
+        icon: Icons.credit_card_outlined,
+        tone: ink.amber,
+        text: 'Select a payment method.',
+      ));
+    }
+
+    return [
+      for (final notice in notices) ...[const SizedBox(height: 12), notice],
+    ];
+  }
+
+  Widget _buildPlaceOrderButton() {
+    final busy = _isProcessing || _isCalculatingShipping || _isCalculatingSameDay;
+
+    return SizedBox(
+      height: 52,
+      child: ElevatedButton(
+        onPressed: busy ? null : _processCheckout,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: ink.emerald,
+          foregroundColor: ink.onEmerald,
+          disabledBackgroundColor: ink.surfaceHigh,
+          disabledForegroundColor: ink.text.withValues(alpha: 0.38),
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (busy) ...[
+              SizedBox(
+                width: 17,
+                height: 17,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: ink.text.withValues(alpha: 0.38),
+                ),
+              ),
+              const SizedBox(width: 10),
+            ] else ...[
+              const Icon(Icons.lock_outline, size: 17),
+              const SizedBox(width: 8),
+            ],
+            Flexible(
+              child: Text(
+                _isProcessing
+                    ? 'Placing order…'
+                    : (_isCalculatingShipping || _isCalculatingSameDay)
+                        ? 'Getting rates…'
+                        : 'Place order',
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.buttonLarge.copyWith(
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The phone's committed action: total on the left, button on the right.
+  /// Same shape as the cart's, so the last two screens of a purchase put the
+  /// same thing in the same place.
+  Widget _buildMobileCheckoutBar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: ink.surface,
+        border: Border(top: BorderSide(color: ink.border)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          child: Row(
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Total',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: ink.text.withValues(alpha: 0.55),
+                      fontSize: 11.5,
+                    ),
+                  ),
+                  Text(
+                    CurrencyFormatter.formatWithPeso(
+                      _calculateTotalWithShipping(),
+                    ),
+                    style: AppTextStyles.titleLarge.copyWith(
+                      color: ink.text,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 19,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 16),
+              Expanded(child: _buildPlaceOrderButton()),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Payment hand-off ─────────────────────────────────────────────────────
+
+  Future<void> _openCheckoutUrl(
+    String checkoutUrl, {
+    required String sessionId,
+  }) async {
     try {
       AppLogger.d('Attempting to open checkout URL: $checkoutUrl');
-      
+
       if (checkoutUrl.isNotEmpty) {
         // Check if running on web platform
         if (kIsWeb) {
           // For web platform, use external browser
           await _openUrlInBrowser(checkoutUrl);
-          
+
           // After opening the URL, show a message to the user
           if (mounted) {
             _showPaymentInProgressDialog();
@@ -3081,19 +2891,22 @@ class _CheckoutPageState extends State<CheckoutPage> {
             Navigator.push(
               context,
               MaterialPageRoute(
+                // The session is the page's identity, so the URL says which
+                // one is open: /cart/checkout/<sessionId>.
+                settings: RouteSettings(name: checkoutSessionPath(sessionId)),
                 builder: (context) => PaymongoWebViewPage(
                   checkoutUrl: checkoutUrl,
                   successUrl: 'https://dentpal-store.web.app/payment-success',
                   cancelUrl: 'https://dentpal-store.web.app/payment-failed',
                   onPaymentComplete: (isSuccess, orderId) {
                     AppLogger.d('Payment completed. Success: $isSuccess, Order ID: $orderId');
-                    
+
                     if (isSuccess) {
                       // Handle successful payment
-                      _handlePaymentSuccess(orderId);
+                      _handlePaymentSuccess(orderId, sessionId);
                     } else {
                       // Handle payment cancellation
-                      _handlePaymentCancellation();
+                      _handlePaymentCancellation(orderId, sessionId);
                     }
                   },
                 ),
@@ -3113,19 +2926,19 @@ class _CheckoutPageState extends State<CheckoutPage> {
   Future<void> _openUrlInBrowser(String url) async {
     try {
       AppLogger.d('Attempting to open URL in browser: $url');
-      
+
       final uri = Uri.parse(url);
-      
+
       // Check if the URL can be launched
       if (await canLaunchUrl(uri)) {
         AppLogger.d('URL can be launched, opening in external browser');
-        
+
         // Launch the URL in external browser
         final success = await launchUrl(
           uri,
           mode: LaunchMode.externalApplication, // Open in external browser
         );
-        
+
         if (success) {
           AppLogger.d('Successfully opened payment page in browser');
         } else {
@@ -3152,67 +2965,34 @@ class _CheckoutPageState extends State<CheckoutPage> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.info.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                Icons.payment,
-                color: AppColors.info,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              'Payment in Progress',
-              style: AppTextStyles.titleMedium.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
+      builder: (context) => _dialog(
+        icon: Icons.open_in_new,
+        tone: ink.emeraldSoft,
+        title: 'Payment in progress',
         content: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              Icons.open_in_new,
-              size: 48,
-              color: AppColors.primary,
+            _dialogBody(
+              'The PayMongo payment page has opened in a new tab. Complete your '
+              'payment there, then come back to this tab.',
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Text(
-              'The Paymongo payment page has been opened in a new tab. Please complete your payment there.',
-              textAlign: TextAlign.center,
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.onSurface.withValues(alpha: 0.8),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'After completing payment, you can return to this page.',
-              textAlign: TextAlign.center,
+              'Your order stays reserved while you pay.',
               style: AppTextStyles.bodySmall.copyWith(
-                color: AppColors.onSurface.withValues(alpha: 0.6),
+                color: ink.text.withValues(alpha: 0.5),
+                fontSize: 12,
               ),
             ),
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop(); // Close this dialog
-              Navigator.of(context).pop(); // Go back to cart
-              widget.onOrderComplete?.call();
-            },
-            child: Text('Continue Shopping', style: AppTextStyles.buttonMedium),
-          ),
+          _dialogPrimaryAction('Continue shopping', () {
+            Navigator.of(context).pop(); // Close this dialog
+            Navigator.of(context).pop(); // Go back to cart
+            widget.onOrderComplete?.call();
+          }),
         ],
       ),
     );
@@ -3222,133 +3002,50 @@ class _CheckoutPageState extends State<CheckoutPage> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
+      builder: (context) => _dialog(
+        icon: Icons.link,
+        tone: ink.amber,
+        title: 'Complete payment',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                Icons.payment,
-                color: AppColors.primary,
-                size: 24,
-              ),
+            _dialogBody(
+              'Your order has been created. The payment page couldn\'t be opened '
+              'automatically — copy this link and open it in a new tab:',
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Complete Payment',
-                style: AppTextStyles.titleMedium.copyWith(
-                  fontWeight: FontWeight.w700,
+            const SizedBox(height: 14),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: ink.surfaceHigh,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: ink.border),
+              ),
+              child: SelectableText(
+                url,
+                style: AppTextStyles.bodySmall.copyWith(
+                  fontFamily: 'monospace',
+                  color: ink.text.withValues(alpha: 0.85),
+                  fontSize: 12,
                 ),
               ),
             ),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Your order has been created successfully! Please copy the URL below and open it in a new tab to complete your payment:',
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.onSurface.withValues(alpha: 0.8),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.grey50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.1)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Payment URL:',
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.onSurface.withValues(alpha: 0.6),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  SelectableText(
-                    url,
-                    style: AppTextStyles.bodySmall.copyWith(
-                      fontFamily: 'monospace',
-                      color: AppColors.info,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.info.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.info_outline,
-                    size: 16,
-                    color: AppColors.info,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'After completing payment, you can return to the app to continue shopping.',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.info,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
         actions: [
-          TextButton(
-            onPressed: () async {
-              try {
-                // Copy URL to clipboard
-                await _copyToClipboard(url);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Payment URL copied to clipboard!'),
-                      backgroundColor: AppColors.success,
-                    ),
-                  );
-                }
-              } catch (e) {
-                AppLogger.d('Error copying to clipboard: $e');
-              }
-            },
-            child: Text('Copy URL', style: AppTextStyles.buttonMedium),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop(); // Close this dialog
-              Navigator.of(context).pop(); // Go back to cart
-              widget.onOrderComplete?.call();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: AppColors.onPrimary,
-            ),
-            child: Text('Continue Shopping', style: AppTextStyles.buttonMedium),
-          ),
+          _dialogTextAction('Copy link', () async {
+            await _copyToClipboard(url);
+            if (mounted) {
+              _showSnack('Payment link copied');
+            }
+          }),
+          _dialogPrimaryAction('Continue shopping', () {
+            Navigator.of(context).pop(); // Close this dialog
+            Navigator.of(context).pop(); // Go back to cart
+            widget.onOrderComplete?.call();
+          }),
         ],
       ),
     );
@@ -3356,85 +3053,51 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   Future<void> _copyToClipboard(String text) async {
     try {
-      // Use Flutter's clipboard functionality
-      // This should work across platforms
-      await Future.delayed(Duration.zero); // Simple placeholder
-      // In a real implementation, you would use:
-      // await Clipboard.setData(ClipboardData(text: text));
-      AppLogger.d('URL copied to clipboard (simulated)');
+      await Clipboard.setData(ClipboardData(text: text));
+      AppLogger.d('URL copied to clipboard');
     } catch (e) {
       AppLogger.d('Error copying to clipboard: $e');
-      rethrow;
     }
   }
 
-  void _handlePaymentSuccess(String? orderId) async {
+  /// Both endings replace the checkout route rather than stacking on it: the
+  /// order is placed, so Back must not walk into a form that would place it
+  /// again.
+  void _handlePaymentSuccess(String? orderId, String? sessionId) {
     AppLogger.d('Payment completed successfully. Order ID: $orderId');
-    
-    if (mounted && orderId != null) {
-      // Show loading dialog while verifying payment
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          backgroundColor: AppColors.surface,
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: 16),
-              Text(
-                'Verifying payment...',
-                style: AppTextStyles.bodyMedium,
-              ),
-            ],
-          ),
-        ),
-      );
+    if (!mounted) return;
 
-      // Payment status will be updated automatically by PayMongo webhooks
-      // No need to manually verify - just navigate to success page
-      await Future.delayed(const Duration(milliseconds: 500)); // Brief delay for better UX
-      
-      if (mounted) {
-        Navigator.of(context).pop(); // Close loading dialog
-        
-        AppLogger.d('Payment completed, webhooks will update order status');
-        
-        // Navigate to success page
-        Navigator.of(context).pushNamedAndRemoveUntil(
-          '/payment-success',
-          (route) => route.settings.name == '/', // Clear stack until home
-        );
-        
-        // Call completion callback
-        widget.onOrderComplete?.call();
-      }
-    } else if (mounted) {
-      // Navigate to success page even without order ID
-      Navigator.of(context).pushNamedAndRemoveUntil(
-        '/payment-success',
-        (route) => route.settings.name == '/', // Clear stack until home
-      );
-      
-      // Call completion callback
-      widget.onOrderComplete?.call();
-    }
+    // Payment status is updated by PayMongo's webhooks — there is nothing for
+    // the app to verify, so it goes straight to the receipt.
+    widget.onOrderComplete?.call();
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        settings: const RouteSettings(name: kCheckoutSuccessPath),
+        builder: (context) => PaymentSuccessPage(
+          orderId: orderId,
+          sessionId: sessionId,
+        ),
+      ),
+    );
   }
 
-  void _handlePaymentCancellation() {
+  void _handlePaymentCancellation(String? orderId, String? sessionId) {
     AppLogger.d('Payment was cancelled by user');
-    
-    if (mounted) {
-      // Navigate to dedicated payment failed page instead of showing popup
-      Navigator.of(context).pushNamedAndRemoveUntil(
-        '/payment-failed',
-        (route) => route.settings.name == '/', // Clear stack until home
-      );
-    }
+    if (!mounted) return;
+
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        settings: const RouteSettings(name: kCheckoutFailedPath),
+        builder: (context) => PaymentFailedPage(
+          orderId: orderId,
+          sessionId: sessionId,
+        ),
+      ),
+    );
   }
 }
 
+/// Terms / Privacy, fetched and shown full-height.
 class _PolicyDialog extends StatefulWidget {
   final String title;
   final IconData icon;
@@ -3493,110 +3156,106 @@ class _PolicyDialogState extends State<_PolicyDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final ink = InkPalette.of(context);
+    final danger = ink.isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626);
+
     return Dialog(
-      backgroundColor: AppColors.surface,
+      backgroundColor: ink.surface,
+      surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Container(
+      child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxWidth: kIsWeb ? 700 : double.infinity,
+          maxWidth: 700,
           maxHeight: MediaQuery.of(context).size.height * 0.8,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             // Header
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.1),
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(20),
-                  topRight: Radius.circular(20),
-                ),
-              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 8, 10),
               child: Row(
                 children: [
-                  Icon(widget.icon, color: AppColors.primary, size: 28),
-                  const SizedBox(width: 12),
+                  Icon(widget.icon, color: ink.emerald, size: 20),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       widget.title,
-                      style: AppTextStyles.titleLarge.copyWith(
-                        fontWeight: FontWeight.w700,
+                      style: AppTextStyles.titleMedium.copyWith(
+                        color: ink.text,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
                   ),
                   IconButton(
-                    icon: Icon(Icons.close, color: AppColors.onSurface),
+                    icon: Icon(Icons.close, color: ink.text.withValues(alpha: 0.6)),
                     onPressed: () => Navigator.of(context).pop(),
+                    tooltip: 'Close',
                   ),
                 ],
               ),
             ),
-            
+            Divider(height: 1, thickness: 1, color: ink.border),
+
             // Content
-            Expanded(
+            Flexible(
               child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? Padding(
+                      padding: const EdgeInsets.all(40),
+                      child: Center(
+                        child: CircularProgressIndicator(color: ink.emerald),
+                      ),
+                    )
                   : _errorMessage != null
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24.0),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.error_outline,
-                                  size: 48,
-                                  color: AppColors.error,
+                      ? Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.error_outline, size: 40, color: danger),
+                              const SizedBox(height: 14),
+                              Text(
+                                _errorMessage!,
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  color: ink.text.withValues(alpha: 0.7),
                                 ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  _errorMessage!,
-                                  style: AppTextStyles.bodyMedium.copyWith(
-                                    color: AppColors.onSurface.withValues(alpha: 0.7),
-                                  ),
-                                  textAlign: TextAlign.center,
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 14),
+                              TextButton(
+                                onPressed: _loadContent,
+                                style: TextButton.styleFrom(
+                                  foregroundColor: ink.emerald,
                                 ),
-                                const SizedBox(height: 16),
-                                TextButton(
-                                  onPressed: _loadContent,
-                                  child: const Text('Retry'),
-                                ),
-                              ],
-                            ),
+                                child: const Text('Retry'),
+                              ),
+                            ],
                           ),
                         )
                       : SingleChildScrollView(
-                          padding: const EdgeInsets.all(20.0),
+                          padding: const EdgeInsets.all(20),
                           child: SelectableText(
                             _content ?? '',
                             style: AppTextStyles.bodyMedium.copyWith(
+                              color: ink.text.withValues(alpha: 0.85),
+                              fontSize: 13.5,
                               height: 1.6,
                             ),
                           ),
                         ),
             ),
-            
+
             // Footer
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                border: Border(
-                  top: BorderSide(
-                    color: AppColors.onSurface.withValues(alpha: 0.1),
-                  ),
-                ),
-              ),
+            Divider(height: 1, thickness: 1, color: ink.border),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    style: TextButton.styleFrom(
-                      foregroundColor: AppColors.primary,
-                    ),
-                    child: const Text('Close'),
+                    style: TextButton.styleFrom(foregroundColor: ink.emerald),
+                    child: Text('Close', style: AppTextStyles.buttonMedium),
                   ),
                 ],
               ),
