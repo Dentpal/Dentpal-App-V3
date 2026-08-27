@@ -1,13 +1,23 @@
-// ignore_for_file: deprecated_member_use
+import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'dart:io';
+import 'package:flutter/services.dart';
+
 import 'signup_controller.dart';
 import 'id_ocr_service.dart';
 import 'id_verification_camera.dart';
 import 'specialty_selection_widget.dart';
-import 'package:dentpal/core/app_theme/index.dart';
+import 'package:dentpal/core/app_theme/app_text_styles.dart';
+import 'package:dentpal/core/app_theme/ink_palette.dart';
+import 'package:dentpal/core/widgets/auth_chrome.dart';
 
+/// Step 1: prove the account belongs to a licensed dentist, then say what they
+/// practise.
+///
+/// The page has four faces — nothing scanned yet, a scan that worked, a scan
+/// that did not, and the licence number typed in by hand — and only one of them
+/// is ever on screen.
 class SignupNewStep1IdVerification extends StatefulWidget {
   final SignupController controller;
   final VoidCallback onNext;
@@ -19,365 +29,388 @@ class SignupNewStep1IdVerification extends StatefulWidget {
   });
 
   @override
-  State<SignupNewStep1IdVerification> createState() => _SignupNewStep1IdVerificationState();
+  State<SignupNewStep1IdVerification> createState() =>
+      _SignupNewStep1IdVerificationState();
 }
 
-class _SignupNewStep1IdVerificationState extends State<SignupNewStep1IdVerification> {
-  File? _capturedImage;
+class _SignupNewStep1IdVerificationState
+    extends State<SignupNewStep1IdVerification> {
+  SignupController get _controller => widget.controller;
+
+  InkPalette get _ink => InkPalette.of(context);
+
+  /// Whether the dentist has asked to type their licence number in instead of
+  /// scanning it. Swaps the scanner card for a form; the rest of the step is
+  /// unchanged.
+  bool _manualEntry = false;
+  bool _checkingNumber = false;
+  String? _manualNumberError;
+
+  final GlobalKey<FormState> _manualFormKey = GlobalKey<FormState>();
+  final TextEditingController _manualNumberController =
+      TextEditingController();
+
+  @override
+  void dispose() {
+    _manualNumberController.dispose();
+    super.dispose();
+  }
+
+  /// Both halves of the step have to be done before it will let you past: a
+  /// verified ID, and at least one specialty.
+  bool get _canProceed =>
+      _controller.isIdVerified && _controller.selectedSpecialties.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.only(
-        left: 30.0,
-        right: 30.0,
-        top: 30.0
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // ID verification section
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: AppColors.grey50,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.grey200),
-            ),
-            child: Column(
-              children: [
-                Icon(
-                  Icons.badge_outlined,
-                  size: 48,
-                  color: AppColors.primary,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'ID Verification',
-                  style: AppTextStyles.headlineSmall.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'We need to verify your identity to ensure account security and comply with regulations.',
-                  textAlign: TextAlign.center,
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.grey600,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                
-                // Show verification status - either captured image or verification result
-                if (_capturedImage != null || widget.controller.isIdVerified || widget.controller.idVerificationError != null) ...[
-                  if (widget.controller.isIdVerified) ...[
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.green.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.check_circle, color: Colors.green, size: 20),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'ID verified successfully!',
-                              style: AppTextStyles.bodySmall.copyWith(
-                                color: Colors.green[700],
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ] else if (widget.controller.idVerificationError != null) ...[
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppColors.error.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(Icons.error_outline, color: AppColors.error, size: 20),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      widget.controller.idVerificationError!,
-                                      style: AppTextStyles.bodySmall.copyWith(
-                                        color: AppColors.error,
-                                      ),
-                                    ),
-                                    // Add iOS-specific tip if it's a face detection error on iOS
-                                    if (Platform.isIOS && widget.controller.idVerificationError!.contains('face')) ...[
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'Ensure good lighting and hold the ID steady.',
-                                        style: AppTextStyles.bodySmall.copyWith(
-                                          color: AppColors.grey600,
-                                          fontStyle: FontStyle.italic,
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          // Show login button if ID is already registered
-                          if (widget.controller.isIdAlreadyRegistered) ...[
-                            const SizedBox(height: 12),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton.icon(
-                                onPressed: () {
-                                  Navigator.of(context).pop();
-                                },
-                                icon: Icon(Icons.login),
-                                label: Text('Go to Login'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.primary,
-                                  foregroundColor: AppColors.onPrimary,
-                                  padding: EdgeInsets.symmetric(vertical: 12),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  // Only show recapture button since verification is automatic
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _captureImage,
-                      icon: Icon(Icons.camera_alt),
-                      label: Text('Recapture PRC ID'),
-                      style: OutlinedButton.styleFrom(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        side: BorderSide(color: AppColors.primary),
-                        foregroundColor: AppColors.primary,
-                      ),
-                    ),
-                  ),
-                ] else ...[
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
-                    ),
-                    child: Column(
-                      children: [
-                        Icon(
-                          Icons.document_scanner_outlined,
-                          size: 32,
-                          color: AppColors.primary,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Smart Verification Ready',
-                          style: AppTextStyles.labelLarge.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Our smart camera will automatically detect, capture, and verify your PRC ID when positioned correctly. Simply hold your PRC ID steady in the frame.',
-                          textAlign: TextAlign.center,
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.primary,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: _captureImage,
-                            icon: Icon(Icons.camera_alt),
-                            label: Text('Start Auto Verification'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: AppColors.onPrimary,
-                              padding: EdgeInsets.symmetric(vertical: 12),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          
-          // ID Number field - only show when ID is verified
-          if (widget.controller.isIdVerified) ...[
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: AppColors.grey50,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.grey200),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.card_membership,
-                        size: 20,
-                        color: AppColors.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'PRC Registration Number',
-                        style: AppTextStyles.labelLarge.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: widget.controller.idNumberController,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      hintText: 'Enter your PRC registration number',
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: AppColors.grey300),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: AppColors.grey300),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: AppColors.primary, width: 2),
-                      ),
-                      prefixIcon: Icon(Icons.numbers, color: AppColors.grey600),
-                      helperText: 'Auto-filled from ID scan. You can edit if incorrect.',
-                      helperMaxLines: 2,
-                      helperStyle: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.grey600,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                    style: AppTextStyles.bodyLarge,
-                    validator: (value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return 'PRC registration number is required';
-                      }
-                      if (value.trim().length < 4) {
-                        return 'Please enter a valid registration number';
-                      }
-                      return null;
-                    },
-                    onChanged: (value) {
-                      // Update the idNumber when user edits
-                      widget.controller.idNumber = value.trim();
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ],
-          
-          // Specialty selection section - only show when ID is verified
-          if (widget.controller.isIdVerified) ...[
-            const SizedBox(height: 24),
-            SpecialtySelectionWidget(
-              selectedSpecialties: widget.controller.selectedSpecialties,
+    return ListView(
+      padding: AuthMetrics.bodyPadding,
+      children: [
+        if (_controller.isIdVerified)
+          _verifiedState()
+        else if (_manualEntry)
+          _manualEntryForm()
+        else if (_controller.idVerificationError != null)
+          _failedState()
+        else
+          _invitation(),
+
+        if (_controller.isIdVerified) ...[
+          const SizedBox(height: 24),
+          // The picker draws its own heading and expects a card around it —
+          // its opener sits on `surfaceHigh` so it reads as nested rather than
+          // flush with the surface behind it.
+          AuthCard(
+            padding: const EdgeInsets.all(18),
+            child: SpecialtySelectionWidget(
+              selectedSpecialties: _controller.selectedSpecialties,
               onSelectionChanged: (specialties) {
                 setState(() {
-                  widget.controller.selectedSpecialties = specialties;
+                  _controller.selectedSpecialties = specialties;
                 });
               },
             ),
-          ],
-          
-          const SizedBox(height: 32),
-          
-          // Action buttons - Only Proceed button for first step
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: (widget.controller.isIdVerified && widget.controller.selectedSpecialties.isNotEmpty) ? widget.onNext : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: (widget.controller.isIdVerified && widget.controller.selectedSpecialties.isNotEmpty)
-                    ? AppColors.primary 
-                    : AppColors.grey300,
-                foregroundColor: (widget.controller.isIdVerified && widget.controller.selectedSpecialties.isNotEmpty)
-                    ? AppColors.onPrimary 
-                    : AppColors.grey600,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: 0,
-              ),
-              child: Text(
-                'Proceed',
-                style: AppTextStyles.buttonLarge,
-              ),
+          ),
+        ],
+
+        const SizedBox(height: 28),
+        AuthPrimaryButton(
+          label: 'Continue',
+          onPressed: _canProceed ? widget.onNext : null,
+        ),
+        if (_controller.isIdVerified &&
+            _controller.selectedSpecialties.isEmpty) ...[
+          const SizedBox(height: 10),
+          Text(
+            'Pick at least one specialty to continue.',
+            textAlign: TextAlign.center,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: _ink.faint,
+              fontSize: 12,
+            ),
+          ),
+        ],
+
+        const SizedBox(height: 4),
+        AuthFooterPrompt(
+          question: 'Already have an account?',
+          actionLabel: 'Log in',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+
+        SizedBox(height: MediaQuery.of(context).padding.bottom > 0 ? 24 : 8),
+      ],
+    );
+  }
+
+  // ── Nothing scanned yet ──────────────────────────────────────────────────
+
+  Widget _invitation() {
+    final ink = _ink;
+
+    return AuthCard(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: ink.emerald.withValues(alpha: ink.isDark ? 0.16 : 0.1),
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: Icon(
+              Icons.document_scanner_outlined,
+              color: ink.emerald,
+              size: 25,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Scan your PRC ID',
+            style: AppTextStyles.titleMedium.copyWith(
+              color: ink.text,
+              fontWeight: FontWeight.w800,
+              fontSize: 17,
             ),
           ),
           const SizedBox(height: 8),
-          
-          // Login link
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-            },
-            child: RichText(
-              textAlign: TextAlign.center,
-              text: TextSpan(
-                style: AppTextStyles.bodyMedium,
-                children: [
-                  TextSpan(
-                    text: "Already have an account? ",
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.grey600,
-                    ),
-                  ),
-                  TextSpan(
-                    text: 'Log In',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.accent,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
+          Text(
+            'DentPal is only open to licensed dentists, so every account starts '
+            'here. Hold your PRC ID steady in the frame — the camera detects, '
+            'captures and checks it for you.',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: ink.muted,
+              fontSize: 13,
+              height: 1.5,
             ),
           ),
-          // Add extra space at the bottom to account for home indicator
-          SizedBox(height: MediaQuery.of(context).padding.bottom > 0 ? 40 : 20),
+          const SizedBox(height: 18),
+          AuthPrimaryButton(label: 'Open camera', onPressed: _captureImage),
+          const SizedBox(height: 6),
+          Center(
+            child: AuthQuietButton(
+              label: "I don't have my card with me",
+              onPressed: _startManualEntry,
+            ),
+          ),
         ],
       ),
     );
   }
+
+  // ── Typed in rather than scanned ─────────────────────────────────────────
+
+  void _startManualEntry() {
+    setState(() {
+      _manualEntry = true;
+      _manualNumberError = null;
+      _controller.idVerificationError = null;
+    });
+  }
+
+  Widget _manualEntryForm() {
+    final ink = _ink;
+
+    return Form(
+      key: _manualFormKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AuthBanner(
+            icon: Icons.fact_check_outlined,
+            tone: ink.amber,
+            title: 'We will check this by hand',
+            message:
+                'Typing your number in gets you into DentPal today, but nothing '
+                'about your licence has been proven yet — so your account stays '
+                'pending until our team matches it against the PRC register. '
+                'Scanning the card clears it right away.',
+          ),
+          const SizedBox(height: 22),
+          const AuthSectionLabel('PRC registration number'),
+          const SizedBox(height: 10),
+          AuthTextField(
+            controller: _manualNumberController,
+            label: 'Registration number',
+            hint: 'e.g. 0086157',
+            prefixIcon: Icons.badge_outlined,
+            keyboardType: TextInputType.number,
+            enabled: !_checkingNumber,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            helperText: 'The number printed under your name on the card.',
+            onChanged: (_) {
+              if (_manualNumberError != null) {
+                setState(() => _manualNumberError = null);
+              }
+            },
+            validator: (value) {
+              final trimmed = value?.trim() ?? '';
+              if (trimmed.isEmpty) {
+                return 'Please enter your PRC registration number';
+              }
+              if (trimmed.length < 4) {
+                return 'Please enter a valid registration number';
+              }
+              // Set by the duplicate check, which cannot run inside a validator.
+              return _manualNumberError;
+            },
+          ),
+          const SizedBox(height: 20),
+          AuthPrimaryButton(
+            label: 'Use this number',
+            busy: _checkingNumber,
+            onPressed: _submitManualNumber,
+          ),
+          const SizedBox(height: 6),
+          Center(
+            child: AuthQuietButton(
+              label: 'Scan my card instead',
+              icon: Icons.camera_alt_outlined,
+              onPressed: _checkingNumber
+                  ? null
+                  : () {
+                      setState(() => _manualEntry = false);
+                      _captureImage();
+                    },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _submitManualNumber() async {
+    if (!(_manualFormKey.currentState?.validate() ?? false)) return;
+
+    final number = _manualNumberController.text.trim();
+    setState(() {
+      _checkingNumber = true;
+      _manualNumberError = null;
+    });
+
+    // The same duplicate check the scanner runs. Skipping it here would make
+    // typing the number in a way around it.
+    final taken = await IdOcrService.checkRegistrationNumberExists(number);
+
+    if (!mounted) return;
+    setState(() => _checkingNumber = false);
+
+    if (taken) {
+      setState(() {
+        _manualNumberError =
+            'This PRC number is already registered. Log in instead, or '
+            'contact support.';
+      });
+      _manualFormKey.currentState?.validate();
+      return;
+    }
+
+    setState(() {
+      _controller.isIdVerified = true;
+      _controller.idEnteredManually = true;
+      _controller.idNumber = number;
+      _controller.idNumberController.text = number;
+      _controller.idVerificationError = null;
+      _controller.isIdAlreadyRegistered = false;
+      // No card was read, so there is no face crop and no name to pre-fill —
+      // step 2 simply starts empty.
+      _controller.idFaceImage = null;
+      _manualEntry = false;
+    });
+  }
+
+  // ── The scan worked ──────────────────────────────────────────────────────
+
+  Widget _verifiedState() {
+    final ink = _ink;
+    final manual = _controller.idEnteredManually;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Amber, not emerald: a number that has only been typed in has not been
+        // verified, and the step should not dress it up as if it had.
+        AuthBanner(
+          icon: manual
+              ? Icons.pending_actions_outlined
+              : Icons.verified_user_outlined,
+          tone: manual ? ink.amber : ink.emerald,
+          title: manual ? 'Pending review' : 'ID verified',
+          message: manual
+              ? 'We will check this number against the PRC register and get in '
+                    'touch if anything does not match.'
+              : 'Your licence checks out. Confirm the registration number we '
+                    'read below.',
+        ),
+        const SizedBox(height: 22),
+        const AuthSectionLabel('PRC registration number'),
+        const SizedBox(height: 10),
+        AuthTextField(
+          controller: _controller.idNumberController,
+          label: 'Registration number',
+          prefixIcon: Icons.badge_outlined,
+          keyboardType: TextInputType.number,
+          helperText: 'Read from your ID — edit it if we got a digit wrong.',
+          validator: (value) {
+            if (value == null || value.trim().isEmpty) {
+              return 'PRC registration number is required';
+            }
+            if (value.trim().length < 4) {
+              return 'Please enter a valid registration number';
+            }
+            return null;
+          },
+          onChanged: (value) {
+            // Keep the controller's own copy in step with the edited field.
+            _controller.idNumber = value.trim();
+          },
+        ),
+        const SizedBox(height: 12),
+        AuthSecondaryButton(
+          label: manual ? 'Scan my card and clear this' : 'Scan a different ID',
+          icon: Icons.camera_alt_outlined,
+          onPressed: _captureImage,
+        ),
+      ],
+    );
+  }
+
+  // ── The scan did not work ────────────────────────────────────────────────
+
+  Widget _failedState() {
+    final ink = _ink;
+    final message = _controller.idVerificationError!;
+
+    // The iOS camera stack fails face detection in poor light more often than
+    // Android's, so that platform gets an extra line of advice.
+    final showLightingTip =
+        !kIsWeb && Platform.isIOS && message.contains('face');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AuthBanner(
+          icon: _controller.isIdAlreadyRegistered
+              ? Icons.person_search_outlined
+              : Icons.error_outline,
+          tone: ink.danger,
+          title: _controller.isIdAlreadyRegistered
+              ? 'This ID is already registered'
+              : 'We could not verify that',
+          message: showLightingTip
+              ? '$message\n\nEnsure good lighting and hold the ID steady.'
+              : message,
+          action: _controller.isIdAlreadyRegistered
+              ? AuthSecondaryButton(
+                  label: 'Go to login',
+                  icon: Icons.login,
+                  tone: ink.danger,
+                  onPressed: () => Navigator.of(context).pop(),
+                )
+              : null,
+        ),
+        const SizedBox(height: 16),
+        AuthPrimaryButton(
+          label: 'Try again',
+          icon: Icons.camera_alt_outlined,
+          onPressed: _captureImage,
+        ),
+        if (!_controller.isIdAlreadyRegistered) ...[
+          const SizedBox(height: 6),
+          Center(
+            child: AuthQuietButton(
+              label: 'Enter my number instead',
+              onPressed: _startManualEntry,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  // ── Capture ──────────────────────────────────────────────────────────────
 
   Future<void> _captureImage() async {
     try {
@@ -400,70 +433,72 @@ class _SignupNewStep1IdVerificationState extends State<SignupNewStep1IdVerificat
         ),
       );
 
-      if (result != null) {
+      if (!mounted) return;
+
+      if (result != null && result.isManualEntryRequest) {
+        // Not a failure — the dentist asked for the form instead. Nothing about
+        // the previous attempt should be left on screen as an error.
+        _startManualEntry();
+      } else if (result != null) {
         // ID was auto-captured and verified
         setState(() {
-          // Set the captured image path if available
           if (result.isValid) {
-            widget.controller.isIdVerified = true;
-            widget.controller.idNumber = result.registrationNumber;
+            _controller.isIdVerified = true;
+            _controller.idNumber = result.registrationNumber;
             // Auto-fill the ID number text field
-            widget.controller.idNumberController.text = result.registrationNumber ?? '';
-            widget.controller.idVerificationError = null;
-            widget.controller.idFaceImage = result.faceImage;
-            
-            // Pre-fill name fields from OCR if available
-            if (result.firstName != null && result.firstName!.isNotEmpty) {
-              widget.controller.firstNameController.text = result.firstName!;
-            }
-            if (result.lastName != null && result.lastName!.isNotEmpty) {
-              widget.controller.lastNameController.text = result.lastName!;
-            }
-            
-            widget.controller.isIdAlreadyRegistered = false;
-            _capturedImage = null;
+            _controller.idNumberController.text =
+                result.registrationNumber ?? '';
+            _controller.idVerificationError = null;
+            _controller.idFaceImage = result.faceImage;
+
+            // The scan's reading of the name is deliberately dropped. OCR gets
+            // it wrong often enough — hyphens, ñ, middle names run into the
+            // first — that a pre-filled field is worse than an empty one: it
+            // invites people to accept a misspelling they would have typed
+            // correctly, and a wrong legal name is not a small thing on an
+            // account tied to a licence. The registration number is a run of
+            // digits, so that one is still filled in for them.
+
+            _controller.isIdAlreadyRegistered = false;
+            // A successful scan supersedes anything typed in earlier.
+            _controller.idEnteredManually = false;
+            _manualEntry = false;
           } else {
-            widget.controller.isIdVerified = false;
-            widget.controller.idVerificationError = result.errorMessage;
-            widget.controller.isIdAlreadyRegistered = result.isAlreadyRegistered;
-            widget.controller.idNumber = null;
-            widget.controller.idNumberController.text = '';
-            widget.controller.idFaceImage = null;
-            _capturedImage = null;
+            _clearVerification(result.errorMessage);
+            _controller.isIdAlreadyRegistered = result.isAlreadyRegistered;
           }
         });
       } else {
         // User cancelled the camera - mark as failed
         setState(() {
-          widget.controller.isIdVerified = false;
-          widget.controller.idVerificationError = 'ID verification cancelled. Please try again to complete your registration.';
-          widget.controller.isIdAlreadyRegistered = false;
-          widget.controller.idNumber = null;
-          widget.controller.idNumberController.text = '';
-          widget.controller.idFaceImage = null;
-          _capturedImage = null;
+          _clearVerification(
+            'ID verification cancelled. Please try again to complete your '
+            'registration.',
+          );
         });
       }
     } catch (e) {
       SignupController.logOcrResult('ERROR', 'Failed to capture image: $e');
       if (mounted) {
-        setState(() {
-          widget.controller.isIdVerified = false;
-          widget.controller.idVerificationError = 'Unable to access camera. Please check permissions and try again.';
-          widget.controller.isIdAlreadyRegistered = false;
-          widget.controller.idNumber = null;
-          widget.controller.idNumberController.text = '';
-          widget.controller.idFaceImage = null;
-          _capturedImage = null;
-        });
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Unable to access camera. Please check permissions and try again.'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        const message =
+            'Unable to access camera. Please check permissions and try again.';
+        setState(() => _clearVerification(message));
+        showAuthSnack(context, message, _ink.danger);
       }
     }
+  }
+
+  /// Puts the step back into its "not verified" shape, carrying the reason.
+  ///
+  /// Call inside a [setState] — it only mutates, so the three failure paths do
+  /// not each have to remember the full list of fields to reset.
+  void _clearVerification(String? error) {
+    _controller.isIdVerified = false;
+    _controller.idVerificationError = error;
+    _controller.isIdAlreadyRegistered = false;
+    _controller.idEnteredManually = false;
+    _controller.idNumber = null;
+    _controller.idNumberController.text = '';
+    _controller.idFaceImage = null;
   }
 }

@@ -7,7 +7,6 @@ import '../../core/app_theme/ink_palette.dart';
 import '../../core/app_theme/theme_controller.dart';
 import '../../core/app_theme/theme_utils.dart';
 import '../../core/widgets/app_page_header.dart';
-import '../../login_page.dart';
 import '../../core/services/nav_badge_service.dart';
 import '../../core/services/session_cache.dart';
 import '../../core/services/sub_account_service.dart';
@@ -779,10 +778,9 @@ class _ProfilePageState extends State<ProfilePage>
       clearCache();
       await FirebaseAuth.instance.signOut();
       if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (context) => const LoginPage()),
-        (route) => false,
-      );
+      Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil('/login', (route) => false);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

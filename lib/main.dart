@@ -481,8 +481,15 @@ class MyApp extends StatelessWidget {
           currentPath == '/payment-failed') {
         return currentPath;
       }
-      // For other routes, check if they're valid
-      final validRoutes = ['/products', '/add-product'];
+      // Top-level pages Navigator can build straight from the path: one
+      // segment each, no arguments, and none of them the shell — so there is
+      // no intermediate segment for Navigator to stack a second app under.
+      //
+      // '/home' is deliberately absent even though it is a registered route:
+      // it builds the shell, and as `initialRoute` it would make Navigator
+      // build ['/', '/home'] — two shells, one on top of the other. It is
+      // handled above as a shell destination instead.
+      const validRoutes = ['/login', '/auth', '/products', '/add-product'];
       if (validRoutes.contains(currentPath)) {
         return currentPath;
       }

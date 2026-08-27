@@ -15,7 +15,6 @@ import '../widgets/loading_overlay.dart';
 import '../utils/cart_feedback.dart';
 import 'cart_page.dart';
 import 'edit_product_page.dart';
-import '../../login_page.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/utils/navigation_utils.dart';
 import 'package:dentpal/utils/currency_formatter.dart';
@@ -596,9 +595,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
             ElevatedButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (context) => const LoginPage()),
-                );
+                Navigator.of(context).pushNamed('/login');
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,

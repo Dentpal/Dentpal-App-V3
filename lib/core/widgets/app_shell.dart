@@ -9,7 +9,6 @@ import 'package:dentpal/core/app_theme/app_text_styles.dart';
 import 'package:dentpal/core/app_theme/ink_palette.dart';
 import 'package:dentpal/core/app_theme/theme_utils.dart';
 import 'package:dentpal/core/services/nav_badge_service.dart';
-import 'package:dentpal/login_page.dart';
 import 'package:dentpal/product/pages/cart_page.dart';
 import 'package:dentpal/product/pages/categories_page.dart';
 import 'package:dentpal/product/pages/product_listing_page.dart';
@@ -647,9 +646,7 @@ class AppShellState extends State<AppShell> {
           ElevatedButton(
             onPressed: () {
               Navigator.of(dialogContext).pop();
-              Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const LoginPage()));
+              Navigator.of(context).pushNamed('/login');
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: ink.emerald,

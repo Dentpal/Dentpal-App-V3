@@ -5,13 +5,14 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:dentpal/home_page.dart';
-import 'package:dentpal/core/app_theme/index.dart';
+import 'package:dentpal/core/app_theme/app_text_styles.dart';
+import 'package:dentpal/core/app_theme/ink_palette.dart';
+import 'package:dentpal/core/app_theme/theme_utils.dart';
+import 'package:dentpal/core/widgets/auth_chrome.dart';
 import 'package:dentpal/utils/credential_manager.dart';
 import 'package:dentpal/product/services/user_service.dart';
 import 'package:dentpal/core/services/sub_account_service.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'dart:ui' as ui;
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -21,14 +22,13 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
   bool _rememberMe = false;
   String? _errorMessage;
-  String? _emailError;
-  String? _passwordError;
 
   @override
   void initState() {
@@ -84,9 +84,12 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _login() async {
+    // The empty-field checks live in the fields' own validators now, so a
+    // missing email marks the email box rather than printing a line of red
+    // under the whole form.
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
     setState(() {
-      _emailError = null;
-      _passwordError = null;
       _errorMessage = null;
     });
 
@@ -94,20 +97,6 @@ class _LoginPageState extends State<LoginPage> {
 
     final emailOrPhone = _emailController.text.trim();
     final password = _passwordController.text;
-    bool hasError = false;
-    if (emailOrPhone.isEmpty) {
-      setState(() {
-        _emailError = 'Please enter your email address or phone number.';
-      });
-      hasError = true;
-    }
-    if (password.isEmpty) {
-      setState(() {
-        _passwordError = 'Please enter your password.';
-      });
-      hasError = true;
-    }
-    if (hasError) return;
 
     setState(() {
       _isLoading = true;
@@ -141,12 +130,7 @@ class _LoginPageState extends State<LoginPage> {
 
         // Show specific loading state for phone lookup
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Verifying phone number...'),
-              duration: Duration(seconds: 1),
-            ),
-          );
+          showAuthSnack(context, 'Verifying phone number…', _ink.emerald);
         }
 
         // Query UserLookup to find the user with this phone number
@@ -195,7 +179,9 @@ class _LoginPageState extends State<LoginPage> {
 
       // Check if email is verified (skip for sub accounts — they use password reset flow)
       final isSubAccount = await _isSubAccountEmail(userCredential.user!.uid);
-      if (!isSubAccount && userCredential.user != null && !userCredential.user!.emailVerified) {
+      if (!isSubAccount &&
+          userCredential.user != null &&
+          !userCredential.user!.emailVerified) {
         // Sign out the user if email is not verified
         await FirebaseAuth.instance.signOut();
 
@@ -206,58 +192,7 @@ class _LoginPageState extends State<LoginPage> {
           });
 
           // Offer to resend verification email
-          showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('Email Not Verified'),
-              content: const Text(
-                'You need to verify your email address before logging in. Would you like us to resend the verification email?',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text(
-                    'CANCEL',
-                    style: TextStyle(color: Colors.red),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () async {
-                    Navigator.of(context).pop();
-                    try {
-                      // Sign in temporarily to send verification email
-                      final tempCredential = await FirebaseAuth.instance
-                          .signInWithEmailAndPassword(
-                            email: emailOrPhone,
-                            password: password,
-                          );
-                      await tempCredential.user?.sendEmailVerification();
-                      await FirebaseAuth.instance.signOut();
-
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Verification email has been sent!'),
-                          ),
-                        );
-                      }
-                    } catch (e) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Failed to send verification email. Please try again.',
-                            ),
-                          ),
-                        );
-                      }
-                    }
-                  },
-                  child: const Text('RESEND'),
-                ),
-              ],
-            ),
-          );
+          _showVerificationPrompt(emailOrPhone, password);
         }
         return;
       }
@@ -271,11 +206,12 @@ class _LoginPageState extends State<LoginPage> {
           } catch (e) {
             AppLogger.d('Failed to clear cache: $e');
           }
-          
+
           // Resolve sub account status before navigating to HomePage.
           try {
-            final subAccountResult =
-                await SubAccountService.lookupSubAccount(uid);
+            final subAccountResult = await SubAccountService.lookupSubAccount(
+              uid,
+            );
             if (subAccountResult != null) {
               // This is a sub account - set up the session
               SubAccountSessionManager.setSubAccountSession(
@@ -299,15 +235,11 @@ class _LoginPageState extends State<LoginPage> {
             AppLogger.d('Sub account lookup failed during login: $e');
             await FirebaseAuth.instance.signOut();
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'Unable to verify your account type. '
-                    'Please check your connection and try again.',
-                  ),
-                  backgroundColor: Colors.red,
-                  behavior: SnackBarBehavior.floating,
-                ),
+              showAuthSnack(
+                context,
+                'Unable to verify your account type. '
+                'Please check your connection and try again.',
+                _ink.danger,
               );
             }
             return;
@@ -316,20 +248,18 @@ class _LoginPageState extends State<LoginPage> {
           // Navigate to HomePage (LoginPage may be pushed on top of the
           // navigation stack, so we must navigate explicitly).
           if (mounted) {
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (context) => const HomePage()),
-            );
+            Navigator.of(context).pushReplacementNamed('/');
           }
         } else {
           // If uid is null, force sign out and ask user to try again
           await FirebaseAuth.instance.signOut();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Something went wrong! Please log in again.'),
-              duration: Duration(seconds: 3),
-              backgroundColor: Colors.orange,
-            ),
-          );
+          if (mounted) {
+            showAuthSnack(
+              context,
+              'Something went wrong! Please log in again.',
+              _ink.amber,
+            );
+          }
         }
       }
     } on FirebaseAuthException catch (e) {
@@ -373,944 +303,476 @@ class _LoginPageState extends State<LoginPage> {
         _errorMessage = 'An unexpected error occurred.';
       });
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
+  /// Offers to send the verification email again, for an account that was
+  /// created but never confirmed.
+  void _showVerificationPrompt(String emailOrPhone, String password) {
+    showAuthDialog<void>(
+      context: context,
+      icon: Icons.mark_email_unread_outlined,
+      tone: _ink.amber,
+      title: 'Email not verified',
+      message:
+          'You need to verify your email address before logging in. Would you '
+          'like us to send the verification email again?',
+      barrierDismissible: true,
+      actions: (dialogContext) => [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          style: TextButton.styleFrom(foregroundColor: _ink.muted),
+          child: const Text('Not now'),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            Navigator.of(dialogContext).pop();
+            _resendVerificationEmail(emailOrPhone, password);
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _ink.emerald,
+            foregroundColor: _ink.onEmerald,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          child: const Text('Resend'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _resendVerificationEmail(
+    String emailOrPhone,
+    String password,
+  ) async {
+    try {
+      // Sign in temporarily to send verification email
+      final tempCredential = await FirebaseAuth.instance
+          .signInWithEmailAndPassword(email: emailOrPhone, password: password);
+      await tempCredential.user?.sendEmailVerification();
+      await FirebaseAuth.instance.signOut();
+
+      if (mounted) {
+        showAuthSnack(
+          context,
+          'Verification email has been sent!',
+          _ink.emerald,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        showAuthSnack(
+          context,
+          'Failed to send verification email. Please try again.',
+          _ink.danger,
+        );
+      }
+    }
+  }
+
+  // ── Palette ──────────────────────────────────────────────────────────────
+
+  InkPalette get _ink => InkPalette.of(context);
+
+  // ── Layout ───────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isWebView = screenWidth > 900;
+    // The brand pane is a browser-window luxury; below it the form takes the
+    // whole screen. Same test the buyer shell uses for its side rail, so login
+    // and the app behind it change shape at the same width.
+    final wide = context.isWideLayout;
+
+    return wide ? _buildWideLayout() : _buildNarrowLayout();
+  }
+
+  /// Phone, tablet in portrait, narrow browser window.
+  ///
+  /// Centred rather than pinned to the top: the form is short enough that a
+  /// tall phone screen — or a mobile browser, which is taller still — left a
+  /// third of the page as empty ground beneath it.
+  Widget _buildNarrowLayout() {
+    return AuthScaffold.centered(header: _header(), children: _formChildren());
+  }
+
+  /// Wide window: the brand holds the left half, the form sits in a card on
+  /// the right. The card carries the *same* [AuthHeader] as the narrow layout,
+  /// so the title and its margins do not move between the two.
+  Widget _buildWideLayout() {
+    final ink = _ink;
 
     return Scaffold(
-      backgroundColor: AppColors.surface,
-      body: Stack(
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              color: isWebView
-                  ? const Color(0xFFF5F5F5)
-                  : null, // dirty white on web
-              gradient: isWebView
-                  ? null
-                  : AppGradients.teal, // keep gradient on mobile
-            ),
-            height: MediaQuery.of(context).size.height,
-          ),
-          SafeArea(
-            bottom: false,
-            child: isWebView
-                ? Center(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Expanded(
-                          flex: 5,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 60),
-                            child: Center(
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(24),
-                                child: Image.asset(
-                                  'lib/assets/icons/dentpal_vertical.png',
-                                  width: 560,
-                                  height: 420,
-                                  fit: BoxFit.contain,
-                                ),
-                                onTap: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (context) => const HomePage(),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 20),
-                        Expanded(
-                          flex: 5,
-                          child: Center(
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 480),
-                              child: Card(
-                                elevation: 14,
-                                shadowColor: Colors.black.withOpacity(0.12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(28),
-                                ),
-                                clipBehavior: Clip.antiAlias,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        AppColors.surface,
-                                        AppColors.surface.withOpacity(0.98),
-                                      ],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                    ),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 42,
-                                    vertical: 40,
-                                  ),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      // Error banner
-                                      if (_errorMessage != null) ...[
-                                        _webErrorBanner(
-                                          _errorMessage!,
-                                          onClose: () {
-                                            setState(
-                                              () => _errorMessage = null,
-                                            );
-                                          },
-                                        ),
-                                        const SizedBox(height: 20),
-                                      ],
-                                      // Email
-                                      Text(
-                                        'Email or Phone Number',
-                                        style: AppTextStyles.bodyMedium
-                                            .copyWith(
-                                              fontWeight: FontWeight.w600,
-                                              color: AppColors.onSurface
-                                                  .withOpacity(0.85),
-                                            ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      _webTextField(
-                                        controller: _emailController,
-                                        hint: 'example@domain.com',
-                                        keyboardType:
-                                            TextInputType.emailAddress,
-                                      ),
-                                      if (_emailError != null) ...[
-                                        const SizedBox(height: 6),
-                                        _fieldError(_emailError!),
-                                      ],
-                                      const SizedBox(height: 20),
-                                      // Password
-                                      Text(
-                                        'Password',
-                                        style: AppTextStyles.bodyMedium
-                                            .copyWith(
-                                              fontWeight: FontWeight.w600,
-                                              color: AppColors.onSurface
-                                                  .withOpacity(0.85),
-                                            ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      _webTextField(
-                                        controller: _passwordController,
-                                        hint: '••••••••',
-                                        obscure: _obscurePassword,
-                                        suffix: IconButton(
-                                          icon: Icon(
-                                            _obscurePassword
-                                                ? Icons.visibility_off
-                                                : Icons.visibility,
-                                            color: AppColors.grey400,
-                                          ),
-                                          onPressed: () {
-                                            setState(
-                                              () => _obscurePassword =
-                                                  !_obscurePassword,
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                      if (_passwordError != null) ...[
-                                        const SizedBox(height: 6),
-                                        _fieldError(_passwordError!),
-                                      ],
-                                      const SizedBox(height: 18),
-                                      // Remember + Forgot
-                                      Row(
-                                        children: [
-                                          Checkbox(
-                                            value: _rememberMe,
-                                            onChanged: (v) => setState(
-                                              () => _rememberMe = v ?? false,
-                                            ),
-                                            materialTapTargetSize:
-                                                MaterialTapTargetSize
-                                                    .shrinkWrap,
-                                          ),
-                                          const Text('Remember me'),
-                                          const Spacer(),
-                                          TextButton(
-                                            onPressed: () {
-                                              Navigator.of(context).push(
-                                                MaterialPageRoute(
-                                                  builder: (_) =>
-                                                      const ForgotPasswordPage(),
-                                                ),
-                                              );
-                                            },
-                                            style: TextButton.styleFrom(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 12,
-                                                    vertical: 8,
-                                                  ),
-                                            ),
-                                            child: Text(
-                                              'Forgot password?',
-                                              style: AppTextStyles.bodySmall
-                                                  .copyWith(
-                                                    color: AppColors.accent,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 22),
-                                      // Login button
-                                      SizedBox(
-                                        height: 54,
-                                        child: ElevatedButton(
-                                          onPressed: _isLoading ? null : _login,
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: AppColors.primary,
-                                            foregroundColor:
-                                                AppColors.onPrimary,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(16),
-                                            ),
-                                            textStyle: AppTextStyles.buttonLarge
-                                                .copyWith(fontSize: 18),
-                                            elevation: 4,
-                                            shadowColor: AppColors.primary
-                                                .withOpacity(0.35),
-                                          ),
-                                          child: _isLoading
-                                              ? const SizedBox(
-                                                  height: 26,
-                                                  width: 26,
-                                                  child: CircularProgressIndicator(
-                                                    strokeWidth: 2.5,
-                                                    valueColor:
-                                                        AlwaysStoppedAnimation<
-                                                          Color
-                                                        >(AppColors.onPrimary),
-                                                  ),
-                                                )
-                                              : const Text('Log In'),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 18),
-                                      // Divider
-                                      // Row(
-                                      //   children: [
-                                      //     Expanded(
-                                      //       child: Container(
-                                      //         height: 1,
-                                      //         color: AppColors.onSurface
-                                      //             .withOpacity(0.1),
-                                      //       ),
-                                      //     ),
-                                      //     Padding(
-                                      //       padding: const EdgeInsets.symmetric(
-                                      //         horizontal: 12,
-                                      //       ),
-                                      //       child: Text(
-                                      //         'or',
-                                      //         style: AppTextStyles.bodySmall
-                                      //             .copyWith(
-                                      //               color: AppColors.onSurface
-                                      //                   .withOpacity(0.55),
-                                      //             ),
-                                      //       ),
-                                      //     ),
-                                      //     Expanded(
-                                      //       child: Container(
-                                      //         height: 1,
-                                      //         color: AppColors.onSurface
-                                      //             .withOpacity(0.1),
-                                      //       ),
-                                      //     ),
-                                      //   ],
-                                      // ),
-                                      // const SizedBox(height: 18),
-                                      // // Social buttons (placeholders)
-                                      // Row(
-                                      //   children: [
-                                      //     Expanded(
-                                      //       child: OutlinedButton.icon(
-                                      //         onPressed: () {
-                                      //           ScaffoldMessenger.of(
-                                      //             context,
-                                      //           ).showSnackBar(
-                                      //             const SnackBar(
-                                      //               content: Text(
-                                      //                 'Google Sign In - Coming Soon!',
-                                      //               ),
-                                      //             ),
-                                      //           );
-                                      //         },
-                                      //         icon: Image.asset(
-                                      //           'lib/assets/icons/google-logo.png',
-                                      //           width: 18,
-                                      //           height: 18,
-                                      //         ),
-                                      //         label: const Text('Google'),
-                                      //         style: OutlinedButton.styleFrom(
-                                      //           padding:
-                                      //               const EdgeInsets.symmetric(
-                                      //                 vertical: 14,
-                                      //               ),
-                                      //           shape: RoundedRectangleBorder(
-                                      //             borderRadius:
-                                      //                 BorderRadius.circular(12),
-                                      //           ),
-                                      //         ),
-                                      //       ),
-                                      //     ),
-                                      //     const SizedBox(width: 14),
-                                      //     Expanded(
-                                      //       child: OutlinedButton.icon(
-                                      //         onPressed: () {
-                                      //           ScaffoldMessenger.of(
-                                      //             context,
-                                      //           ).showSnackBar(
-                                      //             const SnackBar(
-                                      //               content: Text(
-                                      //                 'Facebook Sign In - Coming Soon!',
-                                      //               ),
-                                      //             ),
-                                      //           );
-                                      //         },
-                                      //         icon: Image.asset(
-                                      //           'lib/assets/icons/facebook-logo.png',
-                                      //           width: 18,
-                                      //           height: 18,
-                                      //         ),
-                                      //         label: const Text('Facebook'),
-                                      //         style: OutlinedButton.styleFrom(
-                                      //           padding:
-                                      //               const EdgeInsets.symmetric(
-                                      //                 vertical: 14,
-                                      //               ),
-                                      //           shape: RoundedRectangleBorder(
-                                      //             borderRadius:
-                                      //                 BorderRadius.circular(12),
-                                      //           ),
-                                      //         ),
-                                      //       ),
-                                      //     ),
-                                      //   ],
-                                      // ),
-                                      const SizedBox(height: 26),
-                                      // Sign up link - Download app
-                                      Center(
-                                        child: Text(
-                                          "Don't have an account? Download our app now",
-                                          style: AppTextStyles.bodyMedium.copyWith(
-                                            color: AppColors.onSurface.withOpacity(0.7),
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 14),
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          // App Store button
-                                          Expanded(
-                                            child: OutlinedButton.icon(
-                                              onPressed: () async {
-                                                const appStoreUrl =
-                                                    'https://apps.apple.com/app/dentpal/id6758815697';
-                                                final uri = Uri.parse(appStoreUrl);
-                                                if (await canLaunchUrl(uri)) {
-                                                  await launchUrl(
-                                                    uri,
-                                                    mode: LaunchMode.externalApplication,
-                                                  );
-                                                }
-                                              },
-                                              icon: const Icon(Icons.apple, size: 22),
-                                              label: const Text('App Store'),
-                                              style: OutlinedButton.styleFrom(
-                                                foregroundColor: AppColors.onSurface,
-                                                side: BorderSide(
-                                                  color: AppColors.onSurface.withOpacity(0.2),
-                                                ),
-                                                padding: const EdgeInsets.symmetric(
-                                                  vertical: 14,
-                                                ),
-                                                shape: RoundedRectangleBorder(
-                                                  borderRadius: BorderRadius.circular(12),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 14),
-                                          // Google Play button
-                                          Expanded(
-                                            child: OutlinedButton.icon(
-                                              onPressed: () async {
-                                                const playStoreUrl =
-                                                    'https://play.google.com/store/apps/details?id=com.rrnewtech.dentpal';
-                                                final uri = Uri.parse(playStoreUrl);
-                                                if (await canLaunchUrl(uri)) {
-                                                  await launchUrl(
-                                                    uri,
-                                                    mode: LaunchMode.externalApplication,
-                                                  );
-                                                }
-                                              },
-                                              icon: Image.asset(
-                                                'lib/assets/icons/google-logo.png',
-                                                width: 18,
-                                                height: 18,
-                                              ),
-                                              label: const Text('Google Play'),
-                                              style: OutlinedButton.styleFrom(
-                                                foregroundColor: AppColors.onSurface,
-                                                side: BorderSide(
-                                                  color: AppColors.onSurface.withOpacity(0.2),
-                                                ),
-                                                padding: const EdgeInsets.symmetric(
-                                                  vertical: 14,
-                                                ),
-                                                shape: RoundedRectangleBorder(
-                                                  borderRadius: BorderRadius.circular(12),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : Column(
-                    children: [
-                      // Top section with logo and powered by text
-                      Expanded(
-                        flex: 3,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: () {
-                                  Navigator.of(context).pushAndRemoveUntil(
-                                    MaterialPageRoute(
-                                      builder: (context) => const HomePage(),
-                                    ),
-                                    (route) => false,
-                                  );
-                                },
-                                borderRadius: BorderRadius.circular(20),
-                                splashColor: Colors.white.withOpacity(0.2),
-                                highlightColor: Colors.white.withOpacity(0.1),
-                                hoverColor: Colors.white.withOpacity(0.1),
-                                child: Container(
-                                  width: 220,
-                                  height: 160,
-                                  padding: const EdgeInsets.all(8),
-                                  child: Stack(
-                                    children: [
-                                      ImageFiltered(
-                                        imageFilter: ui.ImageFilter.blur(
-                                          sigmaX: 4,
-                                          sigmaY: 4,
-                                        ),
-                                        child: ColorFiltered(
-                                          colorFilter: ColorFilter.mode(
-                                            Colors.white.withOpacity(0.4),
-                                            BlendMode.srcATop,
-                                          ),
-                                          child: Image.asset(
-                                            'lib/assets/icons/dentpal_vertical.png',
-                                            width: 220,
-                                            height: 160,
-                                            fit: BoxFit.cover,
-                                          ),
-                                        ),
-                                      ),
-                                      Image.asset(
-                                        'lib/assets/icons/dentpal_vertical.png',
-                                        width: 220,
-                                        height: 160,
-                                        fit: BoxFit.cover,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      // Bottom section with login form
-                      Expanded(
-                        flex: 7,
-                        child: Align(
-                          alignment: Alignment.bottomCenter,
-                          child: Container(
-                            width: double.infinity,
-                            constraints: const BoxConstraints(maxWidth: 500),
-                            decoration: const BoxDecoration(
-                              color: AppColors.surface,
-                              borderRadius: BorderRadius.only(
-                                topLeft: Radius.circular(30),
-                                topRight: Radius.circular(30),
-                              ),
-                            ),
-                            child: SingleChildScrollView(
-                              padding: const EdgeInsets.only(
-                                left: 30.0,
-                                right: 30.0,
-                                top: 30.0,
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  const SizedBox(height: 10),
-                                  if (_errorMessage != null) ...[
-                                    Container(
-                                      padding: const EdgeInsets.all(16),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.error.withOpacity(.1),
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                          color: AppColors.error.withOpacity(
-                                            .3,
-                                          ),
-                                        ),
-                                      ),
-                                      child: Text(
-                                        _errorMessage!,
-                                        style: TextStyle(
-                                          color: AppColors.error,
-                                          fontSize: 14,
-                                        ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 10),
-                                  ],
-                                  Text(
-                                    'Email or Phone Number',
-                                    style: AppTextStyles.bodyMedium.copyWith(
-                                      color: AppColors.onSurface,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  TextField(
-                                    controller: _emailController,
-                                    keyboardType: TextInputType.emailAddress,
-                                    decoration: InputDecoration(
-                                      hintText: 'example@domain.com',
-                                      filled: true,
-                                      fillColor: AppColors.surfaceVariant,
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(15),
-                                        borderSide: BorderSide.none,
-                                      ),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(15),
-                                        borderSide: BorderSide.none,
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(15),
-                                        borderSide: const BorderSide(
-                                          color: AppColors.primary,
-                                          width: 2,
-                                        ),
-                                      ),
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                            horizontal: 20,
-                                            vertical: 18,
-                                          ),
-                                    ),
-                                  ),
-                                  if (_emailError != null) ...[
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      _emailError!,
-                                      style: TextStyle(
-                                        color: AppColors.error,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ],
-                                  const SizedBox(height: 10),
-                                  Text(
-                                    'Password',
-                                    style: AppTextStyles.bodyMedium.copyWith(
-                                      color: AppColors.onSurface,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  TextField(
-                                    controller: _passwordController,
-                                    obscureText: _obscurePassword,
-                                    decoration: InputDecoration(
-                                      hintText: '●●●●●●●●',
-                                      filled: true,
-                                      fillColor: AppColors.surfaceVariant,
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(15),
-                                        borderSide: BorderSide.none,
-                                      ),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(15),
-                                        borderSide: BorderSide.none,
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(15),
-                                        borderSide: const BorderSide(
-                                          color: AppColors.primary,
-                                          width: 2,
-                                        ),
-                                      ),
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                            horizontal: 20,
-                                            vertical: 18,
-                                          ),
-                                      suffixIcon: IconButton(
-                                        icon: Icon(
-                                          _obscurePassword
-                                              ? Icons.visibility_off
-                                              : Icons.visibility,
-                                          color: AppColors.grey400,
-                                        ),
-                                        onPressed: () {
-                                          setState(() {
-                                            _obscurePassword =
-                                                !_obscurePassword;
-                                          });
-                                        },
-                                      ),
-                                    ),
-                                  ),
-                                  if (_passwordError != null) ...[
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      _passwordError!,
-                                      style: TextStyle(
-                                        color: AppColors.error,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ],
-                                  const SizedBox(height: 10),
-                                  Row(
-                                    children: [
-                                      Checkbox(
-                                        value: _rememberMe,
-                                        onChanged: (value) {
-                                          setState(() {
-                                            _rememberMe = value ?? false;
-                                          });
-                                        },
-                                      ),
-                                      const Text('Remember me?'),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 14),
-                                  ElevatedButton(
-                                    onPressed: _isLoading ? null : _login,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: AppColors.primary,
-                                      foregroundColor: AppColors.onPrimary,
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 18,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(15),
-                                      ),
-                                      elevation: 0,
-                                    ),
-                                    child: _isLoading
-                                        ? const SizedBox(
-                                            height: 24,
-                                            width: 24,
-                                            child: CircularProgressIndicator(
-                                              color: AppColors.onPrimary,
-                                              strokeWidth: 2.5,
-                                            ),
-                                          )
-                                        : Text(
-                                            'Log In',
-                                            style: AppTextStyles.buttonLarge
-                                                .copyWith(
-                                                  color: AppColors.onPrimary,
-                                                ),
-                                          ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: TextButton(
-                                      onPressed: () {
-                                        Navigator.of(context).push(
-                                          MaterialPageRoute(
-                                            builder: (context) =>
-                                                const ForgotPasswordPage(),
-                                          ),
-                                        );
-                                      },
-                                      child: Text(
-                                        'Forgot password?',
-                                        style: AppTextStyles.bodyMedium
-                                            .copyWith(color: AppColors.accent),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 24),
-                                  Center(
-                                    child: kIsWeb
-                                        // On web (mobile browser), show download app links
-                                        ? Column(
-                                            children: [
-                                              Text(
-                                                "Don't have an account? Download our app now",
-                                                style: AppTextStyles.bodyMedium.copyWith(
-                                                  color: AppColors.onSurfaceVariant,
-                                                ),
-                                                textAlign: TextAlign.center,
-                                              ),
-                                              const SizedBox(height: 14),
-                                              Row(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  // App Store button
-                                                  Expanded(
-                                                    child: OutlinedButton.icon(
-                                                      onPressed: () async {
-                                                        const appStoreUrl =
-                                                            'https://apps.apple.com/app/dentpal/id6758815697';
-                                                        final uri = Uri.parse(appStoreUrl);
-                                                        if (await canLaunchUrl(uri)) {
-                                                          await launchUrl(
-                                                            uri,
-                                                            mode: LaunchMode.externalApplication,
-                                                          );
-                                                        }
-                                                      },
-                                                      icon: const Icon(Icons.apple, size: 22),
-                                                      label: const Text('App Store'),
-                                                      style: OutlinedButton.styleFrom(
-                                                        foregroundColor: AppColors.onSurface,
-                                                        side: BorderSide(
-                                                          color: AppColors.onSurface.withOpacity(0.2),
-                                                        ),
-                                                        padding: const EdgeInsets.symmetric(
-                                                          vertical: 14,
-                                                        ),
-                                                        shape: RoundedRectangleBorder(
-                                                          borderRadius: BorderRadius.circular(12),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 14),
-                                                  // Google Play button
-                                                  Expanded(
-                                                    child: OutlinedButton.icon(
-                                                      onPressed: () async {
-                                                        const playStoreUrl =
-                                                            'https://play.google.com/store/apps/details?id=com.rrnewtech.dentpal';
-                                                        final uri = Uri.parse(playStoreUrl);
-                                                        if (await canLaunchUrl(uri)) {
-                                                          await launchUrl(
-                                                            uri,
-                                                            mode: LaunchMode.externalApplication,
-                                                          );
-                                                        }
-                                                      },
-                                                      icon: Image.asset(
-                                                        'lib/assets/icons/google-logo.png',
-                                                        width: 18,
-                                                        height: 18,
-                                                      ),
-                                                      label: const Text('Google Play'),
-                                                      style: OutlinedButton.styleFrom(
-                                                        foregroundColor: AppColors.onSurface,
-                                                        side: BorderSide(
-                                                          color: AppColors.onSurface.withOpacity(0.2),
-                                                        ),
-                                                        padding: const EdgeInsets.symmetric(
-                                                          vertical: 14,
-                                                        ),
-                                                        shape: RoundedRectangleBorder(
-                                                          borderRadius: BorderRadius.circular(12),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ],
-                                          )
-                                        // On native app, allow sign up
-                                        : TextButton(
-                                            onPressed: () {
-                                              Navigator.of(context).push(
-                                                MaterialPageRoute(
-                                                  builder: (context) =>
-                                                      const SignUpPageNew(),
-                                                ),
-                                              );
-                                            },
-                                            child: RichText(
-                                              textAlign: TextAlign.center,
-                                              text: TextSpan(
-                                                style: AppTextStyles.bodyMedium,
-                                                children: const [
-                                                  TextSpan(
-                                                    text:
-                                                        "Don't have an account? ",
-                                                    style: TextStyle(
-                                                      color: AppColors
-                                                          .onSurfaceVariant,
-                                                      fontWeight:
-                                                          FontWeight.normal,
-                                                    ),
-                                                  ),
-                                                  TextSpan(
-                                                    text: 'Create one',
-                                                    style: TextStyle(
-                                                      color: AppColors.accent,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                  ),
-                                  SizedBox(
-                                    height:
-                                        MediaQuery.of(context).padding.bottom >
-                                            0
-                                        ? 40
-                                        : 20,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+      backgroundColor: ink.bg,
+      body: SafeArea(
+        bottom: false,
+        child: Row(
+          children: [
+            Expanded(flex: 6, child: _brandPane()),
+            Expanded(
+              flex: 5,
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 40,
+                    vertical: 32,
                   ),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: AuthMetrics.columnWidth + 32,
+                    ),
+                    child: AuthCard(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _header(),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AuthMetrics.gutter,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              mainAxisSize: MainAxisSize.min,
+                              children: _formChildren(),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  AuthHeader _header() {
+    return AuthHeader(
+      title: 'Welcome back',
+      subtitle: 'Sign in to your DentPal account.',
+      onBrandTap: _browseAsGuest,
+    );
+  }
+
+  /// Tapping the logo has always been the way into the marketplace without an
+  /// account; keeping it means the guest route survives the redesign.
+  void _browseAsGuest() {
+    // Named, and clearing the stack: the address bar has to come off '/login'
+    // with the page, and pushing the shell *on top* of login would leave two
+    // AppShells fighting over the one `AppShell.instance`.
+    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+  }
+
+  /// The emerald half of the wide layout.
+  Widget _brandPane() {
+    return Container(
+      // The hero gradient is dark in both appearances, so white type sits on it
+      // either way and this pane does not need to flip.
+      decoration: const BoxDecoration(gradient: InkPalette.heroGradient),
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(48),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // The logo artwork is drawn on white, so it gets a plate of its
+                // own rather than a scrubbed-looking square of it on emerald.
+                Material(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: _browseAsGuest,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 28,
+                        vertical: 20,
+                      ),
+                      child: Image.asset(
+                        'lib/assets/icons/dentpal_vertical.png',
+                        width: 220,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 40),
+                Text(
+                  'The marketplace built for\nPhilippine dental practices.',
+                  style: AppTextStyles.headlineMedium.copyWith(
+                    color: Colors.white,
+                    fontSize: 30,
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Source from verified sellers, track every order in one '
+                  'place, and get same-day delivery where it is offered.',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: Colors.white.withValues(alpha: 0.72),
+                    fontSize: 14.5,
+                    height: 1.6,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── The form ─────────────────────────────────────────────────────────────
+
+  /// The body of both layouts, so there is exactly one description of the form.
+  List<Widget> _formChildren() {
+    final ink = _ink;
+
+    return [
+      if (_errorMessage != null) ...[
+        AuthBanner(
+          icon: Icons.error_outline,
+          tone: ink.danger,
+          message: _errorMessage!,
+          onClose: () => setState(() => _errorMessage = null),
+        ),
+        const SizedBox(height: 20),
+      ],
+
+      Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AuthTextField(
+              controller: _emailController,
+              label: 'Email or phone number',
+              hint: 'you@clinic.com or 09XXXXXXXXX',
+              prefixIcon: Icons.person_outline,
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.next,
+              enabled: !_isLoading,
+              autofillHints: const [AutofillHints.username],
+              validator: (value) => (value == null || value.trim().isEmpty)
+                  ? 'Please enter your email address or phone number.'
+                  : null,
+            ),
+            const SizedBox(height: 14),
+            AuthTextField(
+              controller: _passwordController,
+              label: 'Password',
+              prefixIcon: Icons.lock_outline,
+              obscureText: _obscurePassword,
+              textInputAction: TextInputAction.done,
+              enabled: !_isLoading,
+              autofillHints: const [AutofillHints.password],
+              onFieldSubmitted: (_) {
+                if (!_isLoading) _login();
+              },
+              suffixIcon: AuthPasswordToggle(
+                visible: !_obscurePassword,
+                onToggle: () =>
+                    setState(() => _obscurePassword = !_obscurePassword),
+              ),
+              validator: (value) => (value == null || value.isEmpty)
+                  ? 'Please enter your password.'
+                  : null,
+            ),
+          ],
+        ),
+      ),
+
+      const SizedBox(height: 6),
+      _rememberRow(),
+      const SizedBox(height: 16),
+
+      AuthPrimaryButton(
+        label: 'Log in',
+        busy: _isLoading,
+        onPressed: _login,
+      ),
+
+      const SizedBox(height: 24),
+      // On the web there is no signup to offer — ID verification needs a phone
+      // camera — so the page points at the app stores instead.
+      if (kIsWeb) _downloadAppCard() else _createAccountPrompt(),
+
+      SizedBox(height: MediaQuery.of(context).padding.bottom > 0 ? 24 : 8),
+    ];
+  }
+
+  Widget _rememberRow() {
+    final ink = _ink;
+
+    return Row(
+      children: [
+        SizedBox(
+          width: 24,
+          height: 24,
+          child: Checkbox(
+            value: _rememberMe,
+            onChanged: _isLoading
+                ? null
+                : (value) => setState(() => _rememberMe = value ?? false),
+            activeColor: ink.emerald,
+            checkColor: ink.onEmerald,
+            side: BorderSide(color: ink.border, width: 1.5),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(5),
+            ),
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: GestureDetector(
+            onTap: _isLoading
+                ? null
+                : () => setState(() => _rememberMe = !_rememberMe),
+            child: Text(
+              'Remember me',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: ink.muted,
+                fontWeight: FontWeight.w600,
+                fontSize: 12.5,
+              ),
+            ),
+          ),
+        ),
+        TextButton(
+          onPressed: _isLoading
+              ? null
+              : () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ForgotPasswordPage()),
+                ),
+          style: TextButton.styleFrom(
+            foregroundColor: ink.emerald,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: Text(
+            'Forgot password?',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: ink.emerald,
+              fontWeight: FontWeight.w700,
+              fontSize: 12.5,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _createAccountPrompt() {
+    return AuthFooterPrompt(
+      question: "Don't have an account?",
+      actionLabel: 'Create one',
+      onPressed: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (context) => const SignUpPageNew()),
+      ),
+    );
+  }
+
+  Widget _downloadAppCard() {
+    final ink = _ink;
+
+    return AuthCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'New to DentPal?',
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: ink.text,
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Accounts are created in the app — verifying your PRC ID needs '
+            'your phone camera.',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: ink.muted,
+              fontSize: 12.5,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _storeButton(
+                  label: 'App Store',
+                  icon: const Icon(Icons.apple, size: 20),
+                  url: 'https://apps.apple.com/app/dentpal/id6758815697',
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _storeButton(
+                  label: 'Google Play',
+                  icon: Image.asset(
+                    'lib/assets/icons/google-logo.png',
+                    width: 17,
+                    height: 17,
+                  ),
+                  url:
+                      'https://play.google.com/store/apps/details?id=com.rrnewtech.dentpal',
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
-}
 
-// Helper widgets for web UI
-Widget _webErrorBanner(String message, {required VoidCallback onClose}) {
-  return AnimatedContainer(
-    duration: const Duration(milliseconds: 250),
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: AppColors.error.withOpacity(0.08),
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: AppColors.error.withOpacity(0.25)),
-    ),
-    child: Row(
-      children: [
-        Icon(
-          Icons.error_outline,
-          color: AppColors.error.withOpacity(0.9),
-          size: 20,
+  Widget _storeButton({
+    required String label,
+    required Widget icon,
+    required String url,
+  }) {
+    final ink = _ink;
+
+    return SizedBox(
+      height: 46,
+      child: OutlinedButton.icon(
+        onPressed: () async {
+          final uri = Uri.parse(url);
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          }
+        },
+        icon: icon,
+        label: Text(
+          label,
+          style: AppTextStyles.buttonMedium.copyWith(fontSize: 13),
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            message,
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.error.withOpacity(0.95),
-              fontWeight: FontWeight.w600,
-              height: 1.25,
-            ),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: ink.text,
+          side: BorderSide(color: ink.border),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AuthMetrics.fieldRadius),
           ),
         ),
-        IconButton(
-          icon: Icon(
-            Icons.close,
-            size: 18,
-            color: AppColors.error.withOpacity(0.8),
-          ),
-          padding: EdgeInsets.zero,
-          onPressed: onClose,
-        ),
-      ],
-    ),
-  );
-}
-
-Widget _fieldError(String message) {
-  return Text(
-    message,
-    style: AppTextStyles.bodySmall.copyWith(
-      color: AppColors.error,
-      fontWeight: FontWeight.w600,
-    ),
-  );
-}
-
-Widget _webTextField({
-  required TextEditingController controller,
-  required String hint,
-  bool obscure = false,
-  TextInputType? keyboardType,
-  Widget? suffix,
-}) {
-  return TextField(
-    controller: controller,
-    obscureText: obscure,
-    keyboardType: keyboardType,
-    decoration: InputDecoration(
-      hintText: hint,
-      filled: true,
-      fillColor: AppColors.surfaceVariant,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide.none,
       ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide.none,
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: AppColors.primary, width: 2),
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
-      suffixIcon: suffix,
-    ),
-  );
+    );
+  }
 }

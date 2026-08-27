@@ -17,6 +17,13 @@ class SignupController {
   final TextEditingController idNumberController = TextEditingController(); // Editable ID number field
   bool isIdVerified = false;
   String? idVerificationError;
+
+  /// Whether the licence number was typed in rather than read off a card.
+  ///
+  /// The account is still created, but nothing about the licence has been
+  /// proven — so it is written to Firestore as pending review instead of
+  /// verified, and staff can check it against the PRC register.
+  bool idEnteredManually = false;
   bool isIdAlreadyRegistered = false; // Flag to indicate if this PRC ID is already registered
   Uint8List? idFaceImage; // Temporarily store face image from ID
   

@@ -766,6 +766,15 @@ class IdVerificationResult {
   final String? lastName;
   final bool isAlreadyRegistered; // Flag to indicate if this PRC ID is already registered
 
+  /// The scanner was given up on: the dentist has no card to hand, or it will
+  /// not read, and they have asked to type their licence number instead.
+  ///
+  /// Carries no [registrationNumber] — this is a *request*, answered by the
+  /// form the signup step puts up. Nothing about the licence has been proven,
+  /// so an account that takes this route is written as pending review rather
+  /// than verified.
+  final bool isManualEntryRequest;
+
   IdVerificationResult({
     required this.isValid,
     this.errorMessage,
@@ -774,10 +783,19 @@ class IdVerificationResult {
     this.firstName,
     this.lastName,
     this.isAlreadyRegistered = false,
+    this.isManualEntryRequest = false,
   });
+
+  /// What the camera pops when the dentist chooses to type it in instead.
+  ///
+  /// Deliberately `isValid: false`: nothing has been verified, and every check
+  /// downstream that gates on validity should keep gating.
+  factory IdVerificationResult.manualEntryRequested() {
+    return IdVerificationResult(isValid: false, isManualEntryRequest: true);
+  }
 
   @override
   String toString() {
-    return 'IdVerificationResult(isValid: $isValid, errorMessage: $errorMessage, registrationNumber: $registrationNumber, hasFace: ${faceImage != null}, firstName: $firstName, lastName: $lastName, isAlreadyRegistered: $isAlreadyRegistered)';
+    return 'IdVerificationResult(isValid: $isValid, errorMessage: $errorMessage, registrationNumber: $registrationNumber, hasFace: ${faceImage != null}, firstName: $firstName, lastName: $lastName, isAlreadyRegistered: $isAlreadyRegistered, isManualEntryRequest: $isManualEntryRequest)';
   }
 }

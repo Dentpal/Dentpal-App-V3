@@ -1,12 +1,17 @@
-// ignore_for_file: deprecated_member_use
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import 'signup_controller.dart';
-import 'package:dentpal/core/app_theme/index.dart';
 
+import 'signup_controller.dart';
+import 'package:dentpal/core/app_theme/app_text_styles.dart';
+import 'package:dentpal/core/app_theme/ink_palette.dart';
+import 'package:dentpal/core/widgets/auth_chrome.dart';
+
+/// Step 2: who you are, and where.
+///
+/// The name fields usually arrive pre-filled from the ID scanned in step 1;
+/// everything else is asked for here.
 class SignupNewStep2PersonalDetails extends StatefulWidget {
   final SignupController controller;
   final VoidCallback onNext;
@@ -20,22 +25,28 @@ class SignupNewStep2PersonalDetails extends StatefulWidget {
   });
 
   @override
-  State<SignupNewStep2PersonalDetails> createState() => _SignupNewStep2PersonalDetailsState();
+  State<SignupNewStep2PersonalDetails> createState() =>
+      _SignupNewStep2PersonalDetailsState();
 }
 
-class _SignupNewStep2PersonalDetailsState extends State<SignupNewStep2PersonalDetails> {
+class _SignupNewStep2PersonalDetailsState
+    extends State<SignupNewStep2PersonalDetails> {
   // Quick access to controller
   SignupController get _controller => widget.controller;
-  
+
+  InkPalette get _ink => InkPalette.of(context);
+
   // FocusNodes for field traversal
   final FocusNode _firstNameFocus = FocusNode();
   final FocusNode _lastNameFocus = FocusNode();
   final FocusNode _contactNumberFocus = FocusNode();
-  
+
   // Track if phone number check is in progress
   bool _isCheckingPhoneNumber = false;
   String? _phoneNumberError;
-  
+
+  static const List<String> _locations = ['NCR', 'Luzon', 'Visayas', 'Mindanao'];
+
   @override
   void dispose() {
     _firstNameFocus.dispose();
@@ -43,24 +54,28 @@ class _SignupNewStep2PersonalDetailsState extends State<SignupNewStep2PersonalDe
     _contactNumberFocus.dispose();
     super.dispose();
   }
-  
+
   // Check if phone number already exists in UserLookup collection
   Future<bool> _checkPhoneNumberExists(String phoneNumber) async {
-    if (phoneNumber.isEmpty || !phoneNumber.startsWith('09') || phoneNumber.length != 11) {
+    if (phoneNumber.isEmpty ||
+        !phoneNumber.startsWith('09') ||
+        phoneNumber.length != 11) {
       return false;
     }
-    
+
     try {
       // Format phone number to international format for checking
-      final formattedNumber = _controller.formatPhoneNumberForFirebase(phoneNumber);
-      
+      final formattedNumber = _controller.formatPhoneNumberForFirebase(
+        phoneNumber,
+      );
+
       // Query UserLookup collection for existing phone number
       final querySnapshot = await FirebaseFirestore.instance
           .collection('UserLookup')
           .where('contactNumber', isEqualTo: formattedNumber)
           .limit(1)
           .get();
-      
+
       return querySnapshot.docs.isNotEmpty;
     } catch (e) {
       // If there's an error checking, return false to allow user to proceed
@@ -68,554 +83,391 @@ class _SignupNewStep2PersonalDetailsState extends State<SignupNewStep2PersonalDe
       return false;
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {
-        FocusScope.of(context).unfocus();
-      },
+      onTap: () => FocusScope.of(context).unfocus(),
       child: Form(
         key: _controller.formKeyStep1,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.only(
-            left: 30.0,
-            right: 30.0,
-            top: 30.0
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Info banner about pre-filled data
-              if (_controller.firstNameController.text.isNotEmpty || _controller.lastNameController.text.isNotEmpty) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.info_outline, color: AppColors.primary, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Your name has been pre-filled from your ID. Please verify and update if needed.',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.primary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
+        child: ListView(
+          padding: AuthMetrics.bodyPadding,
+          children: [
+            // Nothing is filled in from the ID scan any more, so there is no
+            // "we read this off your card, check it" banner to show: the name
+            // below is whatever the dentist typed.
+            const AuthSectionLabel('Your name'),
+            const SizedBox(height: 10),
+            AuthTextField(
+              controller: _controller.firstNameController,
+              focusNode: _firstNameFocus,
+              label: 'First name',
+              prefixIcon: Icons.person_outline,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+              enabled: !_isCheckingPhoneNumber,
+              onFieldSubmitted: (_) =>
+                  FocusScope.of(context).requestFocus(_lastNameFocus),
+              validator: (value) => (value == null || value.isEmpty)
+                  ? 'Please enter your first name'
+                  : null,
+            ),
+            const SizedBox(height: 14),
+            AuthTextField(
+              controller: _controller.lastNameController,
+              focusNode: _lastNameFocus,
+              label: 'Last name',
+              prefixIcon: Icons.person_outline,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+              enabled: !_isCheckingPhoneNumber,
+              onFieldSubmitted: (_) =>
+                  FocusScope.of(context).requestFocus(_contactNumberFocus),
+              validator: (value) => (value == null || value.isEmpty)
+                  ? 'Please enter your last name'
+                  : null,
+            ),
+
+            const SizedBox(height: 24),
+            const AuthSectionLabel('How we reach you'),
+            const SizedBox(height: 10),
+            AuthTextField(
+              controller: _controller.contactNumberController,
+              focusNode: _contactNumberFocus,
+              label: 'Mobile number',
+              hint: '09XXXXXXXXX',
+              prefixIcon: Icons.phone_iphone_outlined,
+              keyboardType: TextInputType.phone,
+              textInputAction: TextInputAction.done,
+              enabled: !_isCheckingPhoneNumber,
+              maxLength: 11,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(11),
               ],
-              
-              Text(
-                'First Name',
-                style: AppTextStyles.labelLarge.copyWith(
-                  fontWeight: FontWeight.w500,
-                ),
+              helperText: 'Sellers use this to reach you about your orders.',
+              onChanged: (value) {
+                setState(() {
+                  _controller.isVerifyButtonEnabled =
+                      value.startsWith('09') && value.length == 11;
+                  _phoneNumberError = null; // Clear error when user types
+                });
+              },
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your contact number';
+                }
+                if (!value.startsWith('09') || value.length != 11) {
+                  return 'Contact number must start with 09';
+                }
+                // Show cached error if phone number already exists
+                if (_phoneNumberError != null) {
+                  return _phoneNumberError;
+                }
+                return null;
+              },
+            ),
+
+            const SizedBox(height: 24),
+            _optionalLabel('About you'),
+            const SizedBox(height: 10),
+            _genderPicker(),
+            const SizedBox(height: 14),
+            _birthdateField(),
+
+            const SizedBox(height: 24),
+            const AuthSectionLabel('Where you practise'),
+            const SizedBox(height: 10),
+            _locationField(),
+
+            const SizedBox(height: 28),
+            AuthPrimaryButton(
+              label: 'Continue',
+              busy: _isCheckingPhoneNumber,
+              onPressed: _validateAndProceed,
+            ),
+            const SizedBox(height: 6),
+            Center(
+              child: AuthQuietButton(
+                label: 'Back',
+                onPressed: _isCheckingPhoneNumber ? null : widget.onBack,
               ),
-              const SizedBox(height: 4),
-              TextFormField(
-                controller: _controller.firstNameController,
-                focusNode: _firstNameFocus,
-                textCapitalization: TextCapitalization.words,
-                textInputAction: TextInputAction.next,
-                onFieldSubmitted: (_) {
-                  FocusScope.of(context).requestFocus(_lastNameFocus);
-                },
-                style: AppTextStyles.inputText,
-                decoration: InputDecoration(
-                  hintText: 'Enter your first name',
-                  hintStyle: AppTextStyles.inputHint,
-                  filled: true,
-                  fillColor: AppColors.grey50,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.primary, width: 2),
-                  ),
-                  errorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.error, width: 2),
-                  ),
-                  focusedErrorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.error, width: 2),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your first name';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              
-              // Last Name field
-              Text(
-                'Last Name',
-                style: AppTextStyles.labelLarge.copyWith(
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 4),
-              TextFormField(
-                controller: _controller.lastNameController,
-                focusNode: _lastNameFocus,
-                textCapitalization: TextCapitalization.words,
-                textInputAction: TextInputAction.next,
-                onFieldSubmitted: (_) {
-                  FocusScope.of(context).requestFocus(_contactNumberFocus);
-                },
-                style: AppTextStyles.inputText,
-                decoration: InputDecoration(
-                  hintText: 'Enter your last name',
-                  hintStyle: AppTextStyles.inputHint,
-                  filled: true,
-                  fillColor: AppColors.grey50,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.primary, width: 2),
-                  ),
-                  errorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.error, width: 2),
-                  ),
-                  focusedErrorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.error, width: 2),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your last name';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              
-              // Contact Number field
-              Text(
-                'Contact Number',
-                style: AppTextStyles.labelLarge.copyWith(
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 4),
-              TextFormField(
-                controller: _controller.contactNumberController,
-                focusNode: _contactNumberFocus,
-                keyboardType: TextInputType.phone,
-                textInputAction: TextInputAction.done,
-                style: AppTextStyles.inputText,
-                maxLength: 11, // Limit to 11 digits
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly, // Only allow digits
-                  LengthLimitingTextInputFormatter(11), // Hard limit to 11 characters
-                ],
-                onChanged: (value) {
-                  // Enable or disable verification button based on input format
-                  setState(() {
-                    _controller.isVerifyButtonEnabled = value.startsWith('09') && value.length == 11;
-                    _phoneNumberError = null; // Clear error when user types
-                  });
-                },
-                decoration: InputDecoration(
-                  hintText: '09XXXXXXXXX',
-                  hintStyle: AppTextStyles.inputHint,
-                  filled: true,
-                  fillColor: AppColors.grey50,
-                  counterText: '', // Hide the character counter
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.primary, width: 2),
-                  ),
-                  errorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.error, width: 2),
-                  ),
-                  focusedErrorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.error, width: 2),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your contact number';
-                  }
-                  if (!value.startsWith('09') || value.length != 11) {
-                    return 'Contact number must start with 09';
-                  }
-                  // Show cached error if phone number already exists
-                  if (_phoneNumberError != null) {
-                    return _phoneNumberError;
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              
-              // Gender field
-              Text.rich(
-                TextSpan(
-                  children: [
-                    TextSpan(
-                      text: 'Gender',
-                      style: AppTextStyles.labelLarge.copyWith(
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    TextSpan(
-                      text: ' (optional)',
-                      style: AppTextStyles.labelLarge.copyWith(
-                        fontWeight: FontWeight.w400,
-                        color: AppColors.grey400,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                decoration: BoxDecoration(
-                  color: AppColors.grey50,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: RadioListTile<String>(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                            title: Text('Male', style: AppTextStyles.bodyMedium),
-                            value: 'Male',
-                            groupValue: _controller.selectedGender,
-                            activeColor: AppColors.primary,
-                            onChanged: (value) {
-                              setState(() {
-                                _controller.selectedGender = value;
-                              });
-                            },
-                          ),
-                        ),
-                        Expanded(
-                          child: RadioListTile<String>(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                            title: Text('Female', style: AppTextStyles.bodyMedium),
-                            value: 'Female',
-                            groupValue: _controller.selectedGender,
-                            activeColor: AppColors.primary,
-                            onChanged: (value) {
-                              setState(() {
-                                _controller.selectedGender = value;
-                              });
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    RadioListTile<String>(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      title: Text('Rather not say', style: AppTextStyles.bodyMedium),
-                      value: 'Not Specified',
-                      groupValue: _controller.selectedGender,
-                      activeColor: AppColors.primary,
-                      onChanged: (value) {
-                        setState(() {
-                          _controller.selectedGender = value;
-                        });
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              
-              // Birthdate field
-              Text.rich(
-                TextSpan(
-                  children: [
-                    TextSpan(
-                      text: 'Birthdate',
-                      style: AppTextStyles.labelLarge.copyWith(
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    TextSpan(
-                      text: ' (optional)',
-                      style: AppTextStyles.labelLarge.copyWith(
-                        fontWeight: FontWeight.w400,
-                        color: AppColors.grey400,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 4),
-              GestureDetector(
-                onTap: () async {
-                  final now = DateTime.now();
-                  final minDate = DateTime(1900, 1, 1);
-                  final initialDate = _controller.selectedBirthdate ?? DateTime(now.year - 18, now.month, now.day);
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: initialDate,
-                    firstDate: minDate,
-                    lastDate: now,
-                    initialEntryMode: DatePickerEntryMode.calendar,
-                    helpText: 'Select your birthdate',
-                    builder: (context, child) {
-                      return Theme(
-                        data: Theme.of(context).copyWith(
-                          colorScheme: Theme.of(context).colorScheme.copyWith(
-                                primary: AppColors.primary,
-                                onPrimary: AppColors.onPrimary,
-                              ),
-                        ),
-                        child: child!,
-                      );
-                    },
-                  );
-                  if (picked != null) {
-                    setState(() {
-                      _controller.selectedBirthdate = picked;
-                    });
-                  }
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: AppColors.grey50,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: _controller.step1BirthdateError != null ? AppColors.error : Colors.transparent,
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        _controller.selectedBirthdate == null
-                            ? 'Select your birthdate'
-                            : DateFormat('MMMM dd, yyyy').format(_controller.selectedBirthdate!),
-                        style: _controller.selectedBirthdate == null 
-                            ? AppTextStyles.inputHint
-                            : AppTextStyles.inputText,
-                      ),
-                      const Icon(Icons.calendar_today, color: AppColors.grey400),
-                    ],
-                  ),
-                ),
-              ),
-              if (_controller.step1BirthdateError != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
-                  child: Text(
-                    _controller.step1BirthdateError!,
-                    style: AppTextStyles.bodySmall.copyWith(color: AppColors.error),
-                  ),
-                ),
-              const SizedBox(height: 16),
-              
-              // Location field
-              Text(
-                'Location',
-                style: AppTextStyles.labelLarge.copyWith(
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 4),
-              DropdownButtonFormField<String>(
-                value: _controller.selectedLocation,
-                decoration: InputDecoration(
-                  hintText: 'Select your location',
-                  hintStyle: AppTextStyles.inputHint,
-                  filled: true,
-                  fillColor: AppColors.grey50,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.primary, width: 2),
-                  ),
-                  errorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.error, width: 2),
-                  ),
-                  focusedErrorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.error, width: 2),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                ),
-                style: AppTextStyles.inputText,
-                icon: const Icon(Icons.arrow_drop_down, color: AppColors.grey400),
-                items: ['NCR', 'Luzon', 'Visayas', 'Mindanao'].map((String location) {
-                  return DropdownMenuItem<String>(
-                    value: location,
-                    child: Text(location),
-                  );
-                }).toList(),
-                onChanged: (String? newValue) {
-                  setState(() {
-                    _controller.selectedLocation = newValue;
-                    _controller.step1LocationError = null;
-                  });
-                },
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please select your location';
-                  }
-                  return null;
-                },
-              ),
-              if (_controller.step1LocationError != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
-                  child: Text(
-                    _controller.step1LocationError!,
-                    style: AppTextStyles.bodySmall.copyWith(color: AppColors.error),
-                  ),
-                ),
-              const SizedBox(height: 30),
-              
-              // Action buttons
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _isCheckingPhoneNumber ? null : widget.onBack,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.grey200,
-                        foregroundColor: AppColors.grey700,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 0,
-                      ),
-                      child: Text(
-                        'Back',
-                        style: AppTextStyles.buttonLarge,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _isCheckingPhoneNumber ? null : _validateAndProceed,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: AppColors.onPrimary,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 0,
-                      ),
-                      child: _isCheckingPhoneNumber
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(AppColors.onPrimary),
-                              ),
-                            )
-                          : Text(
-                              'Proceed',
-                              style: AppTextStyles.buttonLarge,
-                            ),
-                    ),
-                  ),
-                ],
-              ),
-              // Add extra space at the bottom to account for home indicator
-              SizedBox(height: MediaQuery.of(context).padding.bottom > 0 ? 40 : 20),
-            ],
+            ),
+
+            SizedBox(
+              height: MediaQuery.of(context).padding.bottom > 0 ? 24 : 8,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// A section heading whose fields can all be skipped.
+  Widget _optionalLabel(String title) {
+    final ink = _ink;
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          Text(
+            title,
+            style: AppTextStyles.titleMedium.copyWith(
+              color: ink.text,
+              fontWeight: FontWeight.w800,
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'optional',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: ink.faint,
+              fontWeight: FontWeight.w600,
+              fontSize: 11.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Three choices, so they fit on one row of chips rather than three rows of
+  /// radio tiles.
+  Widget _genderPicker() {
+    const options = ['Male', 'Female', 'Not Specified'];
+    const labels = ['Male', 'Female', 'Rather not say'];
+
+    return Row(
+      children: List.generate(options.length, (index) {
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(right: index == options.length - 1 ? 0 : 8),
+            child: _choiceChip(
+              label: labels[index],
+              selected: _controller.selectedGender == options[index],
+              onTap: () => setState(() {
+                // Tapping the current choice clears it — the field is optional,
+                // and a radio group with no way back is a trap.
+                _controller.selectedGender =
+                    _controller.selectedGender == options[index]
+                    ? null
+                    : options[index];
+              }),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _choiceChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    final ink = _ink;
+
+    return Material(
+      color: selected
+          ? ink.emerald.withValues(alpha: ink.isDark ? 0.18 : 0.1)
+          : ink.surface,
+      borderRadius: BorderRadius.circular(AuthMetrics.fieldRadius),
+      child: InkWell(
+        onTap: _isCheckingPhoneNumber ? null : onTap,
+        borderRadius: BorderRadius.circular(AuthMetrics.fieldRadius),
+        child: Container(
+          height: 46,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AuthMetrics.fieldRadius),
+            border: Border.all(
+              color: selected ? ink.emerald : ink.border,
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: selected ? ink.emerald : ink.muted,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              fontSize: 12.5,
+            ),
           ),
         ),
       ),
     );
   }
-  
+
+  /// A tap target wearing the same outline as the text fields, so the row of
+  /// inputs stays one column of identical shapes.
+  Widget _birthdateField() {
+    final ink = _ink;
+    final picked = _controller.selectedBirthdate;
+
+    return InkWell(
+      onTap: _isCheckingPhoneNumber ? null : _pickBirthdate,
+      borderRadius: BorderRadius.circular(AuthMetrics.fieldRadius),
+      child: InputDecorator(
+        decoration: authInputDecoration(
+          context,
+          label: 'Birthdate',
+          prefixIcon: Icon(
+            Icons.cake_outlined,
+            size: 19,
+            color: ink.emerald,
+          ),
+          suffixIcon: Icon(
+            Icons.calendar_today_outlined,
+            size: 17,
+            color: ink.faint,
+          ),
+        ).copyWith(
+          // Only float the label once there is a date under it; an empty field
+          // should read as a prompt, not as a labelled blank.
+          floatingLabelBehavior: picked == null
+              ? FloatingLabelBehavior.never
+              : FloatingLabelBehavior.always,
+          errorText: _controller.step1BirthdateError,
+        ),
+        child: Text(
+          picked == null
+              ? 'Select your birthdate'
+              : DateFormat('MMMM d, yyyy').format(picked),
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: picked == null ? ink.faint : ink.text,
+            fontSize: 14,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickBirthdate() async {
+    final ink = _ink;
+    final now = DateTime.now();
+    final initialDate =
+        _controller.selectedBirthdate ??
+        DateTime(now.year - 18, now.month, now.day);
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: DateTime(1900, 1, 1),
+      lastDate: now,
+      initialEntryMode: DatePickerEntryMode.calendar,
+      helpText: 'Select your birthdate',
+      builder: (context, child) {
+        // The picker is a Material surface, so it needs the appearance handed
+        // to it explicitly — the app's own ThemeData is still light-only.
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme:
+                (ink.isDark
+                        ? const ColorScheme.dark()
+                        : const ColorScheme.light())
+                    .copyWith(
+                      primary: ink.emerald,
+                      onPrimary: ink.onEmerald,
+                      surface: ink.surface,
+                      onSurface: ink.text,
+                    ),
+            dialogTheme: DialogThemeData(backgroundColor: ink.surface),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null && mounted) {
+      setState(() {
+        _controller.selectedBirthdate = picked;
+        _controller.step1BirthdateError = null;
+      });
+    }
+  }
+
+  Widget _locationField() {
+    final ink = _ink;
+
+    return DropdownButtonFormField<String>(
+      initialValue: _controller.selectedLocation,
+      isExpanded: true,
+      decoration: authInputDecoration(
+        context,
+        label: 'Location',
+        prefixIcon: Icon(
+          Icons.location_on_outlined,
+          size: 19,
+          color: ink.emerald,
+        ),
+      ).copyWith(errorText: _controller.step1LocationError),
+      style: AppTextStyles.bodyMedium.copyWith(color: ink.text, fontSize: 14),
+      dropdownColor: ink.surface,
+      borderRadius: BorderRadius.circular(AuthMetrics.fieldRadius),
+      icon: Icon(Icons.expand_more, color: ink.faint),
+      items: _locations
+          .map(
+            (location) =>
+                DropdownMenuItem<String>(value: location, child: Text(location)),
+          )
+          .toList(),
+      onChanged: _isCheckingPhoneNumber
+          ? null
+          : (String? newValue) {
+              setState(() {
+                _controller.selectedLocation = newValue;
+                _controller.step1LocationError = null;
+              });
+            },
+      validator: (value) => (value == null || value.isEmpty)
+          ? 'Please select your location'
+          : null,
+    );
+  }
+
   void _validateAndProceed() async {
     final valid = _controller.formKeyStep1.currentState?.validate() ?? false;
-    
+
     setState(() {
       _controller.step1GenderError = null;
       _controller.step1BirthdateError = null;
       _controller.step1LocationError = null;
     });
-    
-    if (valid) {
-      // Check if phone number already exists in UserLookup
+
+    if (!valid) return;
+
+    // Check if phone number already exists in UserLookup
+    setState(() {
+      _isCheckingPhoneNumber = true;
+      _phoneNumberError = null;
+    });
+
+    final phoneExists = await _checkPhoneNumberExists(_controller.contactNumber);
+
+    if (!mounted) return;
+
+    setState(() {
+      _isCheckingPhoneNumber = false;
+    });
+
+    if (phoneExists) {
       setState(() {
-        _isCheckingPhoneNumber = true;
-        _phoneNumberError = null;
+        _phoneNumberError = 'This phone number is already registered';
       });
-      
-      final phoneExists = await _checkPhoneNumberExists(_controller.contactNumber);
-      
-      setState(() {
-        _isCheckingPhoneNumber = false;
-      });
-      
-      if (phoneExists) {
-        setState(() {
-          _phoneNumberError = 'This phone number is already registered';
-        });
-        // Trigger validation to show the error
-        _controller.formKeyStep1.currentState?.validate();
-        return;
-      }
-      
-      // All validations passed
-      _controller.step1GenderError = null;
-      _controller.step1BirthdateError = null;
-      _controller.step1LocationError = null;
-      widget.onNext();
+      // Trigger validation to show the error
+      _controller.formKeyStep1.currentState?.validate();
+      return;
     }
+
+    // All validations passed
+    widget.onNext();
   }
 }

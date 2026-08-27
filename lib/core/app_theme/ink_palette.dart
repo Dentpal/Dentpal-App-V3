@@ -111,6 +111,15 @@ class InkPalette {
     ),
   );
 
+  /// The palette for a surface that is dark whatever the user chose.
+  ///
+  /// A camera viewfinder is the case this exists for: you cannot tint a live
+  /// video feed to match a light appearance, so the chrome over it is always
+  /// dark and its accents have to be the tones that read on black. Taking them
+  /// from here rather than writing the hex codes into the page keeps one
+  /// definition of the brand green.
+  static const InkPalette onDarkSurface = _dark;
+
   /// Follows the user's [ThemeController] choice, falling back to the OS
   /// setting when that choice is "Auto".
   ///

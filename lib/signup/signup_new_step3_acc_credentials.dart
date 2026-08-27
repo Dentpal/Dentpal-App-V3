@@ -6,8 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'signup_controller.dart';
-import 'package:dentpal/login_page.dart';
-import 'package:dentpal/core/app_theme/index.dart';
+import 'package:dentpal/core/app_theme/ink_palette.dart';
+import 'package:dentpal/core/widgets/auth_chrome.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/utils/signup_state.dart';
 
@@ -158,332 +158,164 @@ class _SignupNewStep3AccCredentialsState extends State<SignupNewStep3AccCredenti
     }
   }
 
-  Widget _buildPasswordRequirement(String text, bool met) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2.0),
-      child: Row(
-        children: [
-          Icon(
-            met ? Icons.check_circle : Icons.radio_button_unchecked,
-            color: met ? AppColors.success : AppColors.grey400,
-            size: 16,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: AppTextStyles.bodySmall.copyWith(
-                color: met ? AppColors.success : AppColors.grey600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  InkPalette get _ink => InkPalette.of(context);
+
+  bool get _passwordsMatch =>
+      _controller.passwordController.text.isNotEmpty &&
+      _controller.confirmPasswordController.text.isNotEmpty &&
+      _controller.passwordController.text.trim() ==
+          _controller.confirmPasswordController.text.trim();
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {
-        FocusScope.of(context).unfocus();
-      },
+      onTap: () => FocusScope.of(context).unfocus(),
       child: Form(
         key: _controller.formKeyStep2,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.only(
-            left: 30.0,
-            right: 30.0,
-            top: 30.0
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Email field
-              Text(
-                'Email Address',
-                style: AppTextStyles.labelLarge.copyWith(
-                  fontWeight: FontWeight.w500,
+        child: ListView(
+          padding: AuthMetrics.bodyPadding,
+          children: [
+            AuthBanner(
+              icon: Icons.mark_email_read_outlined,
+              tone: _ink.emerald,
+              message:
+                  'We will send a confirmation link to this address. Your '
+                  'account opens once you follow it.',
+            ),
+
+            const SizedBox(height: 22),
+            const AuthSectionLabel('Sign-in email'),
+            const SizedBox(height: 10),
+            AuthTextField(
+              controller: _controller.emailController,
+              focusNode: _emailFocus,
+              label: 'Email address',
+              hint: 'you@clinic.com',
+              prefixIcon: Icons.alternate_email,
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.next,
+              enabled: !_isCheckingEmail,
+              autofillHints: const [AutofillHints.newUsername],
+              onFieldSubmitted: (_) =>
+                  FocusScope.of(context).requestFocus(_passwordFocus),
+              onChanged: (value) {
+                // Clear error when user types
+                setState(() {
+                  _emailError = null;
+                });
+              },
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your email address';
+                }
+                if (!_isValidEmailFormat(value.trim())) {
+                  return 'Please enter a valid email address';
+                }
+                // Show cached error if email already exists
+                if (_emailError != null) {
+                  return _emailError;
+                }
+                return null;
+              },
+            ),
+
+            const SizedBox(height: 24),
+            const AuthSectionLabel('Password'),
+            const SizedBox(height: 10),
+            AuthTextField(
+              controller: _controller.passwordController,
+              focusNode: _passwordFocus,
+              label: 'Password',
+              prefixIcon: Icons.lock_outline,
+              obscureText: !_isPasswordVisible,
+              textInputAction: TextInputAction.next,
+              enabled: !_isCheckingEmail,
+              autofillHints: const [AutofillHints.newPassword],
+              onFieldSubmitted: (_) =>
+                  FocusScope.of(context).requestFocus(_confirmPasswordFocus),
+              suffixIcon: AuthPasswordToggle(
+                visible: _isPasswordVisible,
+                onToggle: () =>
+                    setState(() => _isPasswordVisible = !_isPasswordVisible),
+              ),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter a password';
+                }
+                if (!_controller.hasUppercase ||
+                    !_controller.hasLowercase ||
+                    !_controller.hasNumber ||
+                    !_controller.hasSpecialCharacter ||
+                    !_controller.hasMinLength) {
+                  return 'Password does not meet the requirements below';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 14),
+            AuthTextField(
+              controller: _controller.confirmPasswordController,
+              focusNode: _confirmPasswordFocus,
+              label: 'Confirm password',
+              prefixIcon: Icons.lock_outline,
+              obscureText: !_isConfirmPasswordVisible,
+              textInputAction: TextInputAction.done,
+              enabled: !_isCheckingEmail,
+              autofillHints: const [AutofillHints.newPassword],
+              suffixIcon: AuthPasswordToggle(
+                visible: _isConfirmPasswordVisible,
+                onToggle: () => setState(
+                  () => _isConfirmPasswordVisible = !_isConfirmPasswordVisible,
                 ),
               ),
-              const SizedBox(height: 4),
-              TextFormField(
-                controller: _controller.emailController,
-                focusNode: _emailFocus,
-                keyboardType: TextInputType.emailAddress,
-                textInputAction: TextInputAction.next,
-                onFieldSubmitted: (_) {
-                  FocusScope.of(context).requestFocus(_passwordFocus);
-                },
-                onChanged: (value) {
-                  // Clear error when user types
-                  setState(() {
-                    _emailError = null;
-                  });
-                },
-                style: AppTextStyles.inputText,
-                decoration: InputDecoration(
-                  hintText: 'Enter your email address',
-                  hintStyle: AppTextStyles.inputHint,
-                  filled: true,
-                  fillColor: AppColors.grey50,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.primary, width: 2),
-                  ),
-                  errorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.error, width: 2),
-                  ),
-                  focusedErrorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.error, width: 2),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              validator: (value) => value != _controller.passwordController.text
+                  ? 'Passwords do not match'
+                  : null,
+            ),
+
+            const SizedBox(height: 16),
+            AuthChecklistCard(
+              title: 'Requirements',
+              rows: [
+                AuthCheckRow(
+                  label: 'At least 8 characters',
+                  met: _controller.hasMinLength,
                 ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your email address';
-                  }
-                  if (!_isValidEmailFormat(value.trim())) {
-                    return 'Please enter a valid email address';
-                  }
-                  // Show cached error if email already exists
-                  if (_emailError != null) {
-                    return _emailError;
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              
-              // Password field
-              Text(
-                'Password',
-                style: AppTextStyles.labelLarge.copyWith(
-                  fontWeight: FontWeight.w500,
+                AuthCheckRow(
+                  label: 'An uppercase letter',
+                  met: _controller.hasUppercase,
                 ),
-              ),
-              const SizedBox(height: 4),
-              TextFormField(
-                controller: _controller.passwordController,
-                focusNode: _passwordFocus,
-                obscureText: !_isPasswordVisible,
-                textInputAction: TextInputAction.next,
-                onFieldSubmitted: (_) {
-                  FocusScope.of(context).requestFocus(_confirmPasswordFocus);
-                },
-                style: AppTextStyles.inputText,
-                decoration: InputDecoration(
-                  hintText: 'Create a strong password',
-                  hintStyle: AppTextStyles.inputHint,
-                  filled: true,
-                  fillColor: AppColors.grey50,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.primary, width: 2),
-                  ),
-                  errorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.error, width: 2),
-                  ),
-                  focusedErrorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.error, width: 2),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
-                      color: AppColors.grey400,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _isPasswordVisible = !_isPasswordVisible;
-                      });
-                    },
-                  ),
+                AuthCheckRow(
+                  label: 'A lowercase letter',
+                  met: _controller.hasLowercase,
                 ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter a password';
-                  }
-                  if (!_controller.hasUppercase || !_controller.hasLowercase || !_controller.hasNumber || 
-                      !_controller.hasSpecialCharacter || !_controller.hasMinLength) {
-                    return 'Password does not meet requirements';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              
-              // Confirm Password field
-              Text(
-                'Confirm Password',
-                style: AppTextStyles.labelLarge.copyWith(
-                  fontWeight: FontWeight.w500,
+                AuthCheckRow(label: 'A number', met: _controller.hasNumber),
+                AuthCheckRow(
+                  label: 'A special character',
+                  met: _controller.hasSpecialCharacter,
                 ),
+                AuthCheckRow(label: 'Both entries match', met: _passwordsMatch),
+              ],
+            ),
+
+            const SizedBox(height: 28),
+            AuthPrimaryButton(
+              label: 'Create account',
+              busy: _isCheckingEmail,
+              onPressed: _processSubmission,
+            ),
+            const SizedBox(height: 6),
+            Center(
+              child: AuthQuietButton(
+                label: 'Back',
+                onPressed: _isCheckingEmail ? null : widget.onBack,
               ),
-              const SizedBox(height: 4),
-              TextFormField(
-                controller: _controller.confirmPasswordController,
-                focusNode: _confirmPasswordFocus,
-                obscureText: !_isConfirmPasswordVisible,
-                textInputAction: TextInputAction.done,
-                style: AppTextStyles.inputText,
-                decoration: InputDecoration(
-                  hintText: 'Re-enter your password',
-                  hintStyle: AppTextStyles.inputHint,
-                  filled: true,
-                  fillColor: AppColors.grey50,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.primary, width: 2),
-                  ),
-                  errorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.error, width: 2),
-                  ),
-                  focusedErrorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.error, width: 2),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _isConfirmPasswordVisible ? Icons.visibility : Icons.visibility_off,
-                      color: AppColors.grey400,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _isConfirmPasswordVisible = !_isConfirmPasswordVisible;
-                      });
-                    },
-                  ),
-                ),
-                validator: (value) {
-                  if (value != _controller.passwordController.text) {
-                    return 'Passwords do not match';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 20),
-              
-              // Password requirements section
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.grey50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.grey200),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Password Requirements:',
-                      style: AppTextStyles.labelMedium.copyWith(
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.grey700,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _buildPasswordRequirement('At least 8 characters', _controller.hasMinLength),
-                    _buildPasswordRequirement('At least 1 uppercase letter', _controller.hasUppercase),
-                    _buildPasswordRequirement('At least 1 lowercase letter', _controller.hasLowercase),
-                    _buildPasswordRequirement('At least 1 number', _controller.hasNumber),
-                    _buildPasswordRequirement('At least 1 special character', _controller.hasSpecialCharacter),
-                    _buildPasswordRequirement(
-                      'Passwords must match',
-                      _controller.passwordController.text.isNotEmpty &&
-                      _controller.confirmPasswordController.text.isNotEmpty &&
-                      _controller.passwordController.text.trim() == _controller.confirmPasswordController.text.trim()
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 30),
-              
-              // Action buttons
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _isCheckingEmail ? null : widget.onBack,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.grey200,
-                        foregroundColor: AppColors.grey700,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 0,
-                      ),
-                      child: Text(
-                        'Back',
-                        style: AppTextStyles.buttonLarge,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _isCheckingEmail ? null : _processSubmission,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: AppColors.onPrimary,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 0,
-                      ),
-                      child: _isCheckingEmail
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(AppColors.onPrimary),
-                              ),
-                            )
-                          : Text(
-                              'Complete Signup',
-                              style: AppTextStyles.buttonLarge,
-                            ),
-                    ),
-                  ),
-                ],
-              ),
-              // Add extra space at the bottom to account for home indicator
-              SizedBox(height: MediaQuery.of(context).padding.bottom > 0 ? 40 : 20),
-            ],
-          ),
+            ),
+
+            SizedBox(
+              height: MediaQuery.of(context).padding.bottom > 0 ? 24 : 8,
+            ),
+          ],
         ),
       ),
     );
@@ -505,7 +337,9 @@ class _SignupNewStep3AccCredentialsState extends State<SignupNewStep3AccCredenti
     });
     
     final emailExists = await _checkEmailExists(_controller.email);
-    
+
+    if (!mounted) return;
+
     setState(() {
       _isCheckingEmail = false;
     });
@@ -519,7 +353,7 @@ class _SignupNewStep3AccCredentialsState extends State<SignupNewStep3AccCredenti
     }
     
     // Create account directly without phone and face verification
-    _showLoadingOverlay(context, 'Completing registration...');
+    showAuthLoadingOverlay(context, 'Completing registration…');
     
     try {
       // Create with email/password
@@ -556,10 +390,9 @@ class _SignupNewStep3AccCredentialsState extends State<SignupNewStep3AccCredenti
         SignupState.isInSignupFlow = false;
         AppLogger.d('Registration complete, cleared isInSignupFlow flag');
         
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const LoginPage()),
-          (route) => false,
-        );
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil('/login', (route) => false);
         
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _showEmailVerificationDialog();
@@ -607,18 +440,13 @@ class _SignupNewStep3AccCredentialsState extends State<SignupNewStep3AccCredenti
       
       // Show error dialog
       if (mounted) {
-        showDialog(
+        showAuthDialog<void>(
           context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Registration Failed'),
-            content: Text(errorMessage),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('OK'),
-              ),
-            ],
-          ),
+          icon: Icons.error_outline,
+          tone: _ink.danger,
+          title: 'Registration failed',
+          message: errorMessage,
+          barrierDismissible: true,
         );
       }
     }
@@ -668,6 +496,16 @@ class _SignupNewStep3AccCredentialsState extends State<SignupNewStep3AccCredenti
         AppLogger.d('Firebase Auth profile updated with photoURL');
       }
       
+      // A licence that was typed in has not been checked against anything, so
+      // the record says so rather than looking identical to a scanned one. Staff
+      // filter on `idVerification.status` to find the ones needing a look.
+      final idVerification = {
+        'method': _controller.idEnteredManually ? 'manual' : 'scan',
+        'status': _controller.idEnteredManually ? 'pending_review' : 'verified',
+        'registrationNo': registrationNo,
+        'recordedAt': FieldValue.serverTimestamp(),
+      };
+
       await FirebaseFirestore.instance.collection('User').doc(user.uid).set({
         'displayName': '${_controller.firstName} ${_controller.lastName}',
         'photoURL': photoURL,
@@ -682,6 +520,7 @@ class _SignupNewStep3AccCredentialsState extends State<SignupNewStep3AccCredenti
         'location': _controller.location,
         'RegistrationNo': registrationNo,
         'specialty': _controller.selectedSpecialties,
+        'idVerification': idVerification,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
         'role': 'buyer',
@@ -691,6 +530,7 @@ class _SignupNewStep3AccCredentialsState extends State<SignupNewStep3AccCredenti
         'contactNumber': _controller.formattedPhoneNumber,
         'email': _controller.email,
         'RegistrationNo': registrationNo, // PRC Registration Number for duplicate check
+        'idVerificationStatus': idVerification['status'],
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -704,110 +544,14 @@ class _SignupNewStep3AccCredentialsState extends State<SignupNewStep3AccCredenti
 
   // Show email verification dialog
   void _showEmailVerificationDialog() {
-    showDialog(
+    showAuthDialog<void>(
       context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          backgroundColor: AppColors.surface,
-          child: Padding(
-            padding: const EdgeInsets.all(30.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(40),
-                  ),
-                  child: Icon(
-                    Icons.email_outlined,
-                    size: 40,
-                    color: AppColors.primary,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Email Verification Sent!',
-                  style: AppTextStyles.headlineSmall.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Please check your inbox and verify your email address before logging in.',
-                  textAlign: TextAlign.center,
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.grey600,
-                  ),
-                ),
-                const SizedBox(height: 30),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: AppColors.onPrimary,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: Text(
-                      'Got it',
-                      style: AppTextStyles.buttonLarge,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  void _showLoadingOverlay(BuildContext context, String message) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return Dialog(
-          elevation: 0,
-          backgroundColor: Colors.transparent,
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                  strokeWidth: 3,
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  message,
-                  style: AppTextStyles.bodyLarge.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+      icon: Icons.mark_email_read_outlined,
+      tone: _ink.emerald,
+      title: 'Check your inbox',
+      message:
+          'We have sent a confirmation link to ${_controller.email}. Follow it, '
+          'then sign in.',
     );
   }
 }

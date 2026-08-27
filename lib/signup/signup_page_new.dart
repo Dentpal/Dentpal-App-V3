@@ -3,7 +3,7 @@ import 'signup_new_step1_idverification.dart';
 import 'signup_new_step2_personal_details.dart';
 import 'signup_new_step3_acc_credentials.dart';
 import 'signup_controller.dart';
-import 'package:dentpal/core/app_theme/index.dart';
+import 'package:dentpal/core/widgets/auth_chrome.dart';
 import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/utils/signup_state.dart';
 
@@ -138,171 +138,72 @@ class _SignUpPageNewState extends State<SignUpPageNew> with WidgetsBindingObserv
           previousPage();
         }
       },
-      child: Scaffold(
-        body: Container(
-          decoration: const BoxDecoration(gradient: AppGradients.teal),
-          child: SafeArea(
-            // Don't apply bottom padding to allow content to extend to the bottom edge
-            bottom: false,
-            child: Column(
-              children: [
-                // Top section with step indicator and title
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Step indicator - 3 steps
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          _buildStepIndicator(0),
-                          _buildStepIndicator(1),
-                          _buildStepIndicator(2),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Title - dynamic based on current step
-                      Text(
-                        _getStepTitle(),
-                        style: AppTextStyles.headlineMedium.copyWith(
-                          color: AppColors.surface,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _getStepDescription(),
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.surface.withValues(alpha: 0.9),
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Bottom section with signup form
-                Expanded(
-                  child: Container(
-                    width: double.infinity,
-                    decoration: const BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(30),
-                        topRight: Radius.circular(30),
-                        bottomLeft: Radius.zero,
-                        bottomRight: Radius.zero,
-                      ),
-                    ),
-                    child: Column(
-                      children: [
-                        // Page view - 3 steps
-                        Expanded(
-                          child: PageView(
-                            controller: _pageController,
-                            physics: const NeverScrollableScrollPhysics(),
-                            onPageChanged: (index) {
-                              AppLogger.d('SignUpPageNew page changed to: $index');
-                              setState(() {
-                                _currentPage = index;
-                              });
-                            },
-                            children: [
-                              SignupNewStep1IdVerification(
-                                controller: _controller,
-                                onNext: nextPage,
-                              ),
-                              SignupNewStep2PersonalDetails(
-                                controller: _controller,
-                                onNext: nextPage,
-                                onBack: previousPage,
-                              ),
-                              SignupNewStep3AccCredentials(
-                                controller: _controller,
-                                onBack: previousPage,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+      child: AuthScaffold(
+        header: AuthHeader(
+          title: _stepTitle,
+          subtitle: 'Step ${_currentPage + 1} of $_stepCount — $_stepBlurb',
+          // The arrow is always present: on the first step it leaves signup,
+          // on the others it walks back through the PageView. Wiring it here
+          // rather than letting the header pop the route keeps both meanings in
+          // one place, next to the PopScope that already handles the hardware
+          // back button.
+          showBack: true,
+          onBack: _handleBack,
+          bottom: AuthStepBar(total: _stepCount, current: _currentPage),
+        ),
+        body: PageView(
+          controller: _pageController,
+          physics: const NeverScrollableScrollPhysics(),
+          onPageChanged: (index) {
+            AppLogger.d('SignUpPageNew page changed to: $index');
+            setState(() {
+              _currentPage = index;
+            });
+          },
+          children: [
+            SignupNewStep1IdVerification(
+              controller: _controller,
+              onNext: nextPage,
             ),
-          ),
+            SignupNewStep2PersonalDetails(
+              controller: _controller,
+              onNext: nextPage,
+              onBack: previousPage,
+            ),
+            SignupNewStep3AccCredentials(
+              controller: _controller,
+              onBack: previousPage,
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildStepIndicator(int step) {
-    final bool isActive = _currentPage >= step;
-    return Expanded(
-      child: Column(
-        children: [
-          Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: isActive ? AppColors.surface : AppColors.surface.withValues(alpha: 0.3),
-              border: Border.all(
-                color: AppColors.surface,
-                width: 1,
-              ),
-            ),
-            child: Center(
-              child: Text(
-                '${step + 1}',
-                style: TextStyle(
-                  color: isActive ? AppColors.primary : AppColors.surface,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Step ${step + 1}',
-            style: TextStyle(
-              color: AppColors.surface,
-              fontSize: 12,
-              fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _getStepTitle() {
-    switch (_currentPage) {
-      case 0:
-        return 'ID Verification';
-      case 1:
-        return 'Personal Details';
-      case 2:
-        return 'Account Setup';
-      default:
-        return 'ID Verification';
+  void _handleBack() {
+    if (_currentPage == 0) {
+      SignupState.isInSignupFlow = false;
+      AppLogger.d('SignUpPageNew: User exited signup from first step');
+      Navigator.of(context).pop();
+    } else {
+      previousPage();
     }
   }
 
-  String _getStepDescription() {
-    switch (_currentPage) {
-      case 0:
-        return 'Verify your identity with a valid PRC ID.';
-      case 1:
-        return 'Enter your personal information.';
-      case 2:
-        return 'Create your account credentials and verify your phone.';
-      default:
-        return 'Verify your identity with a valid PRC ID.';
-    }
-  }
+  static const int _stepCount = 3;
+
+  String get _stepTitle => switch (_currentPage) {
+    0 => 'Verify your ID',
+    1 => 'Your details',
+    2 => 'Create your account',
+    _ => 'Verify your ID',
+  };
+
+  /// The half-sentence that follows "Step n of 3 —" in the header.
+  String get _stepBlurb => switch (_currentPage) {
+    0 => 'scan your PRC ID',
+    1 => 'tell us who you are',
+    2 => 'set your email and password',
+    _ => 'scan your PRC ID',
+  };
 }

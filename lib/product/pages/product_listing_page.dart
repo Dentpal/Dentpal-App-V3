@@ -28,7 +28,6 @@ import 'package:dentpal/utils/navigation_utils.dart';
 import 'categories_page.dart';
 import 'product_detail_page.dart';
 import '../services/product_search_service.dart';
-import '../../login_page.dart';
 import 'package:flutter/services.dart';
 import '../../profile/pages/orders_page.dart';
 import '../../profile/pages/order_details_page.dart';
@@ -982,9 +981,7 @@ class _ProductListingPageState extends State<ProductListingPage>
             ElevatedButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (context) => const LoginPage()),
-                );
+                Navigator.of(context).pushNamed('/login');
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: ink.emerald,
