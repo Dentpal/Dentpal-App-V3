@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../config/app_config.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import '../../core/app_theme/ink_palette.dart';
 import '../../core/app_theme/theme_utils.dart';
@@ -116,7 +117,9 @@ class _RewardPointsPageState extends State<RewardPointsPage>
       ..addListener(_onTabChanged);
 
     _userData = widget.userData;
-    if (_userData == null) _loadUserData();
+    // Nothing on the held-back placeholder reads the balance, so don't pay for
+    // the document.
+    if (_userData == null && AppConfig.rewardPointsPageEnabled) _loadUserData();
   }
 
   /// The cold-load path: opened at '/profile/rewards' rather than pushed from
@@ -207,6 +210,8 @@ class _RewardPointsPageState extends State<RewardPointsPage>
 
   @override
   Widget build(BuildContext context) {
+    if (!AppConfig.rewardPointsPageEnabled) return _buildComingSoon();
+
     return Scaffold(
       backgroundColor: ink.bg,
       body: SafeArea(
@@ -233,6 +238,88 @@ class _RewardPointsPageState extends State<RewardPointsPage>
                             _buildRewardsTab(),
                           ],
                         ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Held back ────────────────────────────────────────────────────────────
+
+  /// What the page shows while [AppConfig.rewardPointsPageEnabled] is off.
+  ///
+  /// The route stays alive rather than being torn out, so a bookmarked or
+  /// pasted '/profile/rewards' link lands somewhere that explains itself
+  /// instead of on a dead route. Points keep accruing behind this — the
+  /// completed-order trigger credits them either way — so the copy says so
+  /// rather than implying the programme is off.
+  Widget _buildComingSoon() {
+    return Scaffold(
+      backgroundColor: ink.bg,
+      body: SafeArea(
+        bottom: false,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: AppLayout.maxContentWidth,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const AppPageHeader(
+                  title: 'Reward points',
+                  subtitle: 'Coming soon',
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppLayout.gutter,
+                    ),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 64,
+                            height: 64,
+                            decoration: BoxDecoration(
+                              color: ink.amber.withValues(
+                                alpha: ink.isDark ? 0.18 : 0.12,
+                              ),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Icon(
+                              Icons.star_outline,
+                              color: ink.amber,
+                              size: 30,
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          Text(
+                            'Rewards are on the way',
+                            textAlign: TextAlign.center,
+                            style: AppTextStyles.headlineSmall.copyWith(
+                              color: ink.text,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'You keep earning points on every completed order. '
+                            'We are still building the perks they unlock, so '
+                            'this page is closed until they are ready.',
+                            textAlign: TextAlign.center,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: _muted,
+                              height: 1.45,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),

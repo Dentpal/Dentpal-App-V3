@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../config/app_config.dart';
 import '../../../core/app_theme/app_colors.dart';
 import '../../../core/app_theme/app_text_styles.dart';
 
@@ -152,7 +153,7 @@ class DataPrivacyPage extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'If you have any questions about our data privacy practices, please contact us at privacy@dentpal.com',
+                        'If you have any questions about our data privacy practices, please contact us at ${AppConfig.contactEmail}',
                         style: AppTextStyles.bodyMedium.copyWith(
                           color: AppColors.onSurface.withValues(alpha: 0.8),
                         ),

@@ -59,3 +59,6 @@ export { notifyOrderCancellationEmail } from './notifyOrderCancellationEmail';
 
 // Export the Resend email notification triggered when an Order has a return/refund requested
 export { notifyOrderReturnRefundEmail } from './notifyOrderReturnRefundEmail';
+
+// Export the trigger that credits buyers with reward points on order completion
+export { awardRewardPointsOnOrderCompletion } from './awardRewardPoints';

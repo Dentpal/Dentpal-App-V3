@@ -71,6 +71,13 @@ class LoadingButton extends StatelessWidget {
   final EdgeInsetsGeometry? padding;
   final TextStyle? textStyle;
 
+  /// Colours for callers that draw on the marketplace palette. Left null the
+  /// button keeps taking its colours from the Material theme, which is what
+  /// every older caller expects.
+  final Color? backgroundColor;
+  final Color? foregroundColor;
+  final BorderRadius? borderRadius;
+
   const LoadingButton({
     super.key,
     required this.text,
@@ -79,6 +86,9 @@ class LoadingButton extends StatelessWidget {
     this.onPressed,
     this.padding,
     this.textStyle,
+    this.backgroundColor,
+    this.foregroundColor,
+    this.borderRadius,
   });
 
   @override
@@ -87,17 +97,25 @@ class LoadingButton extends StatelessWidget {
       onPressed: isLoading ? null : onPressed,
       style: ElevatedButton.styleFrom(
         padding: padding ?? const EdgeInsets.symmetric(vertical: 12),
+        backgroundColor: backgroundColor,
+        foregroundColor: foregroundColor,
+        elevation: backgroundColor == null ? null : 0,
+        shape: borderRadius == null
+            ? null
+            : RoundedRectangleBorder(borderRadius: borderRadius!),
       ),
       child: isLoading
           ? Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const SizedBox(
+                SizedBox(
                   width: 16,
                   height: 16,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      foregroundColor ?? Colors.white,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),

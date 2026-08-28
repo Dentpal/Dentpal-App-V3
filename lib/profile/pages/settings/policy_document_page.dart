@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/app_theme/app_text_styles.dart';
 import '../../../core/app_theme/ink_palette.dart';
-import '../../../core/app_theme/theme_utils.dart';
+import '../../../core/widgets/public_page_chrome.dart';
 import '../../../product/widgets/loading_skeletons.dart';
 
 /// A long-form policy document — terms, privacy, anything else the platform
@@ -10,7 +10,9 @@ import '../../../product/widgets/loading_skeletons.dart';
 ///
 /// Terms and Privacy were two files that differed only in their title and which
 /// service call they made, so the screen itself lives here once and each page
-/// supplies its own [loader].
+/// supplies its own [loader]. The public `/privacy-policy` and
+/// `/terms-of-service` routes are the same screen again, landed on without an
+/// account — they only add a [footer] saying who to write to.
 class PolicyDocumentPage extends StatefulWidget {
   const PolicyDocumentPage({
     super.key,
@@ -20,6 +22,7 @@ class PolicyDocumentPage extends StatefulWidget {
     required this.unavailableMessage,
     required this.failureMessage,
     this.summary,
+    this.footer,
   });
 
   /// Screen title, e.g. 'Terms & Conditions'.
@@ -38,6 +41,11 @@ class PolicyDocumentPage extends StatefulWidget {
   /// One line under the title saying what the document is for.
   final String? summary;
 
+  /// Closes the document. Defaults to a one-line note pointing at support; the
+  /// public routes pass a [PublicContactCard] instead, because someone who
+  /// arrived from a Play Store link has no support screen to reach for.
+  final Widget? footer;
+
   @override
   State<PolicyDocumentPage> createState() => _PolicyDocumentPageState();
 }
@@ -46,10 +54,6 @@ class _PolicyDocumentPageState extends State<PolicyDocumentPage> {
   String? _content;
   bool _isLoading = true;
   String? _errorMessage;
-
-  /// A reading column, not a page-wide one: long prose set across a full
-  /// desktop window is unreadable.
-  static const double _kMaxContentWidth = 760;
 
   @override
   void initState() {
@@ -94,80 +98,15 @@ class _PolicyDocumentPageState extends State<PolicyDocumentPage> {
 
   @override
   Widget build(BuildContext context) {
-    final horizontalPadding = context.isWideLayout ? 24.0 : 16.0;
+    final horizontalPadding = PublicPageMetrics.gutterOf(context);
 
-    return Scaffold(
-      backgroundColor: ink.bg,
-      body: SafeArea(
-        bottom: false,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: _kMaxContentWidth),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHeader(horizontalPadding),
-                Expanded(child: _buildBody(horizontalPadding)),
-              ],
-            ),
-          ),
-        ),
+    return PublicPageScaffold(
+      header: PublicPageHeader(
+        title: widget.title,
+        summary: widget.summary,
+        icon: widget.icon,
       ),
-    );
-  }
-
-  Widget _buildHeader(double horizontalPadding) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        horizontalPadding - 8,
-        4,
-        horizontalPadding,
-        10,
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            onPressed: () => Navigator.of(context).maybePop(),
-            icon: Icon(Icons.arrow_back, color: ink.text),
-            tooltip: 'Back',
-          ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.title,
-                  style: AppTextStyles.titleLarge.copyWith(
-                    color: ink.text,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 24,
-                  ),
-                ),
-                if (widget.summary != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    widget.summary!,
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: ink.text.withValues(alpha: 0.5),
-                      fontSize: 12.5,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: ink.emerald.withValues(alpha: ink.isDark ? 0.16 : 0.11),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(widget.icon, size: 19, color: ink.emerald),
-          ),
-        ],
-      ),
+      body: _buildBody(horizontalPadding),
     );
   }
 
@@ -216,28 +155,32 @@ class _PolicyDocumentPageState extends State<PolicyDocumentPage> {
             ),
           ),
           const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.info_outline,
-                size: 14,
-                color: ink.text.withValues(alpha: 0.35),
-              ),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  'Questions about this document? Contact DentPal support.',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: ink.text.withValues(alpha: 0.4),
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ],
-          ),
+          widget.footer ?? _buildDefaultFooter(),
         ],
       ),
+    );
+  }
+
+  Widget _buildDefaultFooter() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          Icons.info_outline,
+          size: 14,
+          color: ink.text.withValues(alpha: 0.35),
+        ),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            'Questions about this document? Contact DentPal support.',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: ink.text.withValues(alpha: 0.4),
+              fontSize: 12,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

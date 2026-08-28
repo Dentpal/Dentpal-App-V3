@@ -15,7 +15,6 @@ import 'package:dentpal/product/pages/product_listing_page.dart';
 import 'package:dentpal/profile/pages/orders_page.dart';
 import 'package:dentpal/profile/pages/profile_page.dart';
 import 'package:dentpal/profile/pages/settings/notifications_page.dart';
-import 'package:dentpal/public_support_page.dart';
 
 /// The buyer's five destinations, in tab-stack order.
 ///
@@ -878,11 +877,9 @@ class ShellSideRail extends StatelessWidget {
                       ink: ink,
                       icon: Icons.headset_mic_outlined,
                       label: 'Support',
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const PublicSupportPage(),
-                        ),
-                      ),
+                      // Named, not a MaterialPageRoute: on web the address
+                      // bar should read /support like any other public page.
+                      onTap: () => Navigator.of(context).pushNamed('/support'),
                     ),
                     const SizedBox(height: 16),
                   ],

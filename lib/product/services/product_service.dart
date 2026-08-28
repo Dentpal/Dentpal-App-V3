@@ -5,8 +5,8 @@ import '../models/product_form_model.dart';
 import 'package:dentpal/utils/app_logger.dart';
 
 class ProductService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  late final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  late final FirebaseAuth _auth = FirebaseAuth.instance;
 
   // ── Active catalogue snapshot ─────────────────────────────────────────────
   //

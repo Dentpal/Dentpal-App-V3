@@ -3,7 +3,7 @@ import '../models/product_model.dart';
 import 'package:dentpal/utils/app_logger.dart';
 
 class CategoryService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  late final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   
   // Cache for categories
   static List<Category>? _cachedCategories;

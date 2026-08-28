@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:dentpal/core/widgets/app_shell.dart';
+import '../../config/app_config.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import '../../core/app_theme/ink_palette.dart';
 import '../../core/app_theme/theme_controller.dart';
@@ -580,7 +581,13 @@ class _ProfilePageState extends State<ProfilePage>
       _menuRow(
         icon: Icons.star_outline,
         label: 'Reward points',
-        detail: 'What you have earned so far',
+        detail: AppConfig.rewardPointsPageEnabled
+            ? 'What you have earned so far'
+            : 'Coming soon — perks are still being built',
+        // Points keep accruing on completed orders while the page is held
+        // back, so the row stays visible rather than disappearing and
+        // reappearing; it just does not lead anywhere yet.
+        enabled: AppConfig.rewardPointsPageEnabled,
         onTap: () => Navigator.of(
           context,
         ).pushNamed('/profile/rewards', arguments: userData),
@@ -614,11 +621,12 @@ class _ProfilePageState extends State<ProfilePage>
     required String label,
     required String detail,
     required VoidCallback onTap,
+    bool enabled = true,
   }) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onTap,
+        onTap: enabled ? onTap : null,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
@@ -628,11 +636,19 @@ class _ProfilePageState extends State<ProfilePage>
                 height: 38,
                 decoration: BoxDecoration(
                   color: ink.emerald.withValues(
-                    alpha: ink.isDark ? 0.16 : 0.11,
+                    alpha: enabled
+                        ? (ink.isDark ? 0.16 : 0.11)
+                        : (ink.isDark ? 0.09 : 0.06),
                   ),
                   borderRadius: BorderRadius.circular(11),
                 ),
-                child: Icon(icon, color: ink.emerald, size: 19),
+                child: Icon(
+                  icon,
+                  color: enabled
+                      ? ink.emerald
+                      : ink.emerald.withValues(alpha: 0.45),
+                  size: 19,
+                ),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -642,7 +658,9 @@ class _ProfilePageState extends State<ProfilePage>
                     Text(
                       label,
                       style: AppTextStyles.bodyMedium.copyWith(
-                        color: ink.text,
+                        color: enabled
+                            ? ink.text
+                            : ink.text.withValues(alpha: 0.55),
                         fontWeight: FontWeight.w700,
                         fontSize: 14,
                       ),
@@ -660,11 +678,18 @@ class _ProfilePageState extends State<ProfilePage>
                   ],
                 ),
               ),
-              Icon(
-                Icons.chevron_right,
-                color: ink.text.withValues(alpha: 0.3),
-                size: 20,
-              ),
+              if (enabled)
+                Icon(
+                  Icons.chevron_right,
+                  color: ink.text.withValues(alpha: 0.3),
+                  size: 20,
+                )
+              else
+                Icon(
+                  Icons.lock_outline,
+                  color: ink.text.withValues(alpha: 0.3),
+                  size: 17,
+                ),
             ],
           ),
         ),

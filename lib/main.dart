@@ -160,6 +160,10 @@ class MyApp extends StatelessWidget {
         '/profile/settings/edit-profile': (context) => const EditProfilePage(),
         '/privacy-policy': (context) => const PublicPrivacyPolicyPage(),
         '/terms-of-service': (context) => const PublicTermsOfServicePage(),
+        '/support': (context) => const PublicSupportPage(),
+        // The address this page shipped at, and the one currently registered
+        // as the Play Store listing's support URL. Kept pointing at the same
+        // page so links already out in the world keep resolving.
         '/support-url': (context) => const PublicSupportPage(),
       },
       onGenerateRoute: (settings) {

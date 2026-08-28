@@ -9,8 +9,8 @@ import 'package:dentpal/utils/app_logger.dart';
 import 'package:dentpal/core/services/sub_account_service.dart';
 
 class CartService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  late final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  late final FirebaseAuth _auth = FirebaseAuth.instance;
 
   // Get current user ID or throw error if not authenticated (for methods that require auth)
   // For sub accounts, returns the parent user ID to share the cart

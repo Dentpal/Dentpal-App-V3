@@ -17,6 +17,7 @@ import '../services/banned_seller_service.dart';
 import '../services/user_service.dart';
 import '../services/category_service.dart';
 import '../services/click_tracking_service.dart';
+import '../widgets/product_tile.dart';
 import '../../core/app_theme/app_text_styles.dart';
 import '../../core/app_theme/ink_palette.dart';
 import '../../core/app_theme/theme_utils.dart';
@@ -33,7 +34,6 @@ import '../../profile/pages/orders_page.dart';
 import '../../profile/pages/order_details_page.dart';
 import '../../profile/services/address_service.dart';
 import '../../profile/services/order_service.dart';
-import '../../public_support_page.dart';
 import 'package:dentpal/core/widgets/app_network_image.dart';
 import 'package:dentpal/core/widgets/skeleton.dart';
 import 'package:dentpal/core/widgets/web_footer.dart';
@@ -2493,7 +2493,7 @@ class _ProductListingPageState extends State<ProductListingPage>
                 ),
             ], // end if (!_isSearchMode)
             // Web Footer
-            SliverToBoxAdapter(child: WebFooter(dark: ink.isDark)),
+            const SliverToBoxAdapter(child: WebFooter()),
           ],
         ),
       ),
@@ -2698,7 +2698,7 @@ class _ProductListingPageState extends State<ProductListingPage>
         crossAxisCount: columns,
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
-        childAspectRatio: 0.74,
+        childAspectRatio: ProductTile.aspectRatioFor(contentWidth),
       ),
       delegate: SliverChildBuilderDelegate(
         (context, index) => _buildDarkSkeleton(radius: 18),
@@ -3319,13 +3319,7 @@ class _ProductListingPageState extends State<ProductListingPage>
         _buildHeroQuickAction(
           icon: Icons.headset_mic_outlined,
           label: 'Support',
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (context) => const PublicSupportPage(),
-              ),
-            );
-          },
+          onTap: () => Navigator.of(context).pushNamed('/support'),
         ),
       ],
     );
@@ -3402,7 +3396,7 @@ class _ProductListingPageState extends State<ProductListingPage>
               crossAxisCount: crossAxisCount,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
-              childAspectRatio: 0.74,
+              childAspectRatio: ProductTile.aspectRatioFor(width),
             ),
             itemBuilder: (context, index) {
               if (_isLoadingPopular) {
@@ -4236,7 +4230,7 @@ class _ProductListingPageState extends State<ProductListingPage>
         crossAxisCount: columns,
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
-        childAspectRatio: 0.74,
+        childAspectRatio: ProductTile.aspectRatioFor(contentWidth),
       ),
       delegate: SliverChildBuilderDelegate(
         (context, index) => _buildProductCard(products[index], cellWidth),
@@ -4252,128 +4246,17 @@ class _ProductListingPageState extends State<ProductListingPage>
     return 2;
   }
 
-  /// One catalogue tile, in the same shape as the Most Popular cards so the
-  /// page reads as one surface.
+  /// One catalogue tile. The shape lives in [ProductTile]; Browse adds the
+  /// click it records before navigating.
   Widget _buildProductCard(Product product, double cellWidth, {int? rank}) {
-    final variation = product.variations?.isNotEmpty == true
-        ? product.variations!.first
-        : null;
-    final imageUrl =
-        variation?.thumbnailURL ??
-        product.thumbnailURL ??
-        variation?.imageURL ??
-        product.imageURL;
-    final price = product.lowestPrice;
-    final brand = product.brand ?? '';
-
-    return GestureDetector(
+    return ProductTile(
+      product: product,
+      width: cellWidth,
+      rank: rank,
       onTap: () {
         _clickTrackingService.trackProductClick(product.productId);
         NavigationUtils.navigateToProductDetail(context, product.productId);
       },
-      child: Container(
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          color: ink.surface,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: ink.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Product shots are cut out on white, so they get a neutral
-            // pedestal rather than floating on the card.
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(gradient: ink.productBackdrop),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: AppNetworkImage(
-                        url: imageUrl,
-                        width: cellWidth,
-                        height: cellWidth,
-                        fit: BoxFit.contain,
-                        backgroundColor: Colors.transparent,
-                      ),
-                    ),
-                    if (rank != null)
-                      Positioned(
-                        top: 8,
-                        left: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: ink.amber,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            '#$rank',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: ink.onAmber,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 9, 10, 11),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (brand.isNotEmpty)
-                    Text(
-                      brand.toUpperCase(),
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: ink.text.withValues(alpha: 0.45),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 9,
-                        letterSpacing: 0.7,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  Text(
-                    product.name,
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: ink.text,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12.5,
-                      height: 1.25,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    price != null
-                        ? CurrencyFormatter.formatWithPeso(price)
-                        : 'Price on request',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: ink.text,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
